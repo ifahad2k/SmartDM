@@ -20,8 +20,20 @@ SmartDM is a powerful, privacy-first download manager that provides reliable hig
 - **Build System:** Gradle (Kotlin DSL)
 - **UI Framework:** JavaFX with FXML/CSS
 - **Database:** SQLite with FTS5, encrypted via SQLCipher
-- **Media Tools:** yt-dlp and FFmpeg
+- **Media Tools:** yt-dlp and FFmpeg (user-installed with guided setup)
+
+## Building
+
+```bash
+# Linux
+./gradlew clean check
+
+# Windows
+gradlew.bat clean check
+```
 
 ## License
 
-This project is open-source. (License to be finalized as per Phase 0 guidelines).
+This project is licensed under the [GNU General Public License v3.0 or later](LICENSE) (GPL-3.0-or-later).
+
+See [THIRD_PARTY_LICENSES.md](docs/architecture/THIRD_PARTY_LICENSES.md) for third-party dependency licenses.
