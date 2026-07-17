@@ -5,8 +5,8 @@ This document tracks the high-level progress of the SmartDM phases.
 | Phase | Name | Status | Start Date | End Date | Notes |
 |-------|------|--------|------------|----------|-------|
 | Phase 0 | Product, legal, privacy, and supply-chain lock | COMPLETE | 2026-07-17 | 2026-07-17 | ADRs and policies defined |
-| Phase 1 | Repository and engineering foundation | IN PROGRESS | 2026-07-17 | | |
-| Phase 2 | Secure local profile and encrypted persistence | NOT STARTED | | | |
+| Phase 1 | Repository and engineering foundation | COMPLETE | 2026-07-17 | 2026-07-17 | |
+| Phase 2 | Secure local profile and encrypted persistence | COMPLETE | 2026-07-17 | 2026-07-17 | |
 | Phase 3 | Minimal JavaFX shell and theme system | NOT STARTED | | | |
 | Phase 4 | Single-download vertical slice | NOT STARTED | | | |
 | Phase 5 | Segmentation, pause/resume, verification, recovery | NOT STARTED | | | |

@@ -1,5 +1,5 @@
 plugins {
-    id("smartdm.javafx-app")
+    application
     id("smartdm.testing")
 }
 

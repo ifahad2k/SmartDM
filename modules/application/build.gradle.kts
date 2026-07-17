@@ -5,4 +5,7 @@ plugins {
 
 dependencies {
     api(project(":modules:domain"))
+    implementation(project(":modules:platform-api"))
+    implementation(libs.slf4j.api)
+    implementation(libs.logback.classic)
 }

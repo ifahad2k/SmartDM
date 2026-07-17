@@ -6,4 +6,5 @@ plugins {
 dependencies {
     implementation(project(":modules:persistence-api"))
     implementation(libs.sqlite.jdbc)
+    implementation(libs.flyway.core)
 }
