@@ -1,0 +1,11 @@
+/* SmartDM Compact Density */
+.root {
+    -fx-spacing-xs: 2px;
+    -fx-spacing-sm: 4px;
+    -fx-spacing-md: 8px;
+    -fx-spacing-lg: 12px;
+    -fx-spacing-xl: 16px;
+    
+    -fx-control-height: 28px;
+    -fx-icon-size: 16px;
+}

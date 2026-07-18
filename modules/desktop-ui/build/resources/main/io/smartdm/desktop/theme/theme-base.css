@@ -1,0 +1,16 @@
+/* SmartDM Base Theme Tokens */
+.root {
+    /* Typography */
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
+    -fx-font-size: 14px;
+    
+    /* Radius */
+    -fx-radius-small: 4px;
+    -fx-radius-medium: 8px;
+    -fx-radius-large: 12px;
+    -fx-radius-pill: 9999px;
+
+    /* Base Layout settings */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}

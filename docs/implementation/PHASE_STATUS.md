@@ -16,7 +16,7 @@
 | **Phase 0** | ADRs, Legal, and Repository Foundation | ✅ Completed | None | 2026-07-17 |
 | **Phase 1** | Gradle Build Infrastructure | ✅ Completed | None | 2026-07-17 |
 | **Phase 2** | Secure Local Profile & Encrypted Persistence | ✅ Completed | None | 2026-07-17 |
-| **Phase 3** | Minimal JavaFX shell and theme system | ⏳ Pending | None | TBD |
+| **Phase 3** | Minimal JavaFX shell and theme system | ✅ Completed | None | 2026-07-17 |
 
 ### Checklist
 - [x] Product specification

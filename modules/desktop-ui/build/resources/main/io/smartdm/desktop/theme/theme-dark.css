@@ -1,0 +1,23 @@
+/* SmartDM Dark Theme */
+.root {
+    -fx-color-surface: #1f2937;
+    -fx-color-surface-dim: #111827;
+    -fx-color-surface-sunken: #030712;
+    
+    -fx-color-text: #f9fafb;
+    -fx-color-text-muted: #9ca3af;
+    
+    -fx-color-primary: #3b82f6;
+    -fx-color-primary-hover: #60a5fa;
+    -fx-color-primary-text: #ffffff;
+    
+    -fx-color-success: #22c55e;
+    -fx-color-warning: #f97316;
+    -fx-color-danger: #ef4444;
+    
+    -fx-color-border: #374151;
+    
+    /* System defaults override */
+    -fx-background-color: -fx-color-surface;
+    -fx-text-fill: -fx-color-text;
+}

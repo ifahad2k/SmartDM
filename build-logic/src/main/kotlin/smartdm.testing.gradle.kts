@@ -80,3 +80,44 @@ tasks.named("check") {
 dependencies {
     "architectureTestImplementation"("com.tngtech.archunit:archunit-junit5:1.3.0")
 }
+
+// UI test source set
+val uiTest by sourceSets.creating {
+    compileClasspath += sourceSets.getByName("main").output
+    runtimeClasspath += sourceSets.getByName("main").output
+}
+
+val uiTestImplementation by configurations.getting {
+    extendsFrom(configurations.getByName("testImplementation"))
+}
+val uiTestRuntimeOnly by configurations.getting {
+    extendsFrom(configurations.getByName("testRuntimeOnly"))
+}
+
+val uiTestTask = tasks.register<Test>("uiTest") {
+    description = "Runs UI tests."
+    group = "verification"
+
+    testClassesDirs = uiTest.output.classesDirs
+    classpath = uiTest.runtimeClasspath
+
+    useJUnitPlatform()
+    shouldRunAfter(tasks.named("test"))
+
+    testLogging {
+        events(TestLogEvent.PASSED, TestLogEvent.FAILED, TestLogEvent.SKIPPED)
+        exceptionFormat = TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
+
+    // Required for TestFX in headless/CI environments and Java 21 module exports
+    jvmArgs(
+        "-Xmx512m",
+        "--add-exports", "javafx.graphics/com.sun.javafx.application=ALL-UNNAMED",
+        "--add-exports", "javafx.graphics/com.sun.glass.ui=ALL-UNNAMED"
+    )
+}
+
+tasks.named("check") {
+    dependsOn(uiTestTask)
+}
