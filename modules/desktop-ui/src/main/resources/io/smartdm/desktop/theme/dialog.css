@@ -1,0 +1,184 @@
+/* SmartDM Dialog Styles */
+.os-window {
+    -fx-background-color: rgba(255, 255, 255, 0.055);
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-width: 1px;
+    -fx-border-radius: 20px;
+    -fx-background-radius: 20px;
+    /* JavaFX DropShadow effect simulating the CSS box-shadow */
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.55), 100, 0, 0, 40);
+    -fx-font-family: 'Inter', sans-serif;
+    -fx-font-size: 12.5px;
+}
+
+.titlebar {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.14) transparent;
+    -fx-border-width: 1px;
+    -fx-padding: 0 6px 0 14px;
+    -fx-min-height: 38px;
+    -fx-alignment: center-left;
+    -fx-spacing: 8px;
+}
+
+.app-icon {
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-background-color: linear-gradient(to bottom right, #37E9FF, #9B6BFF);
+    -fx-background-radius: 5px;
+}
+
+.app-title {
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #A6ADC4;
+}
+
+.win-caption {
+    -fx-alignment: center;
+}
+
+.cap-btn {
+    -fx-min-width: 40px;
+    -fx-min-height: 38px;
+    -fx-alignment: center;
+}
+
+.cap-btn:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+}
+
+.cap-btn.close:hover {
+    -fx-background-color: #E81123;
+}
+
+.close-icon {
+    -fx-min-width: 9px;
+    -fx-min-height: 9px;
+    -fx-background-color: #A6ADC4;
+    -fx-shape: "M 0 0 L 10 10 M 10 0 L 0 10";
+    -fx-stroke: #A6ADC4;
+    -fx-stroke-width: 1;
+}
+.cap-btn:hover .close-icon {
+    -fx-background-color: #ffffff;
+    -fx-stroke: #ffffff;
+}
+
+.dialog-body {
+    -fx-padding: 20px 22px 18px 22px;
+    -fx-spacing: 14px;
+}
+
+/* Common Text */
+.dt {
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-font-weight: bold;
+    -fx-font-size: 16px;
+    -fx-text-fill: #F3F5FC;
+}
+
+.ds {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #A6ADC4;
+}
+
+.field-label {
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #A6ADC4;
+}
+
+.text-input {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-text-fill: #F3F5FC;
+    -fx-padding: 9px 12px;
+    -fx-min-height: 36px;
+}
+.text-input:focused {
+    -fx-border-color: #37E9FF;
+}
+
+.dialog-foot {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-border-color: rgba(255, 255, 255, 0.14) transparent transparent transparent;
+    -fx-border-width: 1px;
+    -fx-padding: 14px 22px;
+    -fx-spacing: 10px;
+    -fx-alignment: center-left;
+}
+
+.btn {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-text-fill: #F3F5FC;
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-padding: 8px 15px;
+}
+.btn:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.13);
+}
+
+.btn-primary {
+    -fx-background-color: linear-gradient(to right, #37E9FF, #9B6BFF);
+    -fx-text-fill: #04141A;
+    -fx-border-width: 0;
+}
+.btn-primary:hover {
+    -fx-background-color: linear-gradient(to right, #6aeaff, #b692ff);
+}
+
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: #A6ADC4;
+}
+.btn-ghost:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-text-fill: #F3F5FC;
+}
+
+/* Tabs */
+.tabs {
+    -fx-padding: 10px 16px 0 16px;
+    -fx-spacing: 4px;
+    -fx-alignment: bottom-left;
+}
+
+.tab-label {
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #767E96;
+    -fx-padding: 8px 12px;
+    -fx-background-radius: 8px 8px 0 0;
+}
+
+.tab-label.active {
+    -fx-text-fill: #F3F5FC;
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-border-color: rgba(255, 255, 255, 0.14) rgba(255, 255, 255, 0.14) transparent rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 8px 8px 0 0;
+}
+
+.progress-track {
+    -fx-background-color: rgba(255, 255, 255, 0.13);
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 999px;
+    -fx-background-radius: 999px;
+    -fx-min-height: 10px;
+}
+
+.progress-fill {
+    -fx-background-color: linear-gradient(to right, #37E9FF, #9B6BFF, #FF3DCB);
+    -fx-background-radius: 999px;
+}

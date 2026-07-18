@@ -26,6 +26,12 @@ public final class TopBar extends HBox {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        getChildren().addAll(logo, spacer, searchField);
+        javafx.scene.control.Button addBtn = new javafx.scene.control.Button("Add URL");
+        addBtn.setOnAction(e -> {
+            AddDownloadDialog d = new AddDownloadDialog((javafx.stage.Stage) getScene().getWindow());
+            d.show();
+        });
+
+        getChildren().addAll(logo, addBtn, spacer, searchField);
     }
 }

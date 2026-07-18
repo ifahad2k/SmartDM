@@ -17,6 +17,7 @@
 | **Phase 1** | Gradle Build Infrastructure | ✅ Completed | None | 2026-07-17 |
 | **Phase 2** | Secure Local Profile & Encrypted Persistence | ✅ Completed | None | 2026-07-17 |
 | **Phase 3** | Minimal JavaFX shell and theme system | ✅ Completed | None | 2026-07-17 |
+| **Phase 4** | Single-download vertical slice | ✅ Completed | None | 2026-07-18 |
 
 ### Checklist
 - [x] Product specification

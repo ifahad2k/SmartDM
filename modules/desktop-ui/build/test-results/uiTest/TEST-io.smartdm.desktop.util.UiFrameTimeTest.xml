@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.desktop.util.UiFrameTimeTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-18T08:57:54.729Z" hostname="IFAHAD2K" time="1.437">
+<testsuite name="io.smartdm.desktop.util.UiFrameTimeTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-18T09:39:48.144Z" hostname="IFAHAD2K" time="1.406">
   <properties/>
-  <testcase name="uiThreadRemainsResponsiveUnderBackgroundLoad()" classname="io.smartdm.desktop.util.UiFrameTimeTest" time="1.437"/>
+  <testcase name="uiThreadRemainsResponsiveUnderBackgroundLoad()" classname="io.smartdm.desktop.util.UiFrameTimeTest" time="1.406"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
