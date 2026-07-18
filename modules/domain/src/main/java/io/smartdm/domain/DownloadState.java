@@ -4,6 +4,8 @@ public enum DownloadState {
     QUEUED,
     PROBING,
     DOWNLOADING,
+    PAUSING,
+    PAUSED,
     VERIFYING,
     COMPLETED,
     FAILED,

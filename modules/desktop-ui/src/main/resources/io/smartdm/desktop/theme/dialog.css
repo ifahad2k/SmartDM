@@ -1,6 +1,15 @@
 /* SmartDM Dialog Styles */
+.dialog-root {
+    -fx-background-color: #0A0C16;
+    -fx-background-radius: 20px;
+    -fx-border-radius: 20px;
+    -fx-border-color: rgba(255,255,255,0.14);
+    -fx-border-width: 1px;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.55), 100, 0, 0, 40);
+}
+
 .os-window {
-    -fx-background-color: rgba(255, 255, 255, 0.055);
+    -fx-background-color: linear-gradient(to bottom right, #2B1D5C, #0E253F, #120E1C, #2D1432, #0A0C16);
     -fx-border-color: rgba(255, 255, 255, 0.14);
     -fx-border-width: 1px;
     -fx-border-radius: 20px;

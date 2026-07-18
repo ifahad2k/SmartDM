@@ -10,4 +10,5 @@ public interface DownloadRepository {
     void save(Download download);
     Optional<Download> findById(DownloadId id);
     List<Download> findAll();
+    void delete(DownloadId id);
 }

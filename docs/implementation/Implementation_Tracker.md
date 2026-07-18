@@ -1,15 +1,15 @@
 # SmartDM Implementation Tracker
 
-This document tracks the high-level progress of the SmartDM phases.
+This document tracks the high-level progress of the SmartDM phases based on the latest verified repository state.
 
 | Phase | Name | Status | Start Date | End Date | Notes |
 |-------|------|--------|------------|----------|-------|
 | Phase 0 | Product, legal, privacy, and supply-chain lock | COMPLETE | 2026-07-17 | 2026-07-17 | ADRs and policies defined |
-| Phase 1 | Repository and engineering foundation | COMPLETE | 2026-07-17 | 2026-07-17 | |
-| Phase 2 | Secure local profile and encrypted persistence | COMPLETE | 2026-07-17 | 2026-07-17 | |
-| Phase 3 | Minimal JavaFX shell and theme system | COMPLETE | 2026-07-17 | 2026-07-17 | TestFX smoke, view-model decoupled from UI thread, background task frame drops <16ms |
-| Phase 4 | Single-download vertical slice | COMPLETE | 2026-07-18 | 2026-07-18 | Glassmorphic UI, SQLite DB, Java HttpClient |
-| Phase 5 | Segmentation, pause/resume, verification, recovery | NOT STARTED | | | |
+| Phase 1 | Repository and engineering foundation | COMPLETE | 2026-07-17 | 2026-07-17 | Gradle multi-module build structure is present |
+| Phase 2 | Secure local profile and encrypted persistence | COMPLETE | 2026-07-17 | 2026-07-17 | Persistence, redaction, and profile-locking primitives are implemented |
+| Phase 3 | Minimal JavaFX shell and theme system | COMPLETE | 2026-07-17 | 2026-07-18 | Shell and theming fully aligned with UI smoke tests |
+| Phase 4 | Single-download vertical slice | COMPLETE | 2026-07-18 | 2026-07-18 | transfer engine verified against mock server and Hetzner link |
+| Phase 5 | Segmentation, pause/resume, verification, recovery | COMPLETE | 2026-07-18 | 2026-07-19 | Multi-threaded segmented download coordinator and UI controls are complete |
 | Phase 6 | Queues, scheduler, bandwidth, and resource control | NOT STARTED | | | |
 | Phase 7 | Categories, batch, clipboard, authentication, proxy | NOT STARTED | | | |
 | Phase 8 | Chrome/Firefox native browser integration | NOT STARTED | | | |

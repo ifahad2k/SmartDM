@@ -1,5 +1,7 @@
 package io.smartdm.domain;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 public class Download {
@@ -9,6 +11,7 @@ public class Download {
     private DownloadState state;
     private ByteCount totalBytes;
     private ByteCount downloadedBytes;
+    private final List<DownloadSegment> segments = new ArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
         this.id = Objects.requireNonNull(id);
@@ -37,5 +40,26 @@ public class Download {
     public Destination destination() { return destination; }
     public DownloadState state() { return state; }
     public ByteCount totalBytes() { return totalBytes; }
-    public ByteCount downloadedBytes() { return downloadedBytes; }
+    
+    public ByteCount downloadedBytes() {
+        if (!segments.isEmpty()) {
+            long sum = 0;
+            for (DownloadSegment s : segments) {
+                sum += s.downloadedBytes();
+            }
+            return ByteCount.of(sum);
+        }
+        return downloadedBytes;
+    }
+
+    public List<DownloadSegment> segments() {
+        return segments;
+    }
+
+    public void updateSegments(List<DownloadSegment> newSegments) {
+        this.segments.clear();
+        if (newSegments != null) {
+            this.segments.addAll(newSegments);
+        }
+    }
 }

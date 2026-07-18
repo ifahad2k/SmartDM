@@ -4,6 +4,7 @@ import io.smartdm.domain.ByteCount;
 import io.smartdm.domain.Destination;
 import io.smartdm.domain.Download;
 import io.smartdm.domain.DownloadId;
+import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
 import io.smartdm.domain.SourceUri;
 import io.smartdm.domain.repository.DownloadRepository;
@@ -26,24 +27,61 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String sql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes) " +
                      "VALUES (?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
                      "downloaded_bytes=excluded.downloaded_bytes";
 
-        try (Connection conn = database.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-             
-            stmt.setString(1, download.id().value());
-            stmt.setString(2, download.source().value().toString());
-            stmt.setString(3, download.destination().value().toString());
-            stmt.setString(4, download.state().name());
-            stmt.setLong(5, download.totalBytes().value());
-            stmt.setLong(6, download.downloadedBytes().value());
+        String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
+        
+        String insertSegmentSql = "INSERT INTO download_segment (download_id, segment_index, start_offset, current_offset, end_offset) " +
+                                  "VALUES (?, ?, ?, ?, ?)";
+
+        try (Connection conn = database.getConnection()) {
+            boolean autoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
             
-            stmt.executeUpdate();
+            try {
+                // 1. Save main download record
+                try (PreparedStatement stmt = conn.prepareStatement(insertDownloadSql)) {
+                    stmt.setString(1, download.id().value());
+                    stmt.setString(2, download.source().value().toString());
+                    stmt.setString(3, download.destination().value().toString());
+                    stmt.setString(4, download.state().name());
+                    stmt.setLong(5, download.totalBytes().value());
+                    stmt.setLong(6, download.downloadedBytes().value());
+                    stmt.executeUpdate();
+                }
+
+                // 2. Save segments if they exist
+                if (!download.segments().isEmpty()) {
+                    try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSegmentsSql)) {
+                        deleteStmt.setString(1, download.id().value());
+                        deleteStmt.executeUpdate();
+                    }
+                    
+                    try (PreparedStatement insertStmt = conn.prepareStatement(insertSegmentSql)) {
+                        for (DownloadSegment segment : download.segments()) {
+                            insertStmt.setString(1, download.id().value());
+                            insertStmt.setInt(2, segment.index());
+                            insertStmt.setLong(3, segment.startOffset());
+                            insertStmt.setLong(4, segment.currentOffset());
+                            insertStmt.setLong(5, segment.endOffset());
+                            insertStmt.addBatch();
+                        }
+                        insertStmt.executeBatch();
+                    }
+                }
+                
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(autoCommit);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to save download", e);
         }
@@ -58,7 +96,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
             stmt.setString(1, id.value());
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    return Optional.of(mapRow(rs));
+                    Download download = mapRow(rs, conn);
+                    return Optional.of(download);
                 }
             }
         } catch (SQLException e) {
@@ -76,15 +115,44 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
              ResultSet rs = stmt.executeQuery()) {
              
             while (rs.next()) {
-                results.add(mapRow(rs));
+                results.add(mapRow(rs, conn));
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to find all downloads", e);
         }
         return results;
     }
+
+    @Override
+    public void delete(DownloadId id) {
+        String deleteDownloadSql = "DELETE FROM download WHERE id = ?";
+        String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
+        
+        try (Connection conn = database.getConnection()) {
+            boolean autoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement stmt = conn.prepareStatement(deleteSegmentsSql)) {
+                    stmt.setString(1, id.value());
+                    stmt.executeUpdate();
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(deleteDownloadSql)) {
+                    stmt.setString(1, id.value());
+                    stmt.executeUpdate();
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(autoCommit);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to delete download: " + id.value(), e);
+        }
+    }
     
-    private Download mapRow(ResultSet rs) throws SQLException {
+    private Download mapRow(ResultSet rs, Connection conn) throws SQLException {
         DownloadId id = new DownloadId(rs.getString("id"));
         SourceUri source = SourceUri.of(rs.getString("source_uri"));
         Destination dest = Destination.of(Path.of(rs.getString("destination_path")));
@@ -95,6 +163,25 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         Download d = new Download(id, source, dest);
         d.updateState(state);
         d.updateProgress(downloaded, total);
+        
+        // Load segments
+        List<DownloadSegment> segments = new ArrayList<>();
+        String segmentSql = "SELECT * FROM download_segment WHERE download_id = ? ORDER BY segment_index ASC";
+        try (PreparedStatement stmt = conn.prepareStatement(segmentSql)) {
+            stmt.setString(1, id.value());
+            try (ResultSet segmentRs = stmt.executeQuery()) {
+                while (segmentRs.next()) {
+                    segments.add(new DownloadSegment(
+                        segmentRs.getInt("segment_index"),
+                        segmentRs.getLong("start_offset"),
+                        segmentRs.getLong("current_offset"),
+                        segmentRs.getLong("end_offset")
+                    ));
+                }
+            }
+        }
+        d.updateSegments(segments);
+        
         return d;
     }
 }

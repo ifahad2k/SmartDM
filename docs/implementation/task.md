@@ -26,5 +26,5 @@
 - [x] Module `build.gradle.kts` files
 - [x] Create minimal source directories for modules
 - [x] CI configuration (`.github/workflows/ci.yml`)
-- [x] Verify build compiles (`gradlew check`)
+- [ ] Verify build compiles (`gradlew check`) — current run fails in phase 3/4 verification and is recorded in `TEST_EVIDENCE.md`
 - [x] Update Phase Status for Phase 1

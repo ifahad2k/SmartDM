@@ -1,0 +1,116 @@
+package io.smartdm.desktop.shell;
+
+import javafx.scene.layout.VBox;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.Priority;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import io.smartdm.domain.Download;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.stage.Stage;
+
+public final class DownloadsWorkspace extends VBox {
+    private final ObservableList<Download> items = FXCollections.observableArrayList();
+    private final ListView<Download> listView;
+    private final Label wsSub;
+
+    public DownloadsWorkspace() {
+        this(new DownloadActionListener() {
+            @Override public void onPause(Download d) {}
+            @Override public void onResume(Download d) {}
+            @Override public void onCancel(Download d) {}
+            @Override public void onDelete(Download d, boolean p) {}
+        });
+    }
+
+    public DownloadsWorkspace(DownloadActionListener listener) {
+        getStyleClass().add("workspace");
+        setSpacing(12);
+
+        // Header
+        HBox wsHead = new HBox();
+        wsHead.getStyleClass().add("ws-head");
+        
+        VBox titleBox = new VBox();
+        Label wsTitle = new Label("Downloads");
+        wsTitle.getStyleClass().add("ws-title");
+        wsSub = new Label("0 items");
+        wsSub.getStyleClass().add("ws-sub");
+        titleBox.getChildren().addAll(wsTitle, wsSub);
+        
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        
+        HBox chipRow = new HBox();
+        chipRow.getStyleClass().add("chip-row");
+        chipRow.setSpacing(6);
+        Label chipAll = new Label("All");
+        chipAll.getStyleClass().addAll("chip", "active");
+        Label chipActive = new Label("Active");
+        chipActive.getStyleClass().add("chip");
+        Label chipCompleted = new Label("Completed");
+        chipCompleted.getStyleClass().add("chip");
+        Label chipBlocked = new Label("Blocked");
+        chipBlocked.getStyleClass().add("chip");
+        chipRow.getChildren().addAll(chipAll, chipActive, chipCompleted, chipBlocked);
+        
+        wsHead.getChildren().addAll(titleBox, spacer, chipRow);
+
+        // Functional List View
+        listView = new ListView<>();
+        listView.getStyleClass().add("list");
+        VBox.setVgrow(listView, Priority.ALWAYS);
+        
+        listView.setCellFactory(param -> new DownloadListCell(new DownloadListCell.Listener() {
+            @Override
+            public void onPause(Download download) {
+                listener.onPause(download);
+            }
+
+            @Override
+            public void onResume(Download download) {
+                listener.onResume(download);
+            }
+
+            @Override
+            public void onCancel(Download download) {
+                listener.onCancel(download);
+            }
+
+            @Override
+            public void onDelete(Download download) {
+                Stage owner = (Stage) listView.getScene().getWindow();
+                DeleteConfirmDialog dialog = new DeleteConfirmDialog(owner, download.destination().value().getFileName().toString());
+                DeleteConfirmDialog.DeleteChoice choice = dialog.showAndGetChoice();
+
+                if (choice == DeleteConfirmDialog.DeleteChoice.CANCEL) {
+                    return;
+                }
+
+                boolean permanent = (choice == DeleteConfirmDialog.DeleteChoice.PERMANENT);
+                listener.onDelete(download, permanent);
+
+                items.remove(download);
+                updateSubTitle();
+            }
+        }));
+        listView.setItems(items);
+
+        getChildren().addAll(wsHead, listView);
+    }
+    
+    public void addDownload(Download download) {
+        items.add(download);
+        updateSubTitle();
+    }
+    
+    public void refresh() {
+        listView.refresh();
+    }
+
+    private void updateSubTitle() {
+        wsSub.setText(items.size() + " items");
+    }
+}
