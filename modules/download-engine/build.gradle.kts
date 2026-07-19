@@ -7,4 +7,6 @@ dependencies {
     implementation(project(":modules:domain"))
     implementation(project(":modules:application"))
     implementation(project(":modules:download-http"))
+
+    testImplementation(libs.bundles.testing)
 }

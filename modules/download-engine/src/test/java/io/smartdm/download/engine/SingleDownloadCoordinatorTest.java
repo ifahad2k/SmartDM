@@ -4,7 +4,6 @@ import io.smartdm.domain.ByteCount;
 import io.smartdm.domain.Destination;
 import io.smartdm.domain.Download;
 import io.smartdm.domain.DownloadEvent;
-import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
 import io.smartdm.domain.SourceUri;
 import io.smartdm.domain.repository.DownloadRepository;

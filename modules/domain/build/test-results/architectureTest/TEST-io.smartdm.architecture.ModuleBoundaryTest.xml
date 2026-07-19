@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.architecture.ModuleBoundaryTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-18T09:33:56.681Z" hostname="IFAHAD2K" time="0.032">
+<testsuite name="io.smartdm.architecture.ModuleBoundaryTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-19T06:58:08.017Z" hostname="IFAHAD2K" time="0.071">
   <properties/>
-  <testcase name="domainModuleShouldNotDependOnInfrastructure()" classname="io.smartdm.architecture.ModuleBoundaryTest" time="0.032"/>
+  <testcase name="domainModuleShouldNotDependOnInfrastructure()" classname="io.smartdm.architecture.ModuleBoundaryTest" time="0.071"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

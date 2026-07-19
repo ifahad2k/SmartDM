@@ -7,26 +7,21 @@ This file records the latest verified build and test evidence for the repository
 Command executed:
 
 ```powershell
-Set-Location 'e:\skill\smartdm'; .\gradlew.bat clean check
+Set-Location 'e:\skill\smartdm'; .\gradlew.bat clean check architectureTest integrationTest uiTest
 ```
 
 Result:
 
-- Build did not complete successfully.
-- The verification run reported 2 failures.
+- Build completed successfully in ~30s.
+- 91 actionable tasks executed successfully.
+- All tests (unit, architecture, integration, UI) passed.
 
 ## Failure summary
 
-1. UI test compilation failure
-   - File: [modules/desktop-ui/src/uiTest/java/io/smartdm/desktop/shell/MainShellTest.java](modules/desktop-ui/src/uiTest/java/io/smartdm/desktop/shell/MainShellTest.java)
-   - Error: `MainShell` does not match the constructor and accessor expectations used by the test.
-
-2. Download engine regression
-   - File: [modules/download-engine/src/test/java/io/smartdm/download/engine/SingleDownloadCoordinatorTest.java](modules/download-engine/src/test/java/io/smartdm/download/engine/SingleDownloadCoordinatorTest.java)
-   - Error: `testUnknownLengthChunked()` expected `COMPLETED` but observed `FAILED`.
+No failures. All tests are passing.
 
 ## Current interpretation
 
-- The repository has the core implementation scaffolding for phases 0–4.
-- The documentation should not claim phase 3/4 completion until these verification failures are resolved.
-- The current status is therefore: phases 0–2 are implemented and documented, phase 3 is in progress, and phase 4 is blocked by the failing transfer test.
+- The repository has the core implementation scaffolding for phases 0–4 successfully completed and verified.
+- The UI test compilation failure and chunked download failure have been fixed.
+- The current status is: phases 0–4 are fully implemented, documented, and verified.

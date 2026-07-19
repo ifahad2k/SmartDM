@@ -16,9 +16,8 @@
 | **Phase 0** | ADRs, Legal, and Repository Foundation | ✅ Completed | None | 2026-07-17 |
 | **Phase 1** | Gradle Build Infrastructure | ✅ Completed | None | 2026-07-17 |
 | **Phase 2** | Secure Local Profile & Encrypted Persistence | ✅ Completed | None | 2026-07-17 |
-| **Phase 3** | Minimal JavaFX shell and theme system | ✅ Completed | None | 2026-07-18 |
-| **Phase 4** | Single-download vertical slice | ✅ Completed | None | 2026-07-18 |
-| **Phase 5** | Segmentation, pause/resume, verification, recovery | ✅ Completed | None | 2026-07-19 |
+| **Phase 3** | Minimal JavaFX shell and theme system | ✅ Completed | None | 2026-07-19 |
+| **Phase 4** | Single-download vertical slice | ✅ Completed | None | 2026-07-19 |
 
 ### Checklist
 - [x] Product specification
@@ -79,12 +78,12 @@
 
 - Status: COMPLETE
 - Started: 2026-07-17
-- Completed: 2026-07-18
+- Completed: 2026-07-19
 - Baseline commit: pending
 - Completion commit: pending
 - ADRs: None
 - Migrations: None
-- Test evidence: MainShell has navigation rail and topbar wired; all UI tests pass.
+- Test evidence: Shell and theme classes are implemented, and the UI smoke test successfully compiles and passes. Keyboard/navigation verified.
 - Known limitations: None
 - Approved deviations: none
 
@@ -100,13 +99,13 @@
 
 - Status: COMPLETE
 - Started: 2026-07-18
-- Completed: 2026-07-18
+- Completed: 2026-07-19
 - Baseline commit: pending
 - Completion commit: pending
 - ADRs: None
 - Migrations: `V2__create_download_tables.sql`
-- Test evidence: SingleDownloadCoordinator handles redirects, HTTP errors, chunked transfer, and file collision atomically.
-- Known limitations: None
+- Test evidence: The transfer engine and repository wiring exist, `SingleDownloadCoordinatorTest` passes successfully with all unknown-length and failure scenarios verified. Delete dialog implemented and integrated.
+- Known limitations: Phase 4 cancel/pause is stubbed pending Phase 5 full segmentation engine.
 - Approved deviations: none
 
 ### Checklist
@@ -115,25 +114,3 @@
 - [x] Filename sanitization and HTTP probe support
 - [x] Full verification for unknown-length and failure scenarios
 - [x] End-to-end build/test pass for phase 4
-
----
-
-## Phase 5 — Segmentation, pause/resume, verification, recovery
-
-- Status: COMPLETE
-- Started: 2026-07-18
-- Completed: 2026-07-19
-- Baseline commit: pending
-- Completion commit: pending
-- ADRs: None
-- Migrations: `V3__create_segment_tables.sql`
-- Test evidence: Segmented parallel downloads, pause/resume state persistence, soft/permanent deletion, and pulsing segment progress animation are fully implemented and verified.
-- Known limitations: None
-- Approved deviations: none
-
-### Checklist
-- [x] Segment planning and FileChannel multi-threaded writing
-- [x] Range-support check and ETag/last-modified verification on resume
-- [x] Soft and permanent deletion with confirmation modal
-- [x] Pulsing lane animations and control buttons in DownloadListCell
-- [x] Unit tests for simulated disk-full, read-only directory, and checkpoints

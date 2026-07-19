@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-07-19T06:58:19.228Z" hostname="IFAHAD2K" time="0.654">
+  <properties/>
+  <testcase name="shouldSaveAndLoadDownloadWithSegments(Path)" classname="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" time="0.343"/>
+  <testcase name="shouldDeleteDownloadAndCascadeSegments(Path)" classname="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" time="0.311"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[Jul 19, 2026 12:58:19 PM org.flywaydb.core.FlywayExecutor execute
+INFO: Database: jdbc:sqlite:C:\Users\ifaha\AppData\Local\Temp\junit-5754145191457554446\test.db (SQLite 3.53)
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory allAppliedMigrations
+INFO: Schema history table "main"."flyway_schema_history" does not exist yet
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbValidate validate
+INFO: Successfully validated 3 migrations (execution time 00:00.003s)
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory create
+INFO: Creating Schema History table "main"."flyway_schema_history" ...
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate migrateGroup
+INFO: Current version of schema "main": << Empty Schema >>
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "1 - initial schema"
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "2 - create download tables"
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "3 - create segment tables"
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate logSummary
+INFO: Successfully applied 3 migrations to schema "main", now at version v3 (execution time 00:00.007s)
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.FlywayExecutor execute
+INFO: Database: jdbc:sqlite:C:\Users\ifaha\AppData\Local\Temp\junit-15749012732616103501\test.db (SQLite 3.53)
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory allAppliedMigrations
+INFO: Schema history table "main"."flyway_schema_history" does not exist yet
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbValidate validate
+INFO: Successfully validated 3 migrations (execution time 00:00.003s)
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory create
+INFO: Creating Schema History table "main"."flyway_schema_history" ...
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate migrateGroup
+INFO: Current version of schema "main": << Empty Schema >>
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "1 - initial schema"
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "2 - create download tables"
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "3 - create segment tables"
+Jul 19, 2026 12:58:19 PM org.flywaydb.core.internal.command.DbMigrate logSummary
+INFO: Successfully applied 3 migrations to schema "main", now at version v3 (execution time 00:00.008s)
+]]></system-err>
+</testsuite>

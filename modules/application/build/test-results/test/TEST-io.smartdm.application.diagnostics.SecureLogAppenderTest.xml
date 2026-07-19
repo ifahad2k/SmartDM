@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.application.diagnostics.SecureLogAppenderTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-07-18T09:34:00.964Z" hostname="IFAHAD2K" time="0.106">
+<testsuite name="io.smartdm.application.diagnostics.SecureLogAppenderTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-07-19T06:58:09.482Z" hostname="IFAHAD2K" time="0.148">
   <properties/>
-  <testcase name="shouldRedactIps()" classname="io.smartdm.application.diagnostics.SecureLogAppenderTest" time="0.098"/>
-  <testcase name="shouldRedactUrls()" classname="io.smartdm.application.diagnostics.SecureLogAppenderTest" time="0.001"/>
+  <testcase name="shouldRedactIps()" classname="io.smartdm.application.diagnostics.SecureLogAppenderTest" time="0.137"/>
+  <testcase name="shouldRedactUrls()" classname="io.smartdm.application.diagnostics.SecureLogAppenderTest" time="0.002"/>
   <testcase name="shouldRedactPaths()" classname="io.smartdm.application.diagnostics.SecureLogAppenderTest" time="0.002"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
