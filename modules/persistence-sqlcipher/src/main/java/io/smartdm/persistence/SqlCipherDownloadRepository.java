@@ -27,12 +27,14 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes) " +
-                     "VALUES (?, ?, ?, ?, ?, ?) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
-                     "downloaded_bytes=excluded.downloaded_bytes";
+                     "downloaded_bytes=excluded.downloaded_bytes, " +
+                     "etag=excluded.etag, " +
+                     "last_modified=excluded.last_modified";
 
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
         
@@ -52,6 +54,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                     stmt.setString(4, download.state().name());
                     stmt.setLong(5, download.totalBytes().value());
                     stmt.setLong(6, download.downloadedBytes().value());
+                    stmt.setString(7, download.etag());
+                    stmt.setString(8, download.lastModified());
                     stmt.executeUpdate();
                 }
 
@@ -159,10 +163,13 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         DownloadState state = DownloadState.valueOf(rs.getString("state"));
         ByteCount total = ByteCount.of(rs.getLong("total_bytes"));
         ByteCount downloaded = ByteCount.of(rs.getLong("downloaded_bytes"));
+        String etag = rs.getString("etag");
+        String lastModified = rs.getString("last_modified");
         
         Download d = new Download(id, source, dest);
         d.updateState(state);
         d.updateProgress(downloaded, total);
+        d.updateIdentity(etag, lastModified);
         
         // Load segments
         List<DownloadSegment> segments = new ArrayList<>();

@@ -8,6 +8,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.control.Label;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.Stage;
+import javafx.geometry.Pos;
 
 
 import java.util.function.Consumer;
@@ -22,10 +23,10 @@ public final class MainShell extends VBox {
     private final TopBar topBar;
 
     public MainShell() {
-        this(new Stage(), download -> { }, new DownloadsWorkspace());
+        this(new Stage(), download -> { }, new DownloadsWorkspace(), null, null, null);
     }
 
-    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace) {
+    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, SchedulerWorkspace.ScheduleManager scheduleManager) {
         getStyleClass().addAll("os-window", "glass");
         
         // Custom Title Bar
@@ -45,7 +46,7 @@ public final class MainShell extends VBox {
         HBox winCaption = new HBox();
         winCaption.getStyleClass().add("win-caption");
         
-        Pane minBtn = new Pane();
+        javafx.scene.layout.StackPane minBtn = new javafx.scene.layout.StackPane();
         minBtn.getStyleClass().addAll("cap-btn");
         minBtn.setOnMouseClicked(e -> stage.setIconified(true));
         SVGPath minIcon = new SVGPath();
@@ -54,7 +55,7 @@ public final class MainShell extends VBox {
         minIcon.getStyleClass().add("cap-icon");
         minBtn.getChildren().add(minIcon);
         
-        Pane maxBtn = new Pane();
+        javafx.scene.layout.StackPane maxBtn = new javafx.scene.layout.StackPane();
         maxBtn.getStyleClass().addAll("cap-btn");
         maxBtn.setOnMouseClicked(e -> stage.setMaximized(!stage.isMaximized()));
         SVGPath maxIcon = new SVGPath();
@@ -63,7 +64,7 @@ public final class MainShell extends VBox {
         maxIcon.getStyleClass().add("cap-icon");
         maxBtn.getChildren().add(maxIcon);
 
-        Pane closeBtn = new Pane();
+        javafx.scene.layout.StackPane closeBtn = new javafx.scene.layout.StackPane();
         closeBtn.getStyleClass().addAll("cap-btn", "close");
         closeBtn.setOnMouseClicked(e -> stage.close());
         SVGPath closeIcon = new SVGPath();
@@ -96,12 +97,37 @@ public final class MainShell extends VBox {
         
         VBox.setVgrow(workspace, Priority.ALWAYS);
         
-        topBar = new TopBar(download -> {
+        topBar = new TopBar(() -> workspace.getDownloadsList(), download -> {
             Platform.runLater(() -> workspace.addDownload(download));
             onDownloadRequested.accept(download);
         });
         
-        mainContent.getChildren().addAll(topBar, workspace);
+        QueueWorkspace queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace);
+        VBox.setVgrow(queueWorkspace, Priority.ALWAYS);
+        
+        SchedulerWorkspace schedulerWorkspace = new SchedulerWorkspace(scheduleManager);
+        VBox.setVgrow(schedulerWorkspace, Priority.ALWAYS);
+        
+        StatusBar statusBar = new StatusBar();
+        mainContent.getChildren().addAll(topBar, workspace, statusBar);
+        
+        navigationRail.setOnNavigated(nav -> {
+            mainContent.getChildren().clear();
+            if ("Downloads".equals(nav)) {
+                mainContent.getChildren().addAll(topBar, workspace, statusBar);
+            } else if ("Queue".equals(nav)) {
+                mainContent.getChildren().addAll(topBar, queueWorkspace, statusBar);
+            } else if ("Scheduler".equals(nav)) {
+                mainContent.getChildren().addAll(topBar, schedulerWorkspace, statusBar);
+            } else {
+                // other views placeholder
+                VBox placeholder = new VBox(new Label(nav + " (Coming Soon)"));
+                placeholder.setAlignment(Pos.CENTER);
+                placeholder.getStyleClass().add("workspace");
+                VBox.setVgrow(placeholder, Priority.ALWAYS);
+                mainContent.getChildren().addAll(topBar, placeholder, statusBar);
+            }
+        });
         
         body.getChildren().addAll(navigationRail, mainContent);
 

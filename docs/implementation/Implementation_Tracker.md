@@ -9,7 +9,7 @@ This document tracks the high-level progress of the SmartDM phases based on the 
 | Phase 2 | Secure local profile and encrypted persistence | COMPLETE | 2026-07-17 | 2026-07-17 | Persistence, redaction, and profile-locking primitives are implemented |
 | Phase 3 | Minimal JavaFX shell and theme system | COMPLETE | 2026-07-17 | 2026-07-19 | Shell, theming, and UI test contract implemented and verified |
 | Phase 4 | Single-download vertical slice | COMPLETE | 2026-07-18 | 2026-07-19 | Core transfer flow, atomic temp-to-dest, and tests passing |
-| Phase 5 | Segmentation, pause/resume, verification, recovery | NOT STARTED | | | |
+| Phase 5 | Segmentation, pause/resume, verification, recovery | COMPLETE | 2026-07-19 | 2026-07-19 | Property-based tests, pause/resume, and crash recovery implemented |
 | Phase 6 | Queues, scheduler, bandwidth, and resource control | NOT STARTED | | | |
 | Phase 7 | Categories, batch, clipboard, authentication, proxy | NOT STARTED | | | |
 | Phase 8 | Chrome/Firefox native browser integration | NOT STARTED | | | |

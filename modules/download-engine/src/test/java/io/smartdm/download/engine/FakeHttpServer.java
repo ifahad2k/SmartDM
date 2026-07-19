@@ -118,6 +118,27 @@ public class FakeHttpServer {
             }, "fake-http-timeout").start();
         });
 
+        // ── 6b. Hang on GET (accepts HEAD, hangs on GET) ────────────────
+        server.createContext("/hang-on-get", exchange -> {
+            if (exchange.getRequestMethod().equalsIgnoreCase("HEAD")) {
+                exchange.getResponseHeaders().add("Content-Type", "text/plain");
+                exchange.sendResponseHeaders(200, 10000);
+                exchange.close();
+            } else {
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(30_000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    try {
+                        exchange.sendResponseHeaders(200, -1);
+                        exchange.close();
+                    } catch (IOException ignored) {}
+                }, "fake-http-hang-on-get").start();
+            }
+        });
+
         // ── 7. HTTP error codes ─────────────────────────────────────────
         for (int code : new int[]{401, 403, 404, 429, 500, 503}) {
             server.createContext("/error" + code, exchange -> {

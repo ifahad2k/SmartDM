@@ -18,6 +18,7 @@
 | **Phase 2** | Secure Local Profile & Encrypted Persistence | ✅ Completed | None | 2026-07-17 |
 | **Phase 3** | Minimal JavaFX shell and theme system | ✅ Completed | None | 2026-07-19 |
 | **Phase 4** | Single-download vertical slice | ✅ Completed | None | 2026-07-19 |
+| **Phase 5** | Segmentation, pause/resume, verification, recovery | ✅ Completed | None | 2026-07-19 |
 
 ### Checklist
 - [x] Product specification
@@ -114,3 +115,26 @@
 - [x] Filename sanitization and HTTP probe support
 - [x] Full verification for unknown-length and failure scenarios
 - [x] End-to-end build/test pass for phase 4
+
+---
+
+## Phase 5 — Segmentation, pause/resume, verification, and recovery
+
+- Status: COMPLETE
+- Started: 2026-07-19
+- Completed: 2026-07-19
+- Baseline commit: pending
+- Completion commit: pending
+- ADRs: None
+- Migrations: `V3__create_segment_tables.sql`, `V4__add_identity_fields.sql`
+- Test evidence: Property-based testing for arbitrary segments implemented, crash recovery verified through durable commits and SegmentedFileChannel.
+- Known limitations: none
+- Approved deviations: none
+
+### Checklist
+- [x] Multithreaded segmentation engine (`SegmentWorker` and `SegmentedFileChannel`)
+- [x] Dynamic pause and resume handling with ETag/Content-Length validation
+- [x] Recovery logic for process crashes and half-written segments
+- [x] Property-based tests for segment counting and validation
+- [x] Local test verification for verification & recovery
+

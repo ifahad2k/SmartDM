@@ -11,6 +11,8 @@ public class Download {
     private DownloadState state;
     private ByteCount totalBytes;
     private ByteCount downloadedBytes;
+    private String etag;
+    private String lastModified;
     private final List<DownloadSegment> segments = new ArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
@@ -35,11 +37,18 @@ public class Download {
         this.totalBytes = Objects.requireNonNull(total);
     }
 
+    public void updateIdentity(String etag, String lastModified) {
+        this.etag = etag;
+        this.lastModified = lastModified;
+    }
+
     public DownloadId id() { return id; }
     public SourceUri source() { return source; }
     public Destination destination() { return destination; }
     public DownloadState state() { return state; }
     public ByteCount totalBytes() { return totalBytes; }
+    public String etag() { return etag; }
+    public String lastModified() { return lastModified; }
     
     public ByteCount downloadedBytes() {
         if (!segments.isEmpty()) {

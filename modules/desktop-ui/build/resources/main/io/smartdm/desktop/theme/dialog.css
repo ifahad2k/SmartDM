@@ -31,10 +31,14 @@
 }
 
 .app-icon {
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-background-color: linear-gradient(to bottom right, #37E9FF, #9B6BFF);
-    -fx-background-radius: 5px;
+    -fx-min-width: 24px;
+    -fx-min-height: 24px;
+    -fx-max-width: 24px;
+    -fx-max-height: 24px;
+    -fx-background-image: url("sdm.png");
+    -fx-background-size: contain;
+    -fx-background-repeat: no-repeat;
+    -fx-background-position: center;
 }
 
 .app-title {

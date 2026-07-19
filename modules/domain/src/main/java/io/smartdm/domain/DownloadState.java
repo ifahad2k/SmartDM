@@ -7,6 +7,7 @@ public enum DownloadState {
     PAUSING,
     PAUSED,
     VERIFYING,
+    RETRY_WAIT,
     COMPLETED,
     FAILED,
     CANCELED

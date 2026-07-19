@@ -341,4 +341,35 @@ class SingleDownloadCoordinatorTest {
             }
         }
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // 12. Pause and Resume (Phase 5)
+    // ────────────────────────────────────────────────────────────────────
+    @Test
+    void testPauseStopsTransferAndLeavesPartFile() throws Exception {
+        Path dest = tempDir.resolve("pause_test.txt");
+        Download dl = Download.create(
+                SourceUri.of(server.getBaseUrl() + "/hang-on-get"), // use hang-on-get so it probes fast but hangs on download
+                Destination.of(dest));
+
+        // Run execute in background
+        Thread executorThread = new Thread(() -> coordinator.execute(dl));
+        executorThread.start();
+
+        // Give it a moment to start probing/downloading
+        Thread.sleep(500);
+
+        // Pause it
+        coordinator.pause(dl.id());
+
+        // Wait for executor to finish (it should return because we paused)
+        executorThread.join(2000);
+
+        assertEquals(DownloadState.PAUSED, dl.state());
+        assertFalse(Files.exists(dest), "Final file should not exist yet");
+
+        // Part file should still exist since it's paused
+        Path partFile = tempDir.resolve("parts").resolve(dl.id().value() + ".part");
+        assertTrue(Files.exists(partFile), "Part file must exist for resumed downloads");
+    }
 }

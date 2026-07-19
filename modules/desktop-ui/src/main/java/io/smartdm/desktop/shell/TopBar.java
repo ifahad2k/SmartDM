@@ -15,8 +15,10 @@ import io.smartdm.domain.SourceUri;
 import io.smartdm.domain.Destination;
 import java.nio.file.Paths;
 
+import java.util.function.Supplier;
+
 public final class TopBar extends HBox {
-    public TopBar(Consumer<Download> onDownloadAdded) {
+    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded) {
         getStyleClass().add("topbar");
 
         // Search Field
@@ -53,7 +55,7 @@ public final class TopBar extends HBox {
         addBtn.setGraphic(addIcon);
         
         addBtn.setOnAction(e -> {
-            AddDownloadDialog d = new AddDownloadDialog((javafx.stage.Stage) getScene().getWindow());
+            AddDownloadDialog d = new AddDownloadDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get());
             d.setOnDownloadAdded(onDownloadAdded);
             d.show();
         });

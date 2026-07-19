@@ -11,10 +11,16 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.stage.Stage;
 
-public final class DownloadsWorkspace extends VBox {
-    private final ObservableList<Download> items = FXCollections.observableArrayList();
-    private final ListView<Download> listView;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import io.smartdm.domain.DownloadId;
+
+public final class DownloadsWorkspace extends VBox implements DownloadProvider {
+    private final ObservableList<DownloadId> items = FXCollections.observableArrayList();
+    private final Map<DownloadId, Download> downloadMap = new ConcurrentHashMap<>();
+    private final ListView<DownloadId> listView;
     private final Label wsSub;
+    private final DownloadActionListener listener;
 
     public DownloadsWorkspace() {
         this(new DownloadActionListener() {
@@ -26,6 +32,7 @@ public final class DownloadsWorkspace extends VBox {
     }
 
     public DownloadsWorkspace(DownloadActionListener listener) {
+        this.listener = listener;
         getStyleClass().add("workspace");
         setSpacing(12);
 
@@ -58,10 +65,14 @@ public final class DownloadsWorkspace extends VBox {
         
         wsHead.getChildren().addAll(titleBox, spacer, chipRow);
 
+        // Content Area (List + Details)
+        HBox contentArea = new HBox(12);
+        VBox.setVgrow(contentArea, Priority.ALWAYS);
+
         // Functional List View
         listView = new ListView<>();
         listView.getStyleClass().add("list");
-        VBox.setVgrow(listView, Priority.ALWAYS);
+        HBox.setHgrow(listView, Priority.ALWAYS);
         
         listView.setCellFactory(param -> new DownloadListCell(new DownloadListCell.Listener() {
             @Override
@@ -92,25 +103,70 @@ public final class DownloadsWorkspace extends VBox {
                 boolean permanent = (choice == DeleteConfirmDialog.DeleteChoice.PERMANENT);
                 listener.onDelete(download, permanent);
 
-                items.remove(download);
+                items.remove(download.id());
+                downloadMap.remove(download.id());
                 updateSubTitle();
             }
-        }));
+        }, this));
         listView.setItems(items);
+        
+        DetailsPane detailsPane = new DetailsPane(() -> {
+            listView.getSelectionModel().clearSelection();
+        });
+        
+        listView.getSelectionModel().selectedItemProperty().addListener((obs, oldV, newV) -> {
+            if (newV != null) {
+                detailsPane.bind(downloadMap.get(newV));
+                if (!contentArea.getChildren().contains(detailsPane)) {
+                    contentArea.getChildren().add(detailsPane);
+                }
+            } else {
+                detailsPane.bind(null);
+                contentArea.getChildren().remove(detailsPane);
+            }
+        });
+        
+        contentArea.getChildren().add(listView);
 
-        getChildren().addAll(wsHead, listView);
+        getChildren().addAll(wsHead, contentArea);
+    }
+    
+    @Override
+    public Download getDownload(DownloadId id) {
+        return downloadMap.get(id);
     }
     
     public void addDownload(Download download) {
-        items.add(download);
+        downloadMap.put(download.id(), download);
+        items.add(download.id());
         updateSubTitle();
     }
     
+    public void updateDownload(Download download) {
+        downloadMap.put(download.id(), download);
+        // Force rebinding details pane if it's currently selected to update UI
+        if (listView.getSelectionModel().getSelectedItem() != null && listView.getSelectionModel().getSelectedItem().equals(download.id())) {
+            // we could refresh detailsPane here by finding it but details pane handles its own state for now
+            // We just let the list cell handle the animation
+        }
+    }
+    
     public void refresh() {
-        listView.refresh();
     }
 
     private void updateSubTitle() {
         wsSub.setText(items.size() + " items");
+    }
+
+    public ObservableList<DownloadId> getItems() {
+        return items;
+    }
+
+    public java.util.List<Download> getDownloadsList() {
+        return new java.util.ArrayList<>(downloadMap.values());
+    }
+
+    public DownloadActionListener getListener() {
+        return listener;
     }
 }

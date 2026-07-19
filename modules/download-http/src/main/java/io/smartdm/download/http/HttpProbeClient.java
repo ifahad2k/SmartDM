@@ -24,7 +24,7 @@ public class HttpProbeClient {
                 .build());
     }
 
-    public record ProbeResult(ByteCount size, String mimeType) {}
+    public record ProbeResult(ByteCount size, String mimeType, String etag, String lastModified, boolean acceptsRanges) {}
 
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri) {
         HttpRequest request = HttpRequest.newBuilder()
@@ -41,8 +41,11 @@ public class HttpProbeClient {
                     }
                     long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
                     String mimeType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
+                    String etag = response.headers().firstValue("ETag").orElse(null);
+                    String lastMod = response.headers().firstValue("Last-Modified").orElse(null);
+                    boolean acceptsRanges = response.headers().firstValue("Accept-Ranges").map(val -> val.contains("bytes")).orElse(false);
                     
-                    return new ProbeResult(ByteCount.of(contentLength), mimeType);
+                    return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges);
                 })
                 .handle((result, ex) -> {
                     if (ex == null) {
@@ -89,7 +92,11 @@ public class HttpProbeClient {
                         }
                         
                         String mimeType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
-                        return new ProbeResult(ByteCount.of(contentLength), mimeType);
+                        String etag = response.headers().firstValue("ETag").orElse(null);
+                        String lastMod = response.headers().firstValue("Last-Modified").orElse(null);
+                        boolean acceptsRanges = response.statusCode() == 206 || contentRange != null;
+                        
+                        return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges);
                     } catch (Exception e) {
                         throw new RuntimeException("Failed to process GET Range response", e);
                     }

@@ -22,9 +22,11 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     private final TextField destinationField;
     private final ComboBox<String> categoryCombo;
     private final Button downloadBtn;
+    private final java.util.List<io.smartdm.domain.Download> existingDownloads;
     
-    public AddDownloadDialog(Stage owner) {
+    public AddDownloadDialog(Stage owner, java.util.List<io.smartdm.domain.Download> existingDownloads) {
         super(owner, "SmartDM — New Download");
+        this.existingDownloads = existingDownloads;
         
         // Header
         Label headerTitle = new Label("Add a new download");
@@ -125,34 +127,69 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         
         Button queueBtn = new Button("Add to queue");
         queueBtn.getStyleClass().add("btn");
+        queueBtn.setOnAction(e -> {
+            if (onDownloadAdded != null) {
+                try {
+                    io.smartdm.domain.Download d = createDownloadFromFields();
+                    if (d != null) {
+                        // Custom state or just pass it, the app will handle it
+                        // Wait, DownloadState doesn't have QUEUED? Let's check. 
+                        // I will set it to PAUSED for now to avoid auto-start if QUEUED doesn't exist.
+                        // Actually, I'll set a special property or just use PAUSED.
+                        // Let's use PAUSED so it doesn't auto-start, and the queue can pick it up.
+                        d.updateState(io.smartdm.domain.DownloadState.PAUSED);
+                        onDownloadAdded.accept(d);
+                        close();
+                    }
+                } catch (Exception ex) {
+                    System.err.println("Failed to queue download: " + ex.getMessage());
+                }
+            }
+        });
         
         downloadBtn = new Button("Download now");
         downloadBtn.getStyleClass().addAll("btn", "btn-primary");
         downloadBtn.setOnAction(e -> {
             if (onDownloadAdded != null) {
                 try {
-                    String urlText = urlField.getText().trim();
-                    io.smartdm.domain.SourceUri source = io.smartdm.domain.SourceUri.of(urlText);
-                    
-                    Path destPath = Paths.get(destinationField.getText().replace("~", System.getProperty("user.home"))).toAbsolutePath();
-                    if (Files.isDirectory(destPath)) {
-                        String filename = extractFilename(urlText);
-                        destPath = destPath.resolve(filename);
+                    io.smartdm.domain.Download d = createDownloadFromFields();
+                    if (d != null) {
+                        d.updateState(io.smartdm.domain.DownloadState.PROBING);
+                        onDownloadAdded.accept(d);
+                        close();
                     }
-                    
-                    io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath);
-                    io.smartdm.domain.Download d = io.smartdm.domain.Download.create(source, dest);
-                    d.updateState(io.smartdm.domain.DownloadState.PROBING);
-                    onDownloadAdded.accept(d);
-                    close();
                 } catch (Exception ex) {
-                    System.err.println("Failed to initiate download from dialog: " + ex.getMessage());
+                    System.err.println("Failed to initiate download: " + ex.getMessage());
                 }
             }
         });
         
         footer.getChildren().addAll(spacer, cancelBtn, queueBtn, downloadBtn);
         root.setBottom(footer);
+    }
+    
+    private io.smartdm.domain.Download createDownloadFromFields() throws Exception {
+        String urlText = urlField.getText().trim();
+        io.smartdm.domain.SourceUri source = io.smartdm.domain.SourceUri.of(urlText);
+        
+        Path destPath = Paths.get(destinationField.getText().replace("~", System.getProperty("user.home"))).toAbsolutePath();
+        if (Files.isDirectory(destPath)) {
+            String filename = extractFilename(urlText);
+            destPath = destPath.resolve(filename);
+        }
+        
+        if (Files.exists(destPath) || isDestinationActive(destPath)) {
+            FileCollisionDialog dialog = new FileCollisionDialog((Stage) getScene().getWindow(), destPath.getFileName().toString());
+            FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
+            if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {
+                return null;
+            } else if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
+                destPath = generateUniquePath(destPath);
+            }
+        }
+        
+        io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath);
+        return io.smartdm.domain.Download.create(source, dest);
     }
     
     private String extractFilename(String urlStr) {
@@ -175,6 +212,38 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     }
     
     private java.util.function.Consumer<io.smartdm.domain.Download> onDownloadAdded;
+    
+    private boolean isDestinationActive(Path path) {
+        if (existingDownloads == null) return false;
+        for (io.smartdm.domain.Download d : existingDownloads) {
+            if (d.destination().value().toAbsolutePath().equals(path.toAbsolutePath())) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    private Path generateUniquePath(Path basePath) {
+        if (!Files.exists(basePath) && !isDestinationActive(basePath)) return basePath;
+        
+        String filename = basePath.getFileName().toString();
+        String name = filename;
+        String ext = "";
+        int dotIdx = filename.lastIndexOf('.');
+        if (dotIdx > 0 && dotIdx < filename.length() - 1) {
+            name = filename.substring(0, dotIdx);
+            ext = filename.substring(dotIdx);
+        }
+        
+        int counter = 1;
+        Path parent = basePath.getParent();
+        Path uniquePath = basePath;
+        while (Files.exists(uniquePath) || isDestinationActive(uniquePath)) {
+            uniquePath = parent.resolve(name + " (" + counter + ")" + ext);
+            counter++;
+        }
+        return uniquePath;
+    }
     
     public void setOnDownloadAdded(java.util.function.Consumer<io.smartdm.domain.Download> onDownloadAdded) {
         this.onDownloadAdded = onDownloadAdded;

@@ -1,36 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.download.engine.SingleDownloadCoordinatorTest" tests="20" skipped="0" failures="0" errors="0" timestamp="2026-07-19T07:07:54.514Z" hostname="IFAHAD2K" time="20.899">
+<testsuite name="io.smartdm.download.engine.SingleDownloadCoordinatorTest" tests="21" skipped="0" failures="0" errors="0" timestamp="2026-07-19T12:28:49.925Z" hostname="IFAHAD2K" time="21.316">
   <properties/>
-  <testcase name="testMaliciousContentDisposition_pathTraversal()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.328"/>
-  <testcase name="testMaliciousContentDisposition_nullByte()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.009"/>
-  <testcase name="testDestinationFilenameCollision()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.18"/>
-  <testcase name="testMaliciousContentDisposition_reservedDeviceName()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.006"/>
-  <testcase name="testMidTransferDisconnect()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.022"/>
-  <testcase name="testRedirectLoopTermination()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.035"/>
-  <testcase name="[1] 401" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.02"/>
-  <testcase name="[2] 403" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.011"/>
-  <testcase name="[3] 404" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.011"/>
-  <testcase name="[4] 429" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.014"/>
-  <testcase name="[5] 500" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.019"/>
-  <testcase name="[6] 503" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.011"/>
-  <testcase name="testMaliciousContentDisposition_overlong()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.004"/>
-  <testcase name="testWrongContentLength()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.014"/>
-  <testcase name="testCancelLeavesTempDisposition()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.007"/>
-  <testcase name="testSimulatedDiskFullException()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.014"/>
-  <testcase name="testPermissionDeniedMidWrite()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.013"/>
-  <testcase name="testServerTimeout()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="20.057"/>
-  <testcase name="testUnknownLengthChunked()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.055"/>
-  <testcase name="testNormalKnownLengthDownload()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.024"/>
+  <testcase name="testMaliciousContentDisposition_pathTraversal()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.234"/>
+  <testcase name="testMaliciousContentDisposition_nullByte()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.008"/>
+  <testcase name="testDestinationFilenameCollision()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.158"/>
+  <testcase name="testMaliciousContentDisposition_reservedDeviceName()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.004"/>
+  <testcase name="testMidTransferDisconnect()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.037"/>
+  <testcase name="testRedirectLoopTermination()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.038"/>
+  <testcase name="[1] 401" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.038"/>
+  <testcase name="[2] 403" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.033"/>
+  <testcase name="[3] 404" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.014"/>
+  <testcase name="[4] 429" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.015"/>
+  <testcase name="[5] 500" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.018"/>
+  <testcase name="[6] 503" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.016"/>
+  <testcase name="testMaliciousContentDisposition_overlong()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.006"/>
+  <testcase name="testPauseStopsTransferAndLeavesPartFile()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.52"/>
+  <testcase name="testWrongContentLength()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.017"/>
+  <testcase name="testCancelLeavesTempDisposition()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.005"/>
+  <testcase name="testSimulatedDiskFullException()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.021"/>
+  <testcase name="testPermissionDeniedMidWrite()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.019"/>
+  <testcase name="testServerTimeout()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="20.019"/>
+  <testcase name="testUnknownLengthChunked()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.024"/>
+  <testcase name="testNormalKnownLengthDownload()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.018"/>
   <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[Jul 19, 2026 1:07:54 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+  <system-err><![CDATA[Jul 19, 2026 6:28:50 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
-SingleDownloadCoordinator failed: java.io.IOException: closed
-java.io.IOException: closed
-	at java.net.http/jdk.internal.net.http.ResponseSubscribers$HttpResponseInputStream.current(ResponseSubscribers.java:464)
-	at java.net.http/jdk.internal.net.http.ResponseSubscribers$HttpResponseInputStream.read(ResponseSubscribers.java:508)
-	at java.base/java.io.InputStream.read(InputStream.java:220)
-	at io.smartdm.download.engine.ManagedFileStream.writeFrom(ManagedFileStream.java:32)
-	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:80)
+SingleDownloadCoordinator failed: java.io.IOException: Downloaded bytes do not match expected size: expected=10000, actual=10
+java.io.IOException: Downloaded bytes do not match expected size: expected=10000, actual=10
+	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:171)
 	at io.smartdm.download.engine.SingleDownloadCoordinatorTest.testMidTransferDisconnect(SingleDownloadCoordinatorTest.java:153)
 	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
 	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
@@ -118,32 +115,6 @@ java.io.IOException: closed
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)
-Caused by: java.io.IOException: fixed content-length: 10000, bytes received: 10
-	at java.net.http/jdk.internal.net.http.common.Utils.wrapWithExtraDetail(Utils.java:415)
-	at java.net.http/jdk.internal.net.http.Http1Response$BodyReader.onReadError(Http1Response.java:676)
-	at java.net.http/jdk.internal.net.http.Http1AsyncReceiver.checkForErrors(Http1AsyncReceiver.java:302)
-	at java.net.http/jdk.internal.net.http.Http1AsyncReceiver.flush(Http1AsyncReceiver.java:268)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$LockingRestartableTask.run(SequentialScheduler.java:182)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$CompleteRestartableTask.run(SequentialScheduler.java:149)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$SchedulableTask.run(SequentialScheduler.java:207)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
-	at java.base/java.lang.Thread.run(Thread.java:1583)
-Caused by: java.io.EOFException: EOF reached while reading
-	at java.net.http/jdk.internal.net.http.Http1AsyncReceiver$Http1TubeSubscriber.onComplete(Http1AsyncReceiver.java:601)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$ReadSubscription.signalCompletion(SocketTube.java:648)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription.read(SocketTube.java:853)
-	at java.net.http/jdk.internal.net.http.SocketTube$SocketFlowTask.run(SocketTube.java:181)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$SchedulableTask.run(SequentialScheduler.java:207)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler.runOrSchedule(SequentialScheduler.java:280)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler.runOrSchedule(SequentialScheduler.java:233)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription.signalReadable(SocketTube.java:782)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$ReadEvent.signalEvent(SocketTube.java:965)
-	at java.net.http/jdk.internal.net.http.SocketTube$SocketFlowEvent.handle(SocketTube.java:253)
-	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.handleEvent(HttpClientImpl.java:1477)
-	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.lambda$run$3(HttpClientImpl.java:1422)
-	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
-	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.run(HttpClientImpl.java:1422)
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
@@ -159,11 +130,11 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 302
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
@@ -180,11 +151,11 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 401
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
@@ -201,11 +172,11 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 403
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
@@ -222,11 +193,11 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 404
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
@@ -243,11 +214,11 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 429
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
@@ -264,11 +235,11 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 500
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
@@ -285,19 +256,17 @@ java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to 
 	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)
 	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)
 Caused by: java.lang.RuntimeException: Failed to process GET Range response
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:94)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:101)
 	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646)
 	... 9 more
 Caused by: java.lang.RuntimeException: GET Range failed: 503
-	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$3(HttpProbeClient.java:73)
+	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 more
-SingleDownloadCoordinator failed: java.io.IOException: closed
-java.io.IOException: closed
-	at java.net.http/jdk.internal.net.http.ResponseSubscribers$HttpResponseInputStream.current(ResponseSubscribers.java:464)
-	at java.net.http/jdk.internal.net.http.ResponseSubscribers$HttpResponseInputStream.read(ResponseSubscribers.java:508)
-	at java.base/java.io.InputStream.read(InputStream.java:220)
-	at io.smartdm.download.engine.ManagedFileStream.writeFrom(ManagedFileStream.java:32)
-	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:80)
+Jul 19, 2026 6:28:50 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
+SingleDownloadCoordinator failed: java.io.IOException: Downloaded bytes do not match expected size: expected=50000, actual=6
+java.io.IOException: Downloaded bytes do not match expected size: expected=50000, actual=6
+	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:171)
 	at io.smartdm.download.engine.SingleDownloadCoordinatorTest.testWrongContentLength(SingleDownloadCoordinatorTest.java:136)
 	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
 	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
@@ -385,39 +354,13 @@ java.io.IOException: closed
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)
-Caused by: java.io.IOException: fixed content-length: 50000, bytes received: 6
-	at java.net.http/jdk.internal.net.http.common.Utils.wrapWithExtraDetail(Utils.java:415)
-	at java.net.http/jdk.internal.net.http.Http1Response$BodyReader.onReadError(Http1Response.java:676)
-	at java.net.http/jdk.internal.net.http.Http1AsyncReceiver.checkForErrors(Http1AsyncReceiver.java:302)
-	at java.net.http/jdk.internal.net.http.Http1AsyncReceiver.flush(Http1AsyncReceiver.java:268)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$LockingRestartableTask.run(SequentialScheduler.java:182)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$CompleteRestartableTask.run(SequentialScheduler.java:149)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$SchedulableTask.run(SequentialScheduler.java:207)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
-	at java.base/java.lang.Thread.run(Thread.java:1583)
-Caused by: java.io.EOFException: EOF reached while reading
-	at java.net.http/jdk.internal.net.http.Http1AsyncReceiver$Http1TubeSubscriber.onComplete(Http1AsyncReceiver.java:601)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$ReadSubscription.signalCompletion(SocketTube.java:648)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription.read(SocketTube.java:853)
-	at java.net.http/jdk.internal.net.http.SocketTube$SocketFlowTask.run(SocketTube.java:181)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler$SchedulableTask.run(SequentialScheduler.java:207)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler.runOrSchedule(SequentialScheduler.java:280)
-	at java.net.http/jdk.internal.net.http.common.SequentialScheduler.runOrSchedule(SequentialScheduler.java:233)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription.signalReadable(SocketTube.java:782)
-	at java.net.http/jdk.internal.net.http.SocketTube$InternalReadPublisher$ReadEvent.signalEvent(SocketTube.java:965)
-	at java.net.http/jdk.internal.net.http.SocketTube$SocketFlowEvent.handle(SocketTube.java:253)
-	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.handleEvent(HttpClientImpl.java:1477)
-	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.lambda$run$3(HttpClientImpl.java:1422)
-	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
-	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.run(HttpClientImpl.java:1422)
-Jul 19, 2026 1:07:55 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 19, 2026 6:28:51 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
 SingleDownloadCoordinator failed: java.nio.file.FileSystemException: Z:\nonexistent\dir: Unable to determine if root directory exists
 java.nio.file.FileSystemException: Z:\nonexistent\dir: Unable to determine if root directory exists
 	at java.base/java.nio.file.Files.createDirectories(Files.java:783)
-	at io.smartdm.download.engine.ManagedFileStream.commit(ManagedFileStream.java:45)
-	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:101)
+	at io.smartdm.download.engine.SegmentedFileChannel.commit(SegmentedFileChannel.java:41)
+	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:183)
 	at io.smartdm.download.engine.SingleDownloadCoordinatorTest.testSimulatedDiskFullException(SingleDownloadCoordinatorTest.java:283)
 	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
 	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
@@ -505,7 +448,7 @@ java.nio.file.FileSystemException: Z:\nonexistent\dir: Unable to determine if ro
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)
-Jul 19, 2026 1:07:55 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 19, 2026 6:28:51 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
 SingleDownloadCoordinator failed: java.util.concurrent.CompletionException: java.net.http.HttpTimeoutException: request timed out
 java.util.concurrent.CompletionException: java.net.http.HttpTimeoutException: request timed out
@@ -522,7 +465,7 @@ Caused by: java.net.http.HttpTimeoutException: request timed out
 	at java.net.http/jdk.internal.net.http.ResponseTimerEvent.handle(ResponseTimerEvent.java:63)
 	at java.net.http/jdk.internal.net.http.HttpClientImpl.purgeTimeoutsAndReturnNextDeadline(HttpClientImpl.java:1788)
 	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.run(HttpClientImpl.java:1386)
-Jul 19, 2026 1:08:15 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 19, 2026 6:29:11 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
 ]]></system-err>
 </testsuite>

@@ -8,6 +8,7 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Label;
 import javafx.geometry.Pos;
 import javafx.scene.shape.SVGPath;
+import java.util.function.Consumer;
 
 public final class NavigationRail extends VBox {
     
@@ -43,6 +44,17 @@ public final class NavigationRail extends VBox {
         ToggleButton btnSettings = createNavButton("Settings", "M12 9 A3 3 0 1 0 12 15 A3 3 0 1 0 12 9", group);
         
         getChildren().addAll(brand, btnDownloads, btnQueue, btnScheduler, btnMedia, btnCatalog, btnSafety, spacer, btnSettings);
+        
+        group.selectedToggleProperty().addListener((obs, old, newVal) -> {
+            if (newVal != null && navListener != null) {
+                navListener.accept(((ToggleButton) newVal).getText());
+            }
+        });
+    }
+    
+    private Consumer<String> navListener;
+    public void setOnNavigated(Consumer<String> listener) {
+        this.navListener = listener;
     }
     
     private ToggleButton createNavButton(String text, String svgPath, ToggleGroup group) {
