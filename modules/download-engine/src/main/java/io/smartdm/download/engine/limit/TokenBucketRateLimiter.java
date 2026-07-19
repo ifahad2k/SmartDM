@@ -1,28 +1,35 @@
 package io.smartdm.download.engine.limit;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class TokenBucketRateLimiter {
     
     private volatile Long bytesPerSecondLimit;
-    private final AtomicLong tokens;
-    private final AtomicLong lastRefillTimestamp;
-    private final TokenBucketRateLimiter parent; // For hierarchical limiting (e.g. global -> queue -> download)
+    private double tokens;
+    private long lastRefillTimestamp;
+    private final TokenBucketRateLimiter parent; // For hierarchical limiting
+    
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition tokensAvailable = lock.newCondition();
     
     public TokenBucketRateLimiter(Long bytesPerSecondLimit, TokenBucketRateLimiter parent) {
         this.bytesPerSecondLimit = bytesPerSecondLimit;
         this.parent = parent;
-        this.tokens = new AtomicLong(bytesPerSecondLimit != null ? bytesPerSecondLimit : Long.MAX_VALUE);
-        this.lastRefillTimestamp = new AtomicLong(System.nanoTime());
+        this.tokens = bytesPerSecondLimit != null ? bytesPerSecondLimit : 0;
+        this.lastRefillTimestamp = System.nanoTime();
     }
     
     public void setLimit(Long newLimitBytesPerSecond) {
-        this.bytesPerSecondLimit = newLimitBytesPerSecond;
-        if (newLimitBytesPerSecond == null) {
-            tokens.set(Long.MAX_VALUE);
-        } else {
-            // Cap existing tokens to new limit
-            tokens.updateAndGet(current -> Math.min(current, newLimitBytesPerSecond));
+        lock.lock();
+        try {
+            this.bytesPerSecondLimit = newLimitBytesPerSecond;
+            if (newLimitBytesPerSecond != null && tokens > newLimitBytesPerSecond) {
+                tokens = newLimitBytesPerSecond;
+            }
+            tokensAvailable.signalAll();
+        } finally {
+            lock.unlock();
         }
     }
     
@@ -31,38 +38,53 @@ public class TokenBucketRateLimiter {
             parent.acquire(permits);
         }
         
-        while (true) {
+        while (permits > 0) {
             Long limit = bytesPerSecondLimit;
             if (limit == null) {
-                return; // Unlimited
+                return;
             }
             
-            refill(limit);
+            // Limit chunk size to bucket capacity so we never deadlock
+            long chunk = Math.min(permits, limit);
             
-            long currentTokens = tokens.get();
-            if (currentTokens >= permits) {
-                if (tokens.compareAndSet(currentTokens, currentTokens - permits)) {
-                    return;
+            lock.lockInterruptibly();
+            try {
+                while (true) {
+                    limit = bytesPerSecondLimit;
+                    if (limit == null) {
+                        break;
+                    }
+                    
+                    refill(limit);
+                    
+                    if (tokens >= chunk) {
+                        tokens -= chunk;
+                        permits -= chunk;
+                        break;
+                    }
+                    
+                    // Not enough tokens, calculate wait time
+                    double missing = chunk - tokens;
+                    long waitNanos = (long) ((missing / limit) * 1_000_000_000L);
+                    if (waitNanos > 0) {
+                        tokensAvailable.awaitNanos(waitNanos);
+                    }
                 }
-            } else {
-                // Not enough tokens, wait a bit
-                Thread.sleep(10);
+            } finally {
+                lock.unlock();
             }
         }
     }
     
     private void refill(long limit) {
         long now = System.nanoTime();
-        long last = lastRefillTimestamp.get();
-        long elapsedNanos = now - last;
+        long elapsedNanos = now - lastRefillTimestamp;
+        lastRefillTimestamp = now;
         
-        // Refill 10 times a second max to avoid tiny increments
-        if (elapsedNanos > 100_000_000) { 
-            if (lastRefillTimestamp.compareAndSet(last, now)) {
-                double elapsedSeconds = elapsedNanos / 1_000_000_000.0;
-                long tokensToAdd = (long) (limit * elapsedSeconds);
-                tokens.updateAndGet(current -> Math.min(limit, current + tokensToAdd));
-            }
+        double elapsedSeconds = elapsedNanos / 1_000_000_000.0;
+        tokens += limit * elapsedSeconds;
+        if (tokens > limit) {
+            tokens = limit;
         }
     }
 }

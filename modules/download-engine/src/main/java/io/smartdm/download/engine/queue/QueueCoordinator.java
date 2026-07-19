@@ -20,6 +20,7 @@ public class QueueCoordinator {
         void startDownload(DownloadId id);
         void pauseDownload(DownloadId id);
         boolean isActive(DownloadId id);
+        boolean isScheduledFuture(DownloadId id);
     }
     
     private final DownloadStarter starter;
@@ -50,6 +51,10 @@ public class QueueCoordinator {
     
     public void markDownloadFinished(DownloadId id) {
         activeDownloadsPerQueue.values().forEach(set -> set.remove(id));
+        // Also remove from queueItems to prevent restart
+        for (List<QueueItem> items : queueItems.values()) {
+            items.removeIf(item -> item.getDownloadId().equals(id));
+        }
         triggerCoordination();
     }
 
@@ -92,6 +97,9 @@ public class QueueCoordinator {
                 }
                 
                 if (!activeInQueue.contains(item.getDownloadId()) && !starter.isActive(item.getDownloadId())) {
+                    if (starter.isScheduledFuture(item.getDownloadId())) {
+                        continue; // Skip downloads scheduled for the future
+                    }
                     activeInQueue.add(item.getDownloadId());
                     starter.startDownload(item.getDownloadId());
                 }

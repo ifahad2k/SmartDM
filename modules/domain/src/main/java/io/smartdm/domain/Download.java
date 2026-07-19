@@ -8,11 +8,12 @@ public class Download {
     private final DownloadId id;
     private final SourceUri source;
     private final Destination destination;
-    private DownloadState state;
-    private ByteCount totalBytes;
-    private ByteCount downloadedBytes;
-    private String etag;
-    private String lastModified;
+    private volatile DownloadState state;
+    private volatile ByteCount totalBytes;
+    private volatile ByteCount downloadedBytes;
+    private volatile String etag;
+    private volatile String lastModified;
+    private volatile Long scheduledStartTime;
     private final List<DownloadSegment> segments = new ArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
@@ -42,6 +43,10 @@ public class Download {
         this.lastModified = lastModified;
     }
 
+    public void updateScheduledStartTime(Long scheduledStartTime) {
+        this.scheduledStartTime = scheduledStartTime;
+    }
+
     public DownloadId id() { return id; }
     public SourceUri source() { return source; }
     public Destination destination() { return destination; }
@@ -49,6 +54,7 @@ public class Download {
     public ByteCount totalBytes() { return totalBytes; }
     public String etag() { return etag; }
     public String lastModified() { return lastModified; }
+    public Long scheduledStartTime() { return scheduledStartTime; }
     
     public ByteCount downloadedBytes() {
         if (!segments.isEmpty()) {

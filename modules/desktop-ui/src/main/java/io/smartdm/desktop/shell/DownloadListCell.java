@@ -247,7 +247,21 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
             }
             
             String url = download.source().value().getHost() != null ? download.source().value().getHost() : download.source().value().toString();
-            String metaText = url + " · " + total + progressPercent + " · ETA -";
+            String scheduleText = "";
+            if (download.scheduledStartTime() != null) {
+                long diff = download.scheduledStartTime() - System.currentTimeMillis();
+                if (diff > 0) {
+                    long minutes = diff / (60 * 1000);
+                    if (minutes > 60) {
+                        scheduleText = " · Starts in ~" + (minutes / 60) + "h";
+                    } else {
+                        scheduleText = " · Starts in ~" + minutes + "m";
+                    }
+                } else {
+                    scheduleText = " · Starting now...";
+                }
+            }
+            String metaText = url + " · " + total + progressPercent + scheduleText + " · ETA -";
             if (!metaText.equals(metaLbl.getText())) metaLbl.setText(metaText);
             
             String targetClass;

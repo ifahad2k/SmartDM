@@ -21,11 +21,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Coordinates the lifecycle of a download: probe → plan segments → download → verify → commit.
  */
 public class SingleDownloadCoordinator {
+    private static final Logger log = LoggerFactory.getLogger(SingleDownloadCoordinator.class);
+    
     private final DownloadRepository repository;
     private final HttpProbeClient probeClient;
     private final HttpClient httpClient;
@@ -37,7 +43,7 @@ public class SingleDownloadCoordinator {
 
     private static class DownloadSession {
         final Download download;
-        final SegmentedFileChannel channel;
+        volatile SegmentedFileChannel channel;
         final List<SegmentWorker> workers = new ArrayList<>();
         final List<Future<Void>> futures = new ArrayList<>();
         volatile boolean cancelled = false;
@@ -72,8 +78,34 @@ public class SingleDownloadCoordinator {
             return;
         }
 
+        if (download.state() == DownloadState.VERIFYING) {
+            try {
+                long expectedSize = download.totalBytes().value();
+                if (expectedSize > 0 && java.nio.file.Files.exists(download.destination().value()) &&
+                    java.nio.file.Files.size(download.destination().value()) == expectedSize) {
+                    
+                    Path partFile = tempDir.resolve(download.id().value() + ".part");
+                    if (!java.nio.file.Files.exists(partFile)) {
+                        log.info("Recovered from crash after commit for download {}. Marking as COMPLETED.", download.id().value());
+                        download.updateState(DownloadState.COMPLETED);
+                        repository.save(download);
+                        eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to check file size during recovery for download {}", download.id().value(), e);
+            }
+        }
+
+        DownloadSession newSession = new DownloadSession(download, null);
+        if (sessions.putIfAbsent(download.id(), newSession) != null) {
+            log.warn("Download {} is already executing. Ignoring duplicate start request.", download.id().value());
+            return;
+        }
+
         SegmentedFileChannel channel = null;
-        DownloadSession session = null;
+        DownloadSession session = newSession;
         try {
             // ── Phase 1: Probe ─────────────────────────────────────────
             download.updateState(DownloadState.PROBING);
@@ -95,6 +127,11 @@ public class SingleDownloadCoordinator {
                 if (etagChanged || lmChanged) {
                     download.updateSegments(Collections.emptyList());
                     download.updateProgress(ByteCount.ZERO, ByteCount.UNKNOWN);
+                    try {
+                        java.nio.file.Files.deleteIfExists(tempDir.resolve(download.id().value() + ".part"));
+                    } catch(Exception e) {
+                        log.warn("Failed to delete stale part file on identity change", e);
+                    }
                 }
             }
 
@@ -126,22 +163,32 @@ public class SingleDownloadCoordinator {
 
             // ── Phase 2: Execute Workers ──────────────────────────────────────
             channel = new SegmentedFileChannel(download.destination(), tempDir, download.id().value() + ".part");
-            session = new DownloadSession(download, channel);
-            sessions.put(download.id(), session);
+            session.channel = channel;
 
             HttpRequest baseRequest = HttpRequest.newBuilder()
                     .uri(download.source().value())
                     .GET()
                     .build();
 
+            long[] lastSaveTime = {System.currentTimeMillis()};
             SegmentWorker.ProgressCallback callback = (segment, read) -> {
                 eventPublisher.publish(new DownloadEvent.ProgressUpdated(
                         download.id(), download.downloadedBytes(), download.totalBytes(), download));
+                long now = System.currentTimeMillis();
+                if (now - lastSaveTime[0] > 5000) {
+                    synchronized (lastSaveTime) {
+                        if (now - lastSaveTime[0] > 5000) {
+                            try { session.channel.force(true); } catch(Exception ignored){}
+                            repository.save(download);
+                            lastSaveTime[0] = now;
+                        }
+                    }
+                }
             };
 
             for (DownloadSegment segment : download.segments()) {
                 if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) continue;
-                SegmentWorker worker = new SegmentWorker(httpClient, baseRequest, segment, channel, rateLimiter, callback);
+                SegmentWorker worker = new SegmentWorker(httpClient, baseRequest, segment, channel, rateLimiter, callback, download.etag(), download.lastModified());
                 session.workers.add(worker);
                 session.futures.add(segmentExecutor.submit(worker));
             }
@@ -197,8 +244,7 @@ public class SingleDownloadCoordinator {
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
 
         } catch (Exception e) {
-            System.err.println("SingleDownloadCoordinator failed: " + e.getClass().getName() + ": " + e.getMessage());
-            e.printStackTrace(System.err);
+            log.error("SingleDownloadCoordinator failed: {}", e.getMessage(), e);
             download.updateState(DownloadState.FAILED);
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
@@ -208,7 +254,7 @@ public class SingleDownloadCoordinator {
                 if (download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
                     session.channel.cleanup();
                 } else if (download.state() == DownloadState.PAUSED) {
-                    try { session.channel.close(); } catch(Exception ignored){}
+                    try { if (session.channel != null) session.channel.close(); } catch(Exception ignored){}
                 }
             } else if (channel != null) {
                 if (download.state() == DownloadState.FAILED) channel.cleanup();
@@ -243,7 +289,7 @@ public class SingleDownloadCoordinator {
         }
     }
 
-    public void cancel(DownloadId id) {
+    public CompletableFuture<Void> cancel(DownloadId id) {
         DownloadSession session = sessions.get(id);
         if (session != null) {
             session.cancelled = true;
@@ -253,29 +299,35 @@ public class SingleDownloadCoordinator {
             for (Future<Void> future : session.futures) {
                 future.cancel(true);
             }
-            session.download.updateState(DownloadState.CANCELED);
-            repository.save(session.download);
-            eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, session.download));
+            return CompletableFuture.runAsync(() -> {
+                for (Future<Void> future : session.futures) {
+                    try { future.get(); } catch (Exception ignored) {}
+                }
+                session.download.updateState(DownloadState.CANCELED);
+                repository.save(session.download);
+                eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, session.download));
+            });
         } else {
-            repository.findById(id).ifPresent(d -> {
-                d.updateState(DownloadState.CANCELED);
-                repository.save(d);
-                eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, d));
+            return CompletableFuture.runAsync(() -> {
+                repository.findById(id).ifPresent(d -> {
+                    d.updateState(DownloadState.CANCELED);
+                    repository.save(d);
+                    eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, d));
+                });
             });
         }
     }
 
-    private boolean isAcceptableEndOfStream(Exception e) {
-        Throwable current = e;
-        while (current != null) {
-            String message = current.getMessage();
-            if (current instanceof EOFException) return true;
-            if (message != null && (message.contains("closed") || message.contains("EOF reached")
-                    || message.contains("Connection reset") || message.contains("connection reset"))) {
-                return true;
-            }
-            current = current.getCause();
+    public void shutdown() {
+        segmentExecutor.shutdownNow();
+        try {
+            segmentExecutor.awaitTermination(3, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
+    }
+
+    private boolean isAcceptableEndOfStream(Exception e) {
         return false;
     }
 }

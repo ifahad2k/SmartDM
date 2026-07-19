@@ -101,9 +101,13 @@ public class StatusBar extends HBox {
     }
 
     private boolean checkInternetConnectivity() {
-        try (java.net.Socket socket = new java.net.Socket()) {
-            socket.connect(new java.net.InetSocketAddress("1.1.1.1", 53), 1500);
-            return true;
+        try {
+            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) java.net.URI.create("http://clients3.google.com/generate_204").toURL().openConnection();
+            connection.setConnectTimeout(1500);
+            connection.setReadTimeout(1500);
+            connection.setRequestMethod("HEAD");
+            int responseCode = connection.getResponseCode();
+            return (200 <= responseCode && responseCode <= 399);
         } catch (java.io.IOException e) {
             return false;
         }

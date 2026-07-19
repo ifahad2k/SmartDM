@@ -25,6 +25,7 @@ public class SqlCipherDatabase {
         // Pass the key to the Willena SQLCipher JDBC driver
         String encodedKey = Base64.getEncoder().encodeToString(key);
         config.setPragma(SQLiteConfig.Pragma.PASSWORD, encodedKey);
+        config.enforceForeignKeys(true);
         
         this.dataSource = new SQLiteDataSource(config);
         this.dataSource.setUrl(url);

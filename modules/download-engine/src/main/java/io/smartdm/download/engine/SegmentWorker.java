@@ -16,19 +16,23 @@ public class SegmentWorker implements Callable<Void> {
     private final SegmentedFileChannel channel;
     private final io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter;
     private final ProgressCallback progressCallback;
+    private final String etag;
+    private final String lastModified;
     private volatile boolean paused = false;
 
     public interface ProgressCallback {
         void onProgress(DownloadSegment segment, long bytesRead);
     }
 
-    public SegmentWorker(HttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback) {
+    public SegmentWorker(HttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback, String etag, String lastModified) {
         this.httpClient = httpClient;
         this.baseRequest = baseRequest;
         this.segment = segment;
         this.channel = channel;
         this.rateLimiter = rateLimiter;
         this.progressCallback = progressCallback;
+        this.etag = etag;
+        this.lastModified = lastModified;
     }
 
     @Override
@@ -47,10 +51,21 @@ public class SegmentWorker implements Callable<Void> {
             }
         });
 
+        boolean isRangeRequest = false;
         if (segment.endOffset() >= 0) {
             builder.header("Range", "bytes=" + segment.currentOffset() + "-" + segment.endOffset());
+            isRangeRequest = true;
         } else if (segment.startOffset() > 0) {
             builder.header("Range", "bytes=" + segment.currentOffset() + "-");
+            isRangeRequest = true;
+        }
+        
+        if (isRangeRequest) {
+            if (etag != null) {
+                builder.header("If-Range", etag);
+            } else if (lastModified != null) {
+                builder.header("If-Range", lastModified);
+            }
         }
         
         HttpRequest request = builder.GET().build();
@@ -59,16 +74,29 @@ public class SegmentWorker implements Callable<Void> {
         if (response.statusCode() >= 300) {
             throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
         }
+        if (isRangeRequest && response.statusCode() != 206) {
+            if (segment.startOffset() > 0) {
+                throw new RuntimeException("Expected 206 Partial Content but got " + response.statusCode());
+            }
+            // If startOffset == 0 and we got 200, it might be acceptable if it's the only segment.
+        }
+
+        long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
 
         try (InputStream is = response.body()) {
             byte[] buffer = new byte[8192];
             int read;
-            while (!Thread.currentThread().isInterrupted() && !paused && (read = is.read(buffer)) != -1) {
+            while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
+                int toRead = (int) Math.min(buffer.length, bytesRemaining);
+                read = is.read(buffer, 0, toRead);
+                if (read == -1) break;
+
                 if (rateLimiter != null) {
                     rateLimiter.acquire(read);
                 }
                 channel.writeAt(segment.currentOffset(), buffer, read);
                 segment.updateOffset(segment.currentOffset() + read);
+                bytesRemaining -= read;
                 if (progressCallback != null) {
                     progressCallback.onProgress(segment, read);
                 }

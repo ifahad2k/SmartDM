@@ -27,14 +27,15 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
                      "downloaded_bytes=excluded.downloaded_bytes, " +
                      "etag=excluded.etag, " +
-                     "last_modified=excluded.last_modified";
+                     "last_modified=excluded.last_modified, " +
+                     "scheduled_start_time=excluded.scheduled_start_time";
 
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
         
@@ -56,16 +57,22 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                     stmt.setLong(6, download.downloadedBytes().value());
                     stmt.setString(7, download.etag());
                     stmt.setString(8, download.lastModified());
+                    if (download.scheduledStartTime() != null) {
+                        stmt.setLong(9, download.scheduledStartTime());
+                    } else {
+                        stmt.setNull(9, java.sql.Types.INTEGER);
+                    }
                     stmt.executeUpdate();
                 }
 
-                // 2. Save segments if they exist
+                // 2. Clear old segments always
+                try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSegmentsSql)) {
+                    deleteStmt.setString(1, download.id().value());
+                    deleteStmt.executeUpdate();
+                }
+
+                // 3. Save new segments if they exist
                 if (!download.segments().isEmpty()) {
-                    try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSegmentsSql)) {
-                        deleteStmt.setString(1, download.id().value());
-                        deleteStmt.executeUpdate();
-                    }
-                    
                     try (PreparedStatement insertStmt = conn.prepareStatement(insertSegmentSql)) {
                         for (DownloadSegment segment : download.segments()) {
                             insertStmt.setString(1, download.id().value());
@@ -128,6 +135,25 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
     }
 
     @Override
+    public List<Download> findReadyScheduledDownloads(long currentTimeMillis) {
+        String sql = "SELECT * FROM download WHERE state = 'QUEUED' AND scheduled_start_time IS NOT NULL AND scheduled_start_time <= ?";
+        List<Download> results = new ArrayList<>();
+        try (Connection conn = database.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+             
+            stmt.setLong(1, currentTimeMillis);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(mapRow(rs, conn));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to find ready scheduled downloads", e);
+        }
+        return results;
+    }
+
+    @Override
     public void delete(DownloadId id) {
         String deleteDownloadSql = "DELETE FROM download WHERE id = ?";
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
@@ -166,10 +192,16 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         String etag = rs.getString("etag");
         String lastModified = rs.getString("last_modified");
         
+        Long scheduledStartTime = rs.getLong("scheduled_start_time");
+        if (rs.wasNull()) {
+            scheduledStartTime = null;
+        }
+        
         Download d = new Download(id, source, dest);
         d.updateState(state);
         d.updateProgress(downloaded, total);
         d.updateIdentity(etag, lastModified);
+        d.updateScheduledStartTime(scheduledStartTime);
         
         // Load segments
         List<DownloadSegment> segments = new ArrayList<>();

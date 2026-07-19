@@ -20,7 +20,19 @@ public class MainShellTest {
 
     @Start
     private void start(Stage stage) {
-        shell = new MainShell();
+        shell = new MainShell(
+            stage,
+            download -> { },
+            new DownloadsWorkspace(),
+            new io.smartdm.domain.DownloadQueue("test-q", "Test", 1, null, io.smartdm.domain.DownloadQueue.Status.ACTIVE),
+            javafx.collections.FXCollections.observableArrayList(),
+            new SchedulerWorkspace.ScheduleManager() {
+                @Override public java.util.Collection<io.smartdm.domain.Schedule> getSchedules() { return java.util.Collections.emptyList(); }
+                @Override public void updateSchedule(io.smartdm.domain.Schedule schedule) {}
+                @Override public void removeSchedule(String id) {}
+            },
+            status -> {}
+        );
         Scene scene = new Scene(shell, 800, 600);
         
         ThemeManager themeManager = new ThemeManager();

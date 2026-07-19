@@ -21,6 +21,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     private final TextField urlField;
     private final TextField destinationField;
     private final ComboBox<String> categoryCombo;
+    private final ComboBox<String> scheduleCombo;
     private final Button downloadBtn;
     private final java.util.List<io.smartdm.domain.Download> existingDownloads;
     
@@ -96,8 +97,27 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         HBox.setHgrow(catGroup, Priority.ALWAYS);
         
         HBox row2 = new HBox(12, destGroup, catGroup);
-        
-        dialogBody.getChildren().addAll(head, urlGroup, row2);
+
+        // Schedule
+        Label schedLabel = new Label("START TIME");
+        schedLabel.getStyleClass().add("field-label");
+        scheduleCombo = new ComboBox<>();
+        scheduleCombo.getItems().addAll(
+            "Start immediately",
+            "In 30 minutes",
+            "In 1 hour",
+            "In 2 hours",
+            "In 6 hours",
+            "In 12 hours",
+            "In 24 hours"
+        );
+        scheduleCombo.getSelectionModel().select(0);
+        scheduleCombo.getStyleClass().add("text-input");
+        scheduleCombo.setMaxWidth(Double.MAX_VALUE);
+        VBox schedGroup = new VBox(6, schedLabel, scheduleCombo);
+        HBox.setHgrow(schedGroup, Priority.ALWAYS);
+
+        dialogBody.getChildren().addAll(head, urlGroup, row2, schedGroup);
         
         // Listen to URL inputs to auto-fill the destination path with the extracted filename
         urlField.textProperty().addListener((observable, oldValue, newValue) -> {
@@ -149,6 +169,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 try {
                     io.smartdm.domain.Download d = createDownloadFromFields();
                     if (d != null) {
+                        d.updateScheduledStartTime(null);
                         d.updateState(io.smartdm.domain.DownloadState.PROBING);
                         onDownloadAdded.accept(d);
                         close();
@@ -194,7 +215,25 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
         
         io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath);
-        return io.smartdm.domain.Download.create(source, dest);
+        io.smartdm.domain.Download d = io.smartdm.domain.Download.create(source, dest);
+
+        int selectedIndex = scheduleCombo.getSelectionModel().getSelectedIndex();
+        long delayMillis = 0;
+        switch (selectedIndex) {
+            case 1: delayMillis = 30 * 60 * 1000L; break;
+            case 2: delayMillis = 60 * 60 * 1000L; break;
+            case 3: delayMillis = 2 * 60 * 60 * 1000L; break;
+            case 4: delayMillis = 6 * 60 * 60 * 1000L; break;
+            case 5: delayMillis = 12 * 60 * 60 * 1000L; break;
+            case 6: delayMillis = 24 * 60 * 60 * 1000L; break;
+        }
+        if (delayMillis > 0) {
+            d.updateScheduledStartTime(System.currentTimeMillis() + delayMillis);
+            // If scheduled, it MUST go to queue
+            d.updateState(io.smartdm.domain.DownloadState.QUEUED);
+        }
+
+        return d;
     }
     
     private String extractFilename(String urlStr) {

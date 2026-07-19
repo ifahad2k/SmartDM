@@ -17,12 +17,14 @@ public class ScheduleRunner {
     
     private final Clock clock;
     private final Consumer<DownloadQueue.Status> queueStatusUpdater;
+    private final Runnable scheduledDownloadsStarter;
     private final Map<String, Schedule> schedules = new ConcurrentHashMap<>();
     private ScheduledExecutorService executor;
 
-    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater) {
+    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter) {
         this.clock = clock;
         this.queueStatusUpdater = queueStatusUpdater;
+        this.scheduledDownloadsStarter = scheduledDownloadsStarter;
     }
     
     public void start() {
@@ -50,6 +52,10 @@ public class ScheduleRunner {
     }
     
     private void evaluateSchedules() {
+        if (scheduledDownloadsStarter != null) {
+            scheduledDownloadsStarter.run();
+        }
+        
         LocalDateTime now = LocalDateTime.now(clock);
         int currentDayOfWeek = now.getDayOfWeek().getValue();
         LocalTime currentTime = now.toLocalTime();

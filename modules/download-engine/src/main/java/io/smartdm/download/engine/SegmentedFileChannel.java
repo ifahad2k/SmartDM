@@ -40,7 +40,12 @@ public class SegmentedFileChannel implements AutoCloseable {
         if (targetParent != null && !Files.exists(targetParent)) {
             Files.createDirectories(targetParent);
         }
-        Files.move(tempFile, finalDestination.value(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        try {
+            Files.move(tempFile, finalDestination.value(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.copy(tempFile, finalDestination.value(), StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(tempFile);
+        }
     }
 
     public void cleanup() {
@@ -54,6 +59,12 @@ public class SegmentedFileChannel implements AutoCloseable {
 
     public Path getTempFile() {
         return tempFile;
+    }
+
+    public void force(boolean metaData) throws IOException {
+        if (channel != null && channel.isOpen()) {
+            channel.force(metaData);
+        }
     }
 
     @Override
