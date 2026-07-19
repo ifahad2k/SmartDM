@@ -82,6 +82,12 @@ public class SingleDownloadCoordinator {
 
             HttpProbeClient.ProbeResult probeResult = probeClient.probeAsync(download.source()).join();
 
+            // Re-check database state in case the user paused/cancelled during the blocking probe
+            Download latest = repository.findById(download.id()).orElse(download);
+            if (latest.state() == DownloadState.PAUSED || latest.state() == DownloadState.CANCELED) {
+                return; // Abort execution silently; pause/cancel already handled the DB and Events
+            }
+
             // Check identity for resume
             if (download.etag() != null || download.lastModified() != null) {
                 boolean etagChanged = download.etag() != null && !download.etag().equals(probeResult.etag());

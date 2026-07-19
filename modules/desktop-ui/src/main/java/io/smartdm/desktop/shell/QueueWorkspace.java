@@ -14,13 +14,14 @@ import javafx.collections.ListChangeListener;
 
 public final class QueueWorkspace extends VBox {
     
-    public QueueWorkspace(io.smartdm.domain.DownloadQueue mainQueue, ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, DownloadsWorkspace downloadsWorkspace) {
+    public QueueWorkspace(io.smartdm.domain.DownloadQueue mainQueue, ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, DownloadsWorkspace downloadsWorkspace, java.util.function.Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange) {
         getStyleClass().add("workspace");
         setSpacing(12);
 
         // Header
-        HBox wsHead = new HBox();
+        HBox wsHead = new HBox(12);
         wsHead.getStyleClass().add("ws-head");
+        wsHead.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         
         VBox titleBox = new VBox();
         String qName = mainQueue != null ? mainQueue.getName() : "Unknown Queue";
@@ -33,7 +34,24 @@ public final class QueueWorkspace extends VBox {
         
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        wsHead.getChildren().addAll(titleBox, spacer);
+        
+        javafx.scene.control.Button startBtn = new javafx.scene.control.Button("Start Queue");
+        startBtn.getStyleClass().addAll("btn", "btn-primary");
+        startBtn.setOnAction(e -> {
+            if (onQueueStatusChange != null) {
+                onQueueStatusChange.accept(io.smartdm.domain.DownloadQueue.Status.ACTIVE);
+            }
+        });
+        
+        javafx.scene.control.Button stopBtn = new javafx.scene.control.Button("Stop Queue");
+        stopBtn.getStyleClass().addAll("btn");
+        stopBtn.setOnAction(e -> {
+            if (onQueueStatusChange != null) {
+                onQueueStatusChange.accept(io.smartdm.domain.DownloadQueue.Status.PAUSED);
+            }
+        });
+        
+        wsHead.getChildren().addAll(titleBox, spacer, startBtn, stopBtn);
 
         // Map QueueItems to DownloadIds
         ObservableList<io.smartdm.domain.DownloadId> downloadIds = FXCollections.observableArrayList();

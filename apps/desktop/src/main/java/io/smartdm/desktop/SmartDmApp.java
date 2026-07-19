@@ -186,9 +186,11 @@ public class SmartDmApp extends Application {
                 if (workspaceRef[0] != null) {
                     workspaceRef[0].refresh();
                 }
-                mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
-                enginePool.submit(() -> coordinator.execute(download));
+                boolean exists = mainQueueItems.stream().anyMatch(item -> item.getDownloadId().equals(download.id()));
+                if (!exists) {
+                    mainQueueItems.add(new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", download.id(), 1, mainQueueItems.size()));
+                    queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                }
             }
 
             @Override
@@ -206,6 +208,11 @@ public class SmartDmApp extends Application {
                     coordinator.cancel(download.id());
                 }
                 repository.delete(download.id());
+                
+                // Remove from queue if it's there
+                mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                
                 if (permanent) {
                     enginePool.submit(() -> {
                         try {
@@ -253,9 +260,9 @@ public class SmartDmApp extends Application {
         };
 
         MainShell shell = new MainShell(primaryStage, download -> {
-            if (download.state() == io.smartdm.domain.DownloadState.PAUSED) {
+            repository.save(download);
+            if (download.state() == io.smartdm.domain.DownloadState.QUEUED) {
                 // Add to Queue instead of starting immediately
-                repository.save(download);
                 io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", download.id(), 1, mainQueueItems.size());
                 mainQueueItems.add(item);
                 queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
@@ -263,7 +270,15 @@ public class SmartDmApp extends Application {
             } else {
                 enginePool.submit(() -> coordinator.execute(download));
             }
-        }, workspace, currentQueueRef[0], mainQueueItems, scheduleManager);
+        }, workspace, currentQueueRef[0], mainQueueItems, scheduleManager, status -> {
+            if (currentQueueRef[0].getStatus() != status) {
+                currentQueueRef[0] = currentQueueRef[0].withStatus(status);
+                queueCoordinator.updateQueue(currentQueueRef[0]);
+                javafx.application.Platform.runLater(() -> {
+                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                });
+            }
+        });
 
         Scene scene = new Scene(shell, 1180, 760);
         scene.setFill(javafx.scene.paint.Color.TRANSPARENT);

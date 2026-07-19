@@ -132,12 +132,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 try {
                     io.smartdm.domain.Download d = createDownloadFromFields();
                     if (d != null) {
-                        // Custom state or just pass it, the app will handle it
-                        // Wait, DownloadState doesn't have QUEUED? Let's check. 
-                        // I will set it to PAUSED for now to avoid auto-start if QUEUED doesn't exist.
-                        // Actually, I'll set a special property or just use PAUSED.
-                        // Let's use PAUSED so it doesn't auto-start, and the queue can pick it up.
-                        d.updateState(io.smartdm.domain.DownloadState.PAUSED);
+                        d.updateState(io.smartdm.domain.DownloadState.QUEUED);
                         onDownloadAdded.accept(d);
                         close();
                     }
@@ -177,8 +172,18 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             String filename = extractFilename(urlText);
             destPath = destPath.resolve(filename);
         }
+        boolean fileExists = Files.exists(destPath);
+        boolean destActive = isDestinationActive(destPath);
+        System.out.println("DEBUG: Checking collision for " + destPath);
+        System.out.println("DEBUG: Files.exists=" + fileExists + ", isDestinationActive=" + destActive);
+        if (destActive) {
+            System.out.println("DEBUG: existingDownloads size=" + existingDownloads.size());
+            for (io.smartdm.domain.Download d : existingDownloads) {
+                System.out.println("DEBUG: Download " + d.id() + " dest=" + d.destination().value());
+            }
+        }
         
-        if (Files.exists(destPath) || isDestinationActive(destPath)) {
+        if (fileExists || destActive) {
             FileCollisionDialog dialog = new FileCollisionDialog((Stage) getScene().getWindow(), destPath.getFileName().toString());
             FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
             if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {

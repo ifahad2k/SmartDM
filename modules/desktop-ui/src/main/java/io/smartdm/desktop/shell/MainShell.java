@@ -23,10 +23,10 @@ public final class MainShell extends VBox {
     private final TopBar topBar;
 
     public MainShell() {
-        this(new Stage(), download -> { }, new DownloadsWorkspace(), null, null, null);
+        this(new Stage(), download -> { }, new DownloadsWorkspace(), null, null, null, null);
     }
 
-    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, SchedulerWorkspace.ScheduleManager scheduleManager) {
+    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, SchedulerWorkspace.ScheduleManager scheduleManager, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange) {
         getStyleClass().addAll("os-window", "glass");
         
         // Custom Title Bar
@@ -102,7 +102,7 @@ public final class MainShell extends VBox {
             onDownloadRequested.accept(download);
         });
         
-        QueueWorkspace queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace);
+        QueueWorkspace queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange);
         VBox.setVgrow(queueWorkspace, Priority.ALWAYS);
         
         SchedulerWorkspace schedulerWorkspace = new SchedulerWorkspace(scheduleManager);
