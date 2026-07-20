@@ -4,6 +4,7 @@ import io.smartdm.domain.ByteCount;
 import io.smartdm.domain.Destination;
 import io.smartdm.domain.Download;
 import io.smartdm.domain.DownloadId;
+import io.smartdm.domain.CategoryId;
 import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
 import io.smartdm.domain.SourceUri;
@@ -27,8 +28,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash, category_id) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
@@ -36,7 +37,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                      "etag=excluded.etag, " +
                      "last_modified=excluded.last_modified, " +
                      "scheduled_start_time=excluded.scheduled_start_time, " +
-                     "expected_hash=excluded.expected_hash";
+                     "expected_hash=excluded.expected_hash, " +
+                     "category_id=excluded.category_id";
 
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
         
@@ -67,6 +69,11 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                         stmt.setString(10, download.expectedHash());
                     } else {
                         stmt.setNull(10, java.sql.Types.VARCHAR);
+                    }
+                    if (download.categoryId() != null) {
+                        stmt.setString(11, download.categoryId().value());
+                    } else {
+                        stmt.setNull(11, java.sql.Types.VARCHAR);
                     }
                     stmt.executeUpdate();
                 }
@@ -221,6 +228,7 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
             scheduledStartTime = null;
         }
         String expectedHash = rs.getString("expected_hash");
+        String categoryIdStr = rs.getString("category_id");
         
         Download d = new Download(id, source, dest);
         d.updateState(state);
@@ -228,6 +236,9 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         d.updateIdentity(etag, lastModified);
         d.updateScheduledStartTime(scheduledStartTime);
         d.updateExpectedHash(expectedHash);
+        if (categoryIdStr != null) {
+            d.updateCategoryId(CategoryId.of(categoryIdStr));
+        }
         
         // Load segments
         List<DownloadSegment> segments = new ArrayList<>();

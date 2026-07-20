@@ -1,64 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-07-20T10:37:24.997Z" hostname="IFAHAD2K" time="0.731">
+<testsuite name="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-07-20T10:54:36.362Z" hostname="IFAHAD2K" time="1.135">
   <properties/>
-  <testcase name="shouldSaveAndLoadDownloadWithSegments(Path)" classname="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" time="0.367"/>
-  <testcase name="shouldDeleteDownloadAndCascadeSegments(Path)" classname="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" time="0.363"/>
+  <testcase name="shouldSaveAndLoadDownloadWithSegments(Path)" classname="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" time="0.603"/>
+  <testcase name="shouldDeleteDownloadAndCascadeSegments(Path)" classname="io.smartdm.persistence.SqlCipherDownloadRepositoryTest" time="0.531"/>
   <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[Jul 20, 2026 4:37:25 PM org.flywaydb.core.FlywayExecutor execute
-INFO: Database: jdbc:sqlite:C:\Users\ifaha\AppData\Local\Temp\junit-4675373959720707690\test.db (SQLite 3.53)
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory allAppliedMigrations
+  <system-err><![CDATA[Jul 20, 2026 4:54:36 PM org.flywaydb.core.FlywayExecutor execute
+INFO: Database: jdbc:sqlite:C:\Users\ifaha\AppData\Local\Temp\junit-3655439598949289693\test.db (SQLite 3.53)
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory allAppliedMigrations
 INFO: Schema history table "main"."flyway_schema_history" does not exist yet
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbValidate validate
-INFO: Successfully validated 8 migrations (execution time 00:00.006s)
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory create
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbValidate validate
+INFO: Successfully validated 9 migrations (execution time 00:00.014s)
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory create
 INFO: Creating Schema History table "main"."flyway_schema_history" ...
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate migrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate migrateGroup
 INFO: Current version of schema "main": << Empty Schema >>
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "1 - initial schema"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "2 - create download tables"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "3 - create segment tables"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "4 - add identity fields"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "5 - create queue and schedule tables"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "6 - add scheduled start time"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "7 - add last run time to schedules"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "8 - add expected hash"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate logSummary
-INFO: Successfully applied 8 migrations to schema "main", now at version v8 (execution time 00:00.017s)
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.FlywayExecutor execute
-INFO: Database: jdbc:sqlite:C:\Users\ifaha\AppData\Local\Temp\junit-9314654351201429352\test.db (SQLite 3.53)
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory allAppliedMigrations
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "9 - create category tables"
+Jul 20, 2026 4:54:36 PM org.flywaydb.core.internal.command.DbMigrate logSummary
+INFO: Successfully applied 9 migrations to schema "main", now at version v9 (execution time 00:00.039s)
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.FlywayExecutor execute
+INFO: Database: jdbc:sqlite:C:\Users\ifaha\AppData\Local\Temp\junit-1189736269725740481\test.db (SQLite 3.53)
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory allAppliedMigrations
 INFO: Schema history table "main"."flyway_schema_history" does not exist yet
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbValidate validate
-INFO: Successfully validated 8 migrations (execution time 00:00.005s)
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory create
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbValidate validate
+INFO: Successfully validated 9 migrations (execution time 00:00.010s)
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory create
 INFO: Creating Schema History table "main"."flyway_schema_history" ...
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate migrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate migrateGroup
 INFO: Current version of schema "main": << Empty Schema >>
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "1 - initial schema"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "2 - create download tables"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "3 - create segment tables"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "4 - add identity fields"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "5 - create queue and schedule tables"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "6 - add scheduled start time"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "7 - add last run time to schedules"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
 INFO: Migrating schema "main" to version "8 - add expected hash"
-Jul 20, 2026 4:37:25 PM org.flywaydb.core.internal.command.DbMigrate logSummary
-INFO: Successfully applied 8 migrations to schema "main", now at version v8 (execution time 00:00.010s)
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate doMigrateGroup
+INFO: Migrating schema "main" to version "9 - create category tables"
+Jul 20, 2026 4:54:37 PM org.flywaydb.core.internal.command.DbMigrate logSummary
+INFO: Successfully applied 9 migrations to schema "main", now at version v9 (execution time 00:00.041s)
 ]]></system-err>
 </testsuite>

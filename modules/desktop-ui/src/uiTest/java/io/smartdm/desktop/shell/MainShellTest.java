@@ -26,12 +26,9 @@ public class MainShellTest {
             new DownloadsWorkspace(),
             new io.smartdm.domain.DownloadQueue("test-q", "Test", 1, null, io.smartdm.domain.DownloadQueue.Status.ACTIVE),
             javafx.collections.FXCollections.observableArrayList(),
-            new SchedulerWorkspace.ScheduleManager() {
-                @Override public java.util.Collection<io.smartdm.domain.Schedule> getSchedules() { return java.util.Collections.emptyList(); }
-                @Override public void updateSchedule(io.smartdm.domain.Schedule schedule) {}
-                @Override public void removeSchedule(String id) {}
-            },
-            status -> {}
+            status -> {},
+            () -> java.util.Collections.emptyList(),
+            download -> {}
         );
         Scene scene = new Scene(shell, 800, 600);
         

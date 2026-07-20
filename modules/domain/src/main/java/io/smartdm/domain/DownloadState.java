@@ -10,5 +10,6 @@ public enum DownloadState {
     RETRY_WAIT,
     COMPLETED,
     FAILED,
-    CANCELED
+    CANCELED,
+    REQUIRES_AUTH
 }

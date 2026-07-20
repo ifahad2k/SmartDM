@@ -7,7 +7,12 @@ import io.smartdm.domain.DownloadId;
 import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
 import io.smartdm.domain.repository.DownloadRepository;
+import io.smartdm.domain.repository.CategoryRepository;
+import io.smartdm.domain.Category;
+import io.smartdm.domain.CategoryRule;
 import io.smartdm.download.http.HttpProbeClient;
+import io.smartdm.download.http.UnauthorizedException;
+import java.util.Base64;
 
 import java.io.EOFException;
 import java.io.IOException;
@@ -33,6 +38,7 @@ public class SingleDownloadCoordinator {
     private static final Logger log = LoggerFactory.getLogger(SingleDownloadCoordinator.class);
     
     private final DownloadRepository repository;
+    private final CategoryRepository categoryRepository;
     private final HttpProbeClient probeClient;
     private final HttpClient httpClient;
     private final DownloadEvent.Publisher eventPublisher;
@@ -60,12 +66,14 @@ public class SingleDownloadCoordinator {
 
     public SingleDownloadCoordinator(
             DownloadRepository repository,
+            CategoryRepository categoryRepository,
             HttpProbeClient probeClient,
             HttpClient httpClient,
             DownloadEvent.Publisher eventPublisher,
             Path tempDir,
             io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter) {
         this.repository = repository;
+        this.categoryRepository = categoryRepository;
         this.probeClient = probeClient;
         this.httpClient = httpClient;
         this.eventPublisher = eventPublisher;
@@ -113,7 +121,18 @@ public class SingleDownloadCoordinator {
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
 
-            HttpProbeClient.ProbeResult probeResult = probeClient.probeAsync(download.source()).join();
+            HttpProbeClient.ProbeResult probeResult;
+            try {
+                probeResult = probeClient.probeAsync(download.source(), download.credential()).join();
+            } catch (java.util.concurrent.CompletionException ce) {
+                if (ce.getCause() instanceof UnauthorizedException) {
+                    download.updateState(DownloadState.REQUIRES_AUTH);
+                    repository.save(download);
+                    eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
+                    return;
+                }
+                throw ce;
+            }
 
             // Re-check database state in case the user paused/cancelled during the blocking probe
             Download latest = repository.findById(download.id()).orElse(download);
@@ -138,6 +157,32 @@ public class SingleDownloadCoordinator {
 
             download.updateIdentity(probeResult.etag(), probeResult.lastModified());
             download.updateProgress(download.downloadedBytes(), probeResult.size());
+            
+            if (download.categoryId() == null && categoryRepository != null) {
+                // Auto-assign category
+                String mimeType = probeResult.mimeType();
+                String ext = download.destination().value().getFileName().toString();
+                int lastDot = ext.lastIndexOf('.');
+                String extension = (lastDot != -1) ? ext.substring(lastDot + 1).toLowerCase() : "";
+                
+                Category matchedCategory = null;
+                outer: for (Category cat : categoryRepository.findAll()) {
+                    for (CategoryRule rule : cat.rules()) {
+                        if (rule.type() == CategoryRule.RuleType.EXTENSION && extension.equalsIgnoreCase(rule.value())) {
+                            matchedCategory = cat;
+                            break outer;
+                        }
+                        if (rule.type() == CategoryRule.RuleType.MIME_TYPE && mimeType != null && mimeType.contains(rule.value())) {
+                            matchedCategory = cat;
+                            break outer;
+                        }
+                    }
+                }
+                
+                if (matchedCategory != null) {
+                    download.updateCategoryId(matchedCategory.id());
+                }
+            }
 
             // Generate segments if empty
             if (download.segments().isEmpty()) {
@@ -166,10 +211,15 @@ public class SingleDownloadCoordinator {
             channel = new SegmentedFileChannel(download.destination(), tempDir, download.id().value() + ".part");
             session.channel = channel;
 
-            HttpRequest baseRequest = HttpRequest.newBuilder()
+            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                     .uri(download.source().value())
-                    .GET()
-                    .build();
+                    .GET();
+            
+            if (download.credential() != null) {
+                String basicAuth = Base64.getEncoder().encodeToString((download.credential().username() + ":" + download.credential().password()).getBytes());
+                reqBuilder.header("Authorization", "Basic " + basicAuth);
+            }
+            HttpRequest baseRequest = reqBuilder.build();
 
             long[] lastSaveTime = {System.currentTimeMillis()};
             SegmentWorker.ProgressCallback callback = (segment, read) -> {

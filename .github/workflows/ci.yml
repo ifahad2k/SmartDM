@@ -27,8 +27,9 @@ jobs:
       
     - name: Build and Test
       uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4
-      with:
-        arguments: clean check
+      
+    - name: Execute Gradle build
+      run: ./gradlew clean check
         
     - name: Upload Test Reports
       uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f34369b2 # v4

@@ -63,6 +63,26 @@ public final class TopBar extends HBox {
         Button importBtn = new Button("Import batch");
         importBtn.getStyleClass().addAll("btn", "btn-primary");
         
+        importBtn.setOnAction(e -> {
+            BatchAddDialog d = new BatchAddDialog((javafx.stage.Stage) getScene().getWindow());
+            d.showAndWait();
+            if (d.isResultConfirmed() && d.getBatchUrls() != null) {
+                for (String url : d.getBatchUrls()) {
+                    try {
+                        String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
+                        if (filename == null || filename.isEmpty()) {
+                            filename = "download_" + System.currentTimeMillis();
+                        }
+                        String defaultDir = Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
+                        Destination dest = Destination.of(Paths.get(defaultDir, filename));
+                        Download dl = Download.create(SourceUri.of(url), dest);
+                        onDownloadAdded.accept(dl);
+                    } catch (Exception ex) {
+                        // Skip malformed URIs at this stage
+                    }
+                }
+            }
+        });
         // Theme Toggle
         Button themeBtn = new Button();
         themeBtn.getStyleClass().add("icon-btn");

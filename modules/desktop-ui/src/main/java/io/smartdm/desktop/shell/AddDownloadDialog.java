@@ -344,4 +344,10 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     public void setOnDownloadAdded(java.util.function.Consumer<io.smartdm.domain.Download> onDownloadAdded) {
         this.onDownloadAdded = onDownloadAdded;
     }
+    
+    public void setUrlText(String url) {
+        if (urlField != null) {
+            urlField.setText(url);
+        }
+    }
 }

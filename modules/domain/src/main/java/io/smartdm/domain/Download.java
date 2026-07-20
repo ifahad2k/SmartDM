@@ -15,6 +15,8 @@ public class Download {
     private volatile String lastModified;
     private volatile Long scheduledStartTime;
     private volatile String expectedHash;
+    private volatile CategoryId categoryId;
+    private volatile AuthCredential credential;
     private final List<DownloadSegment> segments = new ArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
@@ -52,6 +54,14 @@ public class Download {
         this.expectedHash = expectedHash;
     }
 
+    public void updateCategoryId(CategoryId categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public void updateCredential(AuthCredential credential) {
+        this.credential = credential;
+    }
+
     public DownloadId id() { return id; }
     public SourceUri source() { return source; }
     public Destination destination() { return destination; }
@@ -61,6 +71,8 @@ public class Download {
     public String lastModified() { return lastModified; }
     public Long scheduledStartTime() { return scheduledStartTime; }
     public String expectedHash() { return expectedHash; }
+    public CategoryId categoryId() { return categoryId; }
+    public AuthCredential credential() { return credential; }
     
     public ByteCount downloadedBytes() {
         if (!segments.isEmpty()) {

@@ -1,7 +1,10 @@
 package io.smartdm.download.http;
 
+import io.smartdm.domain.AuthCredential;
 import io.smartdm.domain.ByteCount;
 import io.smartdm.domain.SourceUri;
+
+import java.util.Base64;
 
 import java.io.InputStream;
 import java.net.http.HttpClient;
@@ -27,15 +30,29 @@ public class HttpProbeClient {
     public record ProbeResult(ByteCount size, String mimeType, String etag, String lastModified, boolean acceptsRanges) {}
 
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri) {
-        HttpRequest request = HttpRequest.newBuilder()
+        return probeAsync(uri, null);
+    }
+
+    public CompletableFuture<ProbeResult> probeAsync(SourceUri uri, AuthCredential credential) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                .timeout(Duration.ofSeconds(10))
-                .build();
+                .timeout(Duration.ofSeconds(10));
+                
+        if (credential != null) {
+            String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
+            builder.header("Authorization", "Basic " + basicAuth);
+        }
+
+        HttpRequest request = builder.build();
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
                 .thenApply(response -> {
+                    if (response.statusCode() == 401) {
+                        String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
+                        throw new UnauthorizedException(wwwAuth);
+                    }
                     if (response.statusCode() >= 300) {
                         throw new RuntimeException("HEAD status: " + response.statusCode());
                     }
@@ -51,26 +68,41 @@ public class HttpProbeClient {
                     if (ex == null) {
                         return CompletableFuture.completedFuture(result);
                     }
-                    // HEAD failed, fall back to GET with Range: bytes=0-0
-                    return probeViaGetRange(uri);
+                    // HEAD failed (possibly 405 Method Not Allowed), fall back to GET with Range: bytes=0-0
+                    // If it was a 401, re-throw it so we can catch it in UI
+                    if (ex.getCause() instanceof UnauthorizedException) {
+                        return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
+                    }
+                    return probeViaGetRange(uri, credential);
                 })
                 .thenCompose(future -> future);
     }
 
-    private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri) {
-        HttpRequest request = HttpRequest.newBuilder()
+    private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri, AuthCredential credential) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .header("Range", "bytes=0-0")
                 .GET()
-                .timeout(Duration.ofSeconds(10))
-                .build();
+                .timeout(Duration.ofSeconds(10));
+                
+        if (credential != null) {
+            String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
+            builder.header("Authorization", "Basic " + basicAuth);
+        }
+
+        HttpRequest request = builder.build();
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
                 .thenApply(response -> {
                     try (InputStream is = response.body()) {
                         // Dummy read to consume a single byte and prevent "resource never referenced" warning
                         int unused = is.read();
+                        
+                        if (response.statusCode() == 401) {
+                            String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
+                            throw new UnauthorizedException(wwwAuth);
+                        }
                         
                         if (response.statusCode() != 200 && response.statusCode() != 206) {
                             throw new RuntimeException("GET Range failed: " + response.statusCode());

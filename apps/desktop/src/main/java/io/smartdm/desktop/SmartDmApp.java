@@ -6,16 +6,19 @@ import javafx.stage.Stage;
 import io.smartdm.desktop.shell.DownloadsWorkspace;
 import io.smartdm.desktop.shell.MainShell;
 import io.smartdm.desktop.shell.DownloadActionListener;
+import io.smartdm.desktop.shell.AuthDialog;
 import io.smartdm.desktop.theme.ThemeManager;
 import io.smartdm.domain.Download;
 import io.smartdm.domain.DownloadEvent;
 import io.smartdm.domain.DownloadState;
 import io.smartdm.domain.repository.DownloadRepository;
+import io.smartdm.desktop.shell.AuthDialog;
 import io.smartdm.download.engine.queue.QueueCoordinator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicBoolean;
 import io.smartdm.download.engine.SingleDownloadCoordinator;
 import io.smartdm.download.http.HttpProbeClient;
+import io.smartdm.download.http.SmartDmProxySelector;
 import io.smartdm.platform.PlatformDirectories;
 import io.smartdm.platform.windows.WindowsPlatformDirectories;
 import io.smartdm.platform.linux.LinuxPlatformDirectories;
@@ -24,6 +27,8 @@ import io.smartdm.securestorage.windows.DpapiMasterKeyStorage;
 import io.smartdm.securestorage.linux.SecretServiceMasterKeyStorage;
 import io.smartdm.persistence.SqlCipherDatabase;
 import io.smartdm.persistence.SqlCipherDownloadRepository;
+import io.smartdm.persistence.SqlCipherCategoryRepository;
+import io.smartdm.domain.repository.CategoryRepository;
 import io.smartdm.application.ProfileLock;
 
 import java.net.http.HttpClient;
@@ -95,6 +100,7 @@ public class SmartDmApp extends Application {
         database.migrate();
 
         DownloadRepository repository = new SqlCipherDownloadRepository(database);
+        CategoryRepository categoryRepository = new SqlCipherCategoryRepository(database);
         io.smartdm.domain.repository.ScheduleRepository scheduleRepo = new io.smartdm.persistence.SqlCipherScheduleRepository(database);
 
         // ── 3. Initialize Thread Pool & HTTP Clients ────────────────────
@@ -104,8 +110,12 @@ public class SmartDmApp extends Application {
             return t;
         });
 
+        SmartDmProxySelector proxySelector = new SmartDmProxySelector();
+        // proxySelector.setConfig(ProxyConfig.system()); // System by default
+
         HttpClient httpClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
+                .proxy(proxySelector)
                 .build();
         HttpProbeClient probeClient = new HttpProbeClient(httpClient);
 
@@ -116,6 +126,7 @@ public class SmartDmApp extends Application {
 
         // ── 5. Event Publisher & Coordinator ────────────────────────────
         AtomicReference<QueueCoordinator> queueCoordinatorRef = new AtomicReference<>();
+        AtomicReference<io.smartdm.download.engine.queue.QueueCoordinator.DownloadStarter> starterRef = new AtomicReference<>();
         AtomicBoolean updatePending = new AtomicBoolean(false);
         DownloadEvent.Publisher publisher = event -> {
             if (event instanceof DownloadEvent.StateChanged) {
@@ -128,6 +139,24 @@ public class SmartDmApp extends Application {
                         if (state == DownloadState.COMPLETED) {
                             mainQueueItems.removeIf(item -> item.getDownloadId().equals(event.downloadId()));
                             if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        }
+                    });
+                } else if (state == DownloadState.REQUIRES_AUTH) {
+                    Platform.runLater(() -> {
+                        String host = event.download().source().value().getHost();
+                        AuthDialog authDialog = new AuthDialog(primaryStage, host, "Secure Area");
+                        authDialog.showAndWait();
+                        if (authDialog.getCredential() != null) {
+                            event.download().updateCredential(authDialog.getCredential());
+                            event.download().updateState(DownloadState.QUEUED);
+                            repository.save(event.download());
+                            if (starterRef.get() != null) {
+                                starterRef.get().startDownload(event.downloadId());
+                            }
+                        } else {
+                            event.download().updateState(DownloadState.PAUSED);
+                            repository.save(event.download());
+                            if (workspaceRef[0] != null) workspaceRef[0].updateDownload(event.download());
                         }
                     });
                 }
@@ -159,13 +188,12 @@ public class SmartDmApp extends Application {
             new io.smartdm.download.engine.limit.TokenBucketRateLimiter(null, null);
 
         coordinator = new SingleDownloadCoordinator(
-                repository, probeClient, httpClient, publisher,
+                repository, categoryRepository, probeClient, httpClient, publisher,
                 directories.getCacheDirectory().resolve("temp"),
                 globalLimiter
         );
 
         // Phase 6 Engine wiring
-        AtomicReference<io.smartdm.download.engine.queue.QueueCoordinator.DownloadStarter> starterRef = new AtomicReference<>();
         io.smartdm.download.engine.queue.QueueCoordinator.DownloadStarter starter = new io.smartdm.download.engine.queue.QueueCoordinator.DownloadStarter() {
                 @Override public void startDownload(io.smartdm.domain.DownloadId id) {
                     repository.findById(id).ifPresent(d -> {

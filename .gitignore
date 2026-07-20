@@ -3,3 +3,4 @@ build/
 *.part
 !gradle/wrapper/gradle-wrapper.jar
 !gradle-wrapper.properties
+**/build/

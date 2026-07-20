@@ -71,7 +71,7 @@ class SingleDownloadCoordinatorTest {
         HttpProbeClient probeClient = new HttpProbeClient(httpClient);
 
         coordinator = new SingleDownloadCoordinator(
-                repo, probeClient, httpClient, publisher, tempDir.resolve("parts"),
+                repo, null, probeClient, httpClient, publisher, tempDir.resolve("parts"),
                 new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
     }
 
@@ -180,7 +180,7 @@ class SingleDownloadCoordinatorTest {
                 .build();
         HttpProbeClient shortProbe = new HttpProbeClient(shortTimeoutClient);
         SingleDownloadCoordinator timeoutCoord = new SingleDownloadCoordinator(
-                repo, shortProbe, shortTimeoutClient, event -> {},
+                repo, null, shortProbe, shortTimeoutClient, event -> {},
                 tempDir.resolve("timeout-parts"),
                 new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
 
@@ -208,7 +208,11 @@ class SingleDownloadCoordinatorTest {
 
         coordinator.execute(dl);
 
-        assertEquals(DownloadState.FAILED, dl.state());
+        if (errorCode == 401) {
+            assertEquals(DownloadState.REQUIRES_AUTH, dl.state());
+        } else {
+            assertEquals(DownloadState.FAILED, dl.state());
+        }
         assertFalse(Files.exists(dest));
     }
 
