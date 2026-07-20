@@ -201,6 +201,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 try {
                     io.smartdm.domain.Download d = createDownloadFromFields();
                     if (d != null) {
+                        d.updateState(io.smartdm.domain.DownloadState.PROBING);
                         onDownloadAdded.accept(d);
                         close();
                     }

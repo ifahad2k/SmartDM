@@ -21,6 +21,8 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     private final ListView<DownloadId> listView;
     private final Label wsSub;
     private final DownloadActionListener listener;
+    private final DetailsPane detailsPane;
+    private final javafx.beans.property.ObjectProperty<Download> latestUpdate = new javafx.beans.property.SimpleObjectProperty<>();
 
     public DownloadsWorkspace() {
         this(new DownloadActionListener() {
@@ -28,6 +30,8 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
             @Override public void onResume(Download d) {}
             @Override public void onCancel(Download d) {}
             @Override public void onDelete(Download d, boolean p) {}
+            @Override public void onAddToQueue(Download d) {}
+            @Override public void onSchedule(Download d) {}
         });
     }
 
@@ -91,7 +95,14 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
             }
 
             @Override
-            public void onDelete(Download download) {
+            public void onDelete(Download download, boolean forcePermanent) {
+                if (forcePermanent) {
+                    listener.onDelete(download, true);
+                    items.remove(download.id());
+                    downloadMap.remove(download.id());
+                    updateSubTitle();
+                    return;
+                }
                 Stage owner = (Stage) listView.getScene().getWindow();
                 DeleteConfirmDialog dialog = new DeleteConfirmDialog(owner, download.destination().value().getFileName().toString());
                 DeleteConfirmDialog.DeleteChoice choice = dialog.showAndGetChoice();
@@ -107,6 +118,16 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                 downloadMap.remove(download.id());
                 updateSubTitle();
             }
+            
+            @Override
+            public void onAddToQueue(Download download) {
+                listener.onAddToQueue(download);
+            }
+            
+            @Override
+            public void onSchedule(Download download) {
+                listener.onSchedule(download);
+            }
         }, this));
         javafx.collections.transformation.FilteredList<DownloadId> filteredItems = new javafx.collections.transformation.FilteredList<>(items, id -> {
             Download d = downloadMap.get(id);
@@ -114,19 +135,27 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         });
         listView.setItems(filteredItems);
         
-        DetailsPane detailsPane = new DetailsPane(() -> {
+        detailsPane = new DetailsPane(() -> {
             listView.getSelectionModel().clearSelection();
         });
         
         listView.getSelectionModel().selectedItemProperty().addListener((obs, oldV, newV) -> {
             if (newV != null) {
                 detailsPane.bind(downloadMap.get(newV));
-                if (!contentArea.getChildren().contains(detailsPane)) {
-                    contentArea.getChildren().add(detailsPane);
-                }
             } else {
                 detailsPane.bind(null);
                 contentArea.getChildren().remove(detailsPane);
+            }
+        });
+        
+        listView.setOnMouseClicked(e -> {
+            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                io.smartdm.domain.DownloadId selected = listView.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    if (!contentArea.getChildren().contains(detailsPane)) {
+                        contentArea.getChildren().add(detailsPane);
+                    }
+                }
             }
         });
         
@@ -147,15 +176,29 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     }
     
     public void updateDownload(Download download) {
+        Download old = downloadMap.get(download.id());
+        boolean stateChanged = (old == null || old.state() != download.state());
         downloadMap.put(download.id(), download);
-        // Force refresh for the FilteredList
-        int idx = items.indexOf(download.id());
-        if (idx >= 0) {
-            items.set(idx, download.id());
+        
+        DownloadId selected = listView.getSelectionModel().getSelectedItem();
+        
+        if (stateChanged) {
+            int idx = items.indexOf(download.id());
+            if (idx >= 0) {
+                items.set(idx, download.id());
+            }
+            // Restore selection if it was cleared by the update
+            if (selected != null && listView.getSelectionModel().getSelectedItem() == null) {
+                listView.getSelectionModel().select(selected);
+            }
+        } else {
+            latestUpdate.set(download);
         }
-        // Force rebinding details pane if it's currently selected to update UI
-        if (listView.getSelectionModel().getSelectedItem() != null && listView.getSelectionModel().getSelectedItem().equals(download.id())) {
-            // We just let the list cell handle the animation
+        
+        if (selected != null && selected.equals(download.id())) {
+            if (detailsPane != null) {
+                detailsPane.bind(download);
+            }
         }
     }
     
@@ -182,5 +225,9 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
 
     public DownloadActionListener getListener() {
         return listener;
+    }
+    
+    public javafx.beans.property.ReadOnlyObjectProperty<Download> latestUpdateProperty() {
+        return latestUpdate;
     }
 }

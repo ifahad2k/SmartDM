@@ -27,15 +27,16 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
                      "downloaded_bytes=excluded.downloaded_bytes, " +
                      "etag=excluded.etag, " +
                      "last_modified=excluded.last_modified, " +
-                     "scheduled_start_time=excluded.scheduled_start_time";
+                     "scheduled_start_time=excluded.scheduled_start_time, " +
+                     "expected_hash=excluded.expected_hash";
 
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
         
@@ -61,6 +62,11 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                         stmt.setLong(9, download.scheduledStartTime());
                     } else {
                         stmt.setNull(9, java.sql.Types.INTEGER);
+                    }
+                    if (download.expectedHash() != null) {
+                        stmt.setString(10, download.expectedHash());
+                    } else {
+                        stmt.setNull(10, java.sql.Types.VARCHAR);
                     }
                     stmt.executeUpdate();
                 }
@@ -154,6 +160,24 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
     }
 
     @Override
+    public List<Download> findScheduledDownloads() {
+        String sql = "SELECT * FROM download WHERE state = 'QUEUED' AND scheduled_start_time IS NOT NULL";
+        List<Download> results = new ArrayList<>();
+        try (Connection conn = database.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+             
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(mapRow(rs, conn));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to find scheduled downloads", e);
+        }
+        return results;
+    }
+
+    @Override
     public void delete(DownloadId id) {
         String deleteDownloadSql = "DELETE FROM download WHERE id = ?";
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
@@ -196,12 +220,14 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         if (rs.wasNull()) {
             scheduledStartTime = null;
         }
+        String expectedHash = rs.getString("expected_hash");
         
         Download d = new Download(id, source, dest);
         d.updateState(state);
         d.updateProgress(downloaded, total);
         d.updateIdentity(etag, lastModified);
         d.updateScheduledStartTime(scheduledStartTime);
+        d.updateExpectedHash(expectedHash);
         
         // Load segments
         List<DownloadSegment> segments = new ArrayList<>();

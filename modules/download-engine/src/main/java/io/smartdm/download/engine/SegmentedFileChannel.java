@@ -61,6 +61,12 @@ public class SegmentedFileChannel implements AutoCloseable {
         return tempFile;
     }
 
+    public void truncate(long size) throws IOException {
+        if (channel != null && channel.isOpen()) {
+            channel.truncate(size);
+        }
+    }
+
     public void force(boolean metaData) throws IOException {
         if (channel != null && channel.isOpen()) {
             channel.force(metaData);

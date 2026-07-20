@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.download.engine.SingleDownloadCoordinatorTest" tests="21" skipped="0" failures="0" errors="0" timestamp="2026-07-19T17:59:39.080Z" hostname="IFAHAD2K" time="21.296">
+<testsuite name="io.smartdm.download.engine.SingleDownloadCoordinatorTest" tests="21" skipped="0" failures="0" errors="0" timestamp="2026-07-20T05:20:27.594Z" hostname="IFAHAD2K" time="22.835">
   <properties/>
-  <testcase name="testMaliciousContentDisposition_pathTraversal()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.246"/>
-  <testcase name="testMaliciousContentDisposition_nullByte()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.005"/>
-  <testcase name="testDestinationFilenameCollision()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.141"/>
-  <testcase name="testMaliciousContentDisposition_reservedDeviceName()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.006"/>
-  <testcase name="testMidTransferDisconnect()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.029"/>
-  <testcase name="testRedirectLoopTermination()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.033"/>
-  <testcase name="[1] 401" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.02"/>
-  <testcase name="[2] 403" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.013"/>
-  <testcase name="[3] 404" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.012"/>
-  <testcase name="[4] 429" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.013"/>
-  <testcase name="[5] 500" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.01"/>
-  <testcase name="[6] 503" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.012"/>
-  <testcase name="testMaliciousContentDisposition_overlong()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.005"/>
-  <testcase name="testPauseStopsTransferAndLeavesPartFile()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.524"/>
-  <testcase name="testWrongContentLength()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.027"/>
-  <testcase name="testCancelLeavesTempDisposition()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.005"/>
-  <testcase name="testSimulatedDiskFullException()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.028"/>
-  <testcase name="testPermissionDeniedMidWrite()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.018"/>
-  <testcase name="testServerTimeout()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="20.018"/>
-  <testcase name="testUnknownLengthChunked()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.042"/>
-  <testcase name="testNormalKnownLengthDownload()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.026"/>
-  <system-out><![CDATA[23:59:39.496 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: One or more segment workers failed.
+  <testcase name="testMaliciousContentDisposition_pathTraversal()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.571"/>
+  <testcase name="testMaliciousContentDisposition_nullByte()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.015"/>
+  <testcase name="testDestinationFilenameCollision()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.46"/>
+  <testcase name="testMaliciousContentDisposition_reservedDeviceName()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.014"/>
+  <testcase name="testMidTransferDisconnect()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.093"/>
+  <testcase name="testRedirectLoopTermination()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.096"/>
+  <testcase name="[1] 401" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.111"/>
+  <testcase name="[2] 403" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.038"/>
+  <testcase name="[3] 404" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.044"/>
+  <testcase name="[4] 429" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.056"/>
+  <testcase name="[5] 500" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.039"/>
+  <testcase name="[6] 503" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.044"/>
+  <testcase name="testMaliciousContentDisposition_overlong()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.019"/>
+  <testcase name="testPauseStopsTransferAndLeavesPartFile()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.552"/>
+  <testcase name="testWrongContentLength()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.082"/>
+  <testcase name="testCancelLeavesTempDisposition()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.016"/>
+  <testcase name="testSimulatedDiskFullException()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.073"/>
+  <testcase name="testPermissionDeniedMidWrite()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.226"/>
+  <testcase name="testServerTimeout()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="20.068"/>
+  <testcase name="testUnknownLengthChunked()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.064"/>
+  <testcase name="testNormalKnownLengthDownload()" classname="io.smartdm.download.engine.SingleDownloadCoordinatorTest" time="0.032"/>
+  <system-out><![CDATA[11:20:28.733 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: One or more segment workers failed.
 java.lang.RuntimeException: One or more segment workers failed.
 	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:221)
 	at io.smartdm.download.engine.SingleDownloadCoordinatorTest.testMidTransferDisconnect(SingleDownloadCoordinatorTest.java:155)
@@ -112,7 +112,7 @@ java.lang.RuntimeException: One or more segment workers failed.
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)
-23:59:39.542 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:28.849 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -133,7 +133,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 302
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:39.604 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:29.024 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -154,7 +154,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 401
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:39.622 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:29.075 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -175,7 +175,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 403
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:39.634 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:29.125 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -196,7 +196,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 404
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:39.649 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:29.181 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -217,7 +217,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 429
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:39.660 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:29.225 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -238,7 +238,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 500
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:39.672 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
+11:20:29.272 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.lang.RuntimeException: Failed to process GET Range response
 java.util.concurrent.CompletionException: java.lang.RuntimeException: Failed to process GET Range response
 	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
 	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
@@ -259,7 +259,7 @@ Caused by: java.lang.RuntimeException: Failed to process GET Range response
 Caused by: java.lang.RuntimeException: GET Range failed: 503
 	at io.smartdm.download.http.HttpProbeClient.lambda$probeViaGetRange$4(HttpProbeClient.java:76)
 	... 10 common frames omitted
-23:59:40.226 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: One or more segment workers failed.
+11:20:29.927 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: One or more segment workers failed.
 java.lang.RuntimeException: One or more segment workers failed.
 	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:221)
 	at io.smartdm.download.engine.SingleDownloadCoordinatorTest.testWrongContentLength(SingleDownloadCoordinatorTest.java:138)
@@ -349,11 +349,11 @@ java.lang.RuntimeException: One or more segment workers failed.
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)
-23:59:40.256 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: Z:\nonexistent\dir: Unable to determine if root directory exists
+11:20:30.015 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: Z:\nonexistent\dir: Unable to determine if root directory exists
 java.nio.file.FileSystemException: Z:\nonexistent\dir: Unable to determine if root directory exists
 	at java.base/java.nio.file.Files.createDirectories(Files.java:783)
 	at io.smartdm.download.engine.SegmentedFileChannel.commit(SegmentedFileChannel.java:41)
-	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:240)
+	at io.smartdm.download.engine.SingleDownloadCoordinator.execute(SingleDownloadCoordinator.java:263)
 	at io.smartdm.download.engine.SingleDownloadCoordinatorTest.testSimulatedDiskFullException(SingleDownloadCoordinatorTest.java:287)
 	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
 	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
@@ -441,7 +441,7 @@ java.nio.file.FileSystemException: Z:\nonexistent\dir: Unable to determine if ro
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)
-00:00:00.296 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.net.http.HttpTimeoutException: request timed out
+11:20:50.325 [Test worker] ERROR io.smartdm.download.engine.SingleDownloadCoordinator -- SingleDownloadCoordinator failed: java.net.http.HttpTimeoutException: request timed out
 java.util.concurrent.CompletionException: java.net.http.HttpTimeoutException: request timed out
 	at java.base/java.util.concurrent.CompletableFuture.encodeRelay(CompletableFuture.java:368)
 	at java.base/java.util.concurrent.CompletableFuture.completeRelay(CompletableFuture.java:377)
@@ -457,15 +457,15 @@ Caused by: java.net.http.HttpTimeoutException: request timed out
 	at java.net.http/jdk.internal.net.http.HttpClientImpl.purgeTimeoutsAndReturnNextDeadline(HttpClientImpl.java:1788)
 	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.run(HttpClientImpl.java:1386)
 ]]></system-out>
-  <system-err><![CDATA[Jul 19, 2026 11:59:39 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+  <system-err><![CDATA[Jul 20, 2026 11:20:28 AM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
-Jul 19, 2026 11:59:39 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 20, 2026 11:20:29 AM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
-Jul 19, 2026 11:59:40 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 20, 2026 11:20:29 AM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
-Jul 19, 2026 11:59:40 PM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 20, 2026 11:20:30 AM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
-Jul 20, 2026 12:00:00 AM sun.net.httpserver.ExchangeImpl sendResponseHeaders
+Jul 20, 2026 11:20:50 AM sun.net.httpserver.ExchangeImpl sendResponseHeaders
 WARNING: sendResponseHeaders: being invoked with a content length for a HEAD request
 ]]></system-err>
 </testsuite>

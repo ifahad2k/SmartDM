@@ -102,7 +102,7 @@ public class StatusBar extends HBox {
 
     private boolean checkInternetConnectivity() {
         try {
-            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) java.net.URI.create("http://clients3.google.com/generate_204").toURL().openConnection();
+            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) java.net.URI.create("https://clients3.google.com/generate_204").toURL().openConnection();
             connection.setConnectTimeout(1500);
             connection.setReadTimeout(1500);
             connection.setRequestMethod("HEAD");

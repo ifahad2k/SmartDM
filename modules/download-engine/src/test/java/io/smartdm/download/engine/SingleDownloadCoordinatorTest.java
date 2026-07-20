@@ -59,6 +59,7 @@ class SingleDownloadCoordinatorTest {
             @Override public Optional<Download> findById(io.smartdm.domain.DownloadId id) { return Optional.empty(); }
             @Override public java.util.List<Download> findAll() { return java.util.Collections.emptyList(); }
             @Override public void delete(io.smartdm.domain.DownloadId id) {}
+            @Override public java.util.List<Download> findScheduledDownloads() { return java.util.Collections.emptyList(); }
             @Override public java.util.List<Download> findReadyScheduledDownloads(long currentTimeMs) { return java.util.Collections.emptyList(); }
         };
         DownloadEvent.Publisher publisher = event -> {};
@@ -170,6 +171,7 @@ class SingleDownloadCoordinatorTest {
             @Override public Optional<Download> findById(io.smartdm.domain.DownloadId id) { return Optional.empty(); }
             @Override public java.util.List<Download> findAll() { return java.util.Collections.emptyList(); }
             @Override public void delete(io.smartdm.domain.DownloadId id) {}
+            @Override public java.util.List<Download> findScheduledDownloads() { return java.util.Collections.emptyList(); }
             @Override public java.util.List<Download> findReadyScheduledDownloads(long currentTimeMs) { return java.util.Collections.emptyList(); }
         };
         HttpClient shortTimeoutClient = HttpClient.newBuilder()

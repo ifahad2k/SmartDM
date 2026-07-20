@@ -36,6 +36,6 @@ class ResourceMonitorTest {
             throw new RuntimeException(e);
         }
         
-        assertFalse(pressureFound.get(), "Should not report pressure when no downloads");
+        assertFalse(monitor.isUnderPressure(), "Should not report pressure when no downloads");
     }
 }

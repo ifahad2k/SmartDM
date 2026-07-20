@@ -22,8 +22,9 @@ public final class MainShell extends VBox {
     private final NavigationRail navigationRail;
     private final TopBar topBar;
     private QueueWorkspace queueWorkspace;
+    private SchedulerWorkspace schedulerWorkspace;
 
-    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, SchedulerWorkspace.ScheduleManager scheduleManager, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange) {
+    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate) {
         getStyleClass().addAll("os-window", "glass");
         
         // Custom Title Bar
@@ -99,10 +100,10 @@ public final class MainShell extends VBox {
             onDownloadRequested.accept(download);
         });
         
-        queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange);
+        queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate);
         VBox.setVgrow(queueWorkspace, Priority.ALWAYS);
         
-        SchedulerWorkspace schedulerWorkspace = new SchedulerWorkspace(scheduleManager);
+        schedulerWorkspace = new SchedulerWorkspace(scheduledDownloadsSupplier, onDownloadUpdate, mainQueueItems, workspace);
         VBox.setVgrow(schedulerWorkspace, Priority.ALWAYS);
         
         StatusBar statusBar = new StatusBar();
@@ -141,5 +142,9 @@ public final class MainShell extends VBox {
     
     public QueueWorkspace getQueueWorkspace() {
         return queueWorkspace;
+    }
+
+    public SchedulerWorkspace getSchedulerWorkspace() {
+        return schedulerWorkspace;
     }
 }

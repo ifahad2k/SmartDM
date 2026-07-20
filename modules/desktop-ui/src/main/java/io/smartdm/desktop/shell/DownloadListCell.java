@@ -29,7 +29,9 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         void onPause(Download download);
         void onResume(Download download);
         void onCancel(Download download);
-        void onDelete(Download download);
+        void onDelete(Download download, boolean forcePermanent);
+        void onAddToQueue(Download download);
+        void onSchedule(Download download);
     }
 
     private final Listener listener;
@@ -61,6 +63,15 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         super();
         this.listener = listener;
         this.provider = provider;
+        
+        if (provider instanceof DownloadsWorkspace) {
+            ((DownloadsWorkspace) provider).latestUpdateProperty().addListener((obs, oldV, newV) -> {
+                if (newV != null && getItem() != null && newV.id().equals(getItem())) {
+                    refreshUI(newV);
+                }
+            });
+        }
+        
         getStyleClass().add("download-cell");
         
         root.getStyleClass().add("row");
@@ -133,7 +144,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
             io.smartdm.domain.DownloadId id = getItem();
             if (id != null) {
                 Download download = provider.getDownload(id);
-                if (download != null) listener.onDelete(download);
+                if (download != null) listener.onDelete(download, false);
             }
         });
 
@@ -170,6 +181,112 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         probingRotation.setByAngle(360);
         probingRotation.setCycleCount(Animation.INDEFINITE);
         probingRotation.setInterpolator(Interpolator.LINEAR);
+        
+        javafx.scene.control.ContextMenu ctxMenu = new javafx.scene.control.ContextMenu();
+        
+        // Add main stylesheet to the popup
+        ctxMenu.getScene().getStylesheets().add(getClass().getResource("/io/smartdm/desktop/theme/main.css").toExternalForm());
+        ctxMenu.getStyleClass().add("context-menu");
+
+        javafx.scene.control.MenuItem openItem = new javafx.scene.control.MenuItem("Open");
+        javafx.scene.control.MenuItem openWithItem = new javafx.scene.control.MenuItem("Open with...");
+        javafx.scene.control.MenuItem openFolderItem = new javafx.scene.control.MenuItem("Open folder");
+        
+        javafx.scene.control.MenuItem moveRenameItem = new javafx.scene.control.MenuItem("Move/Rename (Ctrl-M)");
+        javafx.scene.control.MenuItem redownloadItem = new javafx.scene.control.MenuItem("Redownload");
+        
+        javafx.scene.control.MenuItem resumeItem = new javafx.scene.control.MenuItem("Resume Download");
+        javafx.scene.control.MenuItem stopItem = new javafx.scene.control.MenuItem("Stop Download");
+        
+        javafx.scene.control.MenuItem refreshItem = new javafx.scene.control.MenuItem("Refresh download address");
+        javafx.scene.control.MenuItem removeItem = new javafx.scene.control.MenuItem("Remove");
+
+        javafx.scene.control.Menu queueMenu = new javafx.scene.control.Menu("Add to queue");
+        javafx.scene.control.MenuItem queueItem = new javafx.scene.control.MenuItem("Main Queue");
+        javafx.scene.control.MenuItem timerItem = new javafx.scene.control.MenuItem("Set Timer...");
+        queueMenu.getItems().addAll(queueItem, timerItem);
+        
+        javafx.scene.control.MenuItem deleteQueueItem = new javafx.scene.control.MenuItem("Delete from queue");
+        javafx.scene.control.Menu doubleClickMenu = new javafx.scene.control.Menu("On Double click");
+        javafx.scene.control.MenuItem propertiesItem = new javafx.scene.control.MenuItem("Properties");
+
+        ctxMenu.getItems().addAll(
+                openItem, openWithItem, openFolderItem, 
+                new javafx.scene.control.SeparatorMenuItem(),
+                moveRenameItem,
+                new javafx.scene.control.SeparatorMenuItem(),
+                redownloadItem,
+                new javafx.scene.control.SeparatorMenuItem(),
+                resumeItem, stopItem,
+                new javafx.scene.control.SeparatorMenuItem(),
+                refreshItem,
+                new javafx.scene.control.SeparatorMenuItem(),
+                removeItem,
+                new javafx.scene.control.SeparatorMenuItem(),
+                queueMenu, deleteQueueItem,
+                new javafx.scene.control.SeparatorMenuItem(),
+                doubleClickMenu,
+                new javafx.scene.control.SeparatorMenuItem(),
+                propertiesItem
+        );
+
+        queueItem.setOnAction(e -> {
+            io.smartdm.domain.DownloadId id = getItem();
+            if (id != null) {
+                Download d = provider.getDownload(id);
+                if (d != null) listener.onAddToQueue(d);
+            }
+        });
+        
+        timerItem.setOnAction(e -> {
+            io.smartdm.domain.DownloadId id = getItem();
+            if (id != null) {
+                Download d = provider.getDownload(id);
+                if (d != null) {
+                    javafx.stage.Stage owner = (javafx.stage.Stage) getScene().getWindow();
+                    io.smartdm.desktop.shell.SetTimerDialog dialog = new io.smartdm.desktop.shell.SetTimerDialog(d, updated -> {
+                        listener.onSchedule(updated);
+                    });
+                    dialog.show();
+                }
+            }
+        });
+        
+        openItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null && d.destination() != null && d.destination().value() != null) {
+                try { java.awt.Desktop.getDesktop().open(d.destination().value().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
+            }
+        });
+        
+        openFolderItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null && d.destination() != null && d.destination().value() != null) {
+                try { java.awt.Desktop.getDesktop().open(d.destination().value().getParent().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
+            }
+        });
+        
+        resumeItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) listener.onResume(d);
+        });
+        
+        stopItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) listener.onPause(d);
+        });
+        
+        removeItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) listener.onDelete(d, false);
+        });
+        
+        deleteQueueItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) listener.onDelete(d, false);
+        });
+        
+        setContextMenu(ctxMenu);
     }
 
     private void clearAnimations() {

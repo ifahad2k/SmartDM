@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.desktop.shell.MainShellTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-19T17:45:33.953Z" hostname="IFAHAD2K" time="2.36">
+<testsuite name="io.smartdm.desktop.shell.MainShellTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-20T05:20:27.389Z" hostname="IFAHAD2K" time="4.682">
   <properties/>
-  <testcase name="shouldNavigateWithKeyboard(FxRobot)" classname="io.smartdm.desktop.shell.MainShellTest" time="2.36"/>
+  <testcase name="shouldNavigateWithKeyboard(FxRobot)" classname="io.smartdm.desktop.shell.MainShellTest" time="4.682"/>
   <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[Jul 19, 2026 11:45:33 PM com.sun.javafx.application.PlatformImpl startup
+  <system-err><![CDATA[Jul 20, 2026 11:20:27 AM com.sun.javafx.application.PlatformImpl startup
 WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @5ba3f27a'
 ]]></system-err>
 </testsuite>

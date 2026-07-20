@@ -72,12 +72,12 @@ public final class DetailsPane extends VBox {
         safeChip = new HBox();
         safeChip.getStyleClass().addAll("status-chip", "ok");
         safeChipIcon = new SVGPath();
-        safeChipIcon.setContent("M20 6 L9 17 L4 12");
-        safeChipIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2.4; -fx-fill: transparent;");
-        safeLbl = new Label("No threats detected");
+        safeChipIcon.setContent("M12 2 C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"); // Info icon
+        safeChipIcon.setStyle("-fx-fill: #A6ADC4;");
+        safeLbl = new Label("Not scanned");
         safeChip.getChildren().addAll(safeChipIcon, safeLbl);
         
-        Label safeNote = new Label("Local scanners found no known threats. This is not a guarantee of safety.");
+        Label safeNote = new Label("No virus scanner is currently configured. File safety is unknown.");
         safeNote.getStyleClass().add("note");
         safeNote.setWrapText(true);
         

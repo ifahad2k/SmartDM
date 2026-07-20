@@ -23,22 +23,60 @@ public class SecretServiceMasterKeyStorage implements KeyManager {
         keyFile = Paths.get(userHome, ".config", "smartdm", "db.key");
     }
 
+    private boolean isSecretToolAvailable() {
+        try {
+            Process p = new ProcessBuilder("secret-tool", "--version").start();
+            return p.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Override
     public Optional<byte[]> retrieveMasterKey() {
-        if (Files.exists(keyFile)) {
+        if (isSecretToolAvailable()) {
             try {
-                return Optional.of(Files.readAllBytes(keyFile));
-            } catch (IOException e) {
-                log.error("Failed to read master key from {}", keyFile, e);
-                return Optional.empty();
+                Process p = new ProcessBuilder("secret-tool", "lookup", "app", "smartdm").start();
+                byte[] key = p.getInputStream().readAllBytes();
+                if (p.waitFor() == 0 && key.length > 0) {
+                    return Optional.of(key);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to retrieve key via secret-tool", e);
             }
         }
-        log.info("Linux master key not found at {}. A new one will be generated.", keyFile);
+        
+        // Fallback or read from file
+        if (Files.exists(keyFile)) {
+            try {
+                byte[] bytes = Files.readAllBytes(keyFile);
+                if (bytes.length > 0) return Optional.of(bytes);
+            } catch (IOException e) {
+                log.error("Failed to read master key from {}", keyFile, e);
+                throw new RuntimeException("Failed to read existing master key", e);
+            }
+        }
+        log.info("Linux master key not found. A new one will be generated.");
         return Optional.empty();
     }
 
     @Override
     public void storeMasterKey(byte[] key) {
+        if (isSecretToolAvailable()) {
+            try {
+                Process p = new ProcessBuilder("secret-tool", "store", "--label=SmartDM Master Key", "app", "smartdm").start();
+                p.getOutputStream().write(key);
+                p.getOutputStream().close();
+                if (p.waitFor() == 0) {
+                    log.info("Master key stored via secret-tool");
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to store key via secret-tool", e);
+            }
+        }
+        
+        // Fallback
         try {
             Files.createDirectories(keyFile.getParent());
             Files.write(keyFile, key);
@@ -59,6 +97,13 @@ public class SecretServiceMasterKeyStorage implements KeyManager {
 
     @Override
     public void deleteMasterKey() {
+        if (isSecretToolAvailable()) {
+            try {
+                new ProcessBuilder("secret-tool", "clear", "app", "smartdm").start().waitFor();
+            } catch (Exception e) {
+                log.warn("Failed to clear key via secret-tool", e);
+            }
+        }
         try {
             Files.deleteIfExists(keyFile);
             log.info("Master key deleted from {}", keyFile);

@@ -18,22 +18,33 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import io.smartdm.domain.Schedule;
 import java.time.LocalTime;
+import java.util.function.Supplier;
+import java.util.function.Consumer;
+import io.smartdm.domain.Download;
+import io.smartdm.domain.QueueItem;
+import io.smartdm.desktop.shell.controls.NumberSpinner;
+import io.smartdm.desktop.shell.controls.StringSpinner;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Arrays;
 
 public final class SchedulerWorkspace extends VBox {
     
-    public interface ScheduleManager {
-        java.util.Collection<Schedule> getSchedules();
-        void updateSchedule(Schedule schedule);
-        void removeSchedule(String id);
-    }
+    private final Supplier<java.util.List<Download>> scheduledDownloadsSupplier;
+    private final Consumer<Download> onDownloadUpdate;
+    private final ObservableList<Download> scheduledDownloads;
+    private final ListView<Download> scheduledDownloadsList;
+    
+    private final ObservableList<QueueItem> mainQueueItems;
+    private final DownloadsWorkspace downloadsWorkspace;
 
-    private final ScheduleManager scheduleManager;
-    private final ObservableList<Schedule> schedules;
-    private final ListView<Schedule> listView;
-
-    public SchedulerWorkspace(ScheduleManager scheduleManager) {
-        this.scheduleManager = scheduleManager;
-        this.schedules = FXCollections.observableArrayList(scheduleManager.getSchedules());
+    public SchedulerWorkspace(Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate, ObservableList<QueueItem> mainQueueItems, DownloadsWorkspace downloadsWorkspace) {
+        this.scheduledDownloadsSupplier = scheduledDownloadsSupplier;
+        this.onDownloadUpdate = onDownloadUpdate;
+        this.mainQueueItems = mainQueueItems;
+        this.downloadsWorkspace = downloadsWorkspace;
+        
+        this.scheduledDownloads = FXCollections.observableArrayList(scheduledDownloadsSupplier != null ? scheduledDownloadsSupplier.get() : java.util.List.of());
         
         getStyleClass().add("workspace");
         setSpacing(12);
@@ -52,133 +63,159 @@ public final class SchedulerWorkspace extends VBox {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         
-        wsHead.getChildren().addAll(titleBox, spacer);
+        // Content Box for scheduling
+        VBox downloadsBox = new VBox(8);
+        Label downloadsTitle = new Label("Individually Scheduled Downloads");
+        downloadsTitle.getStyleClass().add("ws-sub");
         
-        // Editor
-        // Editor
-        HBox editorBox = new HBox(8);
-        editorBox.setAlignment(Pos.CENTER_LEFT);
+        scheduledDownloadsList = new ListView<>();
+        scheduledDownloadsList.getStyleClass().add("list");
+        VBox.setVgrow(scheduledDownloadsList, Priority.ALWAYS);
         
-        TextField nameField = new TextField();
-        nameField.setPromptText("Schedule Name");
-        nameField.getStyleClass().add("text-field");
+        Label noDownloadsLabel = new Label("No individual downloads are scheduled.");
+        noDownloadsLabel.setStyle("-fx-text-fill: #A6ADC4; -fx-font-size: 16px;");
+        scheduledDownloadsList.setPlaceholder(noDownloadsLabel);
         
-        CheckBox startCheck = new CheckBox("Start At:");
-        startCheck.setStyle("-fx-text-fill: white;");
-        Spinner<Integer> startHour = new Spinner<>();
-        Spinner<Integer> startMin = new Spinner<>();
-        ComboBox<String> startAmPm = new ComboBox<>();
-        HBox startPicker = createTimePicker(startCheck, startHour, startMin, startAmPm);
+        scheduledDownloadsList.setCellFactory(param -> new ScheduledDownloadCell(d -> {
+            d.updateScheduledStartTime(null);
+            onDownloadUpdate.accept(d);
+            scheduledDownloads.setAll(scheduledDownloadsSupplier.get());
+        }));
+        scheduledDownloadsList.setItems(scheduledDownloads);
         
-        CheckBox endCheck = new CheckBox("Stop At:");
-        endCheck.setStyle("-fx-text-fill: white;");
-        Spinner<Integer> endHour = new Spinner<>();
-        Spinner<Integer> endMin = new Spinner<>();
-        ComboBox<String> endAmPm = new ComboBox<>();
-        HBox endPicker = createTimePicker(endCheck, endHour, endMin, endAmPm);
+        HBox addScheduleBox = new HBox(8);
+        addScheduleBox.setAlignment(Pos.CENTER_LEFT);
         
-        Button addBtn = new Button("Add Schedule");
-        addBtn.getStyleClass().addAll("btn", "btn-primary");
-        addBtn.setOnAction(e -> {
-            if (!startCheck.isSelected() && !endCheck.isSelected()) {
-                return;
+        ComboBox<Download> queueCombo = new ComboBox<>();
+        queueCombo.setPromptText("Select a queue item...");
+        queueCombo.setEditable(true);
+        queueCombo.setPrefWidth(300);
+        
+        queueCombo.setConverter(new javafx.util.StringConverter<Download>() {
+            @Override
+            public String toString(Download d) {
+                if (d == null) return "";
+                String name = d.source().value().getPath();
+                if (name == null || name.isEmpty() || name.equals("/")) name = d.source().value().getHost();
+                else name = name.substring(name.lastIndexOf('/') + 1);
+                return name;
             }
-            try {
-                String name = nameField.getText().isEmpty() ? "New Schedule" : nameField.getText();
-                LocalTime start = startCheck.isSelected() ? parseTime(startHour, startMin, startAmPm) : null;
-                LocalTime end = endCheck.isSelected() ? parseTime(endHour, endMin, endAmPm) : null;
-                Schedule s = Schedule.createNew(name, start, end, java.util.List.of(), Schedule.MissedTriggerPolicy.IGNORE);
-                scheduleManager.updateSchedule(s);
-                schedules.setAll(scheduleManager.getSchedules());
-                nameField.clear(); startCheck.setSelected(false); endCheck.setSelected(false);
-            } catch (Exception ex) {
-                System.out.println("Error adding schedule: " + ex.getMessage());
+
+            @Override
+            public Download fromString(String string) {
+                return queueCombo.getItems().stream().filter(d -> toString(d).equals(string)).findFirst().orElse(null);
             }
         });
         
-        editorBox.getChildren().addAll(nameField, startCheck, startPicker, endCheck, endPicker, addBtn);
-        
-        // List
-        listView = new ListView<>();
-        listView.getStyleClass().add("list");
-        VBox.setVgrow(listView, Priority.ALWAYS);
-        
-        Label emptyLabel = new Label("No schedules defined yet.");
-        emptyLabel.setStyle("-fx-text-fill: #A6ADC4; -fx-font-size: 16px;");
-        listView.setPlaceholder(emptyLabel);
-        
-        listView.setCellFactory(param -> new ListCell<>() {
-            @Override
-            protected void updateItem(Schedule item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setGraphic(null);
-                } else {
-                    HBox box = new HBox(12);
-                    box.getStyleClass().add("list-cell");
-                    box.setAlignment(Pos.CENTER_LEFT);
-                    
-                    VBox texts = new VBox();
-                    Label nameLbl = new Label(item.getName());
-                    nameLbl.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
-                    
-                    String st = item.getStartTime().map(LocalTime::toString).orElse("None");
-                    String et = item.getEndTime().map(LocalTime::toString).orElse("None");
-                    Label metaLbl = new Label("Active from: " + st + " to " + et);
-                    metaLbl.setStyle("-fx-text-fill: #A6ADC4;");
-                    texts.getChildren().addAll(nameLbl, metaLbl);
-                    
-                    Region sp = new Region();
-                    HBox.setHgrow(sp, Priority.ALWAYS);
-                    
-                    Button delBtn = new Button("Delete");
-                    delBtn.getStyleClass().add("btn");
-                    delBtn.setOnAction(e -> {
-                        scheduleManager.removeSchedule(item.getId());
-                        schedules.setAll(scheduleManager.getSchedules());
-                    });
-                    
-                    box.getChildren().addAll(texts, sp, delBtn);
-                    setGraphic(box);
+        // Auto-complete functionality
+        queueCombo.getEditor().textProperty().addListener((obs, oldText, newText) -> {
+            if (newText == null || newText.isEmpty()) {
+                queueCombo.setItems(FXCollections.observableArrayList(getEligibleDownloads()));
+            } else {
+                java.util.List<Download> filtered = getEligibleDownloads().stream()
+                    .filter(d -> queueCombo.getConverter().toString(d).toLowerCase().contains(newText.toLowerCase()))
+                    .collect(java.util.stream.Collectors.toList());
+                queueCombo.setItems(FXCollections.observableArrayList(filtered));
+                if (!filtered.isEmpty() && !queueCombo.isShowing()) {
+                    queueCombo.show();
                 }
             }
         });
-        listView.setItems(schedules);
         
-        getChildren().addAll(wsHead, editorBox, listView);
+        queueCombo.setOnShowing(e -> {
+            if (queueCombo.getEditor().getText() == null || queueCombo.getEditor().getText().isEmpty()) {
+                queueCombo.setItems(FXCollections.observableArrayList(getEligibleDownloads()));
+            }
+        });
+        
+        ComboBox<String> scheduleCombo = new ComboBox<>();
+        scheduleCombo.getItems().addAll("Start immediately", "Start at a specific time", "Start after a timer");
+        scheduleCombo.getSelectionModel().select(0);
+        scheduleCombo.getStyleClass().add("text-input");
+
+        HBox customSchedBox = new HBox(8);
+        customSchedBox.setAlignment(Pos.CENTER_LEFT);
+
+        // Alarm
+        HBox alarmBox = new HBox(4);
+        alarmBox.setAlignment(Pos.CENTER_LEFT);
+        NumberSpinner alarmHr = new NumberSpinner(12, 1, 12, true, "%02d");
+        NumberSpinner alarmMin = new NumberSpinner(0, 0, 59, true, "%02d");
+        StringSpinner alarmAmPm = new StringSpinner(Arrays.asList("AM", "PM"), 0);
+        alarmBox.getChildren().addAll(new Label("At: "), alarmHr, new Label(":"), alarmMin, alarmAmPm);
+
+        // Timer
+        HBox timerBox = new HBox(4);
+        timerBox.setAlignment(Pos.CENTER_LEFT);
+        NumberSpinner timerHr = new NumberSpinner(0, 0, 99, false, "%02d");
+        NumberSpinner timerMin = new NumberSpinner(0, 0, 59, true, "%02d");
+        NumberSpinner timerSec = new NumberSpinner(0, 0, 59, true, "%02d");
+        timerBox.getChildren().addAll(new Label("In: "), timerHr, new Label("h"), timerMin, new Label("m"), timerSec, new Label("s"));
+
+        scheduleCombo.getSelectionModel().selectedIndexProperty().addListener((obs, oldV, newV) -> {
+            customSchedBox.getChildren().clear();
+            if (newV.intValue() == 1) customSchedBox.getChildren().add(alarmBox);
+            else if (newV.intValue() == 2) customSchedBox.getChildren().add(timerBox);
+        });
+
+        Button addScheduleBtn = new Button("Add Schedule");
+        addScheduleBtn.getStyleClass().addAll("btn", "btn-primary");
+        addScheduleBtn.setOnAction(e -> {
+            Download selected = queueCombo.getValue();
+            if (selected == null) {
+                String text = queueCombo.getEditor().getText();
+                selected = queueCombo.getConverter().fromString(text);
+            }
+            if (selected != null) {
+                int schedType = scheduleCombo.getSelectionModel().getSelectedIndex();
+                if (schedType == 1) {
+                    int hr = alarmHr.getValue();
+                    if (hr == 12) hr = 0;
+                    if (alarmAmPm.getValue().equals("PM")) hr += 12;
+                    int min = alarmMin.getValue();
+                    LocalTime time = LocalTime.of(hr, min);
+                    LocalDateTime now = LocalDateTime.now();
+                    LocalDateTime target = now.with(time);
+                    if (target.isBefore(now)) target = target.plusDays(1);
+                    selected.updateScheduledStartTime(target.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                } else if (schedType == 2) {
+                    int h = timerHr.getValue();
+                    int m = timerMin.getValue();
+                    int s = timerSec.getValue();
+                    long delayMs = (h * 3600L + m * 60L + s) * 1000L;
+                    selected.updateScheduledStartTime(System.currentTimeMillis() + delayMs);
+                } else {
+                    selected.updateScheduledStartTime(null);
+                }
+                onDownloadUpdate.accept(selected);
+                scheduledDownloads.setAll(scheduledDownloadsSupplier.get());
+                queueCombo.getEditor().clear();
+                queueCombo.getSelectionModel().clearSelection();
+            }
+        });
+        
+        addScheduleBox.getChildren().addAll(queueCombo, scheduleCombo, customSchedBox, addScheduleBtn);
+        
+        downloadsBox.getChildren().addAll(downloadsTitle, addScheduleBox, scheduledDownloadsList);
+        
+        VBox contentBox = new VBox(12);
+        VBox.setVgrow(contentBox, Priority.ALWAYS);
+        
+        contentBox.getChildren().add(downloadsBox);
+
+        getChildren().addAll(wsHead, contentBox);
     }
     
-    private HBox createTimePicker(CheckBox toggle, Spinner<Integer> hourSpinner, Spinner<Integer> minSpinner, ComboBox<String> amPmCombo) {
-        HBox box = new HBox(4);
-        box.setAlignment(Pos.CENTER);
-        
-        hourSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 12, 12));
-        hourSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_VERTICAL);
-        hourSpinner.setPrefWidth(60);
-        hourSpinner.setEditable(true);
-        
-        minSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 59, 0));
-        minSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_VERTICAL);
-        minSpinner.setPrefWidth(60);
-        minSpinner.setEditable(true);
-        
-        amPmCombo.getItems().addAll("AM", "PM");
-        amPmCombo.getSelectionModel().select("AM");
-        amPmCombo.getStyleClass().add("text-field");
-        
-        Label colon = new Label(":");
-        colon.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
-        
-        box.getChildren().addAll(hourSpinner, colon, minSpinner, amPmCombo);
-        box.disableProperty().bind(toggle.selectedProperty().not());
-        return box;
+    private java.util.List<Download> getEligibleDownloads() {
+        return mainQueueItems.stream()
+            .map(qi -> downloadsWorkspace.getDownload(qi.getDownloadId()))
+            .filter(d -> d != null && d.scheduledStartTime() == null)
+            .collect(java.util.stream.Collectors.toList());
     }
     
-    private LocalTime parseTime(Spinner<Integer> hour, Spinner<Integer> min, ComboBox<String> amPm) {
-        int h = hour.getValue();
-        if (h == 12) h = 0;
-        if ("PM".equals(amPm.getValue())) h += 12;
-        return LocalTime.of(h, min.getValue());
+    public void refreshList() {
+        if (scheduledDownloadsSupplier != null) {
+            scheduledDownloads.setAll(scheduledDownloadsSupplier.get());
+        }
     }
 }

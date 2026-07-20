@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.desktop.shell.MainViewModelTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-19T17:53:20.032Z" hostname="IFAHAD2K" time="0.178">
+<testsuite name="io.smartdm.desktop.shell.MainViewModelTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-20T10:37:21.809Z" hostname="IFAHAD2K" time="0.191">
   <properties/>
-  <testcase name="canTestViewModelWithoutJavaFx()" classname="io.smartdm.desktop.shell.MainViewModelTest" time="0.178"/>
+  <testcase name="canTestViewModelWithoutJavaFx()" classname="io.smartdm.desktop.shell.MainViewModelTest" time="0.191"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

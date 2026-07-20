@@ -75,10 +75,28 @@ public class SegmentWorker implements Callable<Void> {
             throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
         }
         if (isRangeRequest && response.statusCode() != 206) {
-            if (segment.startOffset() > 0) {
-                throw new RuntimeException("Expected 206 Partial Content but got " + response.statusCode());
+            if (response.statusCode() == 200) {
+                if (segment.startOffset() > 0) {
+                    throw new RuntimeException("Expected 206 Partial Content but got 200 OK for range starting at " + segment.startOffset());
+                }
+                if (segment.currentOffset() > 0) {
+                    segment.updateOffset(0);
+                    channel.truncate(0);
+                }
+            } else {
+                throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
             }
-            // If startOffset == 0 and we got 200, it might be acceptable if it's the only segment.
+        } else if (isRangeRequest && response.statusCode() == 206) {
+            String contentRange = response.headers().firstValue("Content-Range").orElse(null);
+            if (contentRange != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("bytes (\\d+)-.*").matcher(contentRange);
+                if (m.matches()) {
+                    long rangeStart = Long.parseLong(m.group(1));
+                    if (rangeStart != segment.currentOffset()) {
+                        throw new RuntimeException("Content-Range start (" + rangeStart + ") does not match requested offset (" + segment.currentOffset() + ")");
+                    }
+                }
+            }
         }
 
         long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;

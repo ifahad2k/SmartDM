@@ -14,6 +14,9 @@ public class TokenBucketRateLimiter {
     private final Condition tokensAvailable = lock.newCondition();
     
     public TokenBucketRateLimiter(Long bytesPerSecondLimit, TokenBucketRateLimiter parent) {
+        if (bytesPerSecondLimit != null && bytesPerSecondLimit <= 0) {
+            throw new IllegalArgumentException("Limit must be positive");
+        }
         this.bytesPerSecondLimit = bytesPerSecondLimit;
         this.parent = parent;
         this.tokens = bytesPerSecondLimit != null ? bytesPerSecondLimit : 0;
@@ -21,6 +24,9 @@ public class TokenBucketRateLimiter {
     }
     
     public void setLimit(Long newLimitBytesPerSecond) {
+        if (newLimitBytesPerSecond != null && newLimitBytesPerSecond <= 0) {
+            throw new IllegalArgumentException("Limit must be positive");
+        }
         lock.lock();
         try {
             this.bytesPerSecondLimit = newLimitBytesPerSecond;
@@ -39,21 +45,19 @@ public class TokenBucketRateLimiter {
         }
         
         while (permits > 0) {
-            Long limit = bytesPerSecondLimit;
-            if (limit == null) {
+            if (bytesPerSecondLimit == null) {
                 return;
             }
-            
-            // Limit chunk size to bucket capacity so we never deadlock
-            long chunk = Math.min(permits, limit);
             
             lock.lockInterruptibly();
             try {
                 while (true) {
-                    limit = bytesPerSecondLimit;
+                    Long limit = bytesPerSecondLimit;
                     if (limit == null) {
                         break;
                     }
+                    
+                    long chunk = Math.min(permits, limit);
                     
                     refill(limit);
                     
@@ -68,6 +72,9 @@ public class TokenBucketRateLimiter {
                     long waitNanos = (long) ((missing / limit) * 1_000_000_000L);
                     if (waitNanos > 0) {
                         tokensAvailable.awaitNanos(waitNanos);
+                    } else {
+                        // In case of precision loss, wait a tiny bit to avoid spinning
+                        tokensAvailable.awaitNanos(1000);
                     }
                 }
             } finally {

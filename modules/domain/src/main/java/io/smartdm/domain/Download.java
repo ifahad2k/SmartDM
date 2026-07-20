@@ -14,6 +14,7 @@ public class Download {
     private volatile String etag;
     private volatile String lastModified;
     private volatile Long scheduledStartTime;
+    private volatile String expectedHash;
     private final List<DownloadSegment> segments = new ArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
@@ -47,6 +48,10 @@ public class Download {
         this.scheduledStartTime = scheduledStartTime;
     }
 
+    public void updateExpectedHash(String expectedHash) {
+        this.expectedHash = expectedHash;
+    }
+
     public DownloadId id() { return id; }
     public SourceUri source() { return source; }
     public Destination destination() { return destination; }
@@ -55,6 +60,7 @@ public class Download {
     public String etag() { return etag; }
     public String lastModified() { return lastModified; }
     public Long scheduledStartTime() { return scheduledStartTime; }
+    public String expectedHash() { return expectedHash; }
     
     public ByteCount downloadedBytes() {
         if (!segments.isEmpty()) {

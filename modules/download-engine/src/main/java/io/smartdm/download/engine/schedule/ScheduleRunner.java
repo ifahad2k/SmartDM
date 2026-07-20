@@ -21,6 +21,7 @@ public class ScheduleRunner {
     private final Consumer<Schedule> scheduleUpdater;
     private final Map<String, Schedule> schedules = new ConcurrentHashMap<>();
     private ScheduledExecutorService executor;
+    private DownloadQueue.Status lastEmittedQueueStatus = null;
 
     public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater) {
         this.clock = clock;
@@ -77,34 +78,38 @@ public class ScheduleRunner {
                 LocalTime end = schedule.getEndTime().get();
                 
                 boolean inWindow;
-                if (start.isBefore(end)) {
+                if (start.equals(end)) {
+                    // Start == End means run 24 hours a day
+                    inWindow = true;
+                } else if (start.isBefore(end)) {
                     inWindow = !currentTime.isBefore(start) && currentTime.isBefore(end);
                 } else {
                     // Spans midnight
                     inWindow = !currentTime.isBefore(start) || currentTime.isBefore(end);
                 }
                 
-                if (inWindow) {
-                    queueStatusUpdater.accept(DownloadQueue.Status.ACTIVE);
-                } else {
-                    queueStatusUpdater.accept(DownloadQueue.Status.PAUSED);
+                DownloadQueue.Status targetStatus = inWindow ? DownloadQueue.Status.ACTIVE : DownloadQueue.Status.PAUSED;
+                if (lastEmittedQueueStatus != targetStatus) {
+                    lastEmittedQueueStatus = targetStatus;
+                    queueStatusUpdater.accept(targetStatus);
                 }
             } else if (schedule.getStartTime().isPresent()) {
                 // One-time start
                 LocalTime start = schedule.getStartTime().get();
                 boolean shouldTriggerNow = false;
                 
+                long lastRunMillis = schedule.getLastRunTime();
+                boolean hasRunToday = false;
+                if (lastRunMillis > 0) {
+                    java.time.LocalDate lastRunDate = java.time.Instant.ofEpochMilli(lastRunMillis).atZone(clock.getZone()).toLocalDate();
+                    hasRunToday = !lastRunDate.isBefore(now.toLocalDate());
+                }
+                
                 if (currentTime.getHour() == start.getHour() && currentTime.getMinute() == start.getMinute()) {
-                    shouldTriggerNow = true;
+                    if (!hasRunToday) shouldTriggerNow = true;
                 } else if (schedule.getMissedTriggerPolicy() == Schedule.MissedTriggerPolicy.RUN_IMMEDIATELY) {
-                    if (currentTime.isAfter(start)) {
-                        long lastRunMillis = schedule.getLastRunTime();
-                        java.time.LocalDate lastRunDate = lastRunMillis > 0 ? 
-                            java.time.Instant.ofEpochMilli(lastRunMillis).atZone(clock.getZone()).toLocalDate() : 
-                            java.time.LocalDate.MIN;
-                        if (lastRunDate.isBefore(now.toLocalDate())) {
-                            shouldTriggerNow = true;
-                        }
+                    if (currentTime.isAfter(start) && !hasRunToday) {
+                        shouldTriggerNow = true;
                     }
                 }
                 
@@ -120,17 +125,18 @@ public class ScheduleRunner {
                 LocalTime end = schedule.getEndTime().get();
                 boolean shouldTriggerNow = false;
                 
+                long lastRunMillis = schedule.getLastRunTime();
+                boolean hasRunToday = false;
+                if (lastRunMillis > 0) {
+                    java.time.LocalDate lastRunDate = java.time.Instant.ofEpochMilli(lastRunMillis).atZone(clock.getZone()).toLocalDate();
+                    hasRunToday = !lastRunDate.isBefore(now.toLocalDate());
+                }
+                
                 if (currentTime.getHour() == end.getHour() && currentTime.getMinute() == end.getMinute()) {
-                    shouldTriggerNow = true;
+                    if (!hasRunToday) shouldTriggerNow = true;
                 } else if (schedule.getMissedTriggerPolicy() == Schedule.MissedTriggerPolicy.RUN_IMMEDIATELY) {
-                    if (currentTime.isAfter(end)) {
-                        long lastRunMillis = schedule.getLastRunTime();
-                        java.time.LocalDate lastRunDate = lastRunMillis > 0 ? 
-                            java.time.Instant.ofEpochMilli(lastRunMillis).atZone(clock.getZone()).toLocalDate() : 
-                            java.time.LocalDate.MIN;
-                        if (lastRunDate.isBefore(now.toLocalDate())) {
-                            shouldTriggerNow = true;
-                        }
+                    if (currentTime.isAfter(end) && !hasRunToday) {
+                        shouldTriggerNow = true;
                     }
                 }
                 

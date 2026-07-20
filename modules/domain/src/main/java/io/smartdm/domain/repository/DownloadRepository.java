@@ -11,5 +11,6 @@ public interface DownloadRepository {
     Optional<Download> findById(DownloadId id);
     List<Download> findAll();
     List<Download> findReadyScheduledDownloads(long currentTimeMillis);
+    List<Download> findScheduledDownloads();
     void delete(DownloadId id);
 }

@@ -12,9 +12,20 @@ import javafx.collections.FXCollections;
 import io.smartdm.domain.Download;
 import javafx.collections.ListChangeListener;
 
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import javafx.scene.control.SplitPane;
+
 public final class QueueWorkspace extends VBox {
     
-    public QueueWorkspace(io.smartdm.domain.DownloadQueue mainQueue, ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, DownloadsWorkspace downloadsWorkspace, java.util.function.Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange) {
+    private final Supplier<java.util.List<Download>> scheduledDownloadsSupplier;
+    private final Consumer<Download> onDownloadUpdate;
+    private final ObservableList<Download> scheduledDownloads;
+    
+    public QueueWorkspace(io.smartdm.domain.DownloadQueue mainQueue, ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, DownloadsWorkspace downloadsWorkspace, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate) {
+        this.scheduledDownloadsSupplier = scheduledDownloadsSupplier;
+        this.onDownloadUpdate = onDownloadUpdate;
+        this.scheduledDownloads = FXCollections.observableArrayList(scheduledDownloadsSupplier != null ? scheduledDownloadsSupplier.get() : java.util.List.of());
         getStyleClass().add("workspace");
         setSpacing(12);
 
@@ -77,8 +88,7 @@ public final class QueueWorkspace extends VBox {
         javafx.collections.transformation.FilteredList<io.smartdm.domain.DownloadId> filteredDownloadIds = new javafx.collections.transformation.FilteredList<>(downloadIds, id -> {
             Download d = downloadsWorkspace.getDownload(id);
             if (d == null) return false;
-            io.smartdm.domain.DownloadState state = d.state();
-            return state != io.smartdm.domain.DownloadState.DOWNLOADING && state != io.smartdm.domain.DownloadState.PROBING && state != io.smartdm.domain.DownloadState.COMPLETED;
+            return d.state() == io.smartdm.domain.DownloadState.QUEUED && d.scheduledStartTime() == null;
         });
         
         listView.setCellFactory(param -> new DownloadListCell(new DownloadListCell.Listener() {
@@ -95,8 +105,18 @@ public final class QueueWorkspace extends VBox {
                 if (downloadsWorkspace.getListener() != null) downloadsWorkspace.getListener().onCancel(download);
             }
             @Override
-            public void onDelete(Download download) {
-                if (downloadsWorkspace.getListener() != null) downloadsWorkspace.getListener().onDelete(download, false);
+            public void onDelete(Download download, boolean deleteFile) {
+                if (downloadsWorkspace.getListener() != null) downloadsWorkspace.getListener().onDelete(download, deleteFile);
+            }
+            
+            @Override
+            public void onAddToQueue(Download download) {
+                if (downloadsWorkspace.getListener() != null) downloadsWorkspace.getListener().onAddToQueue(download);
+            }
+            
+            @Override
+            public void onSchedule(Download download) {
+                if (downloadsWorkspace.getListener() != null) downloadsWorkspace.getListener().onSchedule(download);
             }
         }, downloadsWorkspace));
         listView.setItems(filteredDownloadIds);
@@ -111,11 +131,64 @@ public final class QueueWorkspace extends VBox {
                 fl.setPredicate(p);
             }
             updateList.run();
+            if (scheduledDownloadsSupplier != null) {
+                scheduledDownloads.setAll(scheduledDownloadsSupplier.get());
+            }
         };
         updateListRunnable.run();
         mainQueueItems.addListener((ListChangeListener<io.smartdm.domain.QueueItem>) c -> updateListRunnable.run());
 
-        getChildren().addAll(wsHead, listView);
+        // --- Scheduled Downloads List ---
+        VBox scheduledBox = new VBox(8);
+        Label scheduledTitle = new Label("Scheduled Items");
+        scheduledTitle.getStyleClass().add("ws-sub");
+        
+        ListView<Download> scheduledDownloadsList = new ListView<>();
+        scheduledDownloadsList.getStyleClass().add("list");
+        VBox.setVgrow(scheduledDownloadsList, Priority.ALWAYS);
+        
+        Label noScheduledLabel = new Label("No individual downloads are scheduled.");
+        noScheduledLabel.setStyle("-fx-text-fill: #A6ADC4; -fx-font-size: 16px;");
+        scheduledDownloadsList.setPlaceholder(noScheduledLabel);
+        
+        scheduledDownloadsList.setCellFactory(param -> new ScheduledDownloadCell(d -> {
+            d.updateScheduledStartTime(null);
+            if (onDownloadUpdate != null) onDownloadUpdate.accept(d);
+            updateListRunnable.run();
+        }));
+        scheduledDownloadsList.setItems(scheduledDownloads);
+        
+        scheduledBox.getChildren().addAll(scheduledTitle, scheduledDownloadsList);
+
+        VBox contentBox = new VBox(12);
+        VBox.setVgrow(contentBox, Priority.ALWAYS);
+        
+        VBox regularBox = new VBox(8);
+        Label regularTitle = new Label("Regular Queue");
+        regularTitle.getStyleClass().add("ws-sub");
+        VBox.setVgrow(listView, Priority.ALWAYS);
+        VBox.setVgrow(regularBox, Priority.ALWAYS);
+        regularBox.getChildren().addAll(regularTitle, listView);
+        
+        contentBox.getChildren().add(regularBox);
+        
+        scheduledDownloads.addListener((ListChangeListener<Download>) c -> {
+            if (scheduledDownloads.isEmpty()) {
+                if (contentBox.getChildren().contains(scheduledBox)) {
+                    contentBox.getChildren().remove(scheduledBox);
+                }
+            } else {
+                if (!contentBox.getChildren().contains(scheduledBox)) {
+                    contentBox.getChildren().add(scheduledBox);
+                }
+            }
+        });
+        
+        if (!scheduledDownloads.isEmpty()) {
+            contentBox.getChildren().add(scheduledBox);
+        }
+
+        getChildren().addAll(wsHead, contentBox);
     }
     
     // Store the runnable so we can call it externally

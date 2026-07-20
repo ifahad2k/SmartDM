@@ -48,6 +48,7 @@ public class SingleDownloadCoordinator {
         final List<Future<Void>> futures = new ArrayList<>();
         volatile boolean cancelled = false;
         volatile boolean paused = false;
+        volatile boolean queued = false;
 
         DownloadSession(Download download, SegmentedFileChannel channel) {
             this.download = download;
@@ -210,6 +211,13 @@ public class SingleDownloadCoordinator {
                 return;
             }
 
+            if (session.queued) {
+                download.updateState(DownloadState.QUEUED);
+                repository.save(download);
+                eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
+                return;
+            }
+
             if (session.paused) {
                 download.updateState(DownloadState.PAUSED);
                 repository.save(download);
@@ -234,7 +242,30 @@ public class SingleDownloadCoordinator {
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
             
-            // Hashing logic can be added here if needed
+            // Hashing logic
+            if (download.expectedHash() != null && !download.expectedHash().isBlank()) {
+                try {
+                    java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+                    try (java.io.InputStream is = java.nio.file.Files.newInputStream(channel.getTempFile())) {
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = is.read(buffer)) != -1) {
+                            digest.update(buffer, 0, read);
+                        }
+                    }
+                    byte[] hashBytes = digest.digest();
+                    StringBuilder sb = new StringBuilder();
+                    for (byte b : hashBytes) {
+                        sb.append(String.format("%02x", b));
+                    }
+                    String actualHash = sb.toString();
+                    if (!actualHash.equalsIgnoreCase(download.expectedHash().trim())) {
+                        throw new RuntimeException("Hash verification failed. Expected: " + download.expectedHash() + ", Actual: " + actualHash);
+                    }
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    throw new RuntimeException("SHA-256 algorithm not available for hash verification", e);
+                }
+            }
 
             // ── Phase 4: Commit ──────────────────────────────────────
             channel.commit();
@@ -255,7 +286,7 @@ public class SingleDownloadCoordinator {
                     if (session.channel != null) {
                         session.channel.cleanup();
                     }
-                } else if (download.state() == DownloadState.PAUSED) {
+                } else if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED) {
                     try { if (session.channel != null) session.channel.close(); } catch(Exception ignored){}
                 }
             } else if (channel != null) {
@@ -287,6 +318,27 @@ public class SingleDownloadCoordinator {
                 d.updateState(DownloadState.PAUSED);
                 repository.save(d);
                 eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.PAUSED, d));
+            });
+        }
+    }
+
+    public void queue(DownloadId id) {
+        DownloadSession session = sessions.get(id);
+        if (session != null) {
+            session.queued = true;
+            for (SegmentWorker worker : session.workers) {
+                worker.pause(); // Stop worker loops like pause
+            }
+            for (Future<Void> future : session.futures) {
+                future.cancel(true);
+            }
+            session.download.updateState(DownloadState.QUEUED);
+            eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.QUEUED, session.download));
+        } else {
+            repository.findById(id).ifPresent(d -> {
+                d.updateState(DownloadState.QUEUED);
+                repository.save(d);
+                eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.QUEUED, d));
             });
         }
     }
