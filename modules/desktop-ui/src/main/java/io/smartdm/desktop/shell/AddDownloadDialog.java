@@ -22,6 +22,12 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     private final TextField destinationField;
     private final ComboBox<String> categoryCombo;
     private final ComboBox<String> scheduleCombo;
+    private final io.smartdm.desktop.shell.controls.NumberSpinner alarmHr;
+    private final io.smartdm.desktop.shell.controls.NumberSpinner alarmMin;
+    private final io.smartdm.desktop.shell.controls.StringSpinner alarmAmPm;
+    private final io.smartdm.desktop.shell.controls.NumberSpinner timerHr;
+    private final io.smartdm.desktop.shell.controls.NumberSpinner timerMin;
+    private final io.smartdm.desktop.shell.controls.NumberSpinner timerSec;
     private final Button downloadBtn;
     private final java.util.List<io.smartdm.domain.Download> existingDownloads;
     
@@ -104,17 +110,43 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         scheduleCombo = new ComboBox<>();
         scheduleCombo.getItems().addAll(
             "Start immediately",
-            "In 30 minutes",
-            "In 1 hour",
-            "In 2 hours",
-            "In 6 hours",
-            "In 12 hours",
-            "In 24 hours"
+            "Start at a specific time",
+            "Start after a timer"
         );
         scheduleCombo.getSelectionModel().select(0);
         scheduleCombo.getStyleClass().add("text-input");
         scheduleCombo.setMaxWidth(Double.MAX_VALUE);
-        VBox schedGroup = new VBox(6, schedLabel, scheduleCombo);
+        
+        // Custom Spinners Box
+        VBox customSchedBox = new VBox();
+        customSchedBox.setAlignment(Pos.CENTER);
+        customSchedBox.setPadding(new javafx.geometry.Insets(10, 0, 0, 0));
+        
+        // Exact Time (Alarm)
+        HBox alarmBox = new HBox(8);
+        alarmBox.setAlignment(Pos.CENTER);
+        alarmHr = new io.smartdm.desktop.shell.controls.NumberSpinner(12, 1, 12, true, "%02d");
+        alarmMin = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 59, true, "%02d");
+        alarmAmPm = new io.smartdm.desktop.shell.controls.StringSpinner(java.util.Arrays.asList("AM", "PM"), 0);
+        alarmBox.getChildren().addAll(alarmHr, new Label(":"), alarmMin, alarmAmPm);
+        
+        // Countdown (Timer)
+        HBox timerBox = new HBox(8);
+        timerBox.setAlignment(Pos.CENTER);
+        timerHr = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 99, false, "%02d");
+        timerMin = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 59, true, "%02d");
+        timerSec = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 59, true, "%02d");
+        timerBox.getChildren().addAll(timerHr, new Label(":"), timerMin, new Label(":"), timerSec);
+
+        scheduleCombo.getSelectionModel().selectedIndexProperty().addListener((obs, oldV, newV) -> {
+            customSchedBox.getChildren().clear();
+            if (newV.intValue() == 1) customSchedBox.getChildren().add(alarmBox);
+            else if (newV.intValue() == 2) customSchedBox.getChildren().add(timerBox);
+            
+            javafx.application.Platform.runLater(this::sizeToScene);
+        });
+
+        VBox schedGroup = new VBox(6, schedLabel, scheduleCombo, customSchedBox);
         HBox.setHgrow(schedGroup, Priority.ALWAYS);
 
         dialogBody.getChildren().addAll(head, urlGroup, row2, schedGroup);
@@ -169,17 +201,30 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 try {
                     io.smartdm.domain.Download d = createDownloadFromFields();
                     if (d != null) {
-                        d.updateScheduledStartTime(null);
-                        d.updateState(io.smartdm.domain.DownloadState.PROBING);
                         onDownloadAdded.accept(d);
                         close();
                     }
                 } catch (Exception ex) {
-                    System.err.println("Failed to initiate download: " + ex.getMessage());
+                    System.err.println("Failed to add download: " + ex.getMessage());
                 }
             }
         });
-        
+
+        // Add listener to update buttons based on schedule selection
+        scheduleCombo.getSelectionModel().selectedIndexProperty().addListener((obs, oldV, newV) -> {
+            if (newV.intValue() > 0) { // Schedule selected
+                downloadBtn.setVisible(false);
+                downloadBtn.setManaged(false);
+                queueBtn.setText("Schedule Download");
+                queueBtn.getStyleClass().add("btn-primary");
+            } else {
+                downloadBtn.setVisible(true);
+                downloadBtn.setManaged(true);
+                queueBtn.setText("Add to queue");
+                queueBtn.getStyleClass().remove("btn-primary");
+            }
+        });
+
         footer.getChildren().addAll(spacer, cancelBtn, queueBtn, downloadBtn);
         root.setBottom(footer);
     }
@@ -219,23 +264,29 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
 
         int selectedIndex = scheduleCombo.getSelectionModel().getSelectedIndex();
         long delayMillis = 0;
-        switch (selectedIndex) {
-            case 1: delayMillis = 30 * 60 * 1000L; break;
-            case 2: delayMillis = 60 * 60 * 1000L; break;
-            case 3: delayMillis = 2 * 60 * 60 * 1000L; break;
-            case 4: delayMillis = 6 * 60 * 60 * 1000L; break;
-            case 5: delayMillis = 12 * 60 * 60 * 1000L; break;
-            case 6: delayMillis = 24 * 60 * 60 * 1000L; break;
+        
+        if (selectedIndex == 1) { // Alarm
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            int h = alarmHr.getValue();
+            if (h == 12) h = 0;
+            if (alarmAmPm.getValue().equals("PM")) h += 12;
+            java.time.LocalTime time = java.time.LocalTime.of(h, alarmMin.getValue());
+            java.time.LocalDateTime target = now.with(time);
+            if (target.isBefore(now)) {
+                target = target.plusDays(1);
+            }
+            delayMillis = java.time.Duration.between(now, target).toMillis();
+        } else if (selectedIndex == 2) { // Timer
+            delayMillis = (timerHr.getValue() * 3600L + timerMin.getValue() * 60L + timerSec.getValue()) * 1000L;
         }
-        if (delayMillis > 0) {
-            d.updateScheduledStartTime(System.currentTimeMillis() + delayMillis);
-            // If scheduled, it MUST go to queue
-            d.updateState(io.smartdm.domain.DownloadState.QUEUED);
+
+        if (selectedIndex > 0) {
+            d.updateScheduledStartTime(System.currentTimeMillis() + Math.max(delayMillis, 1000));
         }
 
         return d;
     }
-    
+
     private String extractFilename(String urlStr) {
         if (urlStr == null || urlStr.trim().isEmpty()) {
             return "download.bin";

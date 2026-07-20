@@ -1,0 +1,19 @@
+
+/* ComboBox Dropdown Styling */
+.combo-box-popup .list-view {
+    -fx-background-color: #0A0C16;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-padding: 4px;
+}
+.combo-box-popup .list-cell {
+    -fx-text-fill: #F3F5FC;
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-background-color: transparent;
+    -fx-padding: 8px 12px;
+    -fx-background-radius: 6px;
+}
+.combo-box-popup .list-cell:hover, .combo-box-popup .list-cell:filled:selected {
+    -fx-background-color: rgba(255, 255, 255, 0.13);
+}

@@ -24,6 +24,8 @@ class QueueCoordinatorTest {
             public void pauseDownload(DownloadId id) { paused.add(id); started.remove(id); }
             @Override
             public boolean isActive(DownloadId id) { return started.contains(id); }
+            @Override
+            public boolean isScheduledFuture(DownloadId id) { return false; }
         };
 
         QueueCoordinator coordinator = new QueueCoordinator(starter);

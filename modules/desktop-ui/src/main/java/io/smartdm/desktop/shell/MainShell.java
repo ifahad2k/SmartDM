@@ -21,6 +21,7 @@ public final class MainShell extends VBox {
     private double yOffset = 0;
     private final NavigationRail navigationRail;
     private final TopBar topBar;
+    private QueueWorkspace queueWorkspace;
 
     public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, SchedulerWorkspace.ScheduleManager scheduleManager, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange) {
         getStyleClass().addAll("os-window", "glass");
@@ -94,11 +95,11 @@ public final class MainShell extends VBox {
         VBox.setVgrow(workspace, Priority.ALWAYS);
         
         topBar = new TopBar(() -> workspace.getDownloadsList(), download -> {
-            Platform.runLater(() -> workspace.addDownload(download));
+            workspace.addDownload(download);
             onDownloadRequested.accept(download);
         });
         
-        QueueWorkspace queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange);
+        queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange);
         VBox.setVgrow(queueWorkspace, Priority.ALWAYS);
         
         SchedulerWorkspace schedulerWorkspace = new SchedulerWorkspace(scheduleManager);
@@ -136,5 +137,9 @@ public final class MainShell extends VBox {
 
     public TopBar getTopBar() {
         return topBar;
+    }
+    
+    public QueueWorkspace getQueueWorkspace() {
+        return queueWorkspace;
     }
 }

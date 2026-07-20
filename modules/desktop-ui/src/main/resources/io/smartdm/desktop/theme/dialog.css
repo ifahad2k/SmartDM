@@ -110,8 +110,8 @@
     -fx-border-radius: 10px;
     -fx-background-radius: 10px;
     -fx-text-fill: #F3F5FC;
-    -fx-padding: 9px 12px;
-    -fx-min-height: 36px;
+    -fx-padding: 8px 10px;
+    -fx-min-height: 38px;
 }
 .text-input:focused {
     -fx-border-color: #37E9FF;
@@ -194,4 +194,30 @@
 .progress-fill {
     -fx-background-color: linear-gradient(to right, #37E9FF, #9B6BFF, #FF3DCB);
     -fx-background-radius: 999px;
+}
+
+/* ComboBox Dropdown Styling */
+.combo-box-popup .list-view {
+    -fx-background-color: #0A0C16;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-padding: 4px;
+}
+.combo-box-popup .list-cell {
+    -fx-text-fill: #F3F5FC;
+    -fx-font-family: 'Space Grotesk', sans-serif;
+    -fx-background-color: transparent;
+    -fx-padding: 8px 12px;
+    -fx-background-radius: 6px;
+}
+.combo-box-popup .list-cell:hover, .combo-box-popup .list-cell:filled:selected {
+    -fx-background-color: rgba(255, 255, 255, 0.13);
+}
+.combo-box {
+    -fx-padding: 2px;
+}
+.combo-box .list-cell {
+    -fx-text-fill: #F3F5FC;
+    -fx-padding: 6px 4px;
 }

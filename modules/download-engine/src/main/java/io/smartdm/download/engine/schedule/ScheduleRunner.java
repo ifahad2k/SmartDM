@@ -18,13 +18,15 @@ public class ScheduleRunner {
     private final Clock clock;
     private final Consumer<DownloadQueue.Status> queueStatusUpdater;
     private final Runnable scheduledDownloadsStarter;
+    private final Consumer<Schedule> scheduleUpdater;
     private final Map<String, Schedule> schedules = new ConcurrentHashMap<>();
     private ScheduledExecutorService executor;
 
-    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter) {
+    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater) {
         this.clock = clock;
         this.queueStatusUpdater = queueStatusUpdater;
         this.scheduledDownloadsStarter = scheduledDownloadsStarter;
+        this.scheduleUpdater = scheduleUpdater;
     }
     
     public void start() {
@@ -90,15 +92,54 @@ public class ScheduleRunner {
             } else if (schedule.getStartTime().isPresent()) {
                 // One-time start
                 LocalTime start = schedule.getStartTime().get();
-                // Simple within-minute trigger logic for demo, real impl needs execution tracking
+                boolean shouldTriggerNow = false;
+                
                 if (currentTime.getHour() == start.getHour() && currentTime.getMinute() == start.getMinute()) {
+                    shouldTriggerNow = true;
+                } else if (schedule.getMissedTriggerPolicy() == Schedule.MissedTriggerPolicy.RUN_IMMEDIATELY) {
+                    if (currentTime.isAfter(start)) {
+                        long lastRunMillis = schedule.getLastRunTime();
+                        java.time.LocalDate lastRunDate = lastRunMillis > 0 ? 
+                            java.time.Instant.ofEpochMilli(lastRunMillis).atZone(clock.getZone()).toLocalDate() : 
+                            java.time.LocalDate.MIN;
+                        if (lastRunDate.isBefore(now.toLocalDate())) {
+                            shouldTriggerNow = true;
+                        }
+                    }
+                }
+                
+                if (shouldTriggerNow) {
                     queueStatusUpdater.accept(DownloadQueue.Status.ACTIVE);
+                    schedule.setLastRunTime(System.currentTimeMillis());
+                    if (scheduleUpdater != null) {
+                        scheduleUpdater.accept(schedule);
+                    }
                 }
             } else if (schedule.getEndTime().isPresent()) {
                 // One-time stop
                 LocalTime end = schedule.getEndTime().get();
+                boolean shouldTriggerNow = false;
+                
                 if (currentTime.getHour() == end.getHour() && currentTime.getMinute() == end.getMinute()) {
+                    shouldTriggerNow = true;
+                } else if (schedule.getMissedTriggerPolicy() == Schedule.MissedTriggerPolicy.RUN_IMMEDIATELY) {
+                    if (currentTime.isAfter(end)) {
+                        long lastRunMillis = schedule.getLastRunTime();
+                        java.time.LocalDate lastRunDate = lastRunMillis > 0 ? 
+                            java.time.Instant.ofEpochMilli(lastRunMillis).atZone(clock.getZone()).toLocalDate() : 
+                            java.time.LocalDate.MIN;
+                        if (lastRunDate.isBefore(now.toLocalDate())) {
+                            shouldTriggerNow = true;
+                        }
+                    }
+                }
+                
+                if (shouldTriggerNow) {
                     queueStatusUpdater.accept(DownloadQueue.Status.PAUSED);
+                    schedule.setLastRunTime(System.currentTimeMillis());
+                    if (scheduleUpdater != null) {
+                        scheduleUpdater.accept(schedule);
+                    }
                 }
             }
         }

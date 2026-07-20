@@ -1,0 +1,1 @@
+ALTER TABLE schedule ADD COLUMN last_run_time INTEGER DEFAULT 0;

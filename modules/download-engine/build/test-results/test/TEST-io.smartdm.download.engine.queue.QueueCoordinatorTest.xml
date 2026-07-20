@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.download.engine.queue.QueueCoordinatorTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-19T12:29:11.247Z" hostname="IFAHAD2K" time="0.078">
+<testsuite name="io.smartdm.download.engine.queue.QueueCoordinatorTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-19T18:00:02.916Z" hostname="IFAHAD2K" time="0.057">
   <properties/>
-  <testcase name="shouldRespectConcurrencyLimitAndPriority()" classname="io.smartdm.download.engine.queue.QueueCoordinatorTest" time="0.078"/>
+  <testcase name="shouldRespectConcurrencyLimitAndPriority()" classname="io.smartdm.download.engine.queue.QueueCoordinatorTest" time="0.057"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

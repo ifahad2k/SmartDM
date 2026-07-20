@@ -23,6 +23,7 @@ public class Schedule {
     private final List<Integer> daysOfWeek; // 1 (Monday) to 7 (Sunday)
     private final boolean active;
     private final MissedTriggerPolicy missedTriggerPolicy;
+    private long lastRunTime;
 
     public Schedule(String id, String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, boolean active, MissedTriggerPolicy missedTriggerPolicy) {
         this.id = Objects.requireNonNull(id, "id must not be null");
@@ -32,6 +33,7 @@ public class Schedule {
         this.daysOfWeek = daysOfWeek != null ? List.copyOf(daysOfWeek) : List.of();
         this.active = active;
         this.missedTriggerPolicy = Objects.requireNonNull(missedTriggerPolicy, "missedTriggerPolicy must not be null");
+        this.lastRunTime = 0;
     }
 
     public static Schedule createNew(String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, MissedTriggerPolicy missedTriggerPolicy) {
@@ -64,6 +66,14 @@ public class Schedule {
 
     public MissedTriggerPolicy getMissedTriggerPolicy() {
         return missedTriggerPolicy;
+    }
+
+    public long getLastRunTime() {
+        return lastRunTime;
+    }
+
+    public void setLastRunTime(long lastRunTime) {
+        this.lastRunTime = lastRunTime;
     }
     
     public String getDaysOfWeekAsString() {

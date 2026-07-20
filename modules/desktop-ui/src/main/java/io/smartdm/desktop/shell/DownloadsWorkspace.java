@@ -108,7 +108,11 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                 updateSubTitle();
             }
         }, this));
-        listView.setItems(items);
+        javafx.collections.transformation.FilteredList<DownloadId> filteredItems = new javafx.collections.transformation.FilteredList<>(items, id -> {
+            Download d = downloadMap.get(id);
+            return d != null && d.state() != io.smartdm.domain.DownloadState.QUEUED;
+        });
+        listView.setItems(filteredItems);
         
         DetailsPane detailsPane = new DetailsPane(() -> {
             listView.getSelectionModel().clearSelection();
@@ -144,11 +148,21 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     
     public void updateDownload(Download download) {
         downloadMap.put(download.id(), download);
+        // Force refresh for the FilteredList
+        int idx = items.indexOf(download.id());
+        if (idx >= 0) {
+            items.set(idx, download.id());
+        }
         // Force rebinding details pane if it's currently selected to update UI
         if (listView.getSelectionModel().getSelectedItem() != null && listView.getSelectionModel().getSelectedItem().equals(download.id())) {
-            // we could refresh detailsPane here by finding it but details pane handles its own state for now
             // We just let the list cell handle the animation
         }
+    }
+    
+    public void removeDownload(DownloadId id) {
+        items.remove(id);
+        downloadMap.remove(id);
+        updateSubTitle();
     }
     
     public void refresh() {

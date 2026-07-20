@@ -21,7 +21,7 @@ class ScheduleRunnerTest {
         // Setup clock fixed at 12:00 PM
         Clock clock = Clock.fixed(Instant.parse("2026-07-19T12:00:00Z"), ZoneId.of("UTC"));
         
-        ScheduleRunner runner = new ScheduleRunner(clock, statusRef::set);
+        ScheduleRunner runner = new ScheduleRunner(clock, statusRef::set, () -> {}, schedule -> {});
         
         // Window from 11:00 AM to 1:00 PM (Active)
         Schedule scheduleActive = Schedule.createNew(

@@ -252,7 +252,9 @@ public class SingleDownloadCoordinator {
             if (session != null) {
                 sessions.remove(download.id());
                 if (download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
-                    session.channel.cleanup();
+                    if (session.channel != null) {
+                        session.channel.cleanup();
+                    }
                 } else if (download.state() == DownloadState.PAUSED) {
                     try { if (session.channel != null) session.channel.close(); } catch(Exception ignored){}
                 }

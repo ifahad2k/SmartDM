@@ -59,6 +59,7 @@ class SingleDownloadCoordinatorTest {
             @Override public Optional<Download> findById(io.smartdm.domain.DownloadId id) { return Optional.empty(); }
             @Override public java.util.List<Download> findAll() { return java.util.Collections.emptyList(); }
             @Override public void delete(io.smartdm.domain.DownloadId id) {}
+            @Override public java.util.List<Download> findReadyScheduledDownloads(long currentTimeMs) { return java.util.Collections.emptyList(); }
         };
         DownloadEvent.Publisher publisher = event -> {};
 
@@ -69,7 +70,8 @@ class SingleDownloadCoordinatorTest {
         HttpProbeClient probeClient = new HttpProbeClient(httpClient);
 
         coordinator = new SingleDownloadCoordinator(
-                repo, probeClient, httpClient, publisher, tempDir.resolve("parts"));
+                repo, probeClient, httpClient, publisher, tempDir.resolve("parts"),
+                new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -168,6 +170,7 @@ class SingleDownloadCoordinatorTest {
             @Override public Optional<Download> findById(io.smartdm.domain.DownloadId id) { return Optional.empty(); }
             @Override public java.util.List<Download> findAll() { return java.util.Collections.emptyList(); }
             @Override public void delete(io.smartdm.domain.DownloadId id) {}
+            @Override public java.util.List<Download> findReadyScheduledDownloads(long currentTimeMs) { return java.util.Collections.emptyList(); }
         };
         HttpClient shortTimeoutClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -176,7 +179,8 @@ class SingleDownloadCoordinatorTest {
         HttpProbeClient shortProbe = new HttpProbeClient(shortTimeoutClient);
         SingleDownloadCoordinator timeoutCoord = new SingleDownloadCoordinator(
                 repo, shortProbe, shortTimeoutClient, event -> {},
-                tempDir.resolve("timeout-parts"));
+                tempDir.resolve("timeout-parts"),
+                new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
 
         Path dest = tempDir.resolve("timeout.txt");
         Download dl = Download.create(

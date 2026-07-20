@@ -64,8 +64,6 @@ public final class QueueWorkspace extends VBox {
                 downloadIds.setAll(newIds);
             }
         };
-        updateList.run();
-        mainQueueItems.addListener((ListChangeListener<io.smartdm.domain.QueueItem>) c -> updateList.run());
 
         // Content Area
         ListView<io.smartdm.domain.DownloadId> listView = new ListView<>();
@@ -76,6 +74,12 @@ public final class QueueWorkspace extends VBox {
         listView.setPlaceholder(emptyLabel);
         
         VBox.setVgrow(listView, Priority.ALWAYS);
+        javafx.collections.transformation.FilteredList<io.smartdm.domain.DownloadId> filteredDownloadIds = new javafx.collections.transformation.FilteredList<>(downloadIds, id -> {
+            Download d = downloadsWorkspace.getDownload(id);
+            if (d == null) return false;
+            io.smartdm.domain.DownloadState state = d.state();
+            return state != io.smartdm.domain.DownloadState.DOWNLOADING && state != io.smartdm.domain.DownloadState.PROBING && state != io.smartdm.domain.DownloadState.COMPLETED;
+        });
         
         listView.setCellFactory(param -> new DownloadListCell(new DownloadListCell.Listener() {
             @Override
@@ -95,8 +99,31 @@ public final class QueueWorkspace extends VBox {
                 if (downloadsWorkspace.getListener() != null) downloadsWorkspace.getListener().onDelete(download, false);
             }
         }, downloadsWorkspace));
-        listView.setItems(downloadIds);
+        listView.setItems(filteredDownloadIds);
+
+        this.updateListRunnable = () -> {
+            // we must reset the predicate to force the FilteredList to re-evaluate
+            @SuppressWarnings("unchecked")
+            javafx.collections.transformation.FilteredList<io.smartdm.domain.DownloadId> fl = (javafx.collections.transformation.FilteredList<io.smartdm.domain.DownloadId>) listView.getItems();
+            if (fl != null) {
+                java.util.function.Predicate<? super io.smartdm.domain.DownloadId> p = fl.getPredicate();
+                fl.setPredicate(null);
+                fl.setPredicate(p);
+            }
+            updateList.run();
+        };
+        updateListRunnable.run();
+        mainQueueItems.addListener((ListChangeListener<io.smartdm.domain.QueueItem>) c -> updateListRunnable.run());
 
         getChildren().addAll(wsHead, listView);
+    }
+    
+    // Store the runnable so we can call it externally
+    private Runnable updateListRunnable;
+    
+    public void refreshList() {
+        if (updateListRunnable != null) {
+            updateListRunnable.run();
+        }
     }
 }
