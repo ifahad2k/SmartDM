@@ -305,28 +305,37 @@
       const pageUrl = window.location.href;
       const directSrc = mediaEl.src || mediaEl.currentSrc;
 
-      // 1. Fetch extracted formats via yt-dlp first
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
-        let formats = [];
-        if (res && res.success && res.formats && res.formats.length > 0) {
-          formats = res.formats;
+      let hasHandled = false;
+
+      const finishRender = (formats, netMedia) => {
+        if (hasHandled) return;
+        hasHandled = true;
+        renderUniversalFormats(content, formats || [], netMedia || [], pageUrl, popover);
+      };
+
+      chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        const netMedia = (netRes && netRes.media) ? netRes.media : [];
+
+        if (directSrc && !directSrc.startsWith('blob:') && !netMedia.some(m => m.url === directSrc)) {
+          netMedia.unshift({
+            url: directSrc,
+            contentType: 'video/mp4',
+            filename: 'video_stream.mp4',
+            contentLength: 0
+          });
         }
 
-        // 2. Also check network-intercepted media streams for this tab
-        chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-          const netMedia = (netRes && netRes.media) ? netRes.media : [];
+        const timer = setTimeout(() => {
+          finishRender([], netMedia);
+        }, 2500);
 
-          // Add direct element source if available
-          if (directSrc && !directSrc.startsWith('blob:') && !netMedia.some(m => m.url === directSrc)) {
-            netMedia.unshift({
-              url: directSrc,
-              contentType: 'video/mp4',
-              filename: 'video_stream.mp4',
-              contentLength: 0
-            });
+        chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
+          clearTimeout(timer);
+          let formats = [];
+          if (res && res.success && res.formats && res.formats.length > 0) {
+            formats = res.formats;
           }
-
-          renderUniversalFormats(content, formats, netMedia, pageUrl, popover);
+          finishRender(formats, netMedia);
         });
       });
     });
@@ -470,7 +479,6 @@
   }
 
   function attachThumbnailBadge(containerEl, videoUrl) {
-    if (!videoUrl) return;
     if (!videoUrl) return;
 
     if (window.getComputedStyle(containerEl).position === 'static') {
@@ -649,13 +657,25 @@
       popover.classList.add('active');
       content.innerHTML = '<div class="status-text">Fetching resolutions...</div>';
 
+      let hasHandled = false;
+
+      const finishRender = (formats) => {
+        if (hasHandled) return;
+        hasHandled = true;
+        renderThumbnailFormats(content, formats || [], videoUrl, popover);
+      };
+
+      const timer = setTimeout(() => {
+        finishRender([]);
+      }, 2500);
+
       chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+        clearTimeout(timer);
         let formats = [];
         if (res && res.success && res.formats && res.formats.length > 0) {
           formats = res.formats;
         }
-
-        renderThumbnailFormats(content, formats, videoUrl, popover);
+        finishRender(formats);
       });
     });
 

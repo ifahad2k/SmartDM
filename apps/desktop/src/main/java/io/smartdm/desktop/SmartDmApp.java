@@ -607,6 +607,61 @@ public class SmartDmApp extends Application {
         }
     }
 
+    private static boolean isMediaUrlPattern(String url, String preferredFormatId) {
+        if (preferredFormatId != null && !preferredFormatId.isBlank()) return true;
+        if (url == null || url.isBlank()) return false;
+        
+        String lower = url.toLowerCase();
+        
+        // Check direct video/audio extensions
+        if (lower.contains(".mp4") || lower.contains(".m3u8") || lower.contains(".mpd") ||
+            lower.contains(".webm") || lower.contains(".m4a") || lower.contains(".mp3") ||
+            lower.contains(".ts") || lower.contains(".mov") || lower.contains(".flv") ||
+            lower.contains(".mkv") || lower.contains(".avi")) {
+            return true;
+        }
+
+        // Check universal video route patterns
+        if (lower.contains("/video") || lower.contains("/watch") || lower.contains("/reel") ||
+            lower.contains("/shorts") || lower.contains("/v/") || lower.contains("/clip") ||
+            lower.contains("/play") || lower.contains("viewkey=")) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static String deriveTitleFromUrl(String url) {
+        if (url == null || url.isBlank()) return "Media Video";
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            String path = uri.getPath();
+            if (path != null && path.contains("/")) {
+                String seg = path.substring(path.lastIndexOf('/') + 1);
+                if (seg.contains(".")) {
+                    seg = seg.substring(0, seg.lastIndexOf('.'));
+                }
+                seg = seg.replace('-', ' ').replace('_', ' ').trim();
+                if (!seg.isBlank() && !seg.equalsIgnoreCase("index") && !seg.equalsIgnoreCase("watch") && !seg.endsWith(".php")) {
+                    // Capitalize words
+                    String[] words = seg.split("\\s+");
+                    StringBuilder sb = new StringBuilder();
+                    for (String w : words) {
+                        if (!w.isEmpty()) {
+                            sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1)).append(" ");
+                        }
+                    }
+                    return sb.toString().trim();
+                }
+            }
+            String host = uri.getHost();
+            if (host != null) {
+                return host.replace("www.", "") + " Video";
+            }
+        } catch (Exception ignored) {}
+        return "Media Video";
+    }
+
     private static void openMediaOrStandardDialog(
         String url,
         String preferredFormatId,
@@ -617,21 +672,7 @@ public class SmartDmApp extends Application {
         ExecutorService enginePool,
         SingleDownloadCoordinator coordinator
     ) {
-        String lower = (url != null) ? url.toLowerCase() : "";
-        boolean isMediaUrl = (preferredFormatId != null && !preferredFormatId.isBlank()) ||
-                             lower.contains("youtube.com") || lower.contains("youtu.be") ||
-                             lower.contains("pornhub.com") || lower.contains("xhamster.com") ||
-                             lower.contains("xnxx.com") || lower.contains("xvideos.com") ||
-                             lower.contains("dailymotion.com") || lower.contains("vimeo.com") ||
-                             lower.contains("facebook.com") || lower.contains("instagram.com") ||
-                             lower.contains("tiktok.com") || lower.contains("twitter.com") ||
-                             lower.contains("x.com") || lower.contains("twitch.tv") ||
-                             lower.contains("bilibili.com") || lower.contains("reddit.com") ||
-                             lower.contains("/videos/") || lower.contains("/video/") ||
-                             lower.contains("/video-") || lower.contains("/v/") ||
-                             lower.contains("/watch") || lower.contains("/reel/") ||
-                             lower.contains("/shorts/") || lower.contains(".mp4") ||
-                             lower.contains(".m3u8") || lower.contains(".mpd") || lower.contains(".webm");
+        boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId);
 
         io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
         if (isMediaUrl && toolMgr.isAvailable()) {
@@ -640,29 +681,27 @@ public class SmartDmApp extends Application {
                 io.smartdm.media.api.MediaMetadata meta = null;
                 try {
                     io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                    meta = extractor.extractMetadataAsync(url).get(20, java.util.concurrent.TimeUnit.SECONDS);
+                    meta = extractor.extractMetadataAsync(url).get(15, java.util.concurrent.TimeUnit.SECONDS);
                 } catch (Exception ex) {
                     System.err.println("Media metadata extraction failed: " + ex.getMessage());
                 }
 
                 final io.smartdm.media.api.MediaMetadata finalMeta;
                 if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
-                    // Use the real metadata with proper webpageUrl
+                    // Use real extracted metadata
                     String webpageUrl = (meta.webpageUrl() != null && !meta.webpageUrl().isBlank()) ? meta.webpageUrl() : url;
+                    String title = (meta.title() != null && !meta.title().isBlank()) ? meta.title() : deriveTitleFromUrl(url);
                     finalMeta = new io.smartdm.media.api.MediaMetadata(
-                        meta.id(), meta.title(), meta.durationSeconds(), webpageUrl,
+                        meta.id(), title, meta.durationSeconds(), webpageUrl,
                         meta.thumbnailUrl(), meta.formats(), meta.subtitles()
                     );
                 } else {
-                    // Fallback to hardcoded formats if extraction failed
+                    // Domain-agnostic fallback metadata
+                    String titleName = deriveTitleFromUrl(url);
                     java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
-                        new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
-                        new io.smartdm.media.api.MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
-                        new io.smartdm.media.api.MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
-                        new io.smartdm.media.api.MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
-                        new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
+                        new io.smartdm.media.api.MediaFormat("best", "mp4", "Best Quality", "Video", 0, "h264", "aac", 0, 30, false, false)
                     );
-                    finalMeta = new io.smartdm.media.api.MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, java.util.List.of());
+                    finalMeta = new io.smartdm.media.api.MediaMetadata("video", titleName, 0, url, null, fallbackFormats, java.util.List.of());
                 }
 
                 javafx.application.Platform.runLater(() -> {
@@ -679,6 +718,7 @@ public class SmartDmApp extends Application {
                 });
             });
         } else {
+            // Open standard file download dialog
             javafx.application.Platform.runLater(() -> {
                 io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
                 d.setOnDownloadAdded(dl -> {
@@ -690,6 +730,7 @@ public class SmartDmApp extends Application {
                     } else {
                         enginePool.submit(() -> coordinator.execute(dl));
                     }
+                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
                 });
                 d.setUrlText(url);
                 bringStageToFrontAndFocus(d);
