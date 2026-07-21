@@ -641,10 +641,7 @@ public class SmartDmApp extends Application {
                                 if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                             }
                         );
-                        dlg.setAlwaysOnTop(true);
-                        dlg.show();
-                        dlg.toFront();
-                        dlg.requestFocus();
+                        bringStageToFrontAndFocus(dlg);
                     }))
                     .exceptionally(ex -> {
                         javafx.application.Platform.runLater(() -> {
@@ -663,10 +660,7 @@ public class SmartDmApp extends Application {
                                     if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                                 }
                             );
-                            dlg.setAlwaysOnTop(true);
-                            dlg.show();
-                            dlg.toFront();
-                            dlg.requestFocus();
+                            bringStageToFrontAndFocus(dlg);
                         });
                         return null;
                     });
@@ -683,12 +677,17 @@ public class SmartDmApp extends Application {
                     }
                 });
                 d.setUrlText(url);
-                d.setAlwaysOnTop(true);
-                d.show();
-                d.toFront();
-                d.requestFocus();
+                bringStageToFrontAndFocus(d);
             }
         });
+    }
+
+    private static void bringStageToFrontAndFocus(Stage stage) {
+        stage.centerOnScreen();
+        stage.setAlwaysOnTop(true);
+        stage.show();
+        stage.toFront();
+        stage.requestFocus();
     }
 
     public static void main(String[] args) {
