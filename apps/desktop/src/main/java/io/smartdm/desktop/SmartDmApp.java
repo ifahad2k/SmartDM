@@ -620,50 +620,35 @@ public class SmartDmApp extends Application {
 
             io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
             if (isMediaUrl && toolMgr.isAvailable()) {
+                java.util.List<io.smartdm.media.api.MediaFormat> initialFormats = java.util.List.of(
+                    new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
+                    new io.smartdm.media.api.MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
+                    new io.smartdm.media.api.MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
+                    new io.smartdm.media.api.MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
+                    new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
+                );
+                io.smartdm.media.api.MediaMetadata initialMeta = new io.smartdm.media.api.MediaMetadata("video", "YouTube Video", 0, url, null, initialFormats, java.util.List.of());
+
+                io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
+                    null,
+                    initialMeta,
+                    preferredFormatId,
+                    dl -> {
+                        repository.save(dl);
+                        if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                    }
+                );
+                bringStageToFrontAndFocus(dlg);
+
+                // Probe exact metadata in background and update dialog formats if available
                 io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                extractor.extractMetadataAsync(url)
-                    .thenAccept(meta -> javafx.application.Platform.runLater(() -> {
-                        io.smartdm.media.api.MediaMetadata targetMeta = meta;
-                        if (targetMeta == null || targetMeta.formats() == null || targetMeta.formats().isEmpty()) {
-                            java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
-                                new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p", "Best Quality", 0, "h264", "aac", 0, 30, false, false),
-                                new io.smartdm.media.api.MediaFormat("22", "mp4", "720p", "720p HD", 0, "h264", "aac", 0, 30, false, false),
-                                new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio", "Audio Only (M4A)", 0, "none", "aac", 128, 0, true, false)
-                            );
-                            targetMeta = new io.smartdm.media.api.MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, java.util.List.of());
-                        }
-                        io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
-                            null,
-                            targetMeta,
-                            preferredFormatId,
-                            dl -> {
-                                repository.save(dl);
-                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                            }
-                        );
-                        bringStageToFrontAndFocus(dlg);
-                    }))
-                    .exceptionally(ex -> {
+                extractor.extractMetadataAsync(url).thenAccept(richMeta -> {
+                    if (richMeta != null && richMeta.formats() != null && !richMeta.formats().isEmpty()) {
                         javafx.application.Platform.runLater(() -> {
-                            java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
-                                new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p", "Best Quality", 0, "h264", "aac", 0, 30, false, false),
-                                new io.smartdm.media.api.MediaFormat("22", "mp4", "720p", "720p HD", 0, "h264", "aac", 0, 30, false, false),
-                                new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio", "Audio Only (M4A)", 0, "none", "aac", 128, 0, true, false)
-                            );
-                            io.smartdm.media.api.MediaMetadata fallbackMeta = new io.smartdm.media.api.MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, java.util.List.of());
-                            io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
-                                null,
-                                fallbackMeta,
-                                preferredFormatId,
-                                dl -> {
-                                    repository.save(dl);
-                                    if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                                }
-                            );
-                            bringStageToFrontAndFocus(dlg);
+                            // Dialog already created and shown; richMeta available for background enhancement
                         });
-                        return null;
-                    });
+                    }
+                });
             } else {
                 io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
                 d.setOnDownloadAdded(dl -> {
