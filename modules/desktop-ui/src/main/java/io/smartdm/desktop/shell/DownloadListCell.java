@@ -328,6 +328,19 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         setContextMenu(ctxMenu);
     }
 
+    @Override
+    protected double computePrefWidth(double height) {
+        if (getListView() != null && getListView().getWidth() > 0) {
+            return Math.max(100, getListView().getWidth() - 16);
+        }
+        return 200;
+    }
+
+    @Override
+    protected double computeMinWidth(double height) {
+        return 100;
+    }
+
     private void clearAnimations() {
         for (FadeTransition ft : activeTransitions) {
             ft.stop();
