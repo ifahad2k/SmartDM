@@ -23,6 +23,7 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     private final DownloadActionListener listener;
     private final DetailsPane detailsPane;
     private final javafx.beans.property.ObjectProperty<Download> latestUpdate = new javafx.beans.property.SimpleObjectProperty<>();
+    private javafx.collections.transformation.FilteredList<DownloadId> filteredItems;
 
     public DownloadsWorkspace() {
         this(new DownloadActionListener() {
@@ -67,6 +68,43 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         chipBlocked.getStyleClass().add("chip");
         chipRow.getChildren().addAll(chipAll, chipActive, chipCompleted, chipBlocked);
         
+        // Create filtered list early so chip handlers can reference it
+        filteredItems = new javafx.collections.transformation.FilteredList<>(items, id -> true);
+        
+        // Chip click handlers for filtering
+        Runnable updateFilter = () -> {
+            String filter = "All";
+            for (javafx.scene.Node node : chipRow.getChildren()) {
+                if (node.getStyleClass().contains("active") && node instanceof Label) {
+                    filter = ((Label) node).getText();
+                    break;
+                }
+            }
+            final String f = filter;
+            filteredItems.setPredicate(id -> {
+                Download d = downloadMap.get(id);
+                if (d == null) return false;
+                return switch (f) {
+                    case "Active" -> d.state() == io.smartdm.domain.DownloadState.DOWNLOADING 
+                                  || d.state() == io.smartdm.domain.DownloadState.PROBING 
+                                  || d.state() == io.smartdm.domain.DownloadState.QUEUED;
+                    case "Completed" -> d.state() == io.smartdm.domain.DownloadState.COMPLETED;
+                    case "Blocked" -> d.state() == io.smartdm.domain.DownloadState.PAUSED 
+                                   || d.state() == io.smartdm.domain.DownloadState.FAILED 
+                                   || d.state() == io.smartdm.domain.DownloadState.REQUIRES_AUTH 
+                                   || d.state() == io.smartdm.domain.DownloadState.CANCELED;
+                    default -> true; // "All"
+                };
+            });
+        };
+        for (javafx.scene.Node chip : chipRow.getChildren()) {
+            chip.setOnMouseClicked(ev -> {
+                chipRow.getChildren().forEach(c -> c.getStyleClass().remove("active"));
+                chip.getStyleClass().add("active");
+                updateFilter.run();
+            });
+        }
+        
         wsHead.getChildren().addAll(titleBox, spacer, chipRow);
 
         // Content Area (List + Details)
@@ -76,7 +114,15 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         // Functional List View
         listView = new ListView<>();
         listView.getStyleClass().add("list");
-        HBox.setHgrow(listView, Priority.ALWAYS);
+        listView.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
+        listView.setOnKeyPressed(e -> {
+            if (e.isControlDown() && e.getCode() == javafx.scene.input.KeyCode.A) {
+                listView.getSelectionModel().selectAll();
+                e.consume();
+            }
+        });
+        javafx.scene.layout.StackPane wrappedListView = RubberBandSelection.wrap(this, listView);
+        HBox.setHgrow(wrappedListView, Priority.ALWAYS);
         
         listView.setCellFactory(param -> new DownloadListCell(new DownloadListCell.Listener() {
             @Override
@@ -101,6 +147,11 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                     items.remove(download.id());
                     downloadMap.remove(download.id());
                     updateSubTitle();
+                    return;
+                }
+                java.util.List<DownloadId> sel = listView.getSelectionModel().getSelectedItems();
+                if (sel.contains(download.id()) && sel.size() > 1) {
+                    deleteSelected();
                     return;
                 }
                 Stage owner = (Stage) listView.getScene().getWindow();
@@ -129,10 +180,6 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                 listener.onSchedule(download);
             }
         }, this));
-        javafx.collections.transformation.FilteredList<DownloadId> filteredItems = new javafx.collections.transformation.FilteredList<>(items, id -> {
-            Download d = downloadMap.get(id);
-            return d != null && d.state() != io.smartdm.domain.DownloadState.QUEUED;
-        });
         listView.setItems(filteredItems);
         
         detailsPane = new DetailsPane(() -> {
@@ -159,7 +206,7 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
             }
         });
         
-        contentArea.getChildren().add(listView);
+        contentArea.getChildren().add(wrappedListView);
 
         getChildren().addAll(wsHead, contentArea);
     }
@@ -209,6 +256,41 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     }
     
     public void refresh() {
+        // Re-evaluate the filtered list predicate to reflect state changes
+        if (filteredItems != null) {
+            java.util.function.Predicate<? super DownloadId> p = filteredItems.getPredicate();
+            filteredItems.setPredicate(null);
+            filteredItems.setPredicate(p);
+        }
+    }
+
+    public void deleteSelected() {
+        java.util.List<DownloadId> selected = new java.util.ArrayList<>(listView.getSelectionModel().getSelectedItems());
+        if (selected.isEmpty()) return;
+        
+        Stage owner = (Stage) getScene().getWindow();
+        DeleteConfirmDialog dialog;
+        if (selected.size() == 1) {
+            Download d = downloadMap.get(selected.get(0));
+            dialog = new DeleteConfirmDialog(owner, d.destination().value().getFileName().toString());
+        } else {
+            dialog = new DeleteConfirmDialog(owner, selected.size());
+        }
+        
+        DeleteConfirmDialog.DeleteChoice choice = dialog.showAndGetChoice();
+        if (choice == DeleteConfirmDialog.DeleteChoice.CANCEL) return;
+        
+        boolean perm = choice == DeleteConfirmDialog.DeleteChoice.PERMANENT;
+        for (DownloadId id : selected) {
+            Download d = downloadMap.get(id);
+            if (d != null) {
+                listener.onDelete(d, perm);
+                items.remove(id);
+                downloadMap.remove(id);
+            }
+        }
+        updateSubTitle();
+        listView.getSelectionModel().clearSelection();
     }
 
     private void updateSubTitle() {

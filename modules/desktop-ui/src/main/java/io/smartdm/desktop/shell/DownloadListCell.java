@@ -57,6 +57,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
     private final RotateTransition probingRotation = new RotateTransition(Duration.millis(1500), stIcon);
     private final List<FadeTransition> activeTransitions = new ArrayList<>();
     private final Label extLabel = new Label();
+    private final javafx.scene.control.CheckBox selectBox = new javafx.scene.control.CheckBox();
 
     @SuppressWarnings("this-escape")
     public DownloadListCell(Listener listener, DownloadProvider provider) {
@@ -79,6 +80,27 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         HBox rowTop = new HBox();
         rowTop.getStyleClass().add("row-top");
         rowTop.setSpacing(12);
+        
+        selectBox.getStyleClass().add("row-checkbox");
+        selectBox.setFocusTraversable(false);
+        // Bind checkbox to cell selection
+        selectedProperty().addListener((obs, wasSelected, isSelected) -> {
+            selectBox.setSelected(isSelected != null && isSelected);
+            if (isSelected != null && isSelected) {
+                if (!root.getStyleClass().contains("selected")) root.getStyleClass().add("selected");
+            } else {
+                root.getStyleClass().remove("selected");
+            }
+        });
+        selectBox.setOnAction(e -> {
+            if (selectBox.isSelected()) {
+                getListView().getSelectionModel().select(getItem());
+            } else {
+                getListView().getSelectionModel().clearSelection(getIndex());
+            }
+        });
+        
+        // Drag selection is handled by RubberBandSelection
         
         StackPane fileIcon = new StackPane();
         fileIcon.getStyleClass().add("file-icon");
@@ -149,7 +171,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         });
 
         controlBox.getChildren().addAll(playPauseBtn, cancelBtn, deleteBtn);
-        rowTop.getChildren().addAll(fileIcon, rowInfo, controlBox);
+        rowTop.getChildren().addAll(selectBox, fileIcon, rowInfo, controlBox);
         
         overallLaneContainer.getStyleClass().add("lanes");
         overallLane.getStyleClass().add("lane");

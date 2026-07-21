@@ -12,6 +12,8 @@ import java.util.function.Consumer;
 
 public final class NavigationRail extends VBox {
     
+    private String currentNav = "Downloads";
+    
     public NavigationRail() {
         getStyleClass().add("nav-rail");
 
@@ -46,8 +48,11 @@ public final class NavigationRail extends VBox {
         getChildren().addAll(brand, btnDownloads, btnQueue, btnScheduler, btnMedia, btnCatalog, btnSafety, spacer, btnSettings);
         
         group.selectedToggleProperty().addListener((obs, old, newVal) -> {
-            if (newVal != null && navListener != null) {
-                navListener.accept(((ToggleButton) newVal).getText());
+            if (newVal != null) {
+                currentNav = ((ToggleButton) newVal).getText();
+                if (navListener != null) {
+                    navListener.accept(currentNav);
+                }
             }
         });
     }
@@ -55,6 +60,10 @@ public final class NavigationRail extends VBox {
     private Consumer<String> navListener;
     public void setOnNavigated(Consumer<String> listener) {
         this.navListener = listener;
+    }
+    
+    public String getCurrentNav() {
+        return currentNav;
     }
     
     private ToggleButton createNavButton(String text, String svgPath, ToggleGroup group) {

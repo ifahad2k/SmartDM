@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="io.smartdm.desktop.shell.MainShellTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-20T11:01:26.380Z" hostname="IFAHAD2K" time="2.76">
-  <properties/>
-  <testcase name="shouldNavigateWithKeyboard(FxRobot)" classname="io.smartdm.desktop.shell.MainShellTest" time="2.76"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[Jul 20, 2026 5:01:26 PM com.sun.javafx.application.PlatformImpl startup
-WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @5ba3f27a'
-]]></system-err>
-</testsuite>

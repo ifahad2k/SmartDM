@@ -129,6 +129,8 @@ public class HttpProbeClient {
                         boolean acceptsRanges = response.statusCode() == 206 || contentRange != null;
                         
                         return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges);
+                    } catch (UnauthorizedException e) {
+                        throw e;
                     } catch (Exception e) {
                         throw new RuntimeException("Failed to process GET Range response", e);
                     }

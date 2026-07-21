@@ -234,8 +234,8 @@ public class SmartDmApp extends Application {
         queueCoordinatorRef.set(queueCoordinator);
         starterRef.set(starter);
 
-        // Setup a Default Main Queue (Concurrency 2), default to PAUSED so items can be scheduled or queued
-        io.smartdm.domain.DownloadQueue[] currentQueueRef = { new io.smartdm.domain.DownloadQueue("main-queue", "Main Queue", 2, null, io.smartdm.domain.DownloadQueue.Status.PAUSED) };
+        // Setup a Default Main Queue (Concurrency 4), default to PAUSED so items can be scheduled or queued
+        io.smartdm.domain.DownloadQueue[] currentQueueRef = { new io.smartdm.domain.DownloadQueue("main-queue", "Main Queue", 4, null, io.smartdm.domain.DownloadQueue.Status.PAUSED) };
         queueCoordinator.updateQueue(currentQueueRef[0]);
 
         scheduleRunner = 
@@ -347,7 +347,8 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onDelete(Download download, boolean permanent) {
-                Runnable deleteAction = () -> {
+                // Always try to cancel the engine session first, regardless of state
+                coordinator.cancel(download.id()).whenComplete((v, ex) -> {
                     scheduleRepo.delete(download.id().value());
                     repository.delete(download.id());
                     
@@ -370,13 +371,7 @@ public class SmartDmApp extends Application {
                             } catch (Exception ignored) {}
                         });
                     }
-                };
-
-                if (download.state() == DownloadState.DOWNLOADING || download.state() == DownloadState.PROBING) {
-                    coordinator.cancel(download.id()).thenRun(deleteAction);
-                } else {
-                    deleteAction.run();
-                }
+                });
             }
 
             @Override

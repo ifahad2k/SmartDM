@@ -338,51 +338,106 @@
     -fx-background-color: transparent;
     -fx-border-color: transparent;
 }
-.list-view .scroll-bar:horizontal .track,
-.list-view .scroll-bar:vertical .track {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-}
-.list-view .scroll-bar:horizontal .thumb,
-.list-view .scroll-bar:vertical .thumb {
-    -fx-background-color: rgba(255,255,255,0.2);
-    -fx-background-radius: 4px;
-}
 
 .scroll-pane {
     -fx-background-color: transparent;
     -fx-background: transparent;
 }
+
+/* Override all scrollbars including Modena specific ones */
+.scroll-bar:horizontal .track,
+.scroll-bar:vertical .track,
+.scroll-bar:horizontal .track-background,
+.scroll-bar:vertical .track-background,
 .scroll-pane .scroll-bar:horizontal .track,
 .scroll-pane .scroll-bar:vertical .track,
 .scroll-pane .scroll-bar:horizontal .track-background,
-.scroll-pane .scroll-bar:vertical .track-background {
+.scroll-pane .scroll-bar:vertical .track-background,
+.list-view .scroll-bar:horizontal .track,
+.list-view .scroll-bar:vertical .track,
+.list-view .scroll-bar:horizontal .track-background,
+.list-view .scroll-bar:vertical .track-background,
+.text-area .scroll-bar:horizontal .track,
+.text-area .scroll-bar:vertical .track,
+.text-area .scroll-bar:horizontal .track-background,
+.text-area .scroll-bar:vertical .track-background,
+.text-area .scroll-pane .scroll-bar:horizontal .track,
+.text-area .scroll-pane .scroll-bar:vertical .track,
+.text-area .scroll-pane .scroll-bar:horizontal .track-background,
+.text-area .scroll-pane .scroll-bar:vertical .track-background {
     -fx-background-color: transparent;
     -fx-border-color: transparent;
 }
+
+.scroll-bar:horizontal .thumb,
+.scroll-bar:vertical .thumb,
 .scroll-pane .scroll-bar:horizontal .thumb,
-.scroll-pane .scroll-bar:vertical .thumb {
+.scroll-pane .scroll-bar:vertical .thumb,
+.list-view .scroll-bar:horizontal .thumb,
+.list-view .scroll-bar:vertical .thumb,
+.text-area .scroll-bar:horizontal .thumb,
+.text-area .scroll-bar:vertical .thumb,
+.text-area .scroll-pane .scroll-bar:horizontal .thumb,
+.text-area .scroll-pane .scroll-bar:vertical .thumb {
     -fx-background-color: rgba(255,255,255,0.2);
     -fx-background-radius: 4px;
 }
+
+.scroll-bar:horizontal,
+.scroll-bar:vertical,
 .scroll-pane .scroll-bar:horizontal,
-.scroll-pane .scroll-bar:vertical {
+.scroll-pane .scroll-bar:vertical,
+.list-view .scroll-bar:horizontal,
+.list-view .scroll-bar:vertical,
+.text-area .scroll-bar:horizontal,
+.text-area .scroll-bar:vertical,
+.text-area .scroll-pane .scroll-bar:horizontal,
+.text-area .scroll-pane .scroll-bar:vertical {
     -fx-background-color: transparent;
 }
-.scroll-pane .scroll-bar:vertical {
+
+.scroll-bar:vertical,
+.scroll-pane .scroll-bar:vertical,
+.list-view .scroll-bar:vertical,
+.text-area .scroll-bar:vertical,
+.text-area .scroll-pane .scroll-bar:vertical {
     -fx-pref-width: 6px;
 }
-.scroll-pane .scroll-bar:horizontal {
+
+.scroll-bar:horizontal,
+.scroll-pane .scroll-bar:horizontal,
+.list-view .scroll-bar:horizontal,
+.text-area .scroll-bar:horizontal,
+.text-area .scroll-pane .scroll-bar:horizontal {
     -fx-pref-height: 6px;
 }
+
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button,
 .scroll-pane .scroll-bar .increment-button,
-.scroll-pane .scroll-bar .decrement-button {
+.scroll-pane .scroll-bar .decrement-button,
+.list-view .scroll-bar .increment-button,
+.list-view .scroll-bar .decrement-button,
+.text-area .scroll-bar .increment-button,
+.text-area .scroll-bar .decrement-button,
+.text-area .scroll-pane .scroll-bar .increment-button,
+.text-area .scroll-pane .scroll-bar .decrement-button {
     -fx-pref-width: 0;
     -fx-pref-height: 0;
     -fx-padding: 0;
+    -fx-background-color: transparent;
 }
+
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow,
 .scroll-pane .scroll-bar .increment-arrow,
-.scroll-pane .scroll-bar .decrement-arrow {
+.scroll-pane .scroll-bar .decrement-arrow,
+.list-view .scroll-bar .increment-arrow,
+.list-view .scroll-bar .decrement-arrow,
+.text-area .scroll-bar .increment-arrow,
+.text-area .scroll-bar .decrement-arrow,
+.text-area .scroll-pane .scroll-bar .increment-arrow,
+.text-area .scroll-pane .scroll-bar .decrement-arrow {
     -fx-shape: " ";
     -fx-padding: 0;
 }
@@ -402,6 +457,35 @@
 
 .row.selected {
     -fx-border-color: #37E9FF;
+    -fx-background-color: rgba(55,233,255,0.1);
+}
+
+.row-checkbox {
+    -fx-padding: 0 4px 0 0;
+}
+.row-checkbox .box {
+    -fx-background-color: rgba(255,255,255,0.09);
+    -fx-border-color: rgba(255,255,255,0.14);
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-min-width: 18px;
+    -fx-min-height: 18px;
+    -fx-max-width: 18px;
+    -fx-max-height: 18px;
+}
+.row-checkbox:hover .box {
+    -fx-background-color: rgba(255,255,255,0.13);
+    -fx-border-color: rgba(255,255,255,0.24);
+}
+.row-checkbox:selected .box {
+    -fx-background-color: #37E9FF;
+    -fx-border-color: #37E9FF;
+}
+.row-checkbox:selected .mark {
+    -fx-background-color: #04141A;
+    -fx-shape: "M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z";
+    -fx-scale-x: 0.8;
+    -fx-scale-y: 0.8;
 }
 
 .row-top {

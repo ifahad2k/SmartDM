@@ -1898,6 +1898,7 @@ Turn the feature-complete application into a coherent, minimal, responsive produ
 - Consistent empty/error/retry states.
 - Undo where safe.
 - First-run setup that does not force catalog, Gemini, clipboard, or browser integration.
+- Add a setting to control the rubber band selection scroll speed.
 
 #### 17.2 Themes
 

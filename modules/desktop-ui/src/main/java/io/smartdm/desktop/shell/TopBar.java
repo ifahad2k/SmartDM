@@ -9,16 +9,18 @@ import javafx.scene.layout.Priority;
 import javafx.geometry.Pos;
 import javafx.scene.shape.SVGPath;
 
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
+
+import io.smartdm.desktop.shell.ClipboardMonitor;
 import io.smartdm.domain.Download;
 import io.smartdm.domain.SourceUri;
 import io.smartdm.domain.Destination;
 import java.nio.file.Paths;
 
-import java.util.function.Supplier;
-
 public final class TopBar extends HBox {
-    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded) {
+    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected) {
         getStyleClass().add("topbar");
 
         // Search Field
@@ -55,9 +57,35 @@ public final class TopBar extends HBox {
         addBtn.setGraphic(addIcon);
         
         addBtn.setOnAction(e -> {
-            AddDownloadDialog d = new AddDownloadDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get());
-            d.setOnDownloadAdded(onDownloadAdded);
-            d.show();
+            ClipboardMonitor clipboardMonitor = new ClipboardMonitor();
+            List<String> newUrls = clipboardMonitor.checkClipboardOnFocus();
+            if (newUrls.size() > 1) {
+                BatchAddDialog bd = new BatchAddDialog((javafx.stage.Stage) getScene().getWindow());
+                bd.setInputText(String.join("\n", newUrls));
+                bd.showAndWait();
+                if (bd.isResultConfirmed() && bd.getBatchUrls() != null) {
+                    for (String url : bd.getBatchUrls()) {
+                        try {
+                            String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
+                            if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
+                            String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
+                            io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename));
+                            io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
+                            onDownloadAdded.accept(dl);
+                        } catch (Exception ex) {}
+                    }
+                    if (bd.isDownloadNowRequested() && onStartQueueRequested != null) {
+                        onStartQueueRequested.run();
+                    }
+                }
+            } else {
+                AddDownloadDialog d = new AddDownloadDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get());
+                d.setOnDownloadAdded(onDownloadAdded);
+                if (newUrls.size() == 1) {
+                    javafx.application.Platform.runLater(() -> d.setUrlText(newUrls.get(0)));
+                }
+                d.show();
+            }
         });
 
         Button importBtn = new Button("Import batch");
@@ -81,8 +109,25 @@ public final class TopBar extends HBox {
                         // Skip malformed URIs at this stage
                     }
                 }
+                if (d.isDownloadNowRequested() && onStartQueueRequested != null) {
+                    onStartQueueRequested.run();
+                }
             }
         });
+
+        // Delete Button
+        Button deleteBtn = new Button();
+        deleteBtn.getStyleClass().add("icon-btn");
+        SVGPath deleteTopIcon = new SVGPath();
+        deleteTopIcon.setContent("M3 6 h18 M19 6 v14 a2 2 0 0 1-2 2 H7 a2 2 0 0 1-2-2 V6 m3 0 V4 a2 2 0 0 1 2-2 h4 a2 2 0 0 1 2 2 v2");
+        deleteTopIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2; -fx-fill: transparent;");
+        deleteBtn.setGraphic(deleteTopIcon);
+        deleteBtn.setOnAction(e -> {
+            if (onDeleteSelected != null) {
+                onDeleteSelected.run();
+            }
+        });
+
         // Theme Toggle
         Button themeBtn = new Button();
         themeBtn.getStyleClass().add("icon-btn");
@@ -91,6 +136,6 @@ public final class TopBar extends HBox {
         themeIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2; -fx-fill: transparent;");
         themeBtn.setGraphic(themeIcon);
 
-        getChildren().addAll(searchWrap, spacer, addBtn, importBtn, themeBtn);
+        getChildren().addAll(searchWrap, spacer, addBtn, importBtn, deleteBtn, themeBtn);
     }
 }

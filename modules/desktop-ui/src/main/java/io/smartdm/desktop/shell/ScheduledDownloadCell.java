@@ -26,6 +26,7 @@ public class ScheduledDownloadCell extends ListCell<Download> {
     
     private Download currentItem;
     
+    @SuppressWarnings("this-escape")
     public ScheduledDownloadCell(Consumer<Download> onRemoveTimer) {
         root = new HBox(12);
         root.getStyleClass().add("list-cell");
@@ -54,6 +55,7 @@ public class ScheduledDownloadCell extends ListCell<Download> {
         
         timeline = new Timeline(new KeyFrame(Duration.seconds(1), e -> updateCountdown()));
         timeline.setCycleCount(Animation.INDEFINITE);
+        // Drag selection is handled by RubberBandSelection
     }
     
     @Override

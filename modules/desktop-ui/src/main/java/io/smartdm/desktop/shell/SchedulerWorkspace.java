@@ -70,7 +70,15 @@ public final class SchedulerWorkspace extends VBox {
         
         scheduledDownloadsList = new ListView<>();
         scheduledDownloadsList.getStyleClass().add("list");
-        VBox.setVgrow(scheduledDownloadsList, Priority.ALWAYS);
+        scheduledDownloadsList.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
+        scheduledDownloadsList.setOnKeyPressed(e -> {
+            if (e.isControlDown() && e.getCode() == javafx.scene.input.KeyCode.A) {
+                scheduledDownloadsList.getSelectionModel().selectAll();
+                e.consume();
+            }
+        });
+        javafx.scene.layout.StackPane wrappedScheduledList = RubberBandSelection.wrap(this, scheduledDownloadsList);
+        VBox.setVgrow(wrappedScheduledList, Priority.ALWAYS);
         
         Label noDownloadsLabel = new Label("No individual downloads are scheduled.");
         noDownloadsLabel.setStyle("-fx-text-fill: #A6ADC4; -fx-font-size: 16px;");
@@ -196,7 +204,7 @@ public final class SchedulerWorkspace extends VBox {
         
         addScheduleBox.getChildren().addAll(queueCombo, scheduleCombo, customSchedBox, addScheduleBtn);
         
-        downloadsBox.getChildren().addAll(downloadsTitle, addScheduleBox, scheduledDownloadsList);
+        downloadsBox.getChildren().addAll(downloadsTitle, addScheduleBox, wrappedScheduledList);
         
         VBox contentBox = new VBox(12);
         VBox.setVgrow(contentBox, Priority.ALWAYS);
@@ -217,5 +225,29 @@ public final class SchedulerWorkspace extends VBox {
         if (scheduledDownloadsSupplier != null) {
             scheduledDownloads.setAll(scheduledDownloadsSupplier.get());
         }
+    }
+
+    public void deleteSelected() {
+        java.util.List<Download> selected = new java.util.ArrayList<>(scheduledDownloadsList.getSelectionModel().getSelectedItems());
+        if (selected.isEmpty()) return;
+
+        javafx.stage.Stage owner = (javafx.stage.Stage) getScene().getWindow();
+        DeleteConfirmDialog dialog;
+        if (selected.size() == 1) {
+            dialog = new DeleteConfirmDialog(owner, selected.get(0).destination().value().getFileName().toString());
+        } else {
+            dialog = new DeleteConfirmDialog(owner, selected.size());
+        }
+        
+        DeleteConfirmDialog.DeleteChoice choice = dialog.showAndGetChoice();
+        if (choice == DeleteConfirmDialog.DeleteChoice.CANCEL) return;
+
+        boolean perm = choice == DeleteConfirmDialog.DeleteChoice.PERMANENT;
+        for (Download d : selected) {
+            if (downloadsWorkspace.getListener() != null) {
+                downloadsWorkspace.getListener().onDelete(d, perm);
+            }
+        }
+        scheduledDownloadsList.getSelectionModel().clearSelection();
     }
 }

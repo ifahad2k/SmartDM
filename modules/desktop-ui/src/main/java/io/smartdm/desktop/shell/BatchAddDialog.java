@@ -19,9 +19,11 @@ public final class BatchAddDialog extends GlassmorphicDialog {
     private final ListView<String> parsedUrlsList;
     private final Button addBtn;
     private final Label countLabel;
+    private final Button downloadNowBtn;
     private List<String> currentBatchUrls;
     
     private boolean resultConfirmed = false;
+    private boolean downloadNowRequested = false;
 
     public BatchAddDialog(Stage owner) {
         super(owner, "SmartDM — Batch Add");
@@ -40,6 +42,7 @@ public final class BatchAddDialog extends GlassmorphicDialog {
         inputArea = new TextArea();
         inputArea.setPromptText("http://example.com/file1.zip\nhttp://example.com/file2.zip\nhttp://example.com/image_[01-50].jpg");
         inputArea.getStyleClass().add("text-input");
+        inputArea.setStyle("-fx-control-inner-background: #1C1E26; -fx-text-fill: white; -fx-border-color: #2D313E; -fx-border-radius: 6; -fx-background-radius: 6;");
         inputArea.setPrefRowCount(6);
         VBox.setVgrow(inputArea, Priority.ALWAYS);
 
@@ -56,6 +59,7 @@ public final class BatchAddDialog extends GlassmorphicDialog {
         
         parsedUrlsList = new ListView<>();
         parsedUrlsList.getStyleClass().add("queue-list");
+        parsedUrlsList.setStyle("-fx-control-inner-background: #1C1E26; -fx-text-fill: white; -fx-border-color: #2D313E; -fx-border-radius: 6; -fx-background-radius: 6;");
         parsedUrlsList.setPrefHeight(150);
         VBox.setVgrow(parsedUrlsList, Priority.ALWAYS);
 
@@ -74,14 +78,23 @@ public final class BatchAddDialog extends GlassmorphicDialog {
         cancelBtn.setOnAction(e -> close());
 
         addBtn = new Button("Add to Queue");
-        addBtn.getStyleClass().addAll("btn", "btn-primary");
+        addBtn.getStyleClass().addAll("btn", "btn-secondary");
         addBtn.setDisable(true);
         addBtn.setOnAction(e -> {
             resultConfirmed = true;
             close();
         });
 
-        HBox actions = new HBox(8, cancelBtn, addBtn);
+        downloadNowBtn = new Button("Download Now");
+        downloadNowBtn.getStyleClass().addAll("btn", "btn-primary");
+        downloadNowBtn.setDisable(true);
+        downloadNowBtn.setOnAction(e -> {
+            downloadNowRequested = true;
+            resultConfirmed = true;
+            close();
+        });
+
+        HBox actions = new HBox(8, cancelBtn, addBtn, downloadNowBtn);
         actions.setAlignment(Pos.CENTER_RIGHT);
 
         parseBtn.setOnAction(e -> {
@@ -90,6 +103,7 @@ public final class BatchAddDialog extends GlassmorphicDialog {
             parsedUrlsList.getItems().setAll(parsed);
             countLabel.setText(parsed.size() + " URLs found");
             addBtn.setDisable(parsed.isEmpty());
+            downloadNowBtn.setDisable(parsed.isEmpty());
         });
 
         VBox content = new VBox(20, head, inputGroup, parseBtn, previewGroup, actions);
@@ -108,6 +122,10 @@ public final class BatchAddDialog extends GlassmorphicDialog {
         return resultConfirmed;
     }
 
+    public boolean isDownloadNowRequested() {
+        return downloadNowRequested;
+    }
+
     public List<String> getBatchUrls() {
         return currentBatchUrls;
     }
@@ -120,5 +138,8 @@ public final class BatchAddDialog extends GlassmorphicDialog {
         parsedUrlsList.getItems().setAll(parsed);
         countLabel.setText(parsed.size() + " URLs found");
         addBtn.setDisable(parsed.isEmpty());
+        if (downloadNowBtn != null) {
+            downloadNowBtn.setDisable(parsed.isEmpty());
+        }
     }
 }

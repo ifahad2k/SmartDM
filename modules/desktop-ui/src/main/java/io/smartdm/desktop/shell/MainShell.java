@@ -98,6 +98,19 @@ public final class MainShell extends VBox {
         topBar = new TopBar(() -> workspace.getDownloadsList(), download -> {
             workspace.addDownload(download);
             onDownloadRequested.accept(download);
+        }, () -> {
+            if (onQueueStatusChange != null) {
+                onQueueStatusChange.accept(io.smartdm.domain.DownloadQueue.Status.ACTIVE);
+            }
+        }, () -> {
+            String nav = navigationRail.getCurrentNav();
+            if ("Downloads".equals(nav) && workspace != null) {
+                workspace.deleteSelected();
+            } else if ("Queue".equals(nav) && queueWorkspace != null) {
+                queueWorkspace.deleteSelected();
+            } else if ("Scheduler".equals(nav) && schedulerWorkspace != null) {
+                schedulerWorkspace.deleteSelected();
+            }
         });
         
         queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate);
@@ -131,47 +144,7 @@ public final class MainShell extends VBox {
 
         getChildren().addAll(titleBar, body);
         
-        // Clipboard Monitoring
-        ClipboardMonitor clipboardMonitor = new ClipboardMonitor();
-        stage.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
-            if (isNowFocused) {
-                java.util.List<String> newUrls = clipboardMonitor.checkClipboardOnFocus();
-                if (!newUrls.isEmpty()) {
-                    if (newUrls.size() == 1) {
-                        AddDownloadDialog d = new AddDownloadDialog(stage, workspace.getDownloadsList());
-                        d.setOnDownloadAdded(download -> {
-                            workspace.addDownload(download);
-                            onDownloadRequested.accept(download);
-                        });
-                        Platform.runLater(() -> {
-                            d.setUrlText(newUrls.get(0));
-                        });
-                        d.show();
-                    } else {
-                        BatchAddDialog d = new BatchAddDialog(stage);
-                        Platform.runLater(() -> d.setInputText(String.join("\n", newUrls)));
-                        d.showAndWait();
-                        if (d.isResultConfirmed() && d.getBatchUrls() != null) {
-                            for (String url : d.getBatchUrls()) {
-                                try {
-                                    String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
-                                    if (filename == null || filename.isEmpty()) {
-                                        filename = "download_" + System.currentTimeMillis();
-                                    }
-                                    String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                                    io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename));
-                                    io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
-                                    workspace.addDownload(dl);
-                                    onDownloadRequested.accept(dl);
-                                } catch (Exception ex) {
-                                    // Skip malformed
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        // Clipboard Monitoring logic moved to TopBar
     }
 
     public NavigationRail getNavigationRail() {
