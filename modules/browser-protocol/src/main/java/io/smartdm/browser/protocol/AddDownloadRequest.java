@@ -1,4 +1,11 @@
 package io.smartdm.browser.protocol;
 
-public record AddDownloadRequest(String url, String fileName, String referer, String userAgent) implements NativeMessage {
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+public record AddDownloadRequest(
+    @JsonProperty("url") String url,
+    @JsonProperty("fileName") String fileName,
+    @JsonProperty("referer") String referer,
+    @JsonProperty("userAgent") String userAgent
+) implements NativeMessage {
 }

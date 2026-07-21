@@ -1,4 +1,8 @@
 package io.smartdm.browser.protocol;
 
-public record GetMediaFormatsRequest(String url) implements NativeMessage {
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+public record GetMediaFormatsRequest(
+    @JsonProperty("url") String url
+) implements NativeMessage {
 }
