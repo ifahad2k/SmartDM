@@ -77,6 +77,9 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         root.getStyleClass().add("row");
         
+        HBox rowTop = new HBox();
+        rowTop.getStyleClass().add("row-top");
+        rowTop.setSpacing(12);
         rowTop.setMinWidth(0);
         
         selectBox.getStyleClass().add("row-checkbox");
