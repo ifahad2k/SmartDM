@@ -21,6 +21,7 @@ public class LocalIpcServer {
 
     public LocalIpcServer(Function<NativeMessage, String> messageHandler) {
         this.messageHandler = messageHandler;
+        this.mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         byte[] tokenBytes = new byte[32];
         new SecureRandom().nextBytes(tokenBytes);
         this.token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);

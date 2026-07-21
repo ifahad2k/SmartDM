@@ -511,6 +511,7 @@ public class SmartDmApp extends Application {
                 resp.put("formats", fallbacks);
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
+                System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " formatId=" + req.formatId());
                 openMediaOrStandardDialog(req.url(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
