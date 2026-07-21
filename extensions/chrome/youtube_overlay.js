@@ -83,7 +83,7 @@
     const host = document.createElement('div');
     host.className = 'smartdm-player-host';
     host.style.position = 'absolute';
-    host.style.top = '12px';
+    host.style.top = '24px';
     host.style.right = '12px';
     host.style.zIndex = '99999';
     host.style.pointerEvents = 'auto';
@@ -93,27 +93,31 @@
     shadow.innerHTML = `
       <style>
         .idm-banner {
-          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          background: rgba(15, 23, 42, 0.65);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
           color: #f8fafc;
-          border: 1px solid rgba(56, 189, 248, 0.5);
+          border: 1px solid rgba(56, 189, 248, 0.4);
           border-radius: 6px;
           padding: 6px 12px;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
           font-size: 12px;
           font-weight: 700;
-          cursor: pointer;
+          cursor: grab;
           display: flex;
           align-items: center;
           gap: 6px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-          transition: all 0.2s ease;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+          transition: background 0.2s ease, border-color 0.2s ease;
           user-select: none;
         }
+        .idm-banner:active {
+          cursor: grabbing;
+        }
         .idm-banner:hover {
-          background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+          background: rgba(2, 132, 199, 0.75);
           border-color: #38bdf8;
           box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
-          transform: translateY(-1px);
         }
         .play-icon {
           width: 0;
@@ -130,8 +134,9 @@
           top: 36px;
           right: 0;
           width: 270px;
-          background: rgba(15, 23, 42, 0.96);
-          backdrop-filter: blur(14px);
+          background: rgba(15, 23, 42, 0.75);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           border: 1px solid rgba(255, 255, 255, 0.2);
           border-radius: 8px;
           padding: 10px;
@@ -162,6 +167,9 @@
           flex-direction: column;
           gap: 6px;
           padding-right: 4px;
+        }
+        .popover-content:hover {
+          overflow-y: overlay;
         }
         .popover-content::-webkit-scrollbar {
           width: 5px;
@@ -235,7 +243,45 @@
       }
     });
 
+    // Draggable logic
+    let isDragging = false;
+    let initialX, initialY, currentX, currentY;
+    let xOffset = 0, yOffset = 0;
+    let dragStartX = 0, dragStartY = 0;
+
+    bannerBtn.addEventListener('mousedown', (e) => {
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      initialX = e.clientX - xOffset;
+      initialY = e.clientY - yOffset;
+      isDragging = true;
+    });
+
+    document.addEventListener('mouseup', () => {
+      initialX = currentX;
+      initialY = currentY;
+      isDragging = false;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        e.preventDefault();
+        currentX = e.clientX - initialX;
+        currentY = e.clientY - initialY;
+        xOffset = currentX;
+        yOffset = currentY;
+        host.style.transform = "translate3d(" + currentX + "px, " + currentY + "px, 0)";
+      }
+    });
+
     bannerBtn.addEventListener('click', (e) => {
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.sqrt(dx*dx + dy*dy) > 5) {
+        e.preventDefault();
+        return; // was a drag
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -261,13 +307,17 @@
   }
 
   function scanThumbnails() {
-    const anchors = document.querySelectorAll('a#thumbnail:not([' + PROCESSED_ATTR + ']), a[href*="/watch?v="]:not([' + PROCESSED_ATTR + ']), a[href*="/shorts/"]:not([' + PROCESSED_ATTR + '])');
+    const anchors = document.querySelectorAll('ytd-thumbnail a#thumbnail:not([' + PROCESSED_ATTR + ']), ytd-reel-item-renderer a[href*="/shorts/"]:not([' + PROCESSED_ATTR + '])');
     anchors.forEach(attachBadge);
   }
 
   function attachBadge(anchor) {
     if (anchor.getAttribute(PROCESSED_ATTR)) return;
     anchor.setAttribute(PROCESSED_ATTR, 'true');
+
+    if (!anchor.querySelector('img')) {
+      return; // Not a real thumbnail
+    }
 
     const parent = anchor.parentElement;
     if (parent && getComputedStyle(parent).position === 'static') {
@@ -320,8 +370,9 @@
           top: 28px;
           right: 0;
           width: 250px;
-          background: rgba(15, 23, 42, 0.95);
-          backdrop-filter: blur(12px);
+          background: rgba(15, 23, 42, 0.75);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 8px;
           padding: 10px;
