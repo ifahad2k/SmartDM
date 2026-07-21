@@ -477,7 +477,47 @@ public class SmartDmApp extends Application {
         queueWorkspaceRef.set(shell.getQueueWorkspace());
 
         ipcServer = new io.smartdm.application.ipc.LocalIpcServer(message -> {
-            if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
+            if (message instanceof io.smartdm.browser.protocol.GetMediaFormatsRequest req) {
+                try {
+                    io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
+                    if (toolMgr.isAvailable()) {
+                        io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url()).get(10, java.util.concurrent.TimeUnit.SECONDS);
+                        if (meta != null && meta.formats() != null) {
+                            com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                            java.util.Map<String, Object> resp = new java.util.HashMap<>();
+                            resp.put("success", true);
+                            resp.put("title", meta.title());
+                            resp.put("formats", meta.formats());
+                            return jsonMapper.writeValueAsString(resp);
+                        }
+                    }
+                } catch (Exception ex) {
+                    System.err.println("IPC format extraction error: " + ex.getMessage());
+                }
+                return "{\"success\":false,\"error\":\"Formats unavailable\"}";
+            } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
+                try {
+                    String filename = (req.fileName() != null && !req.fileName().isBlank()) ? req.fileName() : "video_" + System.currentTimeMillis() + ".mp4";
+                    String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
+                    Path targetPath = java.nio.file.Paths.get(defaultDir, filename);
+
+                    io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(
+                        io.smartdm.domain.SourceUri.of(req.url()),
+                        io.smartdm.domain.Destination.of(targetPath)
+                    );
+                    repository.save(dl);
+
+                    javafx.application.Platform.runLater(() -> {
+                        if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                    });
+
+                    io.smartdm.desktop.shell.MediaDownloadTracker.startDownload(dl, targetPath, req.url(), req.formatId());
+                    return "{\"success\":true}";
+                } catch (Exception ex) {
+                    return "{\"success\":false,\"error\":\"" + ex.getMessage() + "\"}";
+                }
+            } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
                 javafx.application.Platform.runLater(() -> {
                     io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(
                         null, 
@@ -530,6 +570,7 @@ public class SmartDmApp extends Application {
                     }
                 });
             }
+            return "{\"status\":\"ok\",\"version\":\"1.0\"}";
         });
         try {
             ipcServer.start(enginePool);

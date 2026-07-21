@@ -1,14 +1,14 @@
 const NATIVE_HOST_NAME = 'io.smartdm.host';
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
+browser.runtime.onInstalled.addListener(() => {
+  browser.contextMenus.create({
     id: 'download-link',
     title: 'Download with SmartDM',
     contexts: ['link', 'page', 'video', 'audio', 'image']
   });
 });
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+browser.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'download-link') {
     let url = info.linkUrl || info.srcUrl || info.pageUrl;
     if (url) {
@@ -17,9 +17,20 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-chrome.action.onClicked.addListener((tab) => {
+browser.browserAction.onClicked.addListener((tab) => {
   if (tab && tab.url) {
     sendToSmartDM(tab.url, tab.url);
+  }
+});
+
+browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD') {
+    browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, request).then(response => {
+      sendResponse(response);
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true; // Async response
   }
 });
 
@@ -33,11 +44,9 @@ function sendToSmartDM(url, referer) {
   };
 
   console.log('Sending message to native host:', message);
-  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('Error sending native message:', chrome.runtime.lastError.message);
-    } else {
-      console.log('Received response from native host:', response);
-    }
+  browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, message).then(response => {
+    console.log('Received response from native host:', response);
+  }).catch(err => {
+    console.error('Error sending native message:', err);
   });
 }

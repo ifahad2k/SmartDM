@@ -23,6 +23,19 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD') {
+    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse(response);
+      }
+    });
+    return true; // Async response
+  }
+});
+
 function sendToSmartDM(url, referer) {
   const message = {
     type: 'ADD_DOWNLOAD',

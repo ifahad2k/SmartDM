@@ -11,15 +11,15 @@ import java.nio.file.Paths;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.concurrent.ExecutorService;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class LocalIpcServer {
     private HttpServer server;
     private final String token;
-    private final Consumer<NativeMessage> messageHandler;
+    private final Function<NativeMessage, String> messageHandler;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public LocalIpcServer(Consumer<NativeMessage> messageHandler) {
+    public LocalIpcServer(Function<NativeMessage, String> messageHandler) {
         this.messageHandler = messageHandler;
         byte[] tokenBytes = new byte[32];
         new SecureRandom().nextBytes(tokenBytes);
@@ -46,9 +46,11 @@ public class LocalIpcServer {
                 byte[] requestBody = exchange.getRequestBody().readAllBytes();
                 NativeMessage message = mapper.readValue(requestBody, NativeMessage.class);
                 
-                messageHandler.accept(message);
-                
-                String responseJson = "{\"status\":\"ok\",\"version\":\"1.0\"}";
+                String responseJson = messageHandler.apply(message);
+                if (responseJson == null || responseJson.isBlank()) {
+                    responseJson = "{\"status\":\"ok\",\"version\":\"1.0\"}";
+                }
+
                 byte[] responseBytes = responseJson.getBytes();
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, responseBytes.length);

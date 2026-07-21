@@ -15,6 +15,13 @@
   "browser_action": {
     "default_title": "Download with SmartDM"
   },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube_overlay.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "applications": {
     "gecko": {
       "id": "integration@smartdm.io",
