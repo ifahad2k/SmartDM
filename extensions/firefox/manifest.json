@@ -7,6 +7,7 @@
     "contextMenus",
     "nativeMessaging",
     "activeTab",
+    "webRequest",
     "<all_urls>"
   ],
   "background": {
@@ -19,6 +20,12 @@
     {
       "matches": ["*://*.youtube.com/*"],
       "js": ["youtube_overlay.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": ["*://*.youtube.com/*"],
+      "js": ["universal_overlay.js"],
       "run_at": "document_idle"
     }
   ],

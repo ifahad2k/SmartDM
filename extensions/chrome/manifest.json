@@ -7,7 +7,8 @@
   "permissions": [
     "contextMenus",
     "nativeMessaging",
-    "activeTab"
+    "activeTab",
+    "webRequest"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -22,6 +23,12 @@
     {
       "matches": ["*://*.youtube.com/*"],
       "js": ["youtube_overlay.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": ["*://*.youtube.com/*"],
+      "js": ["universal_overlay.js"],
       "run_at": "document_idle"
     }
   ]
