@@ -23,6 +23,59 @@
     }
   }
 
+  function getDefaultFallbackFormats() {
+    return [
+      { formatId: 'best', resolution: '1080p HD', ext: 'mp4', fileSize: 0, isAudioOnly: false },
+      { formatId: '22', resolution: '720p HD', ext: 'mp4', fileSize: 0, isAudioOnly: false },
+      { formatId: '18', resolution: '480p', ext: 'mp4', fileSize: 0, isAudioOnly: false },
+      { formatId: '134', resolution: '360p', ext: 'mp4', fileSize: 0, isAudioOnly: false },
+      { formatId: '140', resolution: 'Audio Only', ext: 'm4a', fileSize: 0, isAudioOnly: true }
+    ];
+  }
+
+  function renderFormatItems(container, formats, videoUrl, popover) {
+    container.innerHTML = '';
+    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+
+    formats.forEach((fmt) => {
+      const item = document.createElement('div');
+      item.className = 'format-item';
+
+      const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
+      const extText = (fmt.ext || 'MP4').toUpperCase();
+      const sizeText = fmt.fileSize > 0 
+        ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
+        : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
+
+      item.innerHTML = `
+        <div class="format-info">
+          <span class="format-title">${resolution} (${extText})</span>
+        </div>
+        <span class="format-badge">${sizeText}</span>
+      `;
+
+      item.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
+
+        runtime.sendMessage(
+          {
+            type: 'START_MEDIA_DOWNLOAD',
+            url: videoUrl,
+            formatId: fmt.formatId,
+            fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
+          },
+          () => {
+            setTimeout(() => popover.classList.remove('active'), 800);
+          }
+        );
+      });
+
+      container.appendChild(item);
+    });
+  }
+
   function scanPlayer() {
     const player = document.querySelector('#movie_player:not([' + PLAYER_PROCESSED_ATTR + ']), .html5-video-player:not([' + PLAYER_PROCESSED_ATTR + '])');
     if (!player) return;
@@ -174,6 +227,16 @@
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
 
+    // Auto-close on click outside
+    document.addEventListener('click', (e) => {
+      if (popover.classList.contains('active')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        if (!path.includes(host) && !host.contains(e.target)) {
+          popover.classList.remove('active');
+        }
+      }
+    });
+
     bannerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -187,55 +250,13 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text">Fetching formats...</div>';
+      renderFormatItems(content, getDefaultFallbackFormats(), videoUrl, popover);
 
       const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-
       runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        if (!res || !res.success || !res.formats || res.formats.length === 0) {
-          content.innerHTML = '<div class="status-text" style="color:#ef4444;">Formats unavailable</div>';
-          return;
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          renderFormatItems(content, res.formats, videoUrl, popover);
         }
-
-        content.innerHTML = '';
-
-        res.formats.forEach((fmt) => {
-          const item = document.createElement('div');
-          item.className = 'format-item';
-
-          const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
-          const extText = (fmt.ext || 'MP4').toUpperCase();
-          const sizeText = fmt.fileSize > 0 
-            ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
-            : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Media Format');
-
-          item.innerHTML = `
-            <div class="format-info">
-              <span class="format-title">${resolution} (${extText})</span>
-            </div>
-            <span class="format-badge">${sizeText}</span>
-          `;
-
-          item.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            content.innerHTML = '<div class="status-text" style="color:#38bdf8;">Opening SmartDM...</div>';
-
-            runtime.sendMessage(
-              {
-                type: 'START_MEDIA_DOWNLOAD',
-                url: videoUrl,
-                formatId: fmt.formatId,
-                fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
-              },
-              () => {
-                setTimeout(() => popover.classList.remove('active'), 1000);
-              }
-            );
-          });
-
-          content.appendChild(item);
-        });
       });
     });
 
@@ -396,6 +417,16 @@
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
 
+    // Auto-close on click outside
+    document.addEventListener('click', (e) => {
+      if (popover.classList.contains('active')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        if (!path.includes(host) && !host.contains(e.target)) {
+          popover.classList.remove('active');
+        }
+      }
+    });
+
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -407,52 +438,13 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text">Fetching formats...</div>';
+      renderFormatItems(content, getDefaultFallbackFormats(), videoUrl, popover);
 
       const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-
       runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        if (!res || !res.success || !res.formats || res.formats.length === 0) {
-          content.innerHTML = '<div class="status-text" style="color:#ef4444;">Formats unavailable</div>';
-          return;
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          renderFormatItems(content, res.formats, videoUrl, popover);
         }
-
-        content.innerHTML = '';
-        res.formats.forEach((fmt) => {
-          const item = document.createElement('div');
-          item.className = 'format-item';
-          const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
-          const sizeText = fmt.fileSize > 0 
-            ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
-            : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : (fmt.ext || 'MP4').toUpperCase());
-
-          item.innerHTML = `
-            <div class="format-info">
-              <span class="format-name">${resolution}</span>
-            </div>
-            <span class="format-ext">${sizeText}</span>
-          `;
-
-          item.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            content.innerHTML = '<div class="status-text" style="color:#38bdf8;">Opening SmartDM...</div>';
-
-            runtime.sendMessage(
-              {
-                type: 'START_MEDIA_DOWNLOAD',
-                url: videoUrl,
-                formatId: fmt.formatId,
-                fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
-              },
-              () => {
-                setTimeout(() => popover.classList.remove('active'), 1000);
-              }
-            );
-          });
-
-          content.appendChild(item);
-        });
       });
     });
 
