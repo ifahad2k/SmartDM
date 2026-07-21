@@ -163,9 +163,9 @@
         Download this video
       </button>
       <div class="popover">
-        <div class="popover-title">SmartDM Video Formats</div>
+        <div class="popover-title">Select Quality / Format</div>
         <div class="popover-content">
-          <div class="status-text">Probing video formats...</div>
+          <div class="status-text">Fetching formats...</div>
         </div>
       </div>
     `;
@@ -180,9 +180,6 @@
 
       const videoUrl = getCanonicalUrl(window.location.href);
 
-      // Immediately pop up SmartDM window on screen!
-      chrome.runtime.sendMessage({ type: 'START_MEDIA_DOWNLOAD', url: videoUrl });
-
       const isActive = popover.classList.contains('active');
       if (isActive) {
         popover.classList.remove('active');
@@ -190,15 +187,16 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM Window...</div>';
+      content.innerHTML = '<div class="status-text">Fetching formats...</div>';
 
       chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
         if (!res || !res.success || !res.formats || res.formats.length === 0) {
-          setTimeout(() => popover.classList.remove('active'), 1200);
+          content.innerHTML = '<div class="status-text" style="color:#ef4444;">Formats unavailable</div>';
           return;
         }
 
         content.innerHTML = '';
+
         res.formats.forEach((fmt) => {
           const item = document.createElement('div');
           item.className = 'format-item';
@@ -219,13 +217,19 @@
           item.addEventListener('click', (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
-            chrome.runtime.sendMessage({
-              type: 'START_MEDIA_DOWNLOAD',
-              url: videoUrl,
-              formatId: fmt.formatId,
-              fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
-            });
-            popover.classList.remove('active');
+            content.innerHTML = '<div class="status-text" style="color:#38bdf8;">Opening SmartDM...</div>';
+
+            chrome.runtime.sendMessage(
+              {
+                type: 'START_MEDIA_DOWNLOAD',
+                url: videoUrl,
+                formatId: fmt.formatId,
+                fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
+              },
+              () => {
+                setTimeout(() => popover.classList.remove('active'), 1000);
+              }
+            );
           });
 
           content.appendChild(item);
@@ -379,21 +383,73 @@
         SmartDM
       </button>
       <div class="popover">
-        <div class="popover-title">SmartDM Video Download</div>
+        <div class="popover-title">Select Quality / Format</div>
         <div class="popover-content">
-          <div class="status-text">Probing video formats...</div>
+          <div class="status-text">Fetching formats...</div>
         </div>
       </div>
     `;
 
     const btn = shadow.querySelector('.badge-btn');
+    const popover = shadow.querySelector('.popover');
+    const content = shadow.querySelector('.popover-content');
 
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
 
-      // Immediately trigger SmartDM pop-up window!
-      chrome.runtime.sendMessage({ type: 'START_MEDIA_DOWNLOAD', url: videoUrl });
+      const isActive = popover.classList.contains('active');
+      if (isActive) {
+        popover.classList.remove('active');
+        return;
+      }
+
+      popover.classList.add('active');
+      content.innerHTML = '<div class="status-text">Fetching formats...</div>';
+
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+        if (!res || !res.success || !res.formats || res.formats.length === 0) {
+          content.innerHTML = '<div class="status-text" style="color:#ef4444;">Formats unavailable</div>';
+          return;
+        }
+
+        content.innerHTML = '';
+        res.formats.forEach((fmt) => {
+          const item = document.createElement('div');
+          item.className = 'format-item';
+          const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
+          const sizeText = fmt.fileSize > 0 
+            ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
+            : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : (fmt.ext || 'MP4').toUpperCase());
+
+          item.innerHTML = `
+            <div class="format-info">
+              <span class="format-name">${resolution}</span>
+            </div>
+            <span class="format-ext">${sizeText}</span>
+          `;
+
+          item.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            content.innerHTML = '<div class="status-text" style="color:#38bdf8;">Opening SmartDM...</div>';
+
+            chrome.runtime.sendMessage(
+              {
+                type: 'START_MEDIA_DOWNLOAD',
+                url: videoUrl,
+                formatId: fmt.formatId,
+                fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
+              },
+              () => {
+                setTimeout(() => popover.classList.remove('active'), 1000);
+              }
+            );
+          });
+
+          content.appendChild(item);
+        });
+      });
     });
 
     if (anchor.style.position === 'static' || !anchor.style.position) {

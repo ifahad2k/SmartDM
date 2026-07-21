@@ -147,8 +147,12 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
             formatCombo.getItems().addAll(metadata.formats());
             MediaFormat selectedFmt = metadata.formats().get(0);
             if (preferredFormatId != null && !preferredFormatId.isBlank()) {
+                String pref = preferredFormatId.toLowerCase().trim();
                 for (MediaFormat fmt : metadata.formats()) {
-                    if (fmt.formatId().equalsIgnoreCase(preferredFormatId)) {
+                    if (fmt.formatId().equalsIgnoreCase(pref) ||
+                        (fmt.resolution() != null && fmt.resolution().toLowerCase().contains(pref)) ||
+                        (pref.contains("audio") && fmt.isAudioOnly()) ||
+                        (fmt.ext() != null && fmt.ext().equalsIgnoreCase(pref))) {
                         selectedFmt = fmt;
                         break;
                     }
