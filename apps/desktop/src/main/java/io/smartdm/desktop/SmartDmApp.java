@@ -618,11 +618,20 @@ public class SmartDmApp extends Application {
         SingleDownloadCoordinator coordinator
     ) {
         String lower = (url != null) ? url.toLowerCase() : "";
-        boolean isMediaUrl = lower.contains("youtube.com") || lower.contains("youtu.be") ||
+        boolean isMediaUrl = (preferredFormatId != null && !preferredFormatId.isBlank()) ||
+                             lower.contains("youtube.com") || lower.contains("youtu.be") ||
+                             lower.contains("pornhub.com") || lower.contains("xhamster.com") ||
+                             lower.contains("xnxx.com") || lower.contains("xvideos.com") ||
+                             lower.contains("dailymotion.com") || lower.contains("vimeo.com") ||
                              lower.contains("facebook.com") || lower.contains("instagram.com") ||
-                             lower.contains("tiktok.com") || lower.contains("reddit.com") ||
-                             lower.contains("pornhub.com") || lower.contains("vimeo.com") ||
-                             lower.contains("/watch?v=") || lower.contains("/shorts/");
+                             lower.contains("tiktok.com") || lower.contains("twitter.com") ||
+                             lower.contains("x.com") || lower.contains("twitch.tv") ||
+                             lower.contains("bilibili.com") || lower.contains("reddit.com") ||
+                             lower.contains("/videos/") || lower.contains("/video/") ||
+                             lower.contains("/video-") || lower.contains("/v/") ||
+                             lower.contains("/watch") || lower.contains("/reel/") ||
+                             lower.contains("/shorts/") || lower.contains(".mp4") ||
+                             lower.contains(".m3u8") || lower.contains(".mpd") || lower.contains(".webm");
 
         io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
         if (isMediaUrl && toolMgr.isAvailable()) {
