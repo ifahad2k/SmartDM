@@ -13,6 +13,19 @@ public record MediaFormat(
     boolean isAudioOnly,
     boolean isVideoOnly
 ) {
+    public String getFormattedSize() {
+        if (fileSize > 0) {
+            if (fileSize < 1024) return fileSize + " B";
+            int exp = (int) (Math.log(fileSize) / Math.log(1024));
+            char pre = "KMGTPE".charAt(exp - 1);
+            return String.format("%.1f %sB", fileSize / Math.pow(1024, exp), pre);
+        }
+        if (tbr > 0) {
+            return String.format("~%.0f kbps", tbr);
+        }
+        return "Unknown size";
+    }
+
     public String getDisplayName() {
         StringBuilder sb = new StringBuilder();
         if (isAudioOnly) {
@@ -30,15 +43,8 @@ public record MediaFormat(
             }
         }
         if (fileSize > 0) {
-            sb.append(" - ").append(formatSize(fileSize));
+            sb.append(" - ").append(getFormattedSize());
         }
         return sb.toString();
-    }
-
-    private static String formatSize(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        int exp = (int) (Math.log(bytes) / Math.log(1024));
-        char pre = "KMGTPE".charAt(exp - 1);
-        return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
 }

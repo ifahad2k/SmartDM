@@ -513,7 +513,10 @@ public class SmartDmApp extends Application {
                                                 if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                                             }
                                         );
+                                        dlg.setAlwaysOnTop(true);
                                         dlg.show();
+                                        dlg.toFront();
+                                        dlg.requestFocus();
                                     }
                                 });
                             });
