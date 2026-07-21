@@ -307,17 +307,14 @@
   }
 
   function scanThumbnails() {
-    const anchors = document.querySelectorAll('ytd-thumbnail a#thumbnail:not([' + PROCESSED_ATTR + ']), ytd-reel-item-renderer a[href*="/shorts/"]:not([' + PROCESSED_ATTR + '])');
+    // Only target actual thumbnails, avoiding title links which caused the double icon
+    const anchors = document.querySelectorAll('a#thumbnail:not([' + PROCESSED_ATTR + ']), a.ytd-thumbnail:not([' + PROCESSED_ATTR + ']), ytd-reel-item-renderer a[href*="/shorts/"]:not([' + PROCESSED_ATTR + '])');
     anchors.forEach(attachBadge);
   }
 
   function attachBadge(anchor) {
     if (anchor.getAttribute(PROCESSED_ATTR)) return;
     anchor.setAttribute(PROCESSED_ATTR, 'true');
-
-    if (!anchor.querySelector('img')) {
-      return; // Not a real thumbnail
-    }
 
     const parent = anchor.parentElement;
     if (parent && getComputedStyle(parent).position === 'static') {
