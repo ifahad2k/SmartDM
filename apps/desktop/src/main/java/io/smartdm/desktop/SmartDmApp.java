@@ -497,91 +497,12 @@ public class SmartDmApp extends Application {
                 }
                 return "{\"success\":false,\"error\":\"Formats unavailable\"}";
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
-                String url = req.url();
-                javafx.application.Platform.runLater(() -> {
-                    try {
-                        io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
-                        if (toolMgr.isAvailable()) {
-                            io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                            extractor.extractMetadataAsync(url)
-                                .thenAccept(meta -> javafx.application.Platform.runLater(() -> {
-                                    if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
-                                        io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
-                                            null,
-                                            meta,
-                                            dl -> {
-                                                repository.save(dl);
-                                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                                            }
-                                        );
-                                        dlg.setAlwaysOnTop(true);
-                                        dlg.show();
-                                        dlg.toFront();
-                                        dlg.requestFocus();
-                                    } else {
-                                        io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
-                                        d.setOnDownloadAdded(dl -> {
-                                            repository.save(dl);
-                                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                                        });
-                                        d.setUrlText(url);
-                                        d.setAlwaysOnTop(true);
-                                        d.show();
-                                        d.toFront();
-                                        d.requestFocus();
-                                    }
-                                }))
-                                .exceptionally(ex -> {
-                                    javafx.application.Platform.runLater(() -> {
-                                        io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
-                                        d.setOnDownloadAdded(dl -> {
-                                            repository.save(dl);
-                                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                                        });
-                                        d.setUrlText(url);
-                                        d.setAlwaysOnTop(true);
-                                        d.show();
-                                        d.toFront();
-                                        d.requestFocus();
-                                    });
-                                    return null;
-                                });
-                        } else {
-                            io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
-                            d.setOnDownloadAdded(dl -> {
-                                repository.save(dl);
-                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                            });
-                            d.setUrlText(url);
-                            d.setAlwaysOnTop(true);
-                            d.show();
-                            d.toFront();
-                            d.requestFocus();
-                        }
-                    } catch (Exception ex) {
-                        System.err.println("Failed to open dialog from browser request: " + ex.getMessage());
-                    }
-                });
+                openMediaOrStandardDialog(req.url(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                javafx.application.Platform.runLater(() -> {
-                    io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(
-                        null, 
-                        repository.findAll()
-                    );
-                    d.setOnDownloadAdded(dl -> {
-                        repository.save(dl);
-                        if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
-                            io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
-                            mainQueueItems.add(item);
-                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
-                        } else {
-                            enginePool.submit(() -> coordinator.execute(dl));
-                        }
-                    });
-                    d.setUrlText(req.url());
-                    d.show();
-                });
+                openMediaOrStandardDialog(req.url(), null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
+                return "{\"status\":\"ok\",\"version\":\"1.0\"}";
+            }
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
                     io.smartdm.desktop.shell.BatchAddDialog d = new io.smartdm.desktop.shell.BatchAddDialog(primaryStage);
@@ -664,6 +585,97 @@ public class SmartDmApp extends Application {
         if (profileLock != null) {
             profileLock.close();
         }
+    }
+
+    private static void openMediaOrStandardDialog(
+        String url,
+        String preferredFormatId,
+        io.smartdm.persistence.api.DownloadRepository repository,
+        io.smartdm.desktop.shell.DownloadWorkspace[] workspaceRef,
+        java.util.List<io.smartdm.domain.QueueItem> mainQueueItems,
+        java.util.concurrent.atomic.AtomicReference<io.smartdm.domain.QueueCoordinator> queueCoordinatorRef,
+        java.util.concurrent.ExecutorService enginePool,
+        io.smartdm.engine.DownloadCoordinator coordinator
+    ) {
+        javafx.application.Platform.runLater(() -> {
+            String lower = (url != null) ? url.toLowerCase() : "";
+            boolean isMediaUrl = lower.contains("youtube.com") || lower.contains("youtu.be") ||
+                                 lower.contains("facebook.com") || lower.contains("instagram.com") ||
+                                 lower.contains("tiktok.com") || lower.contains("reddit.com") ||
+                                 lower.contains("pornhub.com") || lower.contains("vimeo.com") ||
+                                 lower.contains("/watch?v=") || lower.contains("/shorts/");
+
+            io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
+            if (isMediaUrl && toolMgr.isAvailable()) {
+                io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                extractor.extractMetadataAsync(url)
+                    .thenAccept(meta -> javafx.application.Platform.runLater(() -> {
+                        io.smartdm.media.api.MediaMetadata targetMeta = meta;
+                        if (targetMeta == null || targetMeta.formats() == null || targetMeta.formats().isEmpty()) {
+                            java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
+                                new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p", "Best Quality", 0, "h264", "aac", 0, 30, false, false),
+                                new io.smartdm.media.api.MediaFormat("22", "mp4", "720p", "720p HD", 0, "h264", "aac", 0, 30, false, false),
+                                new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio", "Audio Only (M4A)", 0, "none", "aac", 128, 0, true, false)
+                            );
+                            targetMeta = new io.smartdm.media.api.MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, java.util.List.of());
+                        }
+                        io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
+                            null,
+                            targetMeta,
+                            preferredFormatId,
+                            dl -> {
+                                repository.save(dl);
+                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                            }
+                        );
+                        dlg.setAlwaysOnTop(true);
+                        dlg.show();
+                        dlg.toFront();
+                        dlg.requestFocus();
+                    }))
+                    .exceptionally(ex -> {
+                        javafx.application.Platform.runLater(() -> {
+                            java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
+                                new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p", "Best Quality", 0, "h264", "aac", 0, 30, false, false),
+                                new io.smartdm.media.api.MediaFormat("22", "mp4", "720p", "720p HD", 0, "h264", "aac", 0, 30, false, false),
+                                new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio", "Audio Only (M4A)", 0, "none", "aac", 128, 0, true, false)
+                            );
+                            io.smartdm.media.api.MediaMetadata fallbackMeta = new io.smartdm.media.api.MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, java.util.List.of());
+                            io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
+                                null,
+                                fallbackMeta,
+                                preferredFormatId,
+                                dl -> {
+                                    repository.save(dl);
+                                    if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                                }
+                            );
+                            dlg.setAlwaysOnTop(true);
+                            dlg.show();
+                            dlg.toFront();
+                            dlg.requestFocus();
+                        });
+                        return null;
+                    });
+            } else {
+                io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
+                d.setOnDownloadAdded(dl -> {
+                    repository.save(dl);
+                    if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                        mainQueueItems.add(item);
+                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                    } else {
+                        enginePool.submit(() -> coordinator.execute(dl));
+                    }
+                });
+                d.setUrlText(url);
+                d.setAlwaysOnTop(true);
+                d.show();
+                d.toFront();
+                d.requestFocus();
+            }
+        });
     }
 
     public static void main(String[] args) {

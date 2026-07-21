@@ -36,23 +36,35 @@ public class YtDlpExtractor implements MediaExtractor {
                     "--dump-json",
                     "--no-playlist",
                     "--no-warnings",
+                    "--ignore-config",
                     url
                 );
 
                 Process process = pb.start();
                 String jsonOutput;
-                try (InputStream is = process.getInputStream()) {
+                String errOutput;
+                try (InputStream is = process.getInputStream();
+                     InputStream es = process.getErrorStream()) {
                     jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                    errOutput = new String(es.readAllBytes(), StandardCharsets.UTF_8);
                 }
 
                 int exitCode = process.waitFor();
                 if (exitCode != 0 || jsonOutput.isBlank()) {
-                    throw new RuntimeException("yt-dlp metadata extraction failed with exit code " + exitCode);
+                    System.err.println("yt-dlp error output: " + errOutput);
+                    throw new RuntimeException("yt-dlp metadata extraction failed with exit code " + exitCode + ": " + errOutput);
+                }
+
+                int start = jsonOutput.indexOf('{');
+                int end = jsonOutput.lastIndexOf('}');
+                if (start >= 0 && end > start) {
+                    jsonOutput = jsonOutput.substring(start, end + 1);
                 }
 
                 JsonNode root = mapper.readTree(jsonOutput);
                 return parseMetadata(root, url);
             } catch (Exception ex) {
+                System.err.println("YtDlpExtractor error for URL [" + url + "]: " + ex.getMessage());
                 throw new RuntimeException("Failed to extract media metadata: " + ex.getMessage(), ex);
             }
         });
@@ -82,7 +94,6 @@ public class YtDlpExtractor implements MediaExtractor {
                 double tbr = f.path("tbr").asDouble(0);
                 int fps = f.path("fps").asInt(0);
 
-                // Skip storyboards and non-media formats
                 if (formatNote.toLowerCase().contains("storyboard") || "mhtml".equalsIgnoreCase(ext)) {
                     continue;
                 }
@@ -99,7 +110,6 @@ public class YtDlpExtractor implements MediaExtractor {
             }
         }
 
-        // Sort formats: combined video+audio or high-res video first, then audio-only
         formatsList.sort((a, b) -> Double.compare(b.tbr(), a.tbr()));
 
         List<String> subtitles = new ArrayList<>();

@@ -44,6 +44,10 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private Consumer<Download> onDownloadAdded;
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded) {
+        this(owner, metadata, null, onDownloadAdded);
+    }
+
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded) {
         super(owner, "Media Download - " + metadata.title(), Modality.NONE);
         this.metadata = metadata;
         this.onDownloadAdded = onDownloadAdded;
@@ -141,7 +145,16 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         if (metadata.formats() != null && !metadata.formats().isEmpty()) {
             formatCombo.getItems().addAll(metadata.formats());
-            formatCombo.getSelectionModel().select(0);
+            MediaFormat selectedFmt = metadata.formats().get(0);
+            if (preferredFormatId != null && !preferredFormatId.isBlank()) {
+                for (MediaFormat fmt : metadata.formats()) {
+                    if (fmt.formatId().equalsIgnoreCase(preferredFormatId)) {
+                        selectedFmt = fmt;
+                        break;
+                    }
+                }
+            }
+            formatCombo.getSelectionModel().select(selectedFmt);
         }
 
         grid.add(formatHeader, 0, 2);
