@@ -307,8 +307,9 @@
   }
 
   function scanThumbnails() {
-    // Only target actual thumbnails, avoiding title links which caused the double icon
-    const anchors = document.querySelectorAll('a#thumbnail:not([' + PROCESSED_ATTR + ']), a.ytd-thumbnail:not([' + PROCESSED_ATTR + ']), ytd-reel-item-renderer a[href*="/shorts/"]:not([' + PROCESSED_ATTR + '])');
+    // Use the original broad selector for maximum compatibility with YouTube's A/B testing,
+    // but specifically exclude the text title links to prevent the double download icon.
+    const anchors = document.querySelectorAll('a[href*="/watch?v="]:not(#video-title):not(#video-title-link):not([' + PROCESSED_ATTR + ']), a[href*="/shorts/"]:not(#video-title):not(#video-title-link):not([' + PROCESSED_ATTR + ']), a#thumbnail:not([' + PROCESSED_ATTR + '])');
     anchors.forEach(attachBadge);
   }
 
