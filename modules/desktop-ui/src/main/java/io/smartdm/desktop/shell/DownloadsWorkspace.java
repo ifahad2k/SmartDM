@@ -114,6 +114,7 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         // Functional List View
         listView = new ListView<>();
         listView.getStyleClass().add("list");
+        listView.setMinWidth(0);
         listView.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
         listView.setOnKeyPressed(e -> {
             if (e.isControlDown() && e.getCode() == javafx.scene.input.KeyCode.A) {
@@ -122,6 +123,7 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
             }
         });
         javafx.scene.layout.StackPane wrappedListView = RubberBandSelection.wrap(this, listView);
+        wrappedListView.setMinWidth(0);
         HBox.setHgrow(wrappedListView, Priority.ALWAYS);
         
         listView.setCellFactory(param -> new DownloadListCell(new DownloadListCell.Listener() {

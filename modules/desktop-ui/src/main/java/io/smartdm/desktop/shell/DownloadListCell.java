@@ -120,7 +120,11 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         nameWrap.setAlignment(Pos.CENTER_LEFT);
         
         nameLbl.setMinWidth(0);
+        nameLbl.setPrefWidth(0);
+        nameLbl.setMaxWidth(Double.MAX_VALUE);
         nameLbl.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
+        HBox.setHgrow(nameLbl, Priority.ALWAYS);
+
         statusChip.setMinWidth(Region.USE_PREF_SIZE);
 
         statusChip.getStyleClass().addAll("status-chip");
@@ -131,7 +135,10 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         metaLbl.getStyleClass().add("row-meta");
         metaLbl.setMinWidth(0);
+        metaLbl.setPrefWidth(0);
+        metaLbl.setMaxWidth(Double.MAX_VALUE);
         metaLbl.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
+        HBox.setHgrow(metaLbl, Priority.ALWAYS);
         
         rowInfo.getChildren().addAll(nameWrap, metaLbl);
 
