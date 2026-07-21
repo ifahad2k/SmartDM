@@ -502,7 +502,6 @@ public class SmartDmApp extends Application {
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
                 openMediaOrStandardDialog(req.url(), null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
-            }
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
                     io.smartdm.desktop.shell.BatchAddDialog d = new io.smartdm.desktop.shell.BatchAddDialog(primaryStage);
