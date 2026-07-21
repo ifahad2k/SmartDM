@@ -589,12 +589,12 @@ public class SmartDmApp extends Application {
     private static void openMediaOrStandardDialog(
         String url,
         String preferredFormatId,
-        io.smartdm.persistence.api.DownloadRepository repository,
-        io.smartdm.desktop.shell.DownloadWorkspace[] workspaceRef,
+        DownloadRepository repository,
+        DownloadsWorkspace[] workspaceRef,
         java.util.List<io.smartdm.domain.QueueItem> mainQueueItems,
-        java.util.concurrent.atomic.AtomicReference<io.smartdm.domain.QueueCoordinator> queueCoordinatorRef,
-        java.util.concurrent.ExecutorService enginePool,
-        io.smartdm.engine.DownloadCoordinator coordinator
+        AtomicReference<QueueCoordinator> queueCoordinatorRef,
+        ExecutorService enginePool,
+        SingleDownloadCoordinator coordinator
     ) {
         javafx.application.Platform.runLater(() -> {
             String lower = (url != null) ? url.toLowerCase() : "";
