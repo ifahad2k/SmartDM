@@ -109,17 +109,28 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         VBox rowInfo = new VBox();
         rowInfo.getStyleClass().add("row-info");
+        rowInfo.setMinWidth(0);
         HBox.setHgrow(rowInfo, Priority.ALWAYS);
         
         HBox nameWrap = new HBox();
         nameWrap.getStyleClass().add("row-name");
+        nameWrap.setMinWidth(0);
         
+        nameLbl.setMinWidth(0);
+        nameLbl.setMaxWidth(Double.MAX_VALUE);
+        nameLbl.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
+        HBox.setHgrow(nameLbl, Priority.ALWAYS);
+
         statusChip.getStyleClass().addAll("status-chip");
         stIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2.4; -fx-fill: transparent;");
         statusChip.getChildren().addAll(stIcon, stLbl);
         
         nameWrap.getChildren().addAll(nameLbl, statusChip);
+        
         metaLbl.getStyleClass().add("row-meta");
+        metaLbl.setMinWidth(0);
+        metaLbl.setMaxWidth(Double.MAX_VALUE);
+        metaLbl.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
         
         rowInfo.getChildren().addAll(nameWrap, metaLbl);
 
