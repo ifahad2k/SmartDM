@@ -31,7 +31,7 @@ public class YtDlpExtractor implements MediaExtractor {
                 new IllegalStateException("yt-dlp executable not found. Please install yt-dlp."));
 
             try {
-                // Try 1: standard yt-dlp dump-json
+                // Try 1: standard yt-dlp dump-json with user-agent
                 ProcessBuilder pb = new ProcessBuilder(
                     ytDlp.toString(),
                     "--dump-json",
@@ -39,6 +39,7 @@ public class YtDlpExtractor implements MediaExtractor {
                     "--no-warnings",
                     "--ignore-config",
                     "--no-check-certificates",
+                    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     url
                 );
 
@@ -61,6 +62,7 @@ public class YtDlpExtractor implements MediaExtractor {
                         "--dump-json",
                         "--no-playlist",
                         "--no-warnings",
+                        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                         "--cookies-from-browser", "chrome",
                         url
                     );
@@ -82,15 +84,21 @@ public class YtDlpExtractor implements MediaExtractor {
                 System.err.println("YtDlpExtractor error for URL [" + url + "]: " + ex.getMessage());
             }
 
-            // Fallback metadata if yt-dlp is blocked by YouTube bot-detection
-            List<MediaFormat> fallbackFormats = List.of(
-                new MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
-                new MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
-                new MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
-                new MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
-                new MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
-            );
-            return new MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, List.of());
+            // Only return YouTube fallbacks if this is actually a YouTube URL
+            boolean isYouTube = url.contains("youtube.com") || url.contains("youtu.be");
+            if (isYouTube) {
+                List<MediaFormat> fallbackFormats = List.of(
+                    new MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
+                    new MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
+                    new MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
+                    new MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
+                    new MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
+                );
+                return new MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, List.of());
+            }
+
+            // Non-YouTube sites (Pornhub, Instagram, Facebook, etc.) return empty formats on extraction failure
+            return new MediaMetadata("video", "Media Stream", 0, url, null, List.of(), List.of());
         });
     }
 

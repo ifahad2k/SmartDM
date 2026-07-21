@@ -496,19 +496,25 @@ public class SmartDmApp extends Application {
                     System.err.println("IPC format extraction error: " + ex.getMessage());
                 }
                 
-                // Fallback default formats if metadata extraction fails or times out
+                // Fallback default formats if metadata extraction fails or times out (ONLY FOR YOUTUBE)
+                boolean isYouTube = req.url() != null && (req.url().contains("youtube.com") || req.url().contains("youtu.be"));
                 com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 java.util.Map<String, Object> resp = new java.util.HashMap<>();
                 resp.put("success", true);
-                resp.put("title", "YouTube Video");
-                java.util.List<io.smartdm.media.api.MediaFormat> fallbacks = java.util.List.of(
-                    new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
-                    new io.smartdm.media.api.MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
-                    new io.smartdm.media.api.MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
-                    new io.smartdm.media.api.MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
-                    new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
-                );
-                resp.put("formats", fallbacks);
+                if (isYouTube) {
+                    resp.put("title", "YouTube Video");
+                    java.util.List<io.smartdm.media.api.MediaFormat> fallbacks = java.util.List.of(
+                        new io.smartdm.media.api.MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
+                        new io.smartdm.media.api.MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
+                        new io.smartdm.media.api.MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
+                        new io.smartdm.media.api.MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
+                        new io.smartdm.media.api.MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
+                    );
+                    resp.put("formats", fallbacks);
+                } else {
+                    resp.put("title", "Media Page");
+                    resp.put("formats", java.util.List.of());
+                }
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " formatId=" + req.formatId());

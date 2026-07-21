@@ -31,6 +31,15 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       });
 
       const url = details.url.toLowerCase();
+
+      // Exclude web assets, images, scripts, stylesheets, fonts
+      const isNonMediaAsset = url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
+                              url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
+                              url.includes('.svg') || url.includes('.webp') || url.includes('.json') ||
+                              url.includes('.woff') || url.includes('.woff2') || url.includes('.html') ||
+                              url.includes('.ico');
+      if (isNonMediaAsset) return;
+
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
                           contentType.includes('application/x-mpegurl') || 
@@ -39,8 +48,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       
       const isMediaExt = url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
-                         url.includes('.flv') || url.includes('.ts') ||
-                         url.includes('fbcdn.net') || url.includes('cdninstagram.com');
+                         url.includes('.flv') || url.includes('.ts') || url.includes('.mov') ||
+                         url.includes('.m4v') || url.includes('.avi') || url.includes('.mkv');
 
       if (isMediaMime || isMediaExt) {
         if (!detectedMediaMap.has(details.tabId)) {
