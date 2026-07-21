@@ -79,11 +79,7 @@ public final class TopBar extends HBox {
                     }
                 }
             } else {
-                AddDownloadDialog d = new AddDownloadDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get());
-                d.setOnDownloadAdded(onDownloadAdded);
-                if (newUrls.size() == 1) {
-                    javafx.application.Platform.runLater(() -> d.setUrlText(newUrls.get(0)));
-                }
+                EnterUrlDialog d = new EnterUrlDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get(), onDownloadAdded);
                 d.show();
             }
         });
@@ -136,6 +132,17 @@ public final class TopBar extends HBox {
         themeIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2; -fx-fill: transparent;");
         themeBtn.setGraphic(themeIcon);
 
-        getChildren().addAll(searchWrap, spacer, addBtn, importBtn, deleteBtn, themeBtn);
+        // Browser Integration Toggle
+        Button browserBtn = new Button();
+        browserBtn.getStyleClass().add("icon-btn");
+        SVGPath browserIcon = new SVGPath();
+        browserIcon.setContent("M2,12 A10,10 0 1,1 22,12 A10,10 0 1,1 2,12 M2,12 H22 M12,2 V22 M8,2 C10,6 10,18 8,22 M16,2 C14,6 14,18 16,22"); // Web/globe icon
+        browserIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2; -fx-fill: transparent;");
+        browserBtn.setGraphic(browserIcon);
+        browserBtn.setOnAction(e -> {
+            new BrowserIntegrationDialog((javafx.stage.Stage) getScene().getWindow()).showAndWait();
+        });
+
+        getChildren().addAll(searchWrap, spacer, addBtn, importBtn, deleteBtn, themeBtn, browserBtn);
     }
 }

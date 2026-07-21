@@ -1,0 +1,9 @@
+{
+  "name": "io.smartdm.host",
+  "description": "SmartDM Native Messaging Host",
+  "path": "host.bat",
+  "type": "stdio",
+  "allowed_extensions": [
+    "integration@smartdm.io"
+  ]
+}

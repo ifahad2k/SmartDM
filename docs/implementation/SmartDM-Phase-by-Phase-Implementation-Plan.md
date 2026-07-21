@@ -1859,6 +1859,7 @@ smartdm verify <id-or-path>
 - Sound themes with mute/do-not-disturb.
 - Manual checksum verification for existing files.
 - “Redownload,” “Move completed file,” and “Change destination” with transactional catalog updates.
+- Independent, standalone progress dialog for individual downloads (similar to IDM's progress window with tabs for speed limits and completion options).
 
 ### Tests and evidence
 

@@ -5,5 +5,5 @@ plugins {
 
 dependencies {
     implementation(project(":modules:domain"))
-    implementation(libs.jackson.databind)
+    api(libs.jackson.databind)
 }

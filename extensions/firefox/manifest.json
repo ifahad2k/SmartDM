@@ -1,0 +1,24 @@
+{
+  "manifest_version": 2,
+  "name": "SmartDM Integration",
+  "version": "1.0.0",
+  "description": "Send files and media to SmartDM.",
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging",
+    "activeTab",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_action": {
+    "default_title": "Download with SmartDM"
+  },
+  "applications": {
+    "gecko": {
+      "id": "integration@smartdm.io",
+      "strict_min_version": "58.0"
+    }
+  }
+}

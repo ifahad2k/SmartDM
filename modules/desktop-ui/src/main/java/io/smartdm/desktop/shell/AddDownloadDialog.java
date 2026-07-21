@@ -1,74 +1,134 @@
 package io.smartdm.desktop.shell;
 
+import javafx.application.Platform;
+import javafx.geometry.HPos;
 import javafx.geometry.Pos;
+import javafx.geometry.VPos;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.CompletableFuture;
+
+import io.smartdm.download.http.HttpProbeClient;
+import io.smartdm.domain.SourceUri;
 
 public final class AddDownloadDialog extends GlassmorphicDialog {
     
     private final TextField urlField;
+    private final TextField nameField;
     private final TextField destinationField;
     private final ComboBox<String> categoryCombo;
-    private final ComboBox<String> scheduleCombo;
-    private final io.smartdm.desktop.shell.controls.NumberSpinner alarmHr;
-    private final io.smartdm.desktop.shell.controls.NumberSpinner alarmMin;
-    private final io.smartdm.desktop.shell.controls.StringSpinner alarmAmPm;
-    private final io.smartdm.desktop.shell.controls.NumberSpinner timerHr;
-    private final io.smartdm.desktop.shell.controls.NumberSpinner timerMin;
-    private final io.smartdm.desktop.shell.controls.NumberSpinner timerSec;
+    private final TextField descriptionField;
+    private final CheckBox rememberPathCheck;
+    private final Label fileSizeLabel;
+    
     private final Button downloadBtn;
     private final java.util.List<io.smartdm.domain.Download> existingDownloads;
+    private java.util.function.Consumer<io.smartdm.domain.Download> onDownloadAdded;
+    private final HttpProbeClient prober;
     
     public AddDownloadDialog(Stage owner, java.util.List<io.smartdm.domain.Download> existingDownloads) {
-        super(owner, "SmartDM — New Download");
+        super(owner, "Download File Info", Modality.NONE);
         this.existingDownloads = existingDownloads;
+        this.prober = new HttpProbeClient();
         
-        // Header
-        Label headerTitle = new Label("Add a new download");
-        headerTitle.getStyleClass().add("dt");
-        Label headerSub = new Label("Paste a link and SmartDM will inspect it before anything is written to disk.");
-        headerSub.getStyleClass().add("ds");
-        VBox head = new VBox(2, headerTitle, headerSub);
+        // Ensure the window pops up over everything (like IDM)
+        setAlwaysOnTop(true);
+        toFront();
+        requestFocus();
         
-        // File URL field
-        Label urlLabel = new Label("FILE URL");
-        urlLabel.getStyleClass().add("field-label");
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("idm-grid");
+        
+        ColumnConstraints labelCol = new ColumnConstraints();
+        labelCol.setHalignment(HPos.RIGHT);
+        
+        ColumnConstraints inputCol = new ColumnConstraints();
+        inputCol.setHgrow(Priority.ALWAYS);
+        inputCol.setFillWidth(true);
+        
+        ColumnConstraints metaCol = new ColumnConstraints();
+        metaCol.setPrefWidth(90);
+        metaCol.setHalignment(HPos.CENTER);
+        
+        grid.getColumnConstraints().addAll(labelCol, inputCol, metaCol);
+        
+        // --- Row 0: URL ---
+        Label urlLabel = new Label("URL");
+        urlLabel.getStyleClass().add("idm-label");
         
         urlField = new TextField("");
-        urlField.setPromptText("Paste download link here...");
         urlField.getStyleClass().add("text-input");
-        HBox.setHgrow(urlField, Priority.ALWAYS);
+        GridPane.setColumnSpan(urlField, 2);
+        grid.add(urlLabel, 0, 0);
+        grid.add(urlField, 1, 0);
         
-        HBox urlRow = new HBox(8, urlField);
-        VBox urlGroup = new VBox(6, urlLabel, urlRow);
+        // --- Row 1: Category ---
+        Label catLabel = new Label("Category");
+        catLabel.getStyleClass().add("idm-label");
         
-        // Save to field
-        Label destLabel = new Label("SAVE TO");
-        destLabel.getStyleClass().add("field-label");
+        categoryCombo = new ComboBox<>();
+        categoryCombo.getItems().addAll("General", "Compressed", "Programs", "Documents", "Video", "Music");
+        categoryCombo.getSelectionModel().select(0);
+        categoryCombo.getStyleClass().add("text-input");
+        categoryCombo.setPrefWidth(200);
+        
+        Button addCatBtn = new Button("+");
+        addCatBtn.getStyleClass().add("btn-icon-sq");
+        HBox catBox = new HBox(8, categoryCombo, addCatBtn);
+        catBox.setAlignment(Pos.CENTER_LEFT);
+        
+        grid.add(catLabel, 0, 1);
+        grid.add(catBox, 1, 1);
+        
+        // File Icon (Row 1-2 right col)
+        javafx.scene.image.ImageView fileIcon = new javafx.scene.image.ImageView();
+        fileIcon.setFitWidth(32);
+        fileIcon.setFitHeight(32);
+        fileIcon.setPreserveRatio(true);
+        GridPane.setRowSpan(fileIcon, 2);
+        GridPane.setValignment(fileIcon, VPos.CENTER);
+        GridPane.setHalignment(fileIcon, HPos.CENTER);
+        grid.add(fileIcon, 2, 1);
+        
+        // --- Row 2: File Name ---
+        Label nameLabel = new Label("File Name");
+        nameLabel.getStyleClass().add("idm-label");
+        
+        nameField = new TextField("download.bin");
+        nameField.getStyleClass().add("text-input");
+        grid.add(nameLabel, 0, 2);
+        grid.add(nameField, 1, 2);
+
+        // --- Row 3: Save To (Directory) ---
+        Label saveLabel = new Label("Save To");
+        saveLabel.getStyleClass().add("idm-label");
         
         String defaultDir = Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
         destinationField = new TextField(defaultDir);
         destinationField.getStyleClass().add("text-input");
         HBox.setHgrow(destinationField, Priority.ALWAYS);
         
-        Button browseBtn = new Button("Browse");
-        browseBtn.getStyleClass().addAll("btn", "btn-ghost");
+        Button browseBtn = new Button("...");
+        browseBtn.getStyleClass().add("btn-icon-sq");
         browseBtn.setOnAction(e -> {
             javafx.stage.DirectoryChooser chooser = new javafx.stage.DirectoryChooser();
             chooser.setTitle("Choose Save Directory");
-            // Set initial directory if valid
             try {
                 Path currentPath = Paths.get(destinationField.getText().replace("~", System.getProperty("user.home")));
                 if (Files.isDirectory(currentPath)) {
@@ -80,154 +140,132 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             
             File selected = chooser.showDialog(browseBtn.getScene().getWindow());
             if (selected != null) {
-                // If we already have a filename in the field, preserve it
-                String currentText = destinationField.getText().trim();
-                String filename = extractFilename(urlField.getText());
-                destinationField.setText(new File(selected, filename).getAbsolutePath());
+                destinationField.setText(selected.getAbsolutePath());
             }
         });
         
-        HBox destRow = new HBox(8, destinationField, browseBtn);
-        VBox destGroup = new VBox(6, destLabel, destRow);
-        HBox.setHgrow(destGroup, Priority.ALWAYS);
+        HBox saveBox = new HBox(8, destinationField, browseBtn);
+        grid.add(saveLabel, 0, 3);
+        grid.add(saveBox, 1, 3);
         
-        // Category
-        Label catLabel = new Label("CATEGORY");
-        catLabel.getStyleClass().add("field-label");
-        categoryCombo = new ComboBox<>();
-        categoryCombo.getItems().addAll("Compressed", "Programs", "Documents", "Video", "Music");
-        categoryCombo.getSelectionModel().select(0);
-        categoryCombo.getStyleClass().add("text-input");
-        categoryCombo.setMaxWidth(Double.MAX_VALUE);
-        VBox catGroup = new VBox(6, catLabel, categoryCombo);
-        HBox.setHgrow(catGroup, Priority.ALWAYS);
+        // --- Row 4: Remember path ---
+        rememberPathCheck = new CheckBox("Remember this path for \"General\" category");
+        rememberPathCheck.getStyleClass().add("idm-label");
+        rememberPathCheck.setSelected(true);
         
-        HBox row2 = new HBox(12, destGroup, catGroup);
-
-        // Schedule
-        Label schedLabel = new Label("START TIME");
-        schedLabel.getStyleClass().add("field-label");
-        scheduleCombo = new ComboBox<>();
-        scheduleCombo.getItems().addAll(
-            "Start immediately",
-            "Start at a specific time",
-            "Start after a timer"
-        );
-        scheduleCombo.getSelectionModel().select(0);
-        scheduleCombo.getStyleClass().add("text-input");
-        scheduleCombo.setMaxWidth(Double.MAX_VALUE);
+        fileSizeLabel = new Label("Probing...");
+        fileSizeLabel.getStyleClass().add("idm-label");
+        fileSizeLabel.setStyle("-fx-font-weight: bold;");
         
-        // Custom Spinners Box
-        VBox customSchedBox = new VBox();
-        customSchedBox.setAlignment(Pos.CENTER);
-        customSchedBox.setPadding(new javafx.geometry.Insets(10, 0, 0, 0));
+        grid.add(rememberPathCheck, 1, 4);
+        grid.add(fileSizeLabel, 2, 4);
         
-        // Exact Time (Alarm)
-        HBox alarmBox = new HBox(8);
-        alarmBox.setAlignment(Pos.CENTER);
-        alarmHr = new io.smartdm.desktop.shell.controls.NumberSpinner(12, 1, 12, true, "%02d");
-        alarmMin = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 59, true, "%02d");
-        alarmAmPm = new io.smartdm.desktop.shell.controls.StringSpinner(java.util.Arrays.asList("AM", "PM"), 0);
-        alarmBox.getChildren().addAll(alarmHr, new Label(":"), alarmMin, alarmAmPm);
+        // --- Row 5: Description ---
+        Label descLabel = new Label("Description");
+        descLabel.getStyleClass().add("idm-label");
         
-        // Countdown (Timer)
-        HBox timerBox = new HBox(8);
-        timerBox.setAlignment(Pos.CENTER);
-        timerHr = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 99, false, "%02d");
-        timerMin = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 59, true, "%02d");
-        timerSec = new io.smartdm.desktop.shell.controls.NumberSpinner(0, 0, 59, true, "%02d");
-        timerBox.getChildren().addAll(timerHr, new Label(":"), timerMin, new Label(":"), timerSec);
-
-        scheduleCombo.getSelectionModel().selectedIndexProperty().addListener((obs, oldV, newV) -> {
-            customSchedBox.getChildren().clear();
-            if (newV.intValue() == 1) customSchedBox.getChildren().add(alarmBox);
-            else if (newV.intValue() == 2) customSchedBox.getChildren().add(timerBox);
-            
-            javafx.application.Platform.runLater(this::sizeToScene);
-        });
-
-        VBox schedGroup = new VBox(6, schedLabel, scheduleCombo, customSchedBox);
-        HBox.setHgrow(schedGroup, Priority.ALWAYS);
-
-        dialogBody.getChildren().addAll(head, urlGroup, row2, schedGroup);
+        descriptionField = new TextField("");
+        descriptionField.getStyleClass().add("text-input");
+        GridPane.setColumnSpan(descriptionField, 2);
+        grid.add(descLabel, 0, 5);
+        grid.add(descriptionField, 1, 5);
         
-        // Listen to URL inputs to auto-fill the destination path with the extracted filename
+        dialogBody.getChildren().add(grid);
+        
+        // Listen to URL inputs to auto-fill the destination path and probe
         urlField.textProperty().addListener((observable, oldValue, newValue) -> {
             if (newValue != null && !newValue.isBlank()) {
                 try {
                     String filename = extractFilename(newValue);
-                    Path currentPath = Paths.get(destinationField.getText().replace("~", System.getProperty("user.home")));
-                    if (Files.isDirectory(currentPath)) {
-                        destinationField.setText(currentPath.resolve(filename).toString());
-                    } else if (currentPath.getParent() != null) {
-                        destinationField.setText(currentPath.getParent().resolve(filename).toString());
-                    }
+                    nameField.setText(filename);
+                    probeUrl(newValue);
                 } catch (Exception ignored) {}
             }
+        });
+        
+        nameField.textProperty().addListener((obs, oldV, newV) -> {
+            if (newV != null && !newV.isBlank()) {
+                io.smartdm.desktop.util.SystemIconExtractor.getFileIconAsync(newV)
+                    .thenAccept(img -> Platform.runLater(() -> {
+                        if (img != null) {
+                            fileIcon.setImage(img);
+                        }
+                    }));
+            }
+        });
+        
+        categoryCombo.valueProperty().addListener((obs, oldV, newV) -> {
+            rememberPathCheck.setText("Remember this path for \"" + newV + "\" category");
         });
         
         // Footer
         HBox footer = new HBox();
         footer.getStyleClass().add("dialog-foot");
+        footer.setAlignment(Pos.CENTER_RIGHT);
         
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
+        
+        Button queueBtn = new Button("Download Later");
+        queueBtn.getStyleClass().add("btn");
+        queueBtn.setOnAction(e -> processDownload(io.smartdm.domain.DownloadState.QUEUED));
+        
+        downloadBtn = new Button("Start Download");
+        downloadBtn.getStyleClass().addAll("btn", "btn-primary");
+        downloadBtn.setOnAction(e -> processDownload(io.smartdm.domain.DownloadState.PROBING));
         
         Button cancelBtn = new Button("Cancel");
         cancelBtn.getStyleClass().addAll("btn", "btn-ghost");
         cancelBtn.setOnAction(e -> close());
         
-        Button queueBtn = new Button("Add to queue");
-        queueBtn.getStyleClass().add("btn");
-        queueBtn.setOnAction(e -> {
-            if (onDownloadAdded != null) {
-                try {
-                    io.smartdm.domain.Download d = createDownloadFromFields();
-                    if (d != null) {
-                        d.updateState(io.smartdm.domain.DownloadState.QUEUED);
-                        onDownloadAdded.accept(d);
-                        close();
-                    }
-                } catch (Exception ex) {
-                    System.err.println("Failed to queue download: " + ex.getMessage());
-                }
-            }
-        });
-        
-        downloadBtn = new Button("Download now");
-        downloadBtn.getStyleClass().addAll("btn", "btn-primary");
-        downloadBtn.setOnAction(e -> {
-            if (onDownloadAdded != null) {
-                try {
-                    io.smartdm.domain.Download d = createDownloadFromFields();
-                    if (d != null) {
-                        d.updateState(io.smartdm.domain.DownloadState.PROBING);
-                        onDownloadAdded.accept(d);
-                        close();
-                    }
-                } catch (Exception ex) {
-                    System.err.println("Failed to add download: " + ex.getMessage());
-                }
-            }
-        });
-
-        // Add listener to update buttons based on schedule selection
-        scheduleCombo.getSelectionModel().selectedIndexProperty().addListener((obs, oldV, newV) -> {
-            if (newV.intValue() > 0) { // Schedule selected
-                downloadBtn.setVisible(false);
-                downloadBtn.setManaged(false);
-                queueBtn.setText("Schedule Download");
-                queueBtn.getStyleClass().add("btn-primary");
-            } else {
-                downloadBtn.setVisible(true);
-                downloadBtn.setManaged(true);
-                queueBtn.setText("Add to queue");
-                queueBtn.getStyleClass().remove("btn-primary");
-            }
-        });
-
-        footer.getChildren().addAll(spacer, cancelBtn, queueBtn, downloadBtn);
+        footer.getChildren().addAll(spacer, queueBtn, downloadBtn, cancelBtn);
         root.setBottom(footer);
+    }
+    
+    // Removed updateDestination method
+    
+    private void probeUrl(String url) {
+        fileSizeLabel.setText("Probing...");
+        try {
+            SourceUri source = SourceUri.of(url);
+            prober.probeAsync(source).thenAccept(result -> {
+                Platform.runLater(() -> {
+                    long size = result.size().value();
+                    if (size > 0) {
+                        fileSizeLabel.setText(formatSize(size));
+                    } else {
+                        fileSizeLabel.setText("Unknown size");
+                    }
+                });
+            }).exceptionally(ex -> {
+                Platform.runLater(() -> fileSizeLabel.setText("Unknown size"));
+                return null;
+            });
+        } catch (Exception ex) {
+            fileSizeLabel.setText("Unknown size");
+        }
+    }
+    
+    private String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        char pre = "KMGTPE".charAt(exp - 1);
+        return String.format("%.2f %sB", bytes / Math.pow(1024, exp), pre);
+    }
+    
+    private void processDownload(io.smartdm.domain.DownloadState state) {
+        if (onDownloadAdded != null) {
+            try {
+                io.smartdm.domain.Download d = createDownloadFromFields();
+                if (d != null) {
+                    d.updateState(state);
+                    onDownloadAdded.accept(d);
+                    close();
+                }
+            } catch (Exception ex) {
+                System.err.println("Failed to queue download: " + ex.getMessage());
+            }
+        }
     }
     
     private io.smartdm.domain.Download createDownloadFromFields() throws Exception {
@@ -236,19 +274,12 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         
         Path destPath = Paths.get(destinationField.getText().replace("~", System.getProperty("user.home"))).toAbsolutePath();
         if (Files.isDirectory(destPath)) {
-            String filename = extractFilename(urlText);
+            String filename = nameField.getText().trim();
+            if (filename.isEmpty()) filename = "download.bin";
             destPath = destPath.resolve(filename);
         }
         boolean fileExists = Files.exists(destPath);
         boolean destActive = isDestinationActive(destPath);
-        System.out.println("DEBUG: Checking collision for " + destPath);
-        System.out.println("DEBUG: Files.exists=" + fileExists + ", isDestinationActive=" + destActive);
-        if (destActive) {
-            System.out.println("DEBUG: existingDownloads size=" + existingDownloads.size());
-            for (io.smartdm.domain.Download d : existingDownloads) {
-                System.out.println("DEBUG: Download " + d.id() + " dest=" + d.destination().value());
-            }
-        }
         
         if (fileExists || destActive) {
             FileCollisionDialog dialog = new FileCollisionDialog((Stage) getScene().getWindow(), destPath.getFileName().toString());
@@ -261,31 +292,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
         
         io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath);
-        io.smartdm.domain.Download d = io.smartdm.domain.Download.create(source, dest);
-
-        int selectedIndex = scheduleCombo.getSelectionModel().getSelectedIndex();
-        long delayMillis = 0;
-        
-        if (selectedIndex == 1) { // Alarm
-            java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            int h = alarmHr.getValue();
-            if (h == 12) h = 0;
-            if (alarmAmPm.getValue().equals("PM")) h += 12;
-            java.time.LocalTime time = java.time.LocalTime.of(h, alarmMin.getValue());
-            java.time.LocalDateTime target = now.with(time);
-            if (target.isBefore(now)) {
-                target = target.plusDays(1);
-            }
-            delayMillis = java.time.Duration.between(now, target).toMillis();
-        } else if (selectedIndex == 2) { // Timer
-            delayMillis = (timerHr.getValue() * 3600L + timerMin.getValue() * 60L + timerSec.getValue()) * 1000L;
-        }
-
-        if (selectedIndex > 0) {
-            d.updateScheduledStartTime(System.currentTimeMillis() + Math.max(delayMillis, 1000));
-        }
-
-        return d;
+        return io.smartdm.domain.Download.create(source, dest);
     }
 
     private String extractFilename(String urlStr) {
@@ -298,7 +305,6 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 int lastSlash = pathPart.lastIndexOf('/');
                 if (lastSlash >= 0 && lastSlash < pathPart.length() - 1) {
                     String raw = pathPart.substring(lastSlash + 1);
-                    // Sanitize illegal characters
                     raw = raw.replaceAll("[\\\\/:*?\"<>|\0]", "_");
                     return raw.trim().isEmpty() ? "download.bin" : raw;
                 }
@@ -306,8 +312,6 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         } catch (Exception ignored) {}
         return "download.bin";
     }
-    
-    private java.util.function.Consumer<io.smartdm.domain.Download> onDownloadAdded;
     
     private boolean isDestinationActive(Path path) {
         if (existingDownloads == null) return false;

@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":modules:domain"))
     implementation(project(":modules:platform-api"))
     implementation(project(":modules:persistence-api"))
+    implementation(project(":modules:browser-protocol"))
 
     // Runtime modules - wired at startup
     implementation(project(":modules:download-engine"))

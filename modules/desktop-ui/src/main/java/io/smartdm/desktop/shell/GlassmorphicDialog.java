@@ -25,8 +25,15 @@ public abstract class GlassmorphicDialog extends Stage {
 
     @SuppressWarnings("this-escape")
     public GlassmorphicDialog(Stage owner, String title) {
+        this(owner, title, Modality.APPLICATION_MODAL);
+    }
+
+    @SuppressWarnings("this-escape")
+    public GlassmorphicDialog(Stage owner, String title, Modality modality) {
         initOwner(owner);
-        initModality(Modality.APPLICATION_MODAL);
+        if (modality != null) {
+            initModality(modality);
+        }
         initStyle(StageStyle.TRANSPARENT); // Undecorated and transparent for drop shadow
 
         root = new BorderPane();
@@ -49,16 +56,23 @@ public abstract class GlassmorphicDialog extends Stage {
         HBox winCaption = new HBox();
         winCaption.getStyleClass().add("win-caption");
         
-        javafx.scene.layout.Pane closeBtn = new javafx.scene.layout.Pane();
+        javafx.scene.layout.StackPane closeBtn = new javafx.scene.layout.StackPane();
         closeBtn.getStyleClass().addAll("cap-btn", "close");
         closeBtn.setOnMouseClicked(e -> close());
         
-        // Simple CSS close icon (two lines)
-        Region closeIcon = new Region();
-        closeIcon.getStyleClass().add("close-icon");
+        Label closeIcon = new Label("✕");
+        closeIcon.getStyleClass().add("close-icon-text");
         closeBtn.getChildren().add(closeIcon);
         
-        winCaption.getChildren().add(closeBtn);
+        javafx.scene.layout.StackPane minBtn = new javafx.scene.layout.StackPane();
+        minBtn.getStyleClass().addAll("cap-btn", "minimize");
+        minBtn.setOnMouseClicked(e -> setIconified(true));
+        
+        Label minIcon = new Label("−");
+        minIcon.getStyleClass().add("min-icon-text");
+        minBtn.getChildren().add(minIcon);
+        
+        winCaption.getChildren().addAll(minBtn, closeBtn);
         
         titleBar.getChildren().addAll(appIcon, titleLabel, spacer, winCaption);
         

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "SmartDM Integration",
+  "version": "1.0.0",
+  "description": "Send files and media to SmartDM.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmLgtF89pUtCcJkhWEEM1Z0j40HqJnzbyxVlZ/qpJk27F/8WL5o4Vm3MXnHm8Fg/yLfS5ZZp7DA/82FcDKNvRHkSr4OpmPvQ2BsfuyYWuCSFG91wsUa3AShEg/AcPt5/iZVvT5XOON98Fli7odj33faD2Q3cGeU1lKHa64lHNSdedaUpCNgEJ3ECC51oAlkCCE8XXnufQlKvdh4LhvaKbocECdI07/3YYLzST4ZfdimuAzKqu82rKEsccgVwLeFRwDN18xxdQxf9Ad24gHQJO2Oz58j81RPnej8Yg3rkvuXfhZxeiGZt/vyNsluzBEV7CTC0a/WcjPPTcU7B5UDPQKQIDAQAB",
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Download with SmartDM"
+  }
+}

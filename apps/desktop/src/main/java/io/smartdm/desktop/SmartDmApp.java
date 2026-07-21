@@ -50,6 +50,7 @@ public class SmartDmApp extends Application {
     private SingleDownloadCoordinator coordinator;
     private io.smartdm.download.engine.schedule.ScheduleRunner scheduleRunner;
     private io.smartdm.application.monitor.ResourceMonitor resourceMonitor;
+    private io.smartdm.application.ipc.LocalIpcServer ipcServer;
 
     @Override
     public void start(Stage primaryStage) {
@@ -294,6 +295,12 @@ public class SmartDmApp extends Application {
         DownloadsWorkspace workspace = new DownloadsWorkspace(new DownloadActionListener() {
             @Override
             public void onPause(Download download) {
+                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
+                    io.smartdm.desktop.shell.MediaDownloadTracker.pauseDownload(download);
+                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                    return;
+                }
                 if (download.state() == DownloadState.QUEUED) {
                     download.updateScheduledStartTime(null);
                     download.updateState(DownloadState.PAUSED);
@@ -316,6 +323,12 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onResume(Download download) {
+                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
+                    io.smartdm.desktop.shell.MediaDownloadTracker.resumeDownload(download);
+                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                    return;
+                }
                 if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED || download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
                     boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
                     if (removed) {
@@ -335,6 +348,12 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onCancel(Download download) {
+                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
+                    io.smartdm.desktop.shell.MediaDownloadTracker.cancelDownload(download);
+                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                    return;
+                }
                 coordinator.cancel(download.id()).thenRun(() -> {
                     download.updateState(DownloadState.CANCELED);
                     Platform.runLater(() -> {
@@ -347,31 +366,33 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onDelete(Download download, boolean permanent) {
-                // Always try to cancel the engine session first, regardless of state
-                coordinator.cancel(download.id()).whenComplete((v, ex) -> {
-                    scheduleRepo.delete(download.id().value());
-                    repository.delete(download.id());
-                    
-                    Platform.runLater(() -> {
-                        mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                        queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
-                        if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
-                        if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                    });
-                    
-                    if (permanent) {
-                        enginePool.submit(() -> {
-                            try {
-                                Files.deleteIfExists(download.destination().value());
-                            } catch (Exception ignored) {}
-                            try {
-                                Path partFile = directories.getCacheDirectory().resolve("temp")
-                                        .resolve(download.id().value() + ".part");
-                                Files.deleteIfExists(partFile);
-                            } catch (Exception ignored) {}
-                        });
-                    }
+                boolean isMedia = io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id());
+                if (isMedia) {
+                    io.smartdm.desktop.shell.MediaDownloadTracker.deleteDownload(download, permanent);
+                } else {
+                    coordinator.cancel(download.id());
+                }
+                
+                scheduleRepo.delete(download.id().value());
+                repository.delete(download.id());
+
+                Platform.runLater(() -> {
+                    mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                    queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                    if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
+                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
                 });
+
+                if (permanent) {
+                    enginePool.submit(() -> {
+                        io.smartdm.desktop.shell.MediaDownloadTracker.deleteMediaFiles(download.destination().value());
+                        try {
+                            Path partFile = directories.getCacheDirectory().resolve("temp")
+                                    .resolve(download.id().value() + ".part");
+                            Files.deleteIfExists(partFile);
+                        } catch (Exception ignored) {}
+                    });
+                }
             }
 
             @Override
@@ -455,6 +476,67 @@ public class SmartDmApp extends Application {
         schedulerWorkspaceRef.set(shell.getSchedulerWorkspace());
         queueWorkspaceRef.set(shell.getQueueWorkspace());
 
+        ipcServer = new io.smartdm.application.ipc.LocalIpcServer(message -> {
+            if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
+                javafx.application.Platform.runLater(() -> {
+                    io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(
+                        null, 
+                        repository.findAll()
+                    );
+                    d.setOnDownloadAdded(dl -> {
+                        repository.save(dl);
+                        if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                            io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                            mainQueueItems.add(item);
+                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        } else {
+                            enginePool.submit(() -> coordinator.execute(dl));
+                        }
+                    });
+                    d.setUrlText(req.url());
+                    d.show();
+                });
+            } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
+                javafx.application.Platform.runLater(() -> {
+                    io.smartdm.desktop.shell.BatchAddDialog d = new io.smartdm.desktop.shell.BatchAddDialog(primaryStage);
+                    d.setInputText(String.join("\n", req.urls()));
+                    d.showAndWait();
+                    if (d.isResultConfirmed() && d.getBatchUrls() != null) {
+                        for (String url : d.getBatchUrls()) {
+                            try {
+                                String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
+                                if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
+                                String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
+                                io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename));
+                                io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
+                                repository.save(dl);
+                                if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                                    io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                                    mainQueueItems.add(item);
+                                } else {
+                                    enginePool.submit(() -> coordinator.execute(dl));
+                                }
+                            } catch (Exception ex) {}
+                        }
+                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        if (d.isDownloadNowRequested()) {
+                            // Run the queue
+                            if (currentQueueRef[0].getStatus() != io.smartdm.domain.DownloadQueue.Status.ACTIVE) {
+                                currentQueueRef[0] = currentQueueRef[0].withStatus(io.smartdm.domain.DownloadQueue.Status.ACTIVE);
+                                if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueue(currentQueueRef[0]);
+                                if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        try {
+            ipcServer.start(enginePool);
+        } catch (Exception e) {
+            System.err.println("Failed to start IPC server: " + e.getMessage());
+        }
+
         Scene scene = new Scene(shell, 1180, 760);
         scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
 
@@ -474,6 +556,9 @@ public class SmartDmApp extends Application {
     public void stop() {
         if (scheduleRunner != null) {
             scheduleRunner.stop();
+        }
+        if (ipcServer != null) {
+            ipcServer.stop();
         }
         if (resourceMonitor != null) {
             resourceMonitor.stop();
