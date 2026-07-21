@@ -14,6 +14,59 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   detectedMediaMap.delete(tabId);
 });
 
+function parseM3u8Formats(m3u8Text, baseUrl) {
+  const lines = m3u8Text.split('\n');
+  const formats = [];
+  let currentInfo = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#EXT-X-STREAM-INF:')) {
+      currentInfo = {};
+      const resMatch = line.match(/RESOLUTION=(\d+x\d+)/i);
+      if (resMatch) currentInfo.resolution = resMatch[1];
+      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+      if (bwMatch) currentInfo.bandwidth = parseInt(bwMatch[1], 10);
+      const nameMatch = line.match(/NAME="([^"]+)"/i);
+      if (nameMatch) currentInfo.name = nameMatch[1];
+    } else if (line && !line.startsWith('#') && currentInfo) {
+      let streamUrl = line;
+      if (!streamUrl.startsWith('http')) {
+        try {
+          streamUrl = new URL(streamUrl, baseUrl).href;
+        } catch (e) {}
+      }
+      
+      let height = 0;
+      if (currentInfo.resolution) {
+        const parts = currentInfo.resolution.split('x');
+        if (parts.length === 2) height = parseInt(parts[1], 10);
+      }
+
+      let label = currentInfo.name || (height > 0 ? `${height}p` : 'Video');
+      if (height >= 720 && !label.includes('HD')) label += ' HD';
+      
+      let badge = 'Stream';
+      if (currentInfo.bandwidth) {
+        const kbps = Math.round(currentInfo.bandwidth / 1000);
+        badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
+      }
+
+      formats.push({
+        title: label,
+        badge: badge,
+        url: streamUrl,
+        height: height,
+        bandwidth: currentInfo.bandwidth || 0
+      });
+      currentInfo = null;
+    }
+  }
+
+  formats.sort((a, b) => b.height - a.height || b.bandwidth - a.bandwidth);
+  return formats;
+}
+
 // Intercept network requests for video/audio streams
 if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
   chrome.webRequest.onHeadersReceived.addListener(
@@ -57,14 +110,37 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
         const mediaList = detectedMediaMap.get(details.tabId);
         if (!mediaList.some((m) => m.url === details.url)) {
-          // Keep at most 25 items per tab to prevent memory leaks
-          if (mediaList.length >= 25) mediaList.shift();
+          if (mediaList.length >= 35) mediaList.shift();
           mediaList.push({
             url: details.url,
             contentType: contentType,
             contentLength: contentLength,
             filename: getFilenameFromUrl(details.url)
           });
+
+          // If this is an m3u8 playlist, fetch and parse variants to extract clean quality profiles
+          if (details.url.includes('.m3u8')) {
+            fetch(details.url)
+              .then((r) => r.text())
+              .then((text) => {
+                if (text.includes('#EXT-X-STREAM-INF')) {
+                  const variants = parseM3u8Formats(text, details.url);
+                  variants.forEach((v) => {
+                    if (!mediaList.some((m) => m.url === v.url)) {
+                      mediaList.push({
+                        url: v.url,
+                        contentType: 'application/x-mpegurl',
+                        contentLength: 0,
+                        filename: v.title + '.mp4',
+                        customTitle: v.title,
+                        customBadge: v.badge
+                      });
+                    }
+                  });
+                }
+              })
+              .catch(() => {});
+          }
         }
       }
     },

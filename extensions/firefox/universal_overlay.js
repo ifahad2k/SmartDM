@@ -371,9 +371,9 @@
 
       uniqueMedia.forEach((m, idx) => {
         const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
-        const sizeText = m.contentLength > 0 
+        const sizeText = m.customBadge || (m.contentLength > 0 
           ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
-          : 'Stream';
+          : 'Stream');
 
         let qualityName = m.customTitle || '';
         if (!qualityName) {
@@ -432,7 +432,7 @@
     });
   }
 
-  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR TUBE SITES (PORNHUB, ETC.) ---
+  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR TUBE SITES (PORNHUB, XHAMSTER, XNXX, DAILYMOTION, ETC.) ---
   function scanThumbnails() {
     const host = window.location.hostname.toLowerCase();
     // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, TikTok, Twitter/X)
@@ -442,23 +442,35 @@
 
     const selectors = [
       'a[href*="/view_video.php"]',
-      '.ph-thumbnail:not([' + THUMB_PROCESSED_ATTR + '])',
-      '.videoCard:not([' + THUMB_PROCESSED_ATTR + '])'
+      'a[href*="/video-"]',
+      'a[href*="/videos/"]',
+      'a[href*="/video/"]',
+      'a[href*="/watch/"]',
+      '.ph-thumbnail',
+      '.videoCard',
+      '.thumb'
     ];
 
-    const thumbLinks = document.querySelectorAll(selectors.join(','));
-    thumbLinks.forEach(attachThumbnailBadge);
+    const elements = document.querySelectorAll(selectors.join(','));
+    elements.forEach((el) => {
+      // Find outermost card container to prevent multiple buttons on the same video card
+      const cardContainer = el.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb') || el;
+      if (cardContainer.getAttribute(THUMB_PROCESSED_ATTR)) return;
+      cardContainer.setAttribute(THUMB_PROCESSED_ATTR, 'true');
+
+      let videoUrl = el.href;
+      if (!videoUrl) {
+        const link = cardContainer.querySelector('a[href*="/view_video.php"], a[href*="/video-"], a[href*="/videos/"], a[href*="/video/"], a[href*="/watch/"]');
+        if (link) videoUrl = link.href;
+      }
+      if (!videoUrl) return;
+
+      attachThumbnailBadge(cardContainer, videoUrl);
+    });
   }
 
-  function attachThumbnailBadge(containerEl) {
-    if (containerEl.getAttribute(THUMB_PROCESSED_ATTR)) return;
-    containerEl.setAttribute(THUMB_PROCESSED_ATTR, 'true');
-
-    let videoUrl = containerEl.href;
-    if (!videoUrl && containerEl.tagName !== 'A') {
-      const parentLink = containerEl.closest('a');
-      if (parentLink) videoUrl = parentLink.href;
-    }
+  function attachThumbnailBadge(containerEl, videoUrl) {
+    if (!videoUrl) return;
     if (!videoUrl) return;
 
     if (window.getComputedStyle(containerEl).position === 'static') {
