@@ -19,15 +19,40 @@
     mediaElements.forEach(attachUniversalBanner);
   }
 
+  function findTopPlayerContainer(mediaEl) {
+    let current = mediaEl;
+    let container = mediaEl.parentElement || mediaEl;
+    let depth = 0;
+
+    while (current && current.parentElement && current.parentElement !== document.body && depth < 8) {
+      current = current.parentElement;
+      const tag = current.tagName.toLowerCase();
+      
+      if (tag === 'article' || current.getAttribute('role') === 'dialog' || current.getAttribute('role') === 'region') {
+        container = current;
+        break;
+      }
+
+      const style = window.getComputedStyle(current);
+      if (style.position === 'relative' || style.position === 'absolute' || style.position === 'fixed') {
+        container = current;
+      }
+      depth++;
+    }
+
+    if (window.getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
+
+    return container;
+  }
+
   function attachUniversalBanner(mediaEl) {
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
-    // Find suitable container (parent element or player wrapper)
-    const container = mediaEl.parentElement || mediaEl;
-    if (getComputedStyle(container).position === 'static') {
-      container.style.position = 'relative';
-    }
+    const container = findTopPlayerContainer(mediaEl);
+    if (container.querySelector('.smartdm-universal-host')) return;
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
@@ -207,6 +232,8 @@
     let dragStartX = 0, dragStartY = 0;
 
     bannerBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
       dragStartX = e.clientX;
       dragStartY = e.clientY;
       initialX = e.clientX - xOffset;
@@ -232,15 +259,9 @@
     });
 
     bannerBtn.addEventListener('click', (e) => {
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      if (Math.sqrt(dx*dx + dy*dy) > 5) {
-        e.preventDefault();
-        return; // was a drag action
-      }
-
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
 
       const isActive = popover.classList.contains('active');
       if (isActive) {
