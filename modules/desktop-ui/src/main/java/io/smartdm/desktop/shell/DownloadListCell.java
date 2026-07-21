@@ -76,6 +76,13 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         getStyleClass().add("download-cell");
         
         root.getStyleClass().add("row");
+        // STRICT BOUNDS: Bind cell width to ListView width so it never overflows and never triggers horizontal scrollbar
+        listViewProperty().addListener((obs, oldV, newV) -> {
+            if (newV != null) {
+                prefWidthProperty().bind(newV.widthProperty().subtract(20));
+                maxWidthProperty().bind(newV.widthProperty().subtract(20));
+            }
+        });
         
         HBox rowTop = new HBox();
         rowTop.getStyleClass().add("row-top");
@@ -333,19 +340,6 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         });
         
         setContextMenu(ctxMenu);
-    }
-
-    @Override
-    protected double computePrefWidth(double height) {
-        if (getListView() != null && getListView().getWidth() > 0) {
-            return Math.max(100, getListView().getWidth() - 16);
-        }
-        return 200;
-    }
-
-    @Override
-    protected double computeMinWidth(double height) {
-        return 100;
     }
 
     private void clearAnimations() {
