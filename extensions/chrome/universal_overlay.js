@@ -432,16 +432,16 @@
     });
   }
 
-  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR ALL MEDIA SITES ---
+  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR TUBE SITES (PORNHUB, ETC.) ---
   function scanThumbnails() {
+    const host = window.location.hostname.toLowerCase();
+    // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, TikTok, Twitter/X)
+    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
+      return;
+    }
+
     const selectors = [
       'a[href*="/view_video.php"]',
-      'a[href*="/watch?v="]',
-      'a[href*="/video/"]',
-      'a[href*="/videos/"]',
-      'a[href*="/reel/"]',
-      'a[href*="/v/"]',
-      'a[href*="/clip/"]',
       '.ph-thumbnail:not([' + THUMB_PROCESSED_ATTR + '])',
       '.videoCard:not([' + THUMB_PROCESSED_ATTR + '])'
     ];
