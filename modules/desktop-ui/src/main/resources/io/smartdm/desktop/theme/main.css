@@ -329,7 +329,7 @@
 
 .list-cell {
     -fx-background-color: transparent;
-    -fx-padding: 2px 6px 2px 2px;
+    -fx-padding: 4px 14px 4px 2px;
 }
 .list-cell:empty {
     -fx-background-color: transparent;
@@ -337,7 +337,7 @@
 .list-view {
     -fx-background-color: transparent;
     -fx-border-color: transparent;
-    -fx-padding: 0 4px 0 0;
+    -fx-padding: 0 8px 0 0;
 }
 
 .scroll-pane {
@@ -449,7 +449,7 @@
 .row {
     -fx-background-radius: 16px;
     -fx-border-radius: 16px;
-    -fx-padding: 14px 24px 14px 18px;
+    -fx-padding: 14px 30px 14px 20px;
     -fx-background-color: rgba(255,255,255,0.055);
     -fx-border-color: rgba(255,255,255,0.14);
     -fx-cursor: hand;
