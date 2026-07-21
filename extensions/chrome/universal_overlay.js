@@ -5,18 +5,45 @@
   if (window.location.hostname.includes('youtube.com')) return;
 
   const PLAYER_PROCESSED_ATTR = 'data-smartdm-universal-attached';
+  const THUMB_PROCESSED_ATTR = 'data-smartdm-universal-thumb-attached';
 
   function initUniversalOverlay() {
     const observer = new MutationObserver(() => {
       scanPlayers();
+      scanThumbnails();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     scanPlayers();
+    scanThumbnails();
   }
 
   function scanPlayers() {
     const mediaElements = document.querySelectorAll('video:not([' + PLAYER_PROCESSED_ATTR + ']), audio:not([' + PLAYER_PROCESSED_ATTR + '])');
     mediaElements.forEach(attachUniversalBanner);
+  }
+
+  function isThumbnailVideo(mediaEl) {
+    if (!mediaEl) return false;
+
+    // Check dimensions - thumbnail preview videos are small
+    if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 280) return true;
+    if (mediaEl.offsetHeight > 0 && mediaEl.offsetHeight < 160) return true;
+
+    // Check ancestors for thumbnail card classes/attributes
+    let current = mediaEl;
+    let depth = 0;
+    while (current && current.parentElement && depth < 6) {
+      current = current.parentElement;
+      const cls = (current.className || '').toString().toLowerCase();
+      const id = (current.id || '').toString().toLowerCase();
+      if (cls.includes('thumb') || cls.includes('preview') || cls.includes('card') || 
+          id.includes('thumb') || id.includes('preview')) {
+        if (current.tagName === 'A') return true;
+      }
+      depth++;
+    }
+
+    return false;
   }
 
   function findTopPlayerContainer(mediaEl) {
@@ -50,6 +77,9 @@
   function attachUniversalBanner(mediaEl) {
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
+
+    // Ignore mini preview videos inside thumbnail cards
+    if (isThumbnailVideo(mediaEl)) return;
 
     const container = findTopPlayerContainer(mediaEl);
     if (container.querySelector('.smartdm-universal-host')) return;
@@ -376,6 +406,286 @@
       div.innerHTML = `
         <div class="format-info">
           <span class="format-title" title="${item.title}">${item.title}</span>
+        </div>
+        <span class="format-badge">${item.badge}</span>
+      `;
+
+      div.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
+
+        chrome.runtime.sendMessage(
+          {
+            type: 'START_MEDIA_DOWNLOAD',
+            url: item.url,
+            formatId: item.formatId,
+            fileName: item.fileName
+          },
+          () => {
+            setTimeout(() => popover.classList.remove('active'), 800);
+          }
+        );
+      });
+
+      container.appendChild(div);
+    });
+  }
+
+  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR ALL MEDIA SITES ---
+  function scanThumbnails() {
+    const selectors = [
+      'a[href*="/view_video.php"]',
+      'a[href*="/watch?v="]',
+      'a[href*="/video/"]',
+      'a[href*="/videos/"]',
+      'a[href*="/reel/"]',
+      'a[href*="/v/"]',
+      'a[href*="/clip/"]',
+      '.ph-thumbnail:not([' + THUMB_PROCESSED_ATTR + '])',
+      '.videoCard:not([' + THUMB_PROCESSED_ATTR + '])'
+    ];
+
+    const thumbLinks = document.querySelectorAll(selectors.join(','));
+    thumbLinks.forEach(attachThumbnailBadge);
+  }
+
+  function attachThumbnailBadge(containerEl) {
+    if (containerEl.getAttribute(THUMB_PROCESSED_ATTR)) return;
+    containerEl.setAttribute(THUMB_PROCESSED_ATTR, 'true');
+
+    let videoUrl = containerEl.href;
+    if (!videoUrl && containerEl.tagName !== 'A') {
+      const parentLink = containerEl.closest('a');
+      if (parentLink) videoUrl = parentLink.href;
+    }
+    if (!videoUrl) return;
+
+    if (window.getComputedStyle(containerEl).position === 'static') {
+      containerEl.style.position = 'relative';
+    }
+
+    const host = document.createElement('div');
+    host.className = 'smartdm-universal-thumb-host';
+    host.style.position = 'absolute';
+    host.style.top = '8px';
+    host.style.right = '8px';
+    host.style.zIndex = '999999';
+    host.style.pointerEvents = 'auto';
+
+    const shadow = host.attachShadow({ mode: 'open' });
+
+    shadow.innerHTML = `
+      <style>
+        .thumb-btn {
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          color: #f8fafc;
+          border: 1px solid rgba(56, 189, 248, 0.6);
+          border-radius: 5px;
+          padding: 4px 8px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+          opacity: 0.85;
+          transition: opacity 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+          user-select: none;
+        }
+        :host(:hover) .thumb-btn, .thumb-btn:hover {
+          opacity: 1;
+          background: rgba(2, 132, 199, 0.95);
+          border-color: #38bdf8;
+          box-shadow: 0 4px 16px rgba(56, 189, 248, 0.6);
+        }
+        .icon {
+          width: 12px;
+          height: 12px;
+          fill: none;
+          stroke: #38bdf8;
+          stroke-width: 2.5;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        .thumb-btn:hover .icon {
+          stroke: #ffffff;
+        }
+        .popover {
+          position: absolute;
+          top: 28px;
+          right: 0;
+          width: 260px;
+          background: rgba(15, 23, 42, 0.9);
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 8px;
+          padding: 8px;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+          display: none;
+          flex-direction: column;
+          gap: 5px;
+          color: #f8fafc;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-size: 11px;
+          z-index: 999999;
+        }
+        .popover.active {
+          display: flex;
+        }
+        .popover-title {
+          font-weight: 700;
+          color: #38bdf8;
+          font-size: 11px;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+          padding-bottom: 4px;
+          margin-bottom: 3px;
+        }
+        .popover-content {
+          max-height: 200px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          padding-right: 2px;
+        }
+        .format-item {
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 5px;
+          padding: 6px 8px;
+          cursor: pointer;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          transition: background 0.15s, border-color 0.15s;
+        }
+        .format-item:hover {
+          background: rgba(56, 189, 248, 0.3);
+          border-color: #38bdf8;
+        }
+        .format-title {
+          font-weight: 700;
+          color: #f8fafc;
+        }
+        .format-badge {
+          font-size: 10px;
+          font-weight: 700;
+          color: #38bdf8;
+          background: rgba(56, 189, 248, 0.15);
+          padding: 2px 5px;
+          border-radius: 3px;
+        }
+        .status-text {
+          font-size: 11px;
+          color: #94a3b8;
+          text-align: center;
+          padding: 8px;
+        }
+      </style>
+      <button class="thumb-btn">
+        <svg class="icon" viewBox="0 0 24 24">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download
+      </button>
+      <div class="popover">
+        <div class="popover-title">Download Video</div>
+        <div class="popover-content">
+          <div class="status-text">Fetching resolutions...</div>
+        </div>
+      </div>
+    `;
+
+    const thumbBtn = shadow.querySelector('.thumb-btn');
+    const popover = shadow.querySelector('.popover');
+    const content = shadow.querySelector('.popover-content');
+
+    // Auto-close popover on outside click
+    document.addEventListener('click', (e) => {
+      if (popover.classList.contains('active')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        if (!path.includes(host) && !host.contains(e.target)) {
+          popover.classList.remove('active');
+        }
+      }
+    });
+
+    thumbBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    thumbBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const isActive = popover.classList.contains('active');
+      if (isActive) {
+        popover.classList.remove('active');
+        return;
+      }
+
+      popover.classList.add('active');
+      content.innerHTML = '<div class="status-text">Fetching resolutions...</div>';
+
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+        let formats = [];
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          formats = res.formats;
+        }
+
+        renderThumbnailFormats(content, formats, videoUrl, popover);
+      });
+    });
+
+    containerEl.appendChild(host);
+  }
+
+  function renderThumbnailFormats(container, ytDlpFormats, videoUrl, popover) {
+    container.innerHTML = '';
+    const items = [];
+
+    if (ytDlpFormats && ytDlpFormats.length > 0) {
+      ytDlpFormats.forEach(fmt => {
+        const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
+        const ext = (fmt.ext || 'MP4').toUpperCase();
+        const sizeText = fmt.fileSize > 0 
+          ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
+          : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
+
+        items.push({
+          title: `${resolution} (${ext})`,
+          badge: sizeText,
+          url: videoUrl,
+          formatId: fmt.formatId,
+          fileName: null
+        });
+      });
+    } else {
+      items.push({
+        title: 'Best Quality (MP4)',
+        badge: 'Download',
+        url: videoUrl,
+        formatId: 'best',
+        fileName: null
+      });
+    }
+
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'format-item';
+      div.innerHTML = `
+        <div class="format-info">
+          <span class="format-title">${item.title}</span>
         </div>
         <span class="format-badge">${item.badge}</span>
       `;
