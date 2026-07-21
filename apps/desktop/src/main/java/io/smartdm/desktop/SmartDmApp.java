@@ -497,14 +497,15 @@ public class SmartDmApp extends Application {
                 }
                 return "{\"success\":false,\"error\":\"Formats unavailable\"}";
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
+                String url = req.url();
                 javafx.application.Platform.runLater(() -> {
                     try {
                         io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
                         if (toolMgr.isAvailable()) {
                             io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                            extractor.extractMetadataAsync(req.url()).thenAccept(meta -> {
-                                javafx.application.Platform.runLater(() -> {
-                                    if (meta != null) {
+                            extractor.extractMetadataAsync(url)
+                                .thenAccept(meta -> javafx.application.Platform.runLater(() -> {
+                                    if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                                         io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
                                             null,
                                             meta,
@@ -517,12 +518,48 @@ public class SmartDmApp extends Application {
                                         dlg.show();
                                         dlg.toFront();
                                         dlg.requestFocus();
+                                    } else {
+                                        io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
+                                        d.setOnDownloadAdded(dl -> {
+                                            repository.save(dl);
+                                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                                        });
+                                        d.setUrlText(url);
+                                        d.setAlwaysOnTop(true);
+                                        d.show();
+                                        d.toFront();
+                                        d.requestFocus();
                                     }
+                                }))
+                                .exceptionally(ex -> {
+                                    javafx.application.Platform.runLater(() -> {
+                                        io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
+                                        d.setOnDownloadAdded(dl -> {
+                                            repository.save(dl);
+                                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                                        });
+                                        d.setUrlText(url);
+                                        d.setAlwaysOnTop(true);
+                                        d.show();
+                                        d.toFront();
+                                        d.requestFocus();
+                                    });
+                                    return null;
                                 });
+                        } else {
+                            io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
+                            d.setOnDownloadAdded(dl -> {
+                                repository.save(dl);
+                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                             });
+                            d.setUrlText(url);
+                            d.setAlwaysOnTop(true);
+                            d.show();
+                            d.toFront();
+                            d.requestFocus();
                         }
                     } catch (Exception ex) {
-                        System.err.println("Failed to open MediaDownloadDialog from browser request: " + ex.getMessage());
+                        System.err.println("Failed to open dialog from browser request: " + ex.getMessage());
                     }
                 });
                 return "{\"success\":true}";
