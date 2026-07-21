@@ -77,9 +77,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         root.getStyleClass().add("row");
         
-        HBox rowTop = new HBox();
-        rowTop.getStyleClass().add("row-top");
-        rowTop.setSpacing(12);
+        rowTop.setMinWidth(0);
         
         selectBox.getStyleClass().add("row-checkbox");
         selectBox.setFocusTraversable(false);
@@ -104,6 +102,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         StackPane fileIcon = new StackPane();
         fileIcon.getStyleClass().add("file-icon");
+        fileIcon.setMinWidth(Region.USE_PREF_SIZE);
         extLabel.setStyle("-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #F3F5FC;");
         fileIcon.getChildren().add(extLabel);
         
@@ -112,14 +111,14 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         rowInfo.setMinWidth(0);
         HBox.setHgrow(rowInfo, Priority.ALWAYS);
         
-        HBox nameWrap = new HBox();
+        HBox nameWrap = new HBox(8);
         nameWrap.getStyleClass().add("row-name");
         nameWrap.setMinWidth(0);
+        nameWrap.setAlignment(Pos.CENTER_LEFT);
         
         nameLbl.setMinWidth(0);
-        nameLbl.setMaxWidth(Double.MAX_VALUE);
         nameLbl.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
-        HBox.setHgrow(nameLbl, Priority.ALWAYS);
+        statusChip.setMinWidth(Region.USE_PREF_SIZE);
 
         statusChip.getStyleClass().addAll("status-chip");
         stIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2.4; -fx-fill: transparent;");
@@ -129,7 +128,6 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         metaLbl.getStyleClass().add("row-meta");
         metaLbl.setMinWidth(0);
-        metaLbl.setMaxWidth(Double.MAX_VALUE);
         metaLbl.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
         
         rowInfo.getChildren().addAll(nameWrap, metaLbl);
@@ -137,6 +135,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         // Control Buttons Panel
         HBox controlBox = new HBox(8);
         controlBox.setAlignment(Pos.CENTER_RIGHT);
+        controlBox.setMinWidth(Region.USE_PREF_SIZE);
 
         playPauseBtn.getStyleClass().add("cell-action-btn");
         playPauseIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2.2; -fx-fill: transparent;");
@@ -195,11 +194,15 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         progressBars.getChildren().addAll(overallLaneContainer, lanes);
         
         rowFoot.getStyleClass().add("row-foot");
+        rowFoot.setMinWidth(0);
         progressTxt.setText("1 parallel segment");
         progressTxt.getStyleClass().add("row-progress-txt");
+        progressTxt.setMinWidth(0);
+        progressTxt.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
         
         HBox safeChip = new HBox();
         safeChip.getStyleClass().addAll("status-chip", "ok");
+        safeChip.setMinWidth(Region.USE_PREF_SIZE);
         SVGPath safeIcon = new SVGPath();
         safeIcon.setContent("M20 6 L9 17 L4 12");
         safeIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2.4; -fx-fill: transparent;");
