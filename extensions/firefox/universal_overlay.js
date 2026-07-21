@@ -309,7 +309,7 @@
 
     const allItems = [];
 
-    // Add yt-dlp formats
+    // 1. Add yt-dlp extracted quality/resolution formats
     ytDlpFormats.forEach(fmt => {
       const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
       const ext = (fmt.ext || 'MP4').toUpperCase();
@@ -326,33 +326,44 @@
       });
     });
 
-    // Add network intercepted direct streams
-    netMediaList.forEach((m, idx) => {
-      const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
-      const sizeText = m.contentLength > 0 
-        ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
-        : 'Stream';
-
-      let qualityName = m.customTitle || '';
-      if (!qualityName) {
-        const lowerUrl = m.url.toLowerCase();
-        if (lowerUrl.includes('hd') || lowerUrl.includes('1080') || lowerUrl.includes('720')) {
-          qualityName = `HD Quality (${ext})`;
-        } else if (lowerUrl.includes('sd') || lowerUrl.includes('480') || lowerUrl.includes('360')) {
-          qualityName = `SD Quality (${ext})`;
-        } else {
-          qualityName = `Video Stream ${idx + 1} (${ext})`;
+    // 2. Fall back to network-intercepted media streams if yt-dlp produced no formats
+    if (ytDlpFormats.length === 0) {
+      const uniqueMedia = [];
+      const seenUrls = new Set();
+      
+      netMediaList.forEach((m) => {
+        const cleanUrl = m.url.split('?')[0];
+        if (!seenUrls.has(cleanUrl)) {
+          seenUrls.add(cleanUrl);
+          uniqueMedia.push(m);
         }
-      }
-
-      allItems.push({
-        title: qualityName,
-        badge: sizeText,
-        url: m.url,
-        formatId: 'best',
-        fileName: m.filename
       });
-    });
+
+      uniqueMedia.forEach((m, idx) => {
+        const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
+        const sizeText = m.contentLength > 0 
+          ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
+          : 'Stream';
+
+        let qualityName = m.customTitle || '';
+        if (!qualityName) {
+          const lowerUrl = m.url.toLowerCase();
+          if (lowerUrl.includes('1080') || lowerUrl.includes('hd')) qualityName = `1080p HD (${ext})`;
+          else if (lowerUrl.includes('720')) qualityName = `720p HD (${ext})`;
+          else if (lowerUrl.includes('480')) qualityName = `480p (${ext})`;
+          else if (lowerUrl.includes('360')) qualityName = `360p (${ext})`;
+          else qualityName = `Video Stream ${idx + 1} (${ext})`;
+        }
+
+        allItems.push({
+          title: qualityName,
+          badge: sizeText,
+          url: m.url,
+          formatId: 'best',
+          fileName: m.filename
+        });
+      });
+    }
 
     if (allItems.length === 0) {
       container.innerHTML = '<div class="status-text">No media formats detected.</div>';
