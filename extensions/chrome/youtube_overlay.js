@@ -2,11 +2,201 @@
   'use strict';
 
   const PROCESSED_ATTR = 'data-smartdm-attached';
+  const PLAYER_PROCESSED_ATTR = 'data-smartdm-player-attached';
 
   function initOverlay() {
-    const observer = new MutationObserver(() => scanThumbnails());
+    const observer = new MutationObserver(() => {
+      scanThumbnails();
+      scanPlayer();
+    });
     observer.observe(document.body, { childList: true, subtree: true });
     scanThumbnails();
+    scanPlayer();
+  }
+
+  function scanPlayer() {
+    const player = document.querySelector('#movie_player:not([' + PLAYER_PROCESSED_ATTR + ']), .html5-video-player:not([' + PLAYER_PROCESSED_ATTR + '])');
+    if (!player) return;
+
+    player.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
+
+    const host = document.createElement('div');
+    host.className = 'smartdm-player-host';
+    host.style.position = 'absolute';
+    host.style.top = '12px';
+    host.style.right = '12px';
+    host.style.zIndex = '99999';
+    host.style.pointerEvents = 'auto';
+
+    const shadow = host.attachShadow({ mode: 'open' });
+
+    shadow.innerHTML = `
+      <style>
+        .idm-banner {
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          color: #f8fafc;
+          border: 1px solid rgba(56, 189, 248, 0.5);
+          border-radius: 6px;
+          padding: 6px 12px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+          transition: all 0.2s ease;
+          user-select: none;
+        }
+        .idm-banner:hover {
+          background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+          border-color: #38bdf8;
+          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
+          transform: translateY(-1px);
+        }
+        .play-icon {
+          width: 0;
+          height: 0;
+          border-top: 5px solid transparent;
+          border-bottom: 5px solid transparent;
+          border-left: 8px solid #38bdf8;
+        }
+        .idm-banner:hover .play-icon {
+          border-left-color: #ffffff;
+        }
+        .popover {
+          position: absolute;
+          top: 34px;
+          right: 0;
+          width: 240px;
+          background: rgba(15, 23, 42, 0.96);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 8px;
+          padding: 10px;
+          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.7);
+          display: none;
+          flex-direction: column;
+          gap: 6px;
+          color: #f8fafc;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-size: 12px;
+          z-index: 100000;
+        }
+        .popover.active {
+          display: flex;
+        }
+        .popover-title {
+          font-weight: 700;
+          color: #38bdf8;
+          font-size: 12px;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+          padding-bottom: 4px;
+          margin-bottom: 2px;
+        }
+        .format-item {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 4px;
+          padding: 6px 10px;
+          cursor: pointer;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          transition: background 0.15s;
+        }
+        .format-item:hover {
+          background: rgba(56, 189, 248, 0.25);
+          border-color: #38bdf8;
+        }
+        .format-name {
+          font-weight: 600;
+        }
+        .format-ext {
+          color: #94a3b8;
+          font-size: 10px;
+        }
+        .status-text {
+          font-size: 11px;
+          color: #94a3b8;
+          text-align: center;
+          padding: 8px;
+        }
+      </style>
+      <button class="idm-banner">
+        <span class="play-icon"></span>
+        Download this video
+      </button>
+      <div class="popover">
+        <div class="popover-title">SmartDM Video Formats</div>
+        <div class="popover-content">
+          <div class="status-text">Probing video formats...</div>
+        </div>
+      </div>
+    `;
+
+    const bannerBtn = shadow.querySelector('.idm-banner');
+    const popover = shadow.querySelector('.popover');
+    const content = shadow.querySelector('.popover-content');
+
+    bannerBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const videoUrl = window.location.href;
+      const isActive = popover.classList.contains('active');
+      if (isActive) {
+        popover.classList.remove('active');
+        return;
+      }
+
+      popover.classList.add('active');
+      content.innerHTML = '<div class="status-text">Fetching formats from SmartDM...</div>';
+
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+        if (!res || !res.success || !res.formats || res.formats.length === 0) {
+          // Fallback: Send direct download trigger to open desktop dialog
+          content.innerHTML = '<div class="status-text" style="color:#ef4444;">Opening SmartDM...</div>';
+          chrome.runtime.sendMessage({ type: 'START_MEDIA_DOWNLOAD', url: videoUrl });
+          setTimeout(() => popover.classList.remove('active'), 1200);
+          return;
+        }
+
+        content.innerHTML = '';
+        res.formats.slice(0, 6).forEach((fmt) => {
+          const item = document.createElement('div');
+          item.className = 'format-item';
+          item.innerHTML = `
+            <span class="format-name">${fmt.qualityLabel || fmt.resolution || 'Download'}</span>
+            <span class="format-ext">${fmt.ext ? fmt.ext.toUpperCase() : 'MP4'}</span>
+          `;
+
+          item.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            content.innerHTML = '<div class="status-text" style="color:#38bdf8;">Opening SmartDM Dialog...</div>';
+
+            chrome.runtime.sendMessage(
+              {
+                type: 'START_MEDIA_DOWNLOAD',
+                url: videoUrl,
+                formatId: fmt.formatId,
+                fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
+              },
+              () => {
+                content.innerHTML = '<div class="status-text" style="color:#22c55e;">Opened SmartDM Dialog!</div>';
+                setTimeout(() => popover.classList.remove('active'), 1500);
+              }
+            );
+          });
+
+          content.appendChild(item);
+        });
+      });
+    });
+
+    player.appendChild(host);
   }
 
   function scanThumbnails() {
@@ -18,7 +208,6 @@
     if (anchor.getAttribute(PROCESSED_ATTR)) return;
     anchor.setAttribute(PROCESSED_ATTR, 'true');
 
-    // Make sure container has relative positioning
     const parent = anchor.parentElement;
     if (parent && getComputedStyle(parent).position === 'static') {
       parent.style.position = 'relative';
@@ -27,7 +216,6 @@
     const videoUrl = anchor.href || window.location.href;
     if (!videoUrl || (!videoUrl.includes('/watch?v=') && !videoUrl.includes('/shorts/'))) return;
 
-    // Create Shadow DOM host
     const host = document.createElement('div');
     host.className = 'smartdm-host';
     host.style.position = 'absolute';
@@ -185,7 +373,7 @@
                 fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
               },
               () => {
-                content.innerHTML = '<div class="status-text" style="color:#22c55e;">Added to SmartDM!</div>';
+                content.innerHTML = '<div class="status-text" style="color:#22c55e;">Opened SmartDM Dialog!</div>';
                 setTimeout(() => popover.classList.remove('active'), 1500);
               }
             );

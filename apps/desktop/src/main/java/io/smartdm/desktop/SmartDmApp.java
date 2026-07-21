@@ -497,26 +497,32 @@ public class SmartDmApp extends Application {
                 }
                 return "{\"success\":false,\"error\":\"Formats unavailable\"}";
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
-                try {
-                    String filename = (req.fileName() != null && !req.fileName().isBlank()) ? req.fileName() : "video_" + System.currentTimeMillis() + ".mp4";
-                    String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                    Path targetPath = java.nio.file.Paths.get(defaultDir, filename);
-
-                    io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(
-                        io.smartdm.domain.SourceUri.of(req.url()),
-                        io.smartdm.domain.Destination.of(targetPath)
-                    );
-                    repository.save(dl);
-
-                    javafx.application.Platform.runLater(() -> {
-                        if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                    });
-
-                    io.smartdm.desktop.shell.MediaDownloadTracker.startDownload(dl, targetPath, req.url(), req.formatId());
-                    return "{\"success\":true}";
-                } catch (Exception ex) {
-                    return "{\"success\":false,\"error\":\"" + ex.getMessage() + "\"}";
-                }
+                javafx.application.Platform.runLater(() -> {
+                    try {
+                        io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
+                        if (toolMgr.isAvailable()) {
+                            io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                            extractor.extractMetadataAsync(req.url()).thenAccept(meta -> {
+                                javafx.application.Platform.runLater(() -> {
+                                    if (meta != null) {
+                                        io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
+                                            null,
+                                            meta,
+                                            dl -> {
+                                                repository.save(dl);
+                                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                                            }
+                                        );
+                                        dlg.show();
+                                    }
+                                });
+                            });
+                        }
+                    } catch (Exception ex) {
+                        System.err.println("Failed to open MediaDownloadDialog from browser request: " + ex.getMessage());
+                    }
+                });
+                return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
                 javafx.application.Platform.runLater(() -> {
                     io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(
