@@ -328,13 +328,25 @@
 
     // Add network intercepted direct streams
     netMediaList.forEach((m, idx) => {
-      const ext = m.filename.substring(m.filename.lastIndexOf('.') + 1).toUpperCase() || 'MEDIA';
+      const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
       const sizeText = m.contentLength > 0 
         ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
-        : 'Direct Stream';
+        : 'Stream';
+
+      let qualityName = m.customTitle || '';
+      if (!qualityName) {
+        const lowerUrl = m.url.toLowerCase();
+        if (lowerUrl.includes('hd') || lowerUrl.includes('1080') || lowerUrl.includes('720')) {
+          qualityName = `HD Quality (${ext})`;
+        } else if (lowerUrl.includes('sd') || lowerUrl.includes('480') || lowerUrl.includes('360')) {
+          qualityName = `SD Quality (${ext})`;
+        } else {
+          qualityName = `Video Stream ${idx + 1} (${ext})`;
+        }
+      }
 
       allItems.push({
-        title: `Stream ${idx + 1} (${ext})`,
+        title: qualityName,
         badge: sizeText,
         url: m.url,
         formatId: 'best',

@@ -9,15 +9,9 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Clean up tab media on tab close or refresh
+// Clean up tab media on tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
   detectedMediaMap.delete(tabId);
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === 'loading') {
-    detectedMediaMap.delete(tabId);
-  }
 });
 
 // Intercept network requests for video/audio streams
@@ -45,7 +39,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       
       const isMediaExt = url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
-                         url.includes('.flv') || url.includes('.ts');
+                         url.includes('.flv') || url.includes('.ts') ||
+                         url.includes('fbcdn.net') || url.includes('cdninstagram.com');
 
       if (isMediaMime || isMediaExt) {
         if (!detectedMediaMap.has(details.tabId)) {
@@ -53,6 +48,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
         const mediaList = detectedMediaMap.get(details.tabId);
         if (!mediaList.some((m) => m.url === details.url)) {
+          // Keep at most 25 items per tab to prevent memory leaks
+          if (mediaList.length >= 25) mediaList.shift();
           mediaList.push({
             url: details.url,
             contentType: contentType,
