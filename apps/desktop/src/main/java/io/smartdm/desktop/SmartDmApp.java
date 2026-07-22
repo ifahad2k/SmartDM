@@ -517,11 +517,11 @@ public class SmartDmApp extends Application {
                 }
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
-                System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
+                System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
+                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -677,6 +677,8 @@ public class SmartDmApp extends Application {
 
     private static void openMediaOrStandardDialog(
         String url,
+        String videoUrl,
+        String audioUrl,
         String preferredFormatId,
         DownloadRepository repository,
         DownloadsWorkspace[] workspaceRef,
@@ -685,23 +687,25 @@ public class SmartDmApp extends Application {
         ExecutorService enginePool,
         SingleDownloadCoordinator coordinator
     ) {
-        boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId);
+        boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId) || (videoUrl != null && !videoUrl.isBlank());
 
         io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
-        if (isMediaUrl && toolMgr.isAvailable()) {
-            // Extract real metadata in background thread FIRST, then show dialog
+        if (isMediaUrl) {
+            String targetStreamUrl = (videoUrl != null && !videoUrl.isBlank()) ? videoUrl : url;
             enginePool.submit(() -> {
                 io.smartdm.media.api.MediaMetadata meta = null;
-                try {
-                    io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                    meta = extractor.extractMetadataAsync(url).get(15, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (Exception ex) {
-                    System.err.println("Media metadata extraction failed: " + ex.getMessage());
+                // Only invoke yt-dlp metadata dump if direct stream URL was not provided
+                if ((videoUrl == null || videoUrl.isBlank()) && toolMgr.isAvailable()) {
+                    try {
+                        io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                        meta = extractor.extractMetadataAsync(url).get(8, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception ex) {
+                        System.err.println("Media metadata extraction failed: " + ex.getMessage());
+                    }
                 }
 
                 final io.smartdm.media.api.MediaMetadata finalMeta;
                 if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
-                    // Use real extracted metadata
                     String webpageUrl = (meta.webpageUrl() != null && !meta.webpageUrl().isBlank()) ? meta.webpageUrl() : url;
                     String title = (meta.title() != null && !meta.title().isBlank()) ? meta.title() : deriveTitleFromUrl(url);
                     finalMeta = new io.smartdm.media.api.MediaMetadata(
@@ -709,8 +713,7 @@ public class SmartDmApp extends Application {
                         meta.thumbnailUrl(), meta.formats(), meta.subtitles()
                     );
                 } else {
-                    // Domain-agnostic fallback metadata with full resolution choices
-                    String titleName = deriveTitleFromUrl(url);
+                    String titleName = deriveTitleFromUrl(targetStreamUrl);
                     java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
                         new io.smartdm.media.api.MediaFormat("bestvideo[height<=1080]+bestaudio/best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
                         new io.smartdm.media.api.MediaFormat("bestvideo[height<=720]+bestaudio/best", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
@@ -718,7 +721,7 @@ public class SmartDmApp extends Application {
                         new io.smartdm.media.api.MediaFormat("bestvideo[height<=360]+bestaudio/best", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
                         new io.smartdm.media.api.MediaFormat("bestaudio", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
                     );
-                    finalMeta = new io.smartdm.media.api.MediaMetadata("video", titleName, 0, url, null, fallbackFormats, java.util.List.of());
+                    finalMeta = new io.smartdm.media.api.MediaMetadata("video", titleName, 0, targetStreamUrl, null, fallbackFormats, java.util.List.of());
                 }
 
                 javafx.application.Platform.runLater(() -> {

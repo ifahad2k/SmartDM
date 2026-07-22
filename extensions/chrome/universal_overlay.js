@@ -316,6 +316,21 @@
           });
         }
 
+        // Single format shortcut: directly launch MediaDownloadDialog
+        if (netMedia.length === 1) {
+          const singleItem = netMedia[0];
+          chrome.runtime.sendMessage({
+            type: 'START_MEDIA_DOWNLOAD',
+            url: singleItem.url,
+            videoUrl: singleItem.videoUrl || null,
+            audioUrl: singleItem.audioUrl || null,
+            formatId: 'best',
+            fileName: singleItem.filename || null
+          });
+          popover.classList.remove('active');
+          return;
+        }
+
         renderUniversalFormats(content, [], netMedia, pageUrl, popover);
 
         // 2. Fetch detailed yt-dlp formats in background and update list when ready
@@ -332,6 +347,12 @@
 
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
     container.innerHTML = '';
+
+    const hostDomain = window.location.hostname.toLowerCase();
+    if (hostDomain.includes('netflix.com')) {
+      container.innerHTML = '<div class="status-text">No media formats detected.</div>';
+      return;
+    }
 
     const allItems = [];
 
@@ -385,6 +406,8 @@
           title: qualityName,
           badge: sizeText,
           url: m.url,
+          videoUrl: m.videoUrl || null,
+          audioUrl: m.audioUrl || null,
           formatId: 'best',
           fileName: m.filename
         });
@@ -421,6 +444,8 @@
           {
             type: 'START_MEDIA_DOWNLOAD',
             url: item.url,
+            videoUrl: item.videoUrl || null,
+            audioUrl: item.audioUrl || null,
             formatId: item.formatId,
             fileName: item.fileName
           },

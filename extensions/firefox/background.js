@@ -67,6 +67,71 @@ function parseM3u8Formats(m3u8Text, baseUrl) {
   return formats;
 }
 
+function parseMpdFormats(mpdText, baseUrl) {
+  const formats = [];
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(mpdText, "text/xml");
+    
+    // Check DRM / ContentProtection - if present, return empty (encrypted)
+    const drmNode = xmlDoc.querySelector('ContentProtection');
+    if (drmNode) return [];
+
+    const adaptSets = xmlDoc.querySelectorAll('AdaptationSet');
+    let audioUrl = null;
+    let videoReps = [];
+
+    adaptSets.forEach(set => {
+      const mime = (set.getAttribute('mimeType') || '').toLowerCase();
+      const contentType = (set.getAttribute('contentType') || '').toLowerCase();
+      const isVideo = mime.includes('video') || contentType === 'video';
+      const isAudio = mime.includes('audio') || contentType === 'audio';
+
+      const reps = set.querySelectorAll('Representation');
+      reps.forEach(rep => {
+        const bandwidth = parseInt(rep.getAttribute('bandwidth') || '0', 10);
+        const width = parseInt(rep.getAttribute('width') || '0', 10);
+        const height = parseInt(rep.getAttribute('height') || '0', 10);
+        
+        let mediaUrl = '';
+        const baseUrlNode = rep.querySelector('BaseURL') || set.querySelector('BaseURL');
+        if (baseUrlNode) {
+          mediaUrl = baseUrlNode.textContent.trim();
+          if (!mediaUrl.startsWith('http')) {
+            try { mediaUrl = new URL(mediaUrl, baseUrl).href; } catch(e) {}
+          }
+        }
+
+        if (mediaUrl) {
+          if (isVideo) {
+            videoReps.push({ height, width, bandwidth, url: mediaUrl });
+          } else if (isAudio && !audioUrl) {
+            audioUrl = mediaUrl;
+          }
+        }
+      });
+    });
+
+    videoReps.sort((a, b) => b.height - a.height || b.bandwidth - a.bandwidth);
+    videoReps.forEach(v => {
+      const label = v.height > 0 ? `${v.height}p HD` : 'Video Stream';
+      const kbps = Math.round(v.bandwidth / 1000);
+      const badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
+
+      formats.push({
+        title: label,
+        badge: badge,
+        url: v.url,
+        videoUrl: v.url,
+        audioUrl: audioUrl,
+        height: v.height,
+        bandwidth: v.bandwidth
+      });
+    });
+  } catch(e) {}
+  return formats;
+}
+
 // Intercept network requests for video/audio streams
 if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
   chrome.webRequest.onHeadersReceived.addListener(
@@ -84,6 +149,11 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       });
 
       const url = details.url.toLowerCase();
+
+      // Explicitly ignore Netflix and DRM content so Netflix displays "No media formats detected"
+      if (url.includes('netflix.com') || url.includes('nflxvideo.net') || url.includes('widevine') || url.includes('pssh')) {
+        return;
+      }
 
       // Exclude web assets, images, scripts, stylesheets, fonts
       const isNonMediaAsset = url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
@@ -147,6 +217,27 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                     }
                   });
                 }
+              })
+              .catch(() => {});
+          } else if (targetUrl.includes('.mpd')) {
+            fetch(targetUrl)
+              .then((r) => r.text())
+              .then((text) => {
+                const mpdFormats = parseMpdFormats(text, targetUrl);
+                mpdFormats.forEach((f) => {
+                  if (!mediaList.some((m) => m.url === f.url)) {
+                    mediaList.push({
+                      url: f.url,
+                      videoUrl: f.videoUrl,
+                      audioUrl: f.audioUrl,
+                      contentType: 'video/mp4',
+                      contentLength: 0,
+                      filename: f.title + '.mp4',
+                      customTitle: f.title,
+                      customBadge: f.badge
+                    });
+                  }
+                });
               })
               .catch(() => {});
           }
