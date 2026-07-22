@@ -23,15 +23,7 @@
     }
   }
 
-  function getDefaultFallbackFormats() {
-    return [
-      { formatId: 'best', resolution: '1080p HD', ext: 'mp4', fileSize: 0, isAudioOnly: false },
-      { formatId: '22', resolution: '720p HD', ext: 'mp4', fileSize: 0, isAudioOnly: false },
-      { formatId: '18', resolution: '480p', ext: 'mp4', fileSize: 0, isAudioOnly: false },
-      { formatId: '134', resolution: '360p', ext: 'mp4', fileSize: 0, isAudioOnly: false },
-      { formatId: '140', resolution: 'Audio Only', ext: 'm4a', fileSize: 0, isAudioOnly: true }
-    ];
-  }
+
 
   function renderFormatItems(container, formats, videoUrl, popover) {
     container.innerHTML = '';
@@ -250,12 +242,21 @@
       }
 
       popover.classList.add('active');
-      renderFormatItems(content, getDefaultFallbackFormats(), videoUrl, popover);
+      content.innerHTML = `
+        <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+          <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+          <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+        </div>
+      `;
 
       const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
       runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
+        } else if (res && res.success === false) {
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">SmartDM App is not running.<br><span style="font-size:10px; color:#94a3b8;">Please open SmartDM desktop app.</span></div>';
+        } else {
+          content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
     });
@@ -438,12 +439,21 @@
       }
 
       popover.classList.add('active');
-      renderFormatItems(content, getDefaultFallbackFormats(), videoUrl, popover);
+      content.innerHTML = `
+        <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+          <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+          <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+        </div>
+      `;
 
       const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
       runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
+        } else if (res && res.success === false) {
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">SmartDM App is not running.<br><span style="font-size:10px; color:#94a3b8;">Please open SmartDM desktop app.</span></div>';
+        } else {
+          content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
     });

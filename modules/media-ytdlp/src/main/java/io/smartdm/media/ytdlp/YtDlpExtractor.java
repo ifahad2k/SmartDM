@@ -84,20 +84,7 @@ public class YtDlpExtractor implements MediaExtractor {
                 System.err.println("YtDlpExtractor error for URL [" + url + "]: " + ex.getMessage());
             }
 
-            // Only return YouTube fallbacks if this is actually a YouTube URL
-            boolean isYouTube = url.contains("youtube.com") || url.contains("youtu.be");
-            if (isYouTube) {
-                List<MediaFormat> fallbackFormats = List.of(
-                    new MediaFormat("best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
-                    new MediaFormat("22", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
-                    new MediaFormat("18", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
-                    new MediaFormat("134", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
-                    new MediaFormat("140", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
-                );
-                return new MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, List.of());
-            }
-
-            // Non-YouTube sites (Instagram, Facebook, Vimeo, etc.) return empty formats on extraction failure
+            // Return empty metadata on extraction failure
             return new MediaMetadata("video", "Media Stream", 0, url, null, List.of(), List.of());
         });
     }
