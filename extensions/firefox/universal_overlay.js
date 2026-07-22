@@ -226,6 +226,25 @@
           text-align: center;
           padding: 10px;
         }
+        .spinner-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          gap: 10px;
+        }
+        .spinner {
+          width: 22px;
+          height: 22px;
+          border: 3px solid rgba(56, 189, 248, 0.2);
+          border-top-color: #38bdf8;
+          border-radius: 50%;
+          animation: smartdm-spin 0.8s linear infinite;
+        }
+        @keyframes smartdm-spin {
+          to { transform: rotate(360deg); }
+        }
       </style>
       <button class="idm-banner">
         <svg class="icon" viewBox="0 0 24 24">
@@ -290,6 +309,9 @@
       }
     });
 
+    let formatSearchInterval = null;
+    let formatSearchTimeout = null;
+
     bannerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -298,52 +320,80 @@
       const isActive = popover.classList.contains('active');
       if (isActive) {
         popover.classList.remove('active');
+        if (formatSearchInterval) clearInterval(formatSearchInterval);
+        if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
         return;
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text">Detecting media streams...</div>';
+      content.innerHTML = `
+        <div class="spinner-container">
+          <div class="spinner"></div>
+          <span class="status-text" style="padding:0;">Searching for video formats...</span>
+        </div>
+      `;
 
       const pageUrl = window.location.href;
       const directSrc = mediaEl.src || mediaEl.currentSrc;
+      let hasFound = false;
 
-      // 1. Render instant items (network media or standard fallbacks)
-      chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-        const netMedia = (netRes && netRes.media) ? netRes.media : [];
+      const checkFormats = () => {
+        chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+          const netMedia = (netRes && netRes.media) ? netRes.media : [];
 
-        if (directSrc && !directSrc.startsWith('blob:') && !netMedia.some(m => m.url === directSrc)) {
-          netMedia.unshift({
-            url: directSrc,
-            contentType: 'video/mp4',
-            filename: 'video_stream.mp4',
-            contentLength: 0
-          });
-        }
+          if (directSrc && !directSrc.startsWith('blob:') && !netMedia.some(m => m.url === directSrc)) {
+            netMedia.unshift({
+              url: directSrc,
+              contentType: 'video/mp4',
+              filename: 'video_stream.mp4',
+              contentLength: 0
+            });
+          }
 
-        // Single format shortcut: directly launch MediaDownloadDialog
-        if (netMedia.length === 1) {
-          const singleItem = netMedia[0];
-          chrome.runtime.sendMessage({
-            type: 'START_MEDIA_DOWNLOAD',
-            url: singleItem.url,
-            videoUrl: singleItem.videoUrl || null,
-            audioUrl: singleItem.audioUrl || null,
-            formatId: 'best',
-            fileName: singleItem.filename || null
-          });
-          popover.classList.remove('active');
-          return;
-        }
+          if (netMedia.length > 0) {
+            hasFound = true;
+            if (formatSearchInterval) clearInterval(formatSearchInterval);
+            if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
 
-        renderUniversalFormats(content, [], netMedia, pageUrl, popover);
+            if (netMedia.length === 1) {
+              const singleItem = netMedia[0];
+              chrome.runtime.sendMessage({
+                type: 'START_MEDIA_DOWNLOAD',
+                url: singleItem.url,
+                videoUrl: singleItem.videoUrl || null,
+                audioUrl: singleItem.audioUrl || null,
+                formatId: 'best',
+                fileName: singleItem.filename || null
+              });
+              popover.classList.remove('active');
+              return;
+            }
 
-        // 2. Fetch detailed yt-dlp formats in background and update list when ready
-        chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
-          if (res && res.success && res.formats && res.formats.length > 0) {
-            renderUniversalFormats(content, res.formats, netMedia, pageUrl, popover);
+            renderUniversalFormats(content, [], netMedia, pageUrl, popover);
           }
         });
+      };
+
+      checkFormats();
+      formatSearchInterval = setInterval(checkFormats, 1000);
+
+      // Async query yt-dlp formats
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          hasFound = true;
+          if (formatSearchInterval) clearInterval(formatSearchInterval);
+          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+          renderUniversalFormats(content, res.formats, [], pageUrl, popover);
+        }
       });
+
+      // 10-second timeout: if no formats found, display "No media formats detected."
+      formatSearchTimeout = setTimeout(() => {
+        if (formatSearchInterval) clearInterval(formatSearchInterval);
+        if (!hasFound) {
+          content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+        }
+      }, 10000);
     });
 
     container.appendChild(host);
@@ -623,6 +673,25 @@
           text-align: center;
           padding: 8px;
         }
+        .spinner-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          gap: 10px;
+        }
+        .spinner {
+          width: 22px;
+          height: 22px;
+          border: 3px solid rgba(56, 189, 248, 0.2);
+          border-top-color: #38bdf8;
+          border-radius: 50%;
+          animation: smartdm-spin 0.8s linear infinite;
+        }
+        @keyframes smartdm-spin {
+          to { transform: rotate(360deg); }
+        }
       </style>
       <button class="thumb-btn">
         <svg class="icon" viewBox="0 0 24 24">
@@ -659,6 +728,9 @@
       e.stopImmediatePropagation();
     });
 
+    let thumbInterval = null;
+    let thumbTimeout = null;
+
     thumbBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -667,24 +739,54 @@
       const isActive = popover.classList.contains('active');
       if (isActive) {
         popover.classList.remove('active');
+        if (thumbInterval) clearInterval(thumbInterval);
+        if (thumbTimeout) clearTimeout(thumbTimeout);
         return;
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text">Detecting resolutions...</div>';
+      content.innerHTML = `
+        <div class="spinner-container">
+          <div class="spinner"></div>
+          <span class="status-text" style="padding:0;">Searching for video formats...</span>
+        </div>
+      `;
 
-      chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-        const netMedia = (netRes && netRes.media) ? netRes.media : [];
+      let hasFound = false;
 
-        renderThumbnailFormats(content, [], netMedia, videoUrl, popover);
+      const checkThumbFormats = () => {
+        chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+          const netMedia = (netRes && netRes.media) ? netRes.media : [];
 
-        // Fetch detailed yt-dlp formats in background and update list when ready
-        chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-          if (res && res.success && res.formats && res.formats.length > 0) {
-            renderThumbnailFormats(content, res.formats, netMedia, videoUrl, popover);
+          if (netMedia.length > 0) {
+            hasFound = true;
+            if (thumbInterval) clearInterval(thumbInterval);
+            if (thumbTimeout) clearTimeout(thumbTimeout);
+            renderThumbnailFormats(content, [], netMedia, videoUrl, popover);
           }
         });
+      };
+
+      checkThumbFormats();
+      thumbInterval = setInterval(checkThumbFormats, 1000);
+
+      // Async query yt-dlp formats
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          hasFound = true;
+          if (thumbInterval) clearInterval(thumbInterval);
+          if (thumbTimeout) clearTimeout(thumbTimeout);
+          renderThumbnailFormats(content, res.formats, [], videoUrl, popover);
+        }
       });
+
+      // 10-second timeout: if no formats found, display "No media formats detected."
+      thumbTimeout = setTimeout(() => {
+        if (thumbInterval) clearInterval(thumbInterval);
+        if (!hasFound) {
+          content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+        }
+      }, 10000);
     });
 
     containerEl.appendChild(host);

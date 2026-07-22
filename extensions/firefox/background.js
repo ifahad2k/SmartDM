@@ -156,11 +156,12 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       }
 
       // Exclude web assets, images, scripts, stylesheets, fonts
+      if (contentType.includes('image/')) return;
       const isNonMediaAsset = url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
-                              url.includes('.svg') || url.includes('.webp') || url.includes('.json') ||
-                              url.includes('.woff') || url.includes('.woff2') || url.includes('.html') ||
-                              url.includes('.ico');
+                              url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
+                              url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
+                              url.includes('.html') || url.includes('.ico');
       if (isNonMediaAsset) return;
 
       // Clean byte-range segment parameters from CDN URLs to produce full stream URL
