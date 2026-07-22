@@ -305,33 +305,36 @@
   }
 
   function scanThumbnails() {
-    const thumbnailElements = document.querySelectorAll('ytd-thumbnail, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, a#thumbnail');
-    thumbnailElements.forEach((el) => {
-      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, a#thumbnail') || el;
-      if (container.getAttribute(PROCESSED_ATTR)) return;
-      container.setAttribute(PROCESSED_ATTR, 'true');
+    // Target the visual picture container elements across all YouTube layouts (home, right sidebar, search, playlists, shorts)
+    const thumbBoxes = document.querySelectorAll('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail, ytd-playlist-panel-video-renderer #thumbnail');
+    thumbBoxes.forEach((box) => {
+      // Do not process main video player containers
+      if (box.closest('#player, #movie_player, .html5-video-player')) return;
+      if (box.getAttribute(PROCESSED_ATTR)) return;
 
-      let thumbAnchor = container.querySelector('a#thumbnail, a.ytd-thumbnail, a[href*="/watch?v="], a[href*="/shorts/"]');
-      if (!thumbAnchor && container.tagName === 'A') {
-        thumbAnchor = container;
+      // Find the associated video/shorts URL from the box or enclosing card
+      let linkEl = box.tagName === 'A' ? box : box.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (!linkEl) linkEl = box.closest('a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (!linkEl) linkEl = box.parentElement?.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (!linkEl) {
+        const card = box.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, yt-lockup-view-model, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-playlist-panel-video-renderer');
+        if (card) linkEl = card.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
       }
-      if (thumbAnchor) {
-        attachBadge(thumbAnchor);
-      }
+
+      if (!linkEl) return;
+      const rawUrl = linkEl.getAttribute('href') || linkEl.href;
+      if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
+
+      box.setAttribute(PROCESSED_ATTR, 'true');
+      attachBadge(box, rawUrl);
     });
   }
 
-  function attachBadge(anchor) {
-    if (anchor.getAttribute(PROCESSED_ATTR)) return;
-    anchor.setAttribute(PROCESSED_ATTR, 'true');
-
-    const parent = anchor.parentElement;
-    if (parent && getComputedStyle(parent).position === 'static') {
-      parent.style.position = 'relative';
+  function attachBadge(box, rawUrl) {
+    if (getComputedStyle(box).position === 'static') {
+      box.style.position = 'relative';
     }
 
-    const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
-    if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
     const videoUrl = getCanonicalUrl(rawUrl);
 
     const host = document.createElement('div');
@@ -372,122 +375,114 @@
           background: rgba(14, 165, 233, 0.9);
           color: #ffffff;
           border-color: #ffffff;
-          transform: translateY(-1px);
+        }
+        .badge-btn svg {
+          width: 12px;
+          height: 12px;
+          fill: currentColor;
         }
         .popover {
           position: absolute;
-          top: 28px;
+          top: 32px;
           right: 0;
-          width: 250px;
-          background: rgba(15, 23, 42, 0.95);
+          background: rgba(15, 23, 42, 0.96);
           backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 8px;
+          border: 1px solid rgba(56, 189, 248, 0.3);
+          border-radius: 10px;
           padding: 10px;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+          width: 250px;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
           display: none;
           flex-direction: column;
           gap: 6px;
-          color: #f8fafc;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 12px;
           z-index: 10000;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
         .popover.active {
           display: flex;
         }
-        .popover-title {
+        .popover-header {
+          font-size: 11px;
           font-weight: 700;
           color: #38bdf8;
-          font-size: 12px;
-          border-bottom: 1px solid rgba(255,255,255,0.1);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
           padding-bottom: 4px;
-          margin-bottom: 2px;
-        }
-        .popover-content {
-          max-height: 200px;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          padding-right: 4px;
-        }
-        .popover-content::-webkit-scrollbar {
-          width: 4px;
-        }
-        .popover-content::-webkit-scrollbar-thumb {
-          background: rgba(56, 189, 248, 0.5);
-          border-radius: 4px;
-        }
-        .format-item {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 4px;
-          padding: 6px 8px;
-          cursor: pointer;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
           display: flex;
           justify-content: space-between;
           align-items: center;
-          transition: background 0.15s;
+        }
+        .format-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 6px 8px;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.04);
+          color: #e2e8f0;
+          font-size: 11px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          border: 1px solid transparent;
         }
         .format-item:hover {
-          background: rgba(56, 189, 248, 0.2);
-          border-color: #38bdf8;
+          background: rgba(56, 189, 248, 0.15);
+          border-color: rgba(56, 189, 248, 0.4);
+          color: #ffffff;
         }
-        .format-info {
-          display: flex;
-          flex-direction: column;
-        }
-        .format-name {
-          font-weight: 600;
-        }
-        .format-ext {
-          color: #38bdf8;
+        .format-badge {
           font-weight: 700;
-          font-size: 11px;
+          color: #38bdf8;
         }
-        .status-text {
-          font-size: 11px;
+        .format-size {
           color: #94a3b8;
-          text-align: center;
-          padding: 8px;
+          font-size: 10px;
         }
       </style>
-      <button class="badge-btn">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        SmartDM
-      </button>
-      <div class="popover">
-        <div class="popover-title">Select Quality / Format</div>
-        <div class="popover-content">
-          <div class="status-text">Fetching formats...</div>
+      <div style="position: relative;">
+        <div class="badge-btn" title="Download with SmartDM">
+          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          SmartDM
+        </div>
+        <div class="popover">
+          <div class="popover-header">
+            <span>Select Quality / Format</span>
+            <span style="cursor:pointer; color:#94a3b8; font-size:13px;" id="close-pop">&times;</span>
+          </div>
+          <div class="popover-content">
+            <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+              <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+              <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+            </div>
+          </div>
         </div>
       </div>
     `;
 
-    const btn = shadow.querySelector('.badge-btn');
+    const badgeBtn = shadow.querySelector('.badge-btn');
     const popover = shadow.querySelector('.popover');
+    const closePop = shadow.querySelector('#close-pop');
     const content = shadow.querySelector('.popover-content');
 
-    // Auto-close on click outside
-    document.addEventListener('click', (e) => {
-      if (popover.classList.contains('active')) {
-        const path = e.composedPath ? e.composedPath() : [];
-        if (!path.includes(host) && !host.contains(e.target)) {
-          popover.classList.remove('active');
-        }
-      }
+    closePop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      popover.classList.remove('active');
     });
 
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
+    badgeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      e.preventDefault();
 
       const isActive = popover.classList.contains('active');
+      document.querySelectorAll('.smartdm-host, .smartdm-player-host').forEach((h) => {
+        if (h.shadowRoot) {
+          const p = h.shadowRoot.querySelector('.popover');
+          if (p) p.classList.remove('active');
+        }
+      });
+
       if (isActive) {
         popover.classList.remove('active');
         return;
@@ -518,10 +513,7 @@
       }
     });
 
-    if (anchor.style.position === 'static' || !anchor.style.position) {
-      anchor.style.position = 'relative';
-    }
-    anchor.appendChild(host);
+    box.appendChild(host);
   }
 
   if (document.readyState === 'loading') {

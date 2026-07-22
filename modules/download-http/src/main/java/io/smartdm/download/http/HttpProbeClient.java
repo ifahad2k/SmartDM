@@ -36,7 +36,7 @@ public class HttpProbeClient {
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri, AuthCredential credential) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
                 .timeout(Duration.ofSeconds(10));
                 
@@ -81,7 +81,7 @@ public class HttpProbeClient {
     private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri, AuthCredential credential) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
                 .header("Range", "bytes=0-0")
                 .GET()
                 .timeout(Duration.ofSeconds(10));

@@ -31,7 +31,7 @@ public class YtDlpExtractor implements MediaExtractor {
                 new IllegalStateException("yt-dlp executable not found. Please install yt-dlp."));
 
             try {
-                // Try 1: standard yt-dlp dump-json with user-agent
+                // Try 1: standard yt-dlp dump-json without hardcoded user-agent so yt-dlp uses its internal client spoofing
                 ProcessBuilder pb = new ProcessBuilder(
                     ytDlp.toString(),
                     "--dump-json",
@@ -39,7 +39,6 @@ public class YtDlpExtractor implements MediaExtractor {
                     "--no-warnings",
                     "--ignore-config",
                     "--no-check-certificates",
-                    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     url
                 );
 
@@ -54,16 +53,17 @@ public class YtDlpExtractor implements MediaExtractor {
 
                 int exitCode = process.waitFor();
                 if (exitCode != 0 || jsonOutput.isBlank()) {
-                    System.err.println("yt-dlp standard dump failed: " + errOutput + ". Attempting fallback cookies-from-browser...");
+                    System.err.println("yt-dlp standard dump failed: " + errOutput + ". Attempting fallback player_client...");
                     
-                    // Try 2: with browser cookies fallback
+                    // Try 2: fallback using ios,web_safari player clients which bypass bot checks without locking Chrome database
                     ProcessBuilder pbCookies = new ProcessBuilder(
                         ytDlp.toString(),
                         "--dump-json",
                         "--no-playlist",
                         "--no-warnings",
-                        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "--cookies-from-browser", "chrome",
+                        "--ignore-config",
+                        "--no-check-certificates",
+                        "--extractor-args", "youtube:player_client=ios,web_safari",
                         url
                     );
                     Process processCookies = pbCookies.start();
