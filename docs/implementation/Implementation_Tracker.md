@@ -11,10 +11,10 @@ This document tracks the high-level progress of the SmartDM phases based on the 
 | Phase 4 | Single-download vertical slice | COMPLETE | 2026-07-18 | 2026-07-19 | Core transfer flow, atomic temp-to-dest, and tests passing |
 | Phase 5 | Segmentation, pause/resume, verification, recovery | COMPLETE | 2026-07-19 | 2026-07-19 | Property-based tests, pause/resume, and crash recovery implemented |
 | Phase 6 | Queues, scheduler, bandwidth, and resource control | COMPLETE | 2026-07-20 | 2026-07-20 | Queue execution engine, database-backed scheduling timers, SetTimerDialog UI |
-| Phase 7 | Categories, batch, clipboard, authentication, proxy | NOT STARTED | | | |
-| Phase 8 | Chrome/Firefox native browser integration | NOT STARTED | | | |
-| Phase 9 | yt-dlp and FFmpeg media subsystem | NOT STARTED | | | |
-| Phase 10 | YouTube thumbnail SmartDM panel | NOT STARTED | | | |
+| Phase 7 | Categories, batch, clipboard, authentication, proxy | COMPLETE | 2026-07-21 | 2026-07-21 | BatchAddDialog, category rules, clipboard monitor |
+| Phase 8 | Chrome/Firefox native browser integration | COMPLETE | 2026-07-21 | 2026-07-22 | Manifest V3 Chrome & Firefox extensions, native host IPC, IDM-style auto-launch plan |
+| Phase 9 | yt-dlp and FFmpeg media subsystem | COMPLETE | 2026-07-21 | 2026-07-22 | LocalMediaToolManager, YtDlpExtractor, MediaDownloadTracker with isolated temp folder downloads |
+| Phase 10 | YouTube & media thumbnail SmartDM panel | COMPLETE | 2026-07-21 | 2026-07-22 | Universal overlay script, thumbnail badges, main video banner, clean format deduplication |
 | Phase 11 | Local file catalog and duplicate detection | NOT STARTED | | | |
 | Phase 12 | Local smart folder selection | NOT STARTED | | | |
 | Phase 13 | Local natural-language search | NOT STARTED | | | |
