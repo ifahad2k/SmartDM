@@ -131,11 +131,7 @@
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
-    // Automatically prefetch formats for the main video to make UI instantly responsive
-    let prefetchUrl = window.location.href;
-    if (!(prefetchUrl.includes('facebook.com') || prefetchUrl.includes('instagram.com') || prefetchUrl.includes('x.com') || prefetchUrl.includes('tiktok.com') || prefetchUrl.includes('twitter.com'))) {
-        prefetchYtDlpFormats(prefetchUrl);
-    }
+
 
     // Do NOT attach banner to thumbnail videos inside cards or grid feeds
     if (isThumbnailVideo(mediaEl)) return;
@@ -754,8 +750,7 @@
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
     
-    // Prefetch formats aggressively when user hovers over the thumbnail
-    containerEl.addEventListener('mouseenter', () => prefetchYtDlpFormats(videoUrl), { once: true });
+
 
 
     // Auto-close popover on outside click
