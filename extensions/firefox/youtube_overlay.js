@@ -22,54 +22,10 @@
       return window.location.href;
     }
   const ytDlpCache = {};
-  const prefetchQueue = [];
-  let isPrefetching = false;
 
-  function prefetchUrl(url, priority = false) {
-    if (!url || ytDlpCache[url]) return;
-
-    ytDlpCache[url] = { status: 'loading', callbacks: [] };
-
-    if (priority) {
-      prefetchQueue.unshift(url);
-    } else {
-      prefetchQueue.push(url);
-    }
-
-    processPrefetchQueue();
-  }
-
-  function processPrefetchQueue() {
-    if (isPrefetching || prefetchQueue.length === 0) return;
-    isPrefetching = true;
-
-    const url = prefetchQueue.shift();
-    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-
-    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-      if (res && res.success && res.formats && res.formats.length > 0) {
-        ytDlpCache[url].status = 'done';
-        ytDlpCache[url].data = res;
-      } else {
-        ytDlpCache[url].status = 'error';
-        ytDlpCache[url].data = res || { success: false, error: 'failed' };
-      }
-
-      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [];
-      cbs.forEach(cb => cb(ytDlpCache[url].data));
-
-      isPrefetching = false;
-      setTimeout(processPrefetchQueue, 250);
-    });
-  }
-
-  function getCachedYtDlpFormats(url, callback) {
+  function fetchYtDlpFormats(url, callback) {
     if (!url) return;
     if (ytDlpCache[url] && ytDlpCache[url].status === 'done') {
-      callback(ytDlpCache[url].data);
-      return;
-    }
-    if (ytDlpCache[url] && ytDlpCache[url].status === 'error') {
       callback(ytDlpCache[url].data);
       return;
     }
@@ -79,8 +35,19 @@
     }
 
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
-    prefetchQueue.unshift(url);
-    processPrefetchQueue();
+
+    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+      if (res && res.success && res.formats && res.formats.length > 0) {
+        ytDlpCache[url].status = 'done';
+        ytDlpCache[url].data = res;
+      } else {
+        delete ytDlpCache[url];
+      }
+
+      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [callback];
+      cbs.forEach(cb => cb(res));
+    });
   }
 
 
@@ -132,7 +99,7 @@
     if (!window.location.pathname.startsWith('/watch') && !window.location.pathname.startsWith('/shorts')) return;
 
     // Immediately prefetch formats for the active watch video page in background
-    prefetchUrl(window.location.href, true);
+    fetchYtDlpFormats(window.location.href, () => {});
 
     const player = document.querySelector('#movie_player:not([' + PLAYER_PROCESSED_ATTR + ']), .html5-video-player:not([' + PLAYER_PROCESSED_ATTR + '])');
     if (!player) return;
@@ -311,7 +278,7 @@
 
       popover.classList.add('active');
 
-      getCachedYtDlpFormats(videoUrl, (res) => {
+      fetchYtDlpFormats(videoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
@@ -366,9 +333,6 @@
     const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
     if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
     const videoUrl = getCanonicalUrl(rawUrl);
-
-    // Queue background prefetching for this thumbnail URL
-    prefetchUrl(videoUrl, false);
 
     const host = document.createElement('div');
     host.className = 'smartdm-host';
@@ -531,7 +495,7 @@
 
       popover.classList.add('active');
 
-      getCachedYtDlpFormats(videoUrl, (res) => {
+      fetchYtDlpFormats(videoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
