@@ -144,11 +144,20 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         });
 
         if (metadata.formats() != null && !metadata.formats().isEmpty()) {
-            formatCombo.getItems().addAll(metadata.formats());
-            MediaFormat selectedFmt = metadata.formats().get(0);
+            java.util.List<MediaFormat> deduplicated = new java.util.ArrayList<>();
+            java.util.Set<String> seenNames = new java.util.HashSet<>();
+            for (MediaFormat fmt : metadata.formats()) {
+                String name = fmt.getDisplayName();
+                if (!seenNames.contains(name)) {
+                    seenNames.add(name);
+                    deduplicated.add(fmt);
+                }
+            }
+            formatCombo.getItems().addAll(deduplicated);
+            MediaFormat selectedFmt = deduplicated.get(0);
             if (preferredFormatId != null && !preferredFormatId.isBlank()) {
                 String pref = preferredFormatId.toLowerCase().trim();
-                for (MediaFormat fmt : metadata.formats()) {
+                for (MediaFormat fmt : deduplicated) {
                     if (fmt.formatId().equalsIgnoreCase(pref) ||
                         (fmt.resolution() != null && fmt.resolution().toLowerCase().contains(pref)) ||
                         (pref.contains("audio") && fmt.isAudioOnly()) ||

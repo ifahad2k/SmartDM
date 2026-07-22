@@ -144,12 +144,25 @@ public class YtDlpExtractor implements MediaExtractor {
 
         formatsList.sort((a, b) -> Double.compare(b.tbr(), a.tbr()));
 
+        List<MediaFormat> cleanList = new ArrayList<>();
+        java.util.Set<String> seenResolutions = new java.util.HashSet<>();
+        for (MediaFormat fmt : formatsList) {
+            String key = fmt.isAudioOnly() ? ("audio_" + fmt.ext()) : (fmt.resolution() != null && !fmt.resolution().isBlank() ? fmt.resolution() : fmt.formatNote());
+            if (!key.isBlank() && !seenResolutions.contains(key)) {
+                seenResolutions.add(key);
+                cleanList.add(fmt);
+            }
+        }
+        if (cleanList.isEmpty()) {
+            cleanList = formatsList;
+        }
+
         List<String> subtitles = new ArrayList<>();
         JsonNode subsNode = root.path("subtitles");
         if (subsNode.isObject()) {
             subsNode.fieldNames().forEachRemaining(subtitles::add);
         }
 
-        return new MediaMetadata(id, title, duration, webpageUrl, thumbnail, formatsList, subtitles);
+        return new MediaMetadata(id, title, duration, webpageUrl, thumbnail, cleanList, subtitles);
     }
 }

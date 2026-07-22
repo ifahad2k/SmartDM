@@ -409,7 +409,15 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
             
             long downloadedBytes = download.downloadedBytes().value();
             long totalBytes = download.totalBytes().value();
-            String total = totalBytes > 0 ? (totalBytes / 1024 / 1024) + " MB" : "-";
+            String total;
+            if (totalBytes > 0) {
+                total = (totalBytes >= 1024 * 1024 * 1024) ? String.format("%.1f GB", (double)totalBytes / (1024 * 1024 * 1024)) : String.format("%.1f MB", (double)totalBytes / (1024 * 1024));
+            } else if (downloadedBytes > 0) {
+                total = String.format("%.1f MB (Stream)", (double)downloadedBytes / (1024 * 1024));
+            } else {
+                total = "Stream";
+            }
+
             String progressPercent = "";
             if (totalBytes > 0 && downloadedBytes >= 0) {
                 long pct = (downloadedBytes * 100) / totalBytes;

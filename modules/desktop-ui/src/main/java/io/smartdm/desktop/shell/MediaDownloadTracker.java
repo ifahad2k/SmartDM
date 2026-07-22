@@ -155,19 +155,22 @@ public final class MediaDownloadTracker {
                     if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.DOWNLOADING, info.download()));
                 });
 
-                Path tempDir = info.targetPath().getParent().resolve(".smartdm-temp-" + info.download().id().value());
+                Path appTempDir = java.nio.file.Paths.get(System.getProperty("user.home"), "AppData", "Local", "SmartDM", "temp", info.download().id().value());
                 try {
-                    java.nio.file.Files.createDirectories(tempDir);
+                    java.nio.file.Files.createDirectories(appTempDir);
                 } catch (Exception ignored) {}
+
+                Path tempOutputFile = appTempDir.resolve(info.targetPath().getFileName());
 
                 ProcessBuilder pb = new ProcessBuilder(
                     ytDlp.toString(),
                     "--newline",
                     "--continue",
                     "-N", "4",
-                    "--paths", "temp:" + tempDir.toString(),
+                    "--paths", "temp:" + appTempDir.toString(),
+                    "--paths", "home:" + appTempDir.toString(),
                     "-f", formatArg,
-                    "-o", info.targetPath().toString(),
+                    "-o", tempOutputFile.toString(),
                     info.webpageUrl()
                 );
                 pb.redirectErrorStream(true);
@@ -251,6 +254,22 @@ public final class MediaDownloadTracker {
                 activeProcesses.remove(info.download().id());
 
                 if (exitCode == 0 && info.download().state() == DownloadState.DOWNLOADING) {
+                    try {
+                        if (java.nio.file.Files.exists(tempOutputFile)) {
+                            java.nio.file.Files.move(tempOutputFile, info.targetPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        } else if (java.nio.file.Files.exists(appTempDir)) {
+                            try (var s = java.nio.file.Files.list(appTempDir)) {
+                                s.filter(f -> !f.toString().endsWith(".part") && !f.toString().endsWith(".ytdl"))
+                                 .findFirst()
+                                 .ifPresent(f -> {
+                                     try { java.nio.file.Files.move(f, info.targetPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignored) {}
+                                 });
+                            }
+                        }
+                    } catch (Exception ex) {
+                        System.err.println("Error moving temp download file to target destination: " + ex.getMessage());
+                    }
+
                     Platform.runLater(() -> {
                         info.download().updateState(DownloadState.COMPLETED);
                         if (repository != null) repository.save(info.download());
@@ -273,9 +292,9 @@ public final class MediaDownloadTracker {
                 }
             } finally {
                 try {
-                    java.nio.file.Path tDir = info.targetPath().getParent().resolve(".smartdm-temp-" + info.download().id().value());
-                    if (java.nio.file.Files.exists(tDir)) {
-                        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(tDir)) {
+                    java.nio.file.Path appTempDir = java.nio.file.Paths.get(System.getProperty("user.home"), "AppData", "Local", "SmartDM", "temp", info.download().id().value());
+                    if (java.nio.file.Files.exists(appTempDir)) {
+                        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(appTempDir)) {
                             walk.sorted(java.util.Comparator.reverseOrder())
                                 .map(java.nio.file.Path::toFile)
                                 .forEach(java.io.File::delete);
