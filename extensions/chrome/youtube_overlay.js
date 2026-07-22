@@ -24,10 +24,54 @@
   }
 
   const ytDlpCache = {};
+  const prefetchQueue = [];
+  let isPrefetching = false;
+
+  function prefetchUrl(url, priority = false) {
+    if (!url || ytDlpCache[url]) return;
+
+    ytDlpCache[url] = { status: 'loading', callbacks: [] };
+
+    if (priority) {
+      prefetchQueue.unshift(url);
+    } else {
+      prefetchQueue.push(url);
+    }
+
+    processPrefetchQueue();
+  }
+
+  function processPrefetchQueue() {
+    if (isPrefetching || prefetchQueue.length === 0) return;
+    isPrefetching = true;
+
+    const url = prefetchQueue.shift();
+    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+
+    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+      if (res && res.success && res.formats && res.formats.length > 0) {
+        ytDlpCache[url].status = 'done';
+        ytDlpCache[url].data = res;
+      } else {
+        ytDlpCache[url].status = 'error';
+        ytDlpCache[url].data = res || { success: false, error: 'failed' };
+      }
+
+      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [];
+      cbs.forEach(cb => cb(ytDlpCache[url].data));
+
+      isPrefetching = false;
+      setTimeout(processPrefetchQueue, 250); // 250ms sequential gap
+    });
+  }
 
   function getCachedYtDlpFormats(url, callback) {
     if (!url) return;
     if (ytDlpCache[url] && ytDlpCache[url].status === 'done') {
+      callback(ytDlpCache[url].data);
+      return;
+    }
+    if (ytDlpCache[url] && ytDlpCache[url].status === 'error') {
       callback(ytDlpCache[url].data);
       return;
     }
@@ -37,19 +81,8 @@
     }
 
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
-
-    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-      if (res && res.success && res.formats && res.formats.length > 0) {
-        ytDlpCache[url].status = 'done';
-        ytDlpCache[url].data = res;
-      } else {
-        delete ytDlpCache[url];
-      }
-
-      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [callback];
-      cbs.forEach(cb => cb(res));
-    });
+    prefetchQueue.unshift(url); // Priority prefetch on user click
+    processPrefetchQueue();
   }
 
 
@@ -97,6 +130,10 @@
 
   function scanPlayer() {
     if (!window.location.pathname.startsWith('/watch') && !window.location.pathname.startsWith('/shorts')) return;
+
+    // Immediately prefetch formats for the active watch video page in background
+    prefetchUrl(window.location.href, true);
+
     const player = document.querySelector('#movie_player:not([' + PLAYER_PROCESSED_ATTR + ']), .html5-video-player:not([' + PLAYER_PROCESSED_ATTR + '])');
     if (!player) return;
 
@@ -324,7 +361,10 @@
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
-          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">SmartDM App is not running.<br><span style="font-size:10px; color:#94a3b8;">Please open SmartDM desktop app.</span></div>';
+          const errMsg = (res.error && res.error.includes("not running")) 
+            ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
+            : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>";
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {
           content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
@@ -372,6 +412,9 @@
     const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
     if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
     const videoUrl = getCanonicalUrl(rawUrl);
+
+    // Queue background prefetching for this thumbnail URL
+    prefetchUrl(videoUrl, false);
 
     const host = document.createElement('div');
     host.className = 'smartdm-host';
@@ -539,7 +582,10 @@
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
-          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">SmartDM App is not running.<br><span style="font-size:10px; color:#94a3b8;">Please open SmartDM desktop app.</span></div>';
+          const errMsg = (res.error && res.error.includes("not running")) 
+            ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
+            : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>";
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {
           content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
