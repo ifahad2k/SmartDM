@@ -571,7 +571,7 @@
     });
   }
 
-  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR TUBE SITES (PORNHUB, XHAMSTER, XNXX, DAILYMOTION, ETC.) ---
+  // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR MEDIA SITES ---
   function scanThumbnails() {
     const host = window.location.hostname.toLowerCase();
     // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, TikTok, Twitter/X)

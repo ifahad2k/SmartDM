@@ -646,10 +646,6 @@ public class SmartDmApp extends Application {
                 if (host.contains("instagram.com") || host.contains("cdninstagram.com")) return "Instagram Video";
                 if (host.contains("tiktok.com") || host.contains("ttwstatic.com")) return "TikTok Video";
                 if (host.contains("twitter.com") || host.contains("x.com") || host.contains("twimg.com")) return "Twitter Video";
-                if (host.contains("pornhub.com") || host.contains("phncdn.com")) return "Pornhub Video";
-                if (host.contains("xhamster.com") || host.contains("xhcdn.com")) return "XHamster Video";
-                if (host.contains("xnxx.com") || host.contains("xnxx-cdn.com")) return "XNXX Video";
-                if (host.contains("xvideos.com") || host.contains("xvideos-cdn.com")) return "XVideos Video";
                 if (host.contains("dailymotion.com") || host.contains("dmcdn.net")) return "Dailymotion Video";
                 if (host.contains("vimeo.com") || host.contains("vimeocdn.com")) return "Vimeo Video";
                 if (host.contains("youtube.com") || host.contains("googlevideo.com")) return "YouTube Video";

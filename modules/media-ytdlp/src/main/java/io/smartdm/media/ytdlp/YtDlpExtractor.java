@@ -97,7 +97,7 @@ public class YtDlpExtractor implements MediaExtractor {
                 return new MediaMetadata("video", "YouTube Video", 0, url, null, fallbackFormats, List.of());
             }
 
-            // Non-YouTube sites (Pornhub, Instagram, Facebook, etc.) return empty formats on extraction failure
+            // Non-YouTube sites (Instagram, Facebook, Vimeo, etc.) return empty formats on extraction failure
             return new MediaMetadata("video", "Media Stream", 0, url, null, List.of(), List.of());
         });
     }
