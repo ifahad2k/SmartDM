@@ -344,23 +344,19 @@
   }
 
   function scanThumbnails() {
-    const cards = document.querySelectorAll('ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer');
-    cards.forEach((card) => {
-      if (card.getAttribute(PROCESSED_ATTR)) return;
-      card.setAttribute(PROCESSED_ATTR, 'true');
+    const thumbnailElements = document.querySelectorAll('ytd-thumbnail, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, a#thumbnail');
+    thumbnailElements.forEach((el) => {
+      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, a#thumbnail') || el;
+      if (container.getAttribute(PROCESSED_ATTR)) return;
+      container.setAttribute(PROCESSED_ATTR, 'true');
 
-      const thumbAnchor = card.querySelector('a#thumbnail, a.ytd-thumbnail, a[href*="/watch?v="], a[href*="/shorts/"]');
+      let thumbAnchor = container.querySelector('a#thumbnail, a.ytd-thumbnail, a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (!thumbAnchor && container.tagName === 'A') {
+        thumbAnchor = container;
+      }
       if (thumbAnchor) {
         attachBadge(thumbAnchor);
       }
-    });
-
-    const standaloneAnchors = document.querySelectorAll('a#thumbnail:not([' + PROCESSED_ATTR + '])');
-    standaloneAnchors.forEach((anchor) => {
-      const card = anchor.closest('ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-reel-item-renderer') || anchor;
-      if (card.getAttribute(PROCESSED_ATTR)) return;
-      card.setAttribute(PROCESSED_ATTR, 'true');
-      attachBadge(anchor);
     });
   }
 
