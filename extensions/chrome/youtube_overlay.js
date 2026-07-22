@@ -23,6 +23,35 @@
     }
   }
 
+  const ytDlpCache = {};
+
+  function getCachedYtDlpFormats(url, callback) {
+    if (!url) return;
+    if (ytDlpCache[url] && ytDlpCache[url].status === 'done') {
+      callback(ytDlpCache[url].data);
+      return;
+    }
+    if (ytDlpCache[url] && ytDlpCache[url].status === 'loading') {
+      ytDlpCache[url].callbacks.push(callback);
+      return;
+    }
+
+    ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
+
+    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+      if (res && res.success && res.formats && res.formats.length > 0) {
+        ytDlpCache[url].status = 'done';
+        ytDlpCache[url].data = res;
+      } else {
+        delete ytDlpCache[url];
+      }
+
+      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [callback];
+      cbs.forEach(cb => cb(res));
+    });
+  }
+
 
 
   function renderFormatItems(container, formats, videoUrl, popover) {
@@ -85,6 +114,9 @@
 
     shadow.innerHTML = `
       <style>
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+        .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
         .idm-banner {
           background: rgba(15, 23, 42, 0.65);
           backdrop-filter: blur(12px);
@@ -287,14 +319,8 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = `
-        <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
-          <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-          <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
-        </div>
-      `;
 
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+      getCachedYtDlpFormats(videoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
@@ -303,6 +329,15 @@
           content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
+
+      if (!ytDlpCache[videoUrl] || ytDlpCache[videoUrl].status !== 'done') {
+        content.innerHTML = `
+          <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+            <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+            <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+          </div>
+        `;
+      }
     });
 
     player.appendChild(host);
@@ -354,6 +389,9 @@
 
     shadow.innerHTML = `
       <style>
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+        .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
         .badge-btn {
           background: rgba(15, 23, 42, 0.85);
           backdrop-filter: blur(8px);
@@ -500,14 +538,8 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = `
-        <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
-          <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-          <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
-        </div>
-      `;
 
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+      getCachedYtDlpFormats(videoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
@@ -516,6 +548,15 @@
           content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
+
+      if (!ytDlpCache[videoUrl] || ytDlpCache[videoUrl].status !== 'done') {
+        content.innerHTML = `
+          <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+            <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+            <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+          </div>
+        `;
+      }
     });
 
     if (anchor.style.position === 'static' || !anchor.style.position) {
