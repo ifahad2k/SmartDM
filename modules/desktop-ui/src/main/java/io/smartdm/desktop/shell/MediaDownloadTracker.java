@@ -135,15 +135,23 @@ public final class MediaDownloadTracker {
             try {
                 Platform.runLater(() -> info.download().updateState(DownloadState.DOWNLOADING));
 
-                ProcessBuilder pb = new ProcessBuilder(
+                java.util.List<String> command = new java.util.ArrayList<>(java.util.List.of(
                     ytDlp.toString(),
                     "--newline",
                     "--continue",
                     "-N", "4",
                     "-f", formatArg,
-                    "-o", info.targetPath().toString(),
-                    info.webpageUrl()
-                );
+                    "-o", info.targetPath().toString()
+                ));
+
+                boolean isYouTube = info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be");
+                if (!isYouTube) {
+                    command.add("--cookies-from-browser");
+                    command.add("chrome");
+                }
+                command.add(info.webpageUrl());
+
+                ProcessBuilder pb = new ProcessBuilder(command);
                 pb.redirectErrorStream(true);
 
                 Process p = pb.start();
