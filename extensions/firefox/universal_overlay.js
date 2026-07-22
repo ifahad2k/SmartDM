@@ -25,20 +25,22 @@
   function isThumbnailVideo(mediaEl) {
     if (!mediaEl) return false;
 
-    // Check dimensions - thumbnail preview videos are small
-    if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 280) return true;
-    if (mediaEl.offsetHeight > 0 && mediaEl.offsetHeight < 160) return true;
+    // Check dimensions - thumbnail preview videos are small/medium grid cards
+    if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 500) {
+      const parentCard = mediaEl.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, [class*="thumb"], [class*="card"], [class*="grid"], [class*="item"]');
+      if (parentCard) return true;
+    }
 
     // Check ancestors for thumbnail card classes/attributes
     let current = mediaEl;
     let depth = 0;
-    while (current && current.parentElement && depth < 6) {
+    while (current && current.parentElement && depth < 8) {
       current = current.parentElement;
       const cls = (current.className || '').toString().toLowerCase();
       const id = (current.id || '').toString().toLowerCase();
-      if (cls.includes('thumb') || cls.includes('preview') || cls.includes('card') || 
-          id.includes('thumb') || id.includes('preview')) {
-        if (current.tagName === 'A') return true;
+      if (cls.includes('thumb') || cls.includes('preview') || cls.includes('card') || cls.includes('grid') ||
+          id.includes('thumb') || id.includes('preview') || id.includes('card')) {
+        return true;
       }
       depth++;
     }
@@ -78,7 +80,7 @@
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
-    // Ignore mini preview videos inside thumbnail cards
+    // Do NOT attach banner to thumbnail videos inside cards or grid feeds
     if (isThumbnailVideo(mediaEl)) return;
 
     const container = findTopPlayerContainer(mediaEl);
@@ -300,6 +302,8 @@
       }
 
       popover.classList.add('active');
+      content.innerHTML = '<div class="status-text">Detecting media streams...</div>';
+
       const pageUrl = window.location.href;
       const directSrc = mediaEl.src || mediaEl.currentSrc;
 
@@ -354,7 +358,7 @@
       return;
     }
 
-    const allItems = [];
+    const rawItems = [];
 
     // 1. Add yt-dlp extracted quality/resolution formats
     ytDlpFormats.forEach(fmt => {
@@ -364,7 +368,7 @@
         ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
         : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
-      allItems.push({
+      rawItems.push({
         title: `${resolution} (${ext})`,
         badge: sizeText,
         url: pageUrl,
@@ -373,20 +377,9 @@
       });
     });
 
-    // 2. Fall back to network-intercepted media streams if yt-dlp produced no formats
+    // 2. Add network-intercepted media streams if yt-dlp produced no formats
     if (ytDlpFormats.length === 0 && netMediaList.length > 0) {
-      const uniqueMedia = [];
-      const seenUrls = new Set();
-      
-      netMediaList.forEach((m) => {
-        const cleanUrl = m.url.split('?')[0];
-        if (!seenUrls.has(cleanUrl)) {
-          seenUrls.add(cleanUrl);
-          uniqueMedia.push(m);
-        }
-      });
-
-      uniqueMedia.forEach((m, idx) => {
+      netMediaList.forEach((m, idx) => {
         const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
         const sizeText = m.customBadge || (m.contentLength > 0 
           ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
@@ -402,7 +395,7 @@
           else qualityName = `Video Stream ${idx + 1} (${ext})`;
         }
 
-        allItems.push({
+        rawItems.push({
           title: qualityName,
           badge: sizeText,
           url: m.url,
@@ -414,15 +407,19 @@
       });
     }
 
-    // 3. Fallback resolution options for video pages
+    // Deduplicate items strictly by title so we never show duplicate 1080p HD rows
+    const seenTitles = new Set();
+    const allItems = [];
+    rawItems.forEach(item => {
+      if (!seenTitles.has(item.title)) {
+        seenTitles.add(item.title);
+        allItems.push(item);
+      }
+    });
+
     if (allItems.length === 0) {
-      allItems.push(
-        { title: '1080p HD (MP4)', badge: 'Best', url: pageUrl, formatId: 'bestvideo[height<=1080]+bestaudio/best', fileName: null },
-        { title: '720p HD (MP4)', badge: 'HD', url: pageUrl, formatId: 'bestvideo[height<=720]+bestaudio/best', fileName: null },
-        { title: '480p (MP4)', badge: 'SD', url: pageUrl, formatId: 'bestvideo[height<=480]+bestaudio/best', fileName: null },
-        { title: '360p (MP4)', badge: 'Low', url: pageUrl, formatId: 'bestvideo[height<=360]+bestaudio/best', fileName: null },
-        { title: 'Audio Only (M4A)', badge: 'Audio', url: pageUrl, formatId: 'bestaudio', fileName: null }
-      );
+      container.innerHTML = '<div class="status-text">No media formats detected.</div>';
+      return;
     }
 
     allItems.forEach(item => {
@@ -674,24 +671,28 @@
       }
 
       popover.classList.add('active');
-      
-      // Render instant resolution choices first
-      renderThumbnailFormats(content, [], videoUrl, popover);
+      content.innerHTML = '<div class="status-text">Detecting resolutions...</div>';
 
-      // Fetch detailed yt-dlp formats in background and update list when ready
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        if (res && res.success && res.formats && res.formats.length > 0) {
-          renderThumbnailFormats(content, res.formats, videoUrl, popover);
-        }
+      chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        const netMedia = (netRes && netRes.media) ? netRes.media : [];
+
+        renderThumbnailFormats(content, [], netMedia, videoUrl, popover);
+
+        // Fetch detailed yt-dlp formats in background and update list when ready
+        chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+          if (res && res.success && res.formats && res.formats.length > 0) {
+            renderThumbnailFormats(content, res.formats, netMedia, videoUrl, popover);
+          }
+        });
       });
     });
 
     containerEl.appendChild(host);
   }
 
-  function renderThumbnailFormats(container, ytDlpFormats, videoUrl, popover) {
+  function renderThumbnailFormats(container, ytDlpFormats, netMediaList, videoUrl, popover) {
     container.innerHTML = '';
-    const items = [];
+    const rawItems = [];
 
     if (ytDlpFormats && ytDlpFormats.length > 0) {
       ytDlpFormats.forEach(fmt => {
@@ -701,7 +702,7 @@
           ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
           : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
-        items.push({
+        rawItems.push({
           title: `${resolution} (${ext})`,
           badge: sizeText,
           url: videoUrl,
@@ -709,14 +710,50 @@
           fileName: null
         });
       });
-    } else {
-      items.push(
-        { title: '1080p HD (MP4)', badge: 'Best', url: videoUrl, formatId: 'bestvideo[height<=1080]+bestaudio/best', fileName: null },
-        { title: '720p HD (MP4)', badge: 'HD', url: videoUrl, formatId: 'bestvideo[height<=720]+bestaudio/best', fileName: null },
-        { title: '480p (MP4)', badge: 'SD', url: videoUrl, formatId: 'bestvideo[height<=480]+bestaudio/best', fileName: null },
-        { title: '360p (MP4)', badge: 'Low', url: videoUrl, formatId: 'bestvideo[height<=360]+bestaudio/best', fileName: null },
-        { title: 'Audio Only (M4A)', badge: 'Audio', url: videoUrl, formatId: 'bestaudio', fileName: null }
-      );
+    }
+
+    if (rawItems.length === 0 && netMediaList && netMediaList.length > 0) {
+      netMediaList.forEach((m, idx) => {
+        const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
+        const sizeText = m.customBadge || (m.contentLength > 0 
+          ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
+          : 'Stream');
+
+        let qualityName = m.customTitle || '';
+        if (!qualityName) {
+          const lowerUrl = m.url.toLowerCase();
+          if (lowerUrl.includes('1080') || lowerUrl.includes('hd')) qualityName = `1080p HD (${ext})`;
+          else if (lowerUrl.includes('720')) qualityName = `720p HD (${ext})`;
+          else if (lowerUrl.includes('480')) qualityName = `480p (${ext})`;
+          else if (lowerUrl.includes('360')) qualityName = `360p (${ext})`;
+          else qualityName = `Video Stream ${idx + 1} (${ext})`;
+        }
+
+        rawItems.push({
+          title: qualityName,
+          badge: sizeText,
+          url: m.url,
+          videoUrl: m.videoUrl || null,
+          audioUrl: m.audioUrl || null,
+          formatId: 'best',
+          fileName: m.filename
+        });
+      });
+    }
+
+    // Deduplicate items strictly by title
+    const seenTitles = new Set();
+    const items = [];
+    rawItems.forEach(item => {
+      if (!seenTitles.has(item.title)) {
+        seenTitles.add(item.title);
+        items.push(item);
+      }
+    });
+
+    if (items.length === 0) {
+      container.innerHTML = '<div class="status-text">No media formats detected.</div>';
+      return;
     }
 
     items.forEach(item => {
