@@ -351,34 +351,33 @@
   }
 
   function scanThumbnails() {
-    // Target the visual picture container elements across all YouTube layouts (home, right sidebar, search, playlists, shorts)
-    const thumbBoxes = document.querySelectorAll('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail, ytd-playlist-panel-video-renderer #thumbnail');
-    thumbBoxes.forEach((box) => {
-      // Do not process main video player containers
-      if (box.closest('#player, #movie_player, .html5-video-player')) return;
-      if (box.getAttribute(PROCESSED_ATTR)) return;
+    // Find exact thumbnail image link anchors across all YouTube pages and layouts (home, watch sidebar, search, playlists, shorts)
+    const thumbAnchors = document.querySelectorAll('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, ytd-thumbnail a[href*="/watch"], ytd-thumbnail a[href*="/shorts"], div.yt-lockup-view-model__image a[href*="/watch"], div.yt-lockup-view-model__image a[href*="/shorts"]');
+    thumbAnchors.forEach((anchor) => {
+      if (anchor.closest('#player, #movie_player, .html5-video-player')) return;
+      if (anchor.getAttribute(PROCESSED_ATTR)) return;
 
-      // Find the associated video/shorts URL from the box or enclosing card
-      let linkEl = box.tagName === 'A' ? box : box.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
-      if (!linkEl) linkEl = box.closest('a[href*="/watch?v="], a[href*="/shorts/"]');
-      if (!linkEl) linkEl = box.parentElement?.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
-      if (!linkEl) {
-        const card = box.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, yt-lockup-view-model, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-playlist-panel-video-renderer');
-        if (card) linkEl = card.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
-      }
-
-      if (!linkEl) return;
-      const rawUrl = linkEl.getAttribute('href') || linkEl.href;
+      const rawUrl = anchor.getAttribute('href') || anchor.href;
       if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
 
-      box.setAttribute(PROCESSED_ATTR, 'true');
-      attachBadge(box, rawUrl);
+      // Check if this thumbnail container already has a smartdm-host to prevent duplicates on hover or preview animations
+      const thumbContainer = anchor.closest('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail') || anchor;
+      if (thumbContainer.querySelector('.smartdm-host')) {
+        anchor.setAttribute(PROCESSED_ATTR, 'true');
+        return;
+      }
+
+      anchor.setAttribute(PROCESSED_ATTR, 'true');
+      attachBadge(anchor, rawUrl);
     });
   }
 
-  function attachBadge(box, rawUrl) {
-    if (getComputedStyle(box).position === 'static') {
-      box.style.position = 'relative';
+  function attachBadge(anchor, rawUrl) {
+    if (getComputedStyle(anchor).position === 'static' || !getComputedStyle(anchor).position) {
+      anchor.style.position = 'relative';
+    }
+    if (anchor.parentElement && getComputedStyle(anchor.parentElement).position === 'static') {
+      anchor.parentElement.style.position = 'relative';
     }
 
     const videoUrl = getCanonicalUrl(rawUrl);
@@ -559,7 +558,7 @@
       }
     });
 
-    box.appendChild(host);
+    anchor.appendChild(host);
   }
 
   if (document.readyState === 'loading') {
