@@ -69,6 +69,7 @@
   }
 
   function scanPlayer() {
+    if (!window.location.pathname.startsWith('/watch') && !window.location.pathname.startsWith('/shorts')) return;
     const player = document.querySelector('#movie_player:not([' + PLAYER_PROCESSED_ATTR + ']), .html5-video-player:not([' + PLAYER_PROCESSED_ATTR + '])');
     if (!player) return;
 
@@ -265,8 +266,24 @@
   }
 
   function scanThumbnails() {
-    const anchors = document.querySelectorAll('a#thumbnail:not([' + PROCESSED_ATTR + ']), a[href*="/watch?v="]:not([' + PROCESSED_ATTR + ']), a[href*="/shorts/"]:not([' + PROCESSED_ATTR + '])');
-    anchors.forEach(attachBadge);
+    const cards = document.querySelectorAll('ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer');
+    cards.forEach((card) => {
+      if (card.getAttribute(PROCESSED_ATTR)) return;
+      card.setAttribute(PROCESSED_ATTR, 'true');
+
+      const thumbAnchor = card.querySelector('a#thumbnail, a.ytd-thumbnail, a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (thumbAnchor) {
+        attachBadge(thumbAnchor);
+      }
+    });
+
+    const standaloneAnchors = document.querySelectorAll('a#thumbnail:not([' + PROCESSED_ATTR + '])');
+    standaloneAnchors.forEach((anchor) => {
+      const card = anchor.closest('ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-reel-item-renderer') || anchor;
+      if (card.getAttribute(PROCESSED_ATTR)) return;
+      card.setAttribute(PROCESSED_ATTR, 'true');
+      attachBadge(anchor);
+    });
   }
 
   function attachBadge(anchor) {
