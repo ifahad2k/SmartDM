@@ -15,6 +15,32 @@
   const PLAYER_PROCESSED_ATTR = 'data-smartdm-universal-attached';
   const THUMB_PROCESSED_ATTR = 'data-smartdm-universal-thumb-attached';
 
+  const ytDlpCache = {};
+
+  function prefetchYtDlpFormats(url) {
+    if (!ytDlpCache[url]) {
+      ytDlpCache[url] = { status: 'fetching', formats: null, callbacks: [] };
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+        ytDlpCache[url].status = 'done';
+        ytDlpCache[url].formats = res;
+        ytDlpCache[url].callbacks.forEach(cb => cb(res));
+        ytDlpCache[url].callbacks = [];
+      });
+    }
+  }
+
+  function getCachedYtDlpFormats(url, callback) {
+    if (!ytDlpCache[url]) {
+      prefetchYtDlpFormats(url);
+    }
+    if (ytDlpCache[url].status === 'done') {
+      callback(ytDlpCache[url].formats);
+    } else {
+      ytDlpCache[url].callbacks.push(callback);
+    }
+  }
+
+
   function initUniversalOverlay() {
     const observer = new MutationObserver(() => {
       scanPlayers();
@@ -104,6 +130,12 @@
   function attachUniversalBanner(mediaEl) {
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
+
+    // Automatically prefetch formats for the main video to make UI instantly responsive
+    let prefetchUrl = window.location.href;
+    if (!(prefetchUrl.includes('facebook.com') || prefetchUrl.includes('instagram.com') || prefetchUrl.includes('x.com') || prefetchUrl.includes('tiktok.com') || prefetchUrl.includes('twitter.com'))) {
+        prefetchYtDlpFormats(prefetchUrl);
+    }
 
     // Do NOT attach banner to thumbnail videos inside cards or grid feeds
     if (isThumbnailVideo(mediaEl)) return;
@@ -407,8 +439,8 @@
         formatSearchInterval = setInterval(checkFormats, 1000);
       }
 
-      // Async query yt-dlp formats
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
+      // Async query yt-dlp formats (uses cache for instant response)
+      getCachedYtDlpFormats(pageUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
           if (formatSearchInterval) clearInterval(formatSearchInterval);
@@ -721,6 +753,10 @@
     const thumbBtn = shadow.querySelector('.thumb-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
+    
+    // Prefetch formats aggressively when user hovers over the thumbnail
+    containerEl.addEventListener('mouseenter', () => prefetchYtDlpFormats(videoUrl), { once: true });
+
 
     // Auto-close popover on outside click
     document.addEventListener('click', (e) => {
@@ -767,8 +803,8 @@
       // Tube site thumbnail hovers always use yt-dlp to get the full video.
 
 
-      // Async query yt-dlp formats
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+      // Async query yt-dlp formats (uses cache for instant response)
+      getCachedYtDlpFormats(videoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
           if (thumbInterval) clearInterval(thumbInterval);
