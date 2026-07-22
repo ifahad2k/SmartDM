@@ -176,7 +176,7 @@ public final class MediaDownloadTracker {
                 activeProcesses.put(info.download().id(), p);
 
                 Pattern progressPattern = Pattern.compile("\\[download\\]\\s+([\\d\\.]+)%");
-                Pattern sizePattern = Pattern.compile("of\\s+~?([\\d\\.]+)\\s*(\\w+)");
+                Pattern sizePattern = Pattern.compile("of\\s+~?\\s*([\\d\\.]+)\\s*([a-zA-Z]+)");
 
                 try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
                     String line;
@@ -194,7 +194,7 @@ public final class MediaDownloadTracker {
                                 if (pct >= currentMax) {
                                     maxProgressMap.put(info.download().id(), pct);
 
-                                    long totalBytes = 100 * 1024 * 1024L;
+                                    long totalBytes = 0L;
 
                                     Matcher sizeMatcher = sizePattern.matcher(line);
                                     if (sizeMatcher.find()) {

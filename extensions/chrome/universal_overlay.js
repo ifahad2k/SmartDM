@@ -33,21 +33,37 @@
   function isThumbnailVideo(mediaEl) {
     if (!mediaEl) return false;
 
+    // A main video usually has controls, or is large.
+    if (mediaEl.hasAttribute('controls')) return false;
+    
+    // If it's a large video, it's almost certainly the main player, not a thumbnail preview.
+    if (mediaEl.offsetWidth >= 500 || mediaEl.offsetHeight >= 400) return false;
+
+    // Check if it's inside a link (most thumbnails are wrapped in a tags)
+    let el = mediaEl;
+    let depth = 0;
+    while(el && el !== document.body && depth < 5) {
+        if (el.tagName === 'A') return true;
+        el = el.parentElement;
+        depth++;
+    }
+
     // Check dimensions - thumbnail preview videos are small/medium grid cards
     if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 500) {
       const parentCard = mediaEl.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, [class*="thumb"], [class*="card"], [class*="grid"], [class*="item"]');
       if (parentCard) return true;
     }
 
-    // Check ancestors for thumbnail card classes/attributes
+    // Fallback: check classes for explicit thumbnail indicators
     let current = mediaEl;
-    let depth = 0;
+    depth = 0;
     while (current && current.parentElement && depth < 8) {
       current = current.parentElement;
       const cls = (current.className || '').toString().toLowerCase();
       const id = (current.id || '').toString().toLowerCase();
-      if (cls.includes('thumb') || cls.includes('preview') || cls.includes('card') || cls.includes('grid') ||
-          id.includes('thumb') || id.includes('preview') || id.includes('card')) {
+      
+      // Be more restrictive: only match if it explicitly says 'thumb' or 'preview'
+      if (cls.includes('thumb') || cls.includes('preview') || id.includes('thumb') || id.includes('preview')) {
         return true;
       }
       depth++;
@@ -61,18 +77,19 @@
     let container = mediaEl.parentElement || mediaEl;
     let depth = 0;
 
+    // Look for common video player wrapper classes
     while (current && current.parentElement && current.parentElement !== document.body && depth < 8) {
       current = current.parentElement;
       const tag = current.tagName.toLowerCase();
+      const cls = (current.className || '').toString().toLowerCase();
       
       if (tag === 'article' || current.getAttribute('role') === 'dialog' || current.getAttribute('role') === 'region') {
         container = current;
         break;
       }
 
-      const style = window.getComputedStyle(current);
-      if (style.position === 'relative' || style.position === 'absolute' || style.position === 'fixed') {
-        container = current;
+      if (cls.includes('player') || cls.includes('video-wrapper') || cls.includes('vjs-') || cls.includes('plyr') || cls.includes('html5-video-container')) {
+          container = current;
       }
       depth++;
     }
@@ -563,11 +580,11 @@
     }
 
     const host = document.createElement('div');
-    host.className = 'smartdm-universal-thumb-host';
+    host.className = 'smartdm-universal-host';
     host.style.position = 'absolute';
-    host.style.top = '8px';
-    host.style.right = '8px';
-    host.style.zIndex = '999999';
+    host.style.top = '16px';
+    host.style.right = '16px';
+    host.style.zIndex = '2147483647';
     host.style.pointerEvents = 'auto';
 
     const shadow = host.attachShadow({ mode: 'open' });
