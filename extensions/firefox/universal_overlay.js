@@ -784,16 +784,21 @@
           if (thumbInterval) clearInterval(thumbInterval);
           if (thumbTimeout) clearTimeout(thumbTimeout);
           renderThumbnailFormats(content, res.formats, [], videoUrl, popover);
+        } else if (res && res.success === false) {
+          hasFound = true;
+          if (thumbInterval) clearInterval(thumbInterval);
+          if (thumbTimeout) clearTimeout(thumbTimeout);
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">SmartDM App is not running.<br><span style="font-size:10px; color:#94a3b8;">Please open SmartDM desktop app.</span></div>';
         }
       });
 
-      // 10-second timeout: if no formats found, display "No media formats detected."
+      // 40-second timeout: if no formats found after 40 seconds, display "No media formats detected."
       thumbTimeout = setTimeout(() => {
         if (thumbInterval) clearInterval(thumbInterval);
         if (!hasFound) {
           content.innerHTML = '<div class="status-text">No media formats detected.</div>';
         }
-      }, 10000);
+      }, 40000);
     });
 
     containerEl.appendChild(host);
