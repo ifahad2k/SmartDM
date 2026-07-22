@@ -4,6 +4,14 @@
   // Do not run on YouTube (YouTube has its dedicated overlay script)
   if (window.location.hostname.includes('youtube.com')) return;
 
+  function formatSize(bytes) {
+    if (!bytes || bytes <= 0) return null;
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1.0) return mb.toFixed(1) + ' MB';
+    const kb = bytes / 1024;
+    return kb.toFixed(0) + ' KB';
+  }
+
   const PLAYER_PROCESSED_ATTR = 'data-smartdm-universal-attached';
   const THUMB_PROCESSED_ATTR = 'data-smartdm-universal-thumb-attached';
 
@@ -333,7 +341,18 @@
         </div>
       `;
 
-      const pageUrl = window.location.href;
+      let pageUrl = window.location.href;
+      if (pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com')) {
+        let el = mediaEl;
+        while (el && el !== document.body) {
+          if (el.tagName === 'A' && el.href && (el.href.includes('/reel/') || el.href.includes('/watch') || el.href.includes('/status/') || el.href.includes('/p/'))) {
+            pageUrl = el.href;
+            break;
+          }
+          el = el.parentElement;
+        }
+      }
+
       const directSrc = mediaEl.src || mediaEl.currentSrc;
       let hasFound = false;
 
@@ -405,9 +424,8 @@
     ytDlpFormats.forEach(fmt => {
       const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
       const ext = (fmt.ext || 'MP4').toUpperCase();
-      const sizeText = fmt.fileSize > 0 
-        ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
-        : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
+      const formattedSize = formatSize(fmt.fileSize);
+      const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
       rawItems.push({
         title: `${resolution} (${ext})`,
@@ -422,9 +440,8 @@
     if (ytDlpFormats.length === 0 && netMediaList.length > 0) {
       netMediaList.forEach((m, idx) => {
         const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
-        const sizeText = m.customBadge || (m.contentLength > 0 
-          ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
-          : 'Stream');
+        const formattedSize = formatSize(m.contentLength);
+        const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
 
         let qualityName = m.customTitle || '';
         if (!qualityName) {
@@ -772,9 +789,8 @@
       ytDlpFormats.forEach(fmt => {
         const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
         const ext = (fmt.ext || 'MP4').toUpperCase();
-        const sizeText = fmt.fileSize > 0 
-          ? (fmt.fileSize / (1024 * 1024)).toFixed(1) + ' MB'
-          : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
+        const formattedSize = formatSize(fmt.fileSize);
+        const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
         rawItems.push({
           title: `${resolution} (${ext})`,
@@ -789,9 +805,8 @@
     if (rawItems.length === 0 && netMediaList && netMediaList.length > 0) {
       netMediaList.forEach((m, idx) => {
         const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
-        const sizeText = m.customBadge || (m.contentLength > 0 
-          ? (m.contentLength / (1024 * 1024)).toFixed(1) + ' MB'
-          : 'Stream');
+        const formattedSize = formatSize(m.contentLength);
+        const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
 
         let qualityName = m.customTitle || '';
         if (!qualityName) {

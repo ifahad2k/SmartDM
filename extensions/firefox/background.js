@@ -164,19 +164,15 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.html') || url.includes('.ico');
       if (isNonMediaAsset) return;
 
-      // Clean byte-range segment parameters from CDN URLs to produce full stream URL
-      let targetUrl = details.url;
-      if (targetUrl.includes('bytestart=') || targetUrl.includes('range=')) {
-        targetUrl = targetUrl.replace(/[\?&]bytestart=\d+&byteend=\d+/g, '')
-                             .replace(/[\?&]bytestart=\d+/g, '')
-                             .replace(/[\?&]byteend=\d+/g, '')
-                             .replace(/[\?&]range=\d+-\d+/g, '');
-      }
-
-      // Filter out HLS/DASH segment chunks (.ts, .m4s, fragment files)
+      // Filter out HLS/DASH segment chunks and range requests
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
-                             (url.includes('.m4s') && !url.includes('master'));
+                             (url.includes('.m4s') && !url.includes('master')) ||
+                             url.includes('bytestart=') || 
+                             url.includes('byteend=') ||
+                             url.includes('range=');
       if (isSegmentChunk) return;
+
+      const targetUrl = details.url;
 
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
