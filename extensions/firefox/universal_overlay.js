@@ -300,19 +300,10 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text">Fetching formats...</div>';
-
       const pageUrl = window.location.href;
       const directSrc = mediaEl.src || mediaEl.currentSrc;
 
-      let hasHandled = false;
-
-      const finishRender = (formats, netMedia) => {
-        if (hasHandled) return;
-        hasHandled = true;
-        renderUniversalFormats(content, formats || [], netMedia || [], pageUrl, popover);
-      };
-
+      // 1. Render instant items (network media or standard fallbacks)
       chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
         const netMedia = (netRes && netRes.media) ? netRes.media : [];
 
@@ -325,17 +316,13 @@
           });
         }
 
-        const timer = setTimeout(() => {
-          finishRender([], netMedia);
-        }, 2500);
+        renderUniversalFormats(content, [], netMedia, pageUrl, popover);
 
+        // 2. Fetch detailed yt-dlp formats in background and update list when ready
         chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
-          clearTimeout(timer);
-          let formats = [];
           if (res && res.success && res.formats && res.formats.length > 0) {
-            formats = res.formats;
+            renderUniversalFormats(content, res.formats, netMedia, pageUrl, popover);
           }
-          finishRender(formats, netMedia);
         });
       });
     });
@@ -366,7 +353,7 @@
     });
 
     // 2. Fall back to network-intercepted media streams if yt-dlp produced no formats
-    if (ytDlpFormats.length === 0) {
+    if (ytDlpFormats.length === 0 && netMediaList.length > 0) {
       const uniqueMedia = [];
       const seenUrls = new Set();
       
@@ -404,9 +391,15 @@
       });
     }
 
+    // 3. Fallback resolution options for video pages
     if (allItems.length === 0) {
-      container.innerHTML = '<div class="status-text">No media formats detected.</div>';
-      return;
+      allItems.push(
+        { title: '1080p HD (MP4)', badge: 'Best', url: pageUrl, formatId: 'bestvideo[height<=1080]+bestaudio/best', fileName: null },
+        { title: '720p HD (MP4)', badge: 'HD', url: pageUrl, formatId: 'bestvideo[height<=720]+bestaudio/best', fileName: null },
+        { title: '480p (MP4)', badge: 'SD', url: pageUrl, formatId: 'bestvideo[height<=480]+bestaudio/best', fileName: null },
+        { title: '360p (MP4)', badge: 'Low', url: pageUrl, formatId: 'bestvideo[height<=360]+bestaudio/best', fileName: null },
+        { title: 'Audio Only (M4A)', badge: 'Audio', url: pageUrl, formatId: 'bestaudio', fileName: null }
+      );
     }
 
     allItems.forEach(item => {
@@ -479,6 +472,7 @@
   }
 
   function attachThumbnailBadge(containerEl, videoUrl) {
+    if (!videoUrl) return;
     if (!videoUrl) return;
 
     if (window.getComputedStyle(containerEl).position === 'static') {
@@ -655,27 +649,15 @@
       }
 
       popover.classList.add('active');
-      content.innerHTML = '<div class="status-text">Fetching resolutions...</div>';
+      
+      // Render instant resolution choices first
+      renderThumbnailFormats(content, [], videoUrl, popover);
 
-      let hasHandled = false;
-
-      const finishRender = (formats) => {
-        if (hasHandled) return;
-        hasHandled = true;
-        renderThumbnailFormats(content, formats || [], videoUrl, popover);
-      };
-
-      const timer = setTimeout(() => {
-        finishRender([]);
-      }, 2500);
-
+      // Fetch detailed yt-dlp formats in background and update list when ready
       chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        clearTimeout(timer);
-        let formats = [];
         if (res && res.success && res.formats && res.formats.length > 0) {
-          formats = res.formats;
+          renderThumbnailFormats(content, res.formats, videoUrl, popover);
         }
-        finishRender(formats);
       });
     });
 
@@ -703,13 +685,13 @@
         });
       });
     } else {
-      items.push({
-        title: 'Best Quality (MP4)',
-        badge: 'Download',
-        url: videoUrl,
-        formatId: 'best',
-        fileName: null
-      });
+      items.push(
+        { title: '1080p HD (MP4)', badge: 'Best', url: videoUrl, formatId: 'bestvideo[height<=1080]+bestaudio/best', fileName: null },
+        { title: '720p HD (MP4)', badge: 'HD', url: videoUrl, formatId: 'bestvideo[height<=720]+bestaudio/best', fileName: null },
+        { title: '480p (MP4)', badge: 'SD', url: videoUrl, formatId: 'bestvideo[height<=480]+bestaudio/best', fileName: null },
+        { title: '360p (MP4)', badge: 'Low', url: videoUrl, formatId: 'bestvideo[height<=360]+bestaudio/best', fileName: null },
+        { title: 'Audio Only (M4A)', badge: 'Audio', url: videoUrl, formatId: 'bestaudio', fileName: null }
+      );
     }
 
     items.forEach(item => {

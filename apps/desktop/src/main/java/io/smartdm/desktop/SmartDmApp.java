@@ -709,10 +709,14 @@ public class SmartDmApp extends Application {
                         meta.thumbnailUrl(), meta.formats(), meta.subtitles()
                     );
                 } else {
-                    // Domain-agnostic fallback metadata
+                    // Domain-agnostic fallback metadata with full resolution choices
                     String titleName = deriveTitleFromUrl(url);
                     java.util.List<io.smartdm.media.api.MediaFormat> fallbackFormats = java.util.List.of(
-                        new io.smartdm.media.api.MediaFormat("best", "mp4", "Best Quality", "Video", 0, "h264", "aac", 0, 30, false, false)
+                        new io.smartdm.media.api.MediaFormat("bestvideo[height<=1080]+bestaudio/best", "mp4", "1080p HD", "Full HD", 0, "h264", "aac", 0, 60, false, false),
+                        new io.smartdm.media.api.MediaFormat("bestvideo[height<=720]+bestaudio/best", "mp4", "720p HD", "HD", 0, "h264", "aac", 0, 30, false, false),
+                        new io.smartdm.media.api.MediaFormat("bestvideo[height<=480]+bestaudio/best", "mp4", "480p", "SD", 0, "h264", "aac", 0, 30, false, false),
+                        new io.smartdm.media.api.MediaFormat("bestvideo[height<=360]+bestaudio/best", "mp4", "360p", "Low", 0, "h264", "aac", 0, 30, false, false),
+                        new io.smartdm.media.api.MediaFormat("bestaudio", "m4a", "Audio Only", "Audio M4A", 0, "none", "aac", 128, 0, true, false)
                     );
                     finalMeta = new io.smartdm.media.api.MediaMetadata("video", titleName, 0, url, null, fallbackFormats, java.util.List.of());
                 }

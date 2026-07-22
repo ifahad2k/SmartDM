@@ -93,11 +93,14 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.ico');
       if (isNonMediaAsset) return;
 
-      // Ignore byte-range segment chunks (.m4s, bytestart=, byteend=, range=, sq=)
-      const isSegmentChunk = url.includes('bytestart=') || url.includes('byteend=') ||
-                             url.includes('range=') || url.includes('&sq=') ||
-                             url.includes('segment=') || url.includes('.m4s');
-      if (isSegmentChunk) return;
+      // Clean byte-range segment parameters from CDN URLs to produce full stream URL
+      let targetUrl = details.url;
+      if (targetUrl.includes('bytestart=') || targetUrl.includes('range=')) {
+        targetUrl = targetUrl.replace(/[\?&]bytestart=\d+&byteend=\d+/g, '')
+                             .replace(/[\?&]bytestart=\d+/g, '')
+                             .replace(/[\?&]byteend=\d+/g, '')
+                             .replace(/[\?&]range=\d+-\d+/g, '');
+      }
 
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
@@ -115,22 +118,22 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           detectedMediaMap.set(details.tabId, []);
         }
         const mediaList = detectedMediaMap.get(details.tabId);
-        if (!mediaList.some((m) => m.url === details.url)) {
+        if (!mediaList.some((m) => m.url === targetUrl)) {
           if (mediaList.length >= 35) mediaList.shift();
           mediaList.push({
-            url: details.url,
+            url: targetUrl,
             contentType: contentType,
             contentLength: contentLength,
-            filename: getFilenameFromUrl(details.url)
+            filename: getFilenameFromUrl(targetUrl)
           });
 
           // If this is an m3u8 playlist, fetch and parse variants to extract clean quality profiles
-          if (details.url.includes('.m3u8')) {
-            fetch(details.url)
+          if (targetUrl.includes('.m3u8')) {
+            fetch(targetUrl)
               .then((r) => r.text())
               .then((text) => {
                 if (text.includes('#EXT-X-STREAM-INF')) {
-                  const variants = parseM3u8Formats(text, details.url);
+                  const variants = parseM3u8Formats(text, targetUrl);
                   variants.forEach((v) => {
                     if (!mediaList.some((m) => m.url === v.url)) {
                       mediaList.push({
