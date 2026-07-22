@@ -186,6 +186,8 @@ public class SmartDmApp extends Application {
             }
         };
 
+        io.smartdm.desktop.shell.MediaDownloadTracker.init(repository, publisher);
+
         io.smartdm.download.engine.limit.TokenBucketRateLimiter globalLimiter = 
             new io.smartdm.download.engine.limit.TokenBucketRateLimiter(null, null);
 

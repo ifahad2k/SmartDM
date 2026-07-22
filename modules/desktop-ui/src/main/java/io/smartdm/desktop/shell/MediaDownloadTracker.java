@@ -16,7 +16,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
+import io.smartdm.domain.DownloadRepository;
+import io.smartdm.domain.EventPublisher;
+import io.smartdm.domain.DownloadEvent;
 public final class MediaDownloadTracker {
 
     public static record TaskInfo(
@@ -30,6 +32,14 @@ public final class MediaDownloadTracker {
     private static final Map<DownloadId, TaskInfo> taskRegistry = new ConcurrentHashMap<>();
     private static final Map<DownloadId, Double> maxProgressMap = new ConcurrentHashMap<>();
 
+    private static DownloadRepository repository;
+    private static EventPublisher eventPublisher;
+
+    public static void init(DownloadRepository repo, EventPublisher pub) {
+        repository = repo;
+        eventPublisher = pub;
+    }
+
     public static boolean isMediaDownload(DownloadId id) {
         return taskRegistry.containsKey(id);
     }
@@ -42,6 +52,8 @@ public final class MediaDownloadTracker {
 
     public static void pauseDownload(Download download) {
         download.updateState(DownloadState.PAUSED);
+        if (repository != null) repository.save(download);
+        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.PAUSED, download));
         Process p = activeProcesses.remove(download.id());
         killProcessTree(p);
     }
@@ -52,11 +64,15 @@ public final class MediaDownloadTracker {
             runYtDlp(info);
         } else {
             download.updateState(DownloadState.FAILED);
+            if (repository != null) repository.save(download);
+            if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.FAILED, download));
         }
     }
 
     public static void cancelDownload(Download download) {
         download.updateState(DownloadState.CANCELED);
+        if (repository != null) repository.save(download);
+        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.CANCELED, download));
         Process p = activeProcesses.remove(download.id());
         killProcessTree(p);
         maxProgressMap.remove(download.id());
@@ -133,25 +149,21 @@ public final class MediaDownloadTracker {
 
         new Thread(() -> {
             try {
-                Platform.runLater(() -> info.download().updateState(DownloadState.DOWNLOADING));
+                Platform.runLater(() -> {
+                    info.download().updateState(DownloadState.DOWNLOADING);
+                    if (repository != null) repository.save(info.download());
+                    if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.DOWNLOADING, info.download()));
+                });
 
-                java.util.List<String> command = new java.util.ArrayList<>(java.util.List.of(
+                ProcessBuilder pb = new ProcessBuilder(
                     ytDlp.toString(),
                     "--newline",
                     "--continue",
                     "-N", "4",
                     "-f", formatArg,
-                    "-o", info.targetPath().toString()
-                ));
-
-                boolean isYouTube = info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be");
-                if (!isYouTube) {
-                    command.add("--cookies-from-browser");
-                    command.add("chrome");
-                }
-                command.add(info.webpageUrl());
-
-                ProcessBuilder pb = new ProcessBuilder(command);
+                    "-o", info.targetPath().toString(),
+                    info.webpageUrl()
+                );
                 pb.redirectErrorStream(true);
 
                 Process p = pb.start();
@@ -214,6 +226,12 @@ public final class MediaDownloadTracker {
                                                     ByteCount.of(finalDownloaded),
                                                     ByteCount.of(finalTotal)
                                                 );
+                                                if (repository != null && System.currentTimeMillis() % 1000 < 200) {
+                                                    repository.save(info.download());
+                                                }
+                                                if (eventPublisher != null) {
+                                                    eventPublisher.publish(new DownloadEvent.ProgressUpdated(info.download().id(), info.download()));
+                                                }
                                             }
                                         });
                                     }
