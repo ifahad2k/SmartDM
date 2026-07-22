@@ -384,8 +384,11 @@
         });
       };
 
-      checkFormats();
-      formatSearchInterval = setInterval(checkFormats, 1000);
+      const isSocial = pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com') || pageUrl.includes('twitter.com') || pageUrl.includes('tiktok.com');
+      if (isSocial) {
+        checkFormats();
+        formatSearchInterval = setInterval(checkFormats, 1000);
+      }
 
       // Async query yt-dlp formats
       chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
@@ -743,21 +746,9 @@
 
       let hasFound = false;
 
-      const checkThumbFormats = () => {
-        chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-          const netMedia = (netRes && netRes.media) ? netRes.media : [];
+      // We do not use network-intercepted media for thumbnails on tube sites.
+      // Tube site thumbnail hovers always use yt-dlp to get the full video.
 
-          if (netMedia.length > 0) {
-            hasFound = true;
-            if (thumbInterval) clearInterval(thumbInterval);
-            if (thumbTimeout) clearTimeout(thumbTimeout);
-            renderThumbnailFormats(content, [], netMedia, videoUrl, popover);
-          }
-        });
-      };
-
-      checkThumbFormats();
-      thumbInterval = setInterval(checkThumbFormats, 1000);
 
       // Async query yt-dlp formats
       chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {

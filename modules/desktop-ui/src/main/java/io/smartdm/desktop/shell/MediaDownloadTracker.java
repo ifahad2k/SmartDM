@@ -16,8 +16,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import io.smartdm.domain.DownloadRepository;
-import io.smartdm.domain.EventPublisher;
+import io.smartdm.domain.repository.DownloadRepository;
+
 import io.smartdm.domain.DownloadEvent;
 public final class MediaDownloadTracker {
 
@@ -33,9 +33,9 @@ public final class MediaDownloadTracker {
     private static final Map<DownloadId, Double> maxProgressMap = new ConcurrentHashMap<>();
 
     private static DownloadRepository repository;
-    private static EventPublisher eventPublisher;
+    private static DownloadEvent.Publisher eventPublisher;
 
-    public static void init(DownloadRepository repo, EventPublisher pub) {
+    public static void init(DownloadRepository repo, DownloadEvent.Publisher pub) {
         repository = repo;
         eventPublisher = pub;
     }
@@ -155,11 +155,17 @@ public final class MediaDownloadTracker {
                     if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.DOWNLOADING, info.download()));
                 });
 
+                Path tempDir = info.targetPath().getParent().resolve(".smartdm-temp-" + info.download().id().value());
+                try {
+                    java.nio.file.Files.createDirectories(tempDir);
+                } catch (Exception ignored) {}
+
                 ProcessBuilder pb = new ProcessBuilder(
                     ytDlp.toString(),
                     "--newline",
                     "--continue",
                     "-N", "4",
+                    "--paths", "temp:" + tempDir.toString(),
                     "-f", formatArg,
                     "-o", info.targetPath().toString(),
                     info.webpageUrl()
@@ -230,7 +236,7 @@ public final class MediaDownloadTracker {
                                                     repository.save(info.download());
                                                 }
                                                 if (eventPublisher != null) {
-                                                    eventPublisher.publish(new DownloadEvent.ProgressUpdated(info.download().id(), info.download()));
+                                                    eventPublisher.publish(new DownloadEvent.ProgressUpdated(info.download().id(), ByteCount.of(finalDownloaded), ByteCount.of(finalTotal), info.download()));
                                                 }
                                             }
                                         });
@@ -245,14 +251,37 @@ public final class MediaDownloadTracker {
                 activeProcesses.remove(info.download().id());
 
                 if (exitCode == 0 && info.download().state() == DownloadState.DOWNLOADING) {
-                    Platform.runLater(() -> info.download().updateState(DownloadState.COMPLETED));
+                    Platform.runLater(() -> {
+                        info.download().updateState(DownloadState.COMPLETED);
+                        if (repository != null) repository.save(info.download());
+                        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.COMPLETED, info.download()));
+                    });
                 } else if (info.download().state() != DownloadState.PAUSED && info.download().state() != DownloadState.CANCELED) {
-                    Platform.runLater(() -> info.download().updateState(DownloadState.FAILED));
+                    Platform.runLater(() -> {
+                        info.download().updateState(DownloadState.FAILED);
+                        if (repository != null) repository.save(info.download());
+                        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.FAILED, info.download()));
+                    });
                 }
             } catch (Exception ex) {
                 if (info.download().state() != DownloadState.PAUSED && info.download().state() != DownloadState.CANCELED) {
-                    Platform.runLater(() -> info.download().updateState(DownloadState.FAILED));
+                    Platform.runLater(() -> {
+                        info.download().updateState(DownloadState.FAILED);
+                        if (repository != null) repository.save(info.download());
+                        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.FAILED, info.download()));
+                    });
                 }
+            } finally {
+                try {
+                    java.nio.file.Path tDir = info.targetPath().getParent().resolve(".smartdm-temp-" + info.download().id().value());
+                    if (java.nio.file.Files.exists(tDir)) {
+                        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(tDir)) {
+                            walk.sorted(java.util.Comparator.reverseOrder())
+                                .map(java.nio.file.Path::toFile)
+                                .forEach(java.io.File::delete);
+                        }
+                    }
+                } catch (Exception ignored) {}
             }
         }).start();
     }
