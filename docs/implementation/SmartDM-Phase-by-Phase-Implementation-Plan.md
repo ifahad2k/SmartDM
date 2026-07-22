@@ -1071,13 +1071,15 @@ Define versioned request/response schemas for:
 
 Every message has protocol version, request ID, type, bounded payload, and safe error response.
 
-#### 8.2 Native host
+#### 8.2 Native host & IDM-style auto-launch architecture
 
 - Length-prefixed JSON over stdin/stdout exactly as each browser specifies.
 - Write diagnostics only to stderr and privacy-safe storage.
 - Validate extension origin/ID against an allowlist pinned to the fixed Chrome extension ID (8.3) and the signed Firefox extension ID (8.4); reject every other origin, including other locally sideloaded extensions.
 - Enforce message and field size limits.
-- Connect to the running SmartDM instance or launch it safely.
+- **System Tray Daemon (`--background`)**: SmartDM runs as a persistent background daemon in the system tray when closed. Clicking `[X]` minimizes the application to the tray rather than terminating it, keeping `LocalIpcServer` active.
+- **IDM-Style Auto-Launch Launcher**: If SmartDM is completely stopped (not running and not present in the system tray), when the extension sends a message, `NativeHostMain` automatically detects the offline status and executes `SmartDM.exe --background` silently in the background before connecting and forwarding the request.
+- **Seamless Download Dialog Pop-Up**: Once spawned in the background, SmartDM brings `MediaDownloadDialog` directly over the browser with focus, opening the download window without manual user intervention.
 - Use a per-installation pairing secret in addition to browser registration where feasible.
 - Never accept an arbitrary executable path or unrestricted destination path.
 
