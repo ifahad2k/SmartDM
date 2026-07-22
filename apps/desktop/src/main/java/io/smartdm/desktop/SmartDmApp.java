@@ -485,7 +485,7 @@ public class SmartDmApp extends Application {
                     io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
                     if (toolMgr.isAvailable()) {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url()).get(15, java.util.concurrent.TimeUnit.SECONDS);
+                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url()).get(45, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                             metadataCache.put(req.url(), meta);
                             com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();

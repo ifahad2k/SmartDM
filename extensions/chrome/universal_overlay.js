@@ -21,10 +21,16 @@
     if (!ytDlpCache[url]) {
       ytDlpCache[url] = { status: 'fetching', formats: null, callbacks: [] };
       chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-        ytDlpCache[url].status = 'done';
-        ytDlpCache[url].formats = res;
-        ytDlpCache[url].callbacks.forEach(cb => cb(res));
-        ytDlpCache[url].callbacks = [];
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          ytDlpCache[url].status = 'done';
+          ytDlpCache[url].formats = res;
+          ytDlpCache[url].callbacks.forEach(cb => cb(res));
+          ytDlpCache[url].callbacks = [];
+        } else {
+          const cbs = ytDlpCache[url].callbacks || [];
+          delete ytDlpCache[url];
+          cbs.forEach(cb => cb(res));
+        }
       });
     }
   }
@@ -135,6 +141,9 @@
 
     // Do NOT attach banner to thumbnail videos inside cards or grid feeds
     if (isThumbnailVideo(mediaEl)) return;
+
+    // Immediately fetch video resolutions when the new link opens so they are already saved when clicked
+    prefetchYtDlpFormats(window.location.href);
 
     const container = findTopPlayerContainer(mediaEl);
     if (container.querySelector('.smartdm-universal-host')) return;
@@ -445,13 +454,13 @@
         }
       });
 
-      // 10-second timeout: if no formats found, display "No media formats detected."
+      // 40-second timeout: if no formats found after 40 seconds, display "No media formats detected."
       formatSearchTimeout = setTimeout(() => {
         if (formatSearchInterval) clearInterval(formatSearchInterval);
         if (!hasFound) {
           content.innerHTML = '<div class="status-text">No media formats detected.</div>';
         }
-      }, 10000);
+      }, 40000);
     });
 
     container.appendChild(host);
@@ -808,13 +817,13 @@
         }
       });
 
-      // 10-second timeout: if no formats found, display "No media formats detected."
+      // 40-second timeout: if no formats found after 40 seconds, display "No media formats detected."
       thumbTimeout = setTimeout(() => {
         if (thumbInterval) clearInterval(thumbInterval);
         if (!hasFound) {
           content.innerHTML = '<div class="status-text">No media formats detected.</div>';
         }
-      }, 10000);
+      }, 40000);
     });
 
     containerEl.appendChild(host);
