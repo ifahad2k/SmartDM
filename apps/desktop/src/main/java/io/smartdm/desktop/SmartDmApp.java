@@ -47,6 +47,7 @@ public class SmartDmApp extends Application {
 
     private ExecutorService enginePool;
     private ProfileLock profileLock;
+    private static final java.util.Map<String, io.smartdm.media.api.MediaMetadata> metadataCache = new java.util.concurrent.ConcurrentHashMap<>();
     private SingleDownloadCoordinator coordinator;
     private io.smartdm.download.engine.schedule.ScheduleRunner scheduleRunner;
     private io.smartdm.application.monitor.ResourceMonitor resourceMonitor;
@@ -484,6 +485,7 @@ public class SmartDmApp extends Application {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
                         io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url()).get(15, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
+                            metadataCache.put(req.url(), meta);
                             com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
                             java.util.Map<String, Object> resp = new java.util.HashMap<>();
                             resp.put("success", true);
@@ -693,12 +695,13 @@ public class SmartDmApp extends Application {
         if (isMediaUrl) {
             String targetStreamUrl = (videoUrl != null && !videoUrl.isBlank()) ? videoUrl : url;
             enginePool.submit(() -> {
-                io.smartdm.media.api.MediaMetadata meta = null;
-                // Only invoke yt-dlp metadata dump if direct stream URL was not provided
-                if ((videoUrl == null || videoUrl.isBlank()) && toolMgr.isAvailable()) {
+                io.smartdm.media.api.MediaMetadata meta = metadataCache.get(url);
+                // Only invoke yt-dlp metadata dump if direct stream URL was not provided and not in cache
+                if (meta == null && (videoUrl == null || videoUrl.isBlank()) && toolMgr.isAvailable()) {
                     try {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        meta = extractor.extractMetadataAsync(url).get(8, java.util.concurrent.TimeUnit.SECONDS);
+                        meta = extractor.extractMetadataAsync(url).get(20, java.util.concurrent.TimeUnit.SECONDS);
+                        if (meta != null) metadataCache.put(url, meta);
                     } catch (Exception ex) {
                         System.err.println("Media metadata extraction failed: " + ex.getMessage());
                     }
