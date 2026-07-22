@@ -635,6 +635,21 @@ public class SmartDmApp extends Application {
         if (url == null || url.isBlank()) return "Media Video";
         try {
             java.net.URI uri = new java.net.URI(url);
+            String host = uri.getHost();
+            if (host != null) {
+                host = host.toLowerCase().replace("www.", "");
+                if (host.contains("facebook.com") || host.contains("fbcdn.net")) return "Facebook Video";
+                if (host.contains("instagram.com") || host.contains("cdninstagram.com")) return "Instagram Video";
+                if (host.contains("tiktok.com") || host.contains("ttwstatic.com")) return "TikTok Video";
+                if (host.contains("twitter.com") || host.contains("x.com") || host.contains("twimg.com")) return "Twitter Video";
+                if (host.contains("pornhub.com") || host.contains("phncdn.com")) return "Pornhub Video";
+                if (host.contains("xhamster.com") || host.contains("xhcdn.com")) return "XHamster Video";
+                if (host.contains("xnxx.com") || host.contains("xnxx-cdn.com")) return "XNXX Video";
+                if (host.contains("xvideos.com") || host.contains("xvideos-cdn.com")) return "XVideos Video";
+                if (host.contains("dailymotion.com") || host.contains("dmcdn.net")) return "Dailymotion Video";
+                if (host.contains("vimeo.com") || host.contains("vimeocdn.com")) return "Vimeo Video";
+                if (host.contains("youtube.com") || host.contains("googlevideo.com")) return "YouTube Video";
+            }
             String path = uri.getPath();
             if (path != null && path.contains("/")) {
                 String seg = path.substring(path.lastIndexOf('/') + 1);
@@ -642,8 +657,7 @@ public class SmartDmApp extends Application {
                     seg = seg.substring(0, seg.lastIndexOf('.'));
                 }
                 seg = seg.replace('-', ' ').replace('_', ' ').trim();
-                if (!seg.isBlank() && !seg.equalsIgnoreCase("index") && !seg.equalsIgnoreCase("watch") && !seg.endsWith(".php")) {
-                    // Capitalize words
+                if (!seg.isBlank() && seg.length() < 30 && seg.contains(" ") && !seg.endsWith(".php")) {
                     String[] words = seg.split("\\s+");
                     StringBuilder sb = new StringBuilder();
                     for (String w : words) {
@@ -654,9 +668,8 @@ public class SmartDmApp extends Application {
                     return sb.toString().trim();
                 }
             }
-            String host = uri.getHost();
             if (host != null) {
-                return host.replace("www.", "") + " Video";
+                return host + " Video";
             }
         } catch (Exception ignored) {}
         return "Media Video";

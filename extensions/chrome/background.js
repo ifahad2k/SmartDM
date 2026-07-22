@@ -93,6 +93,12 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.ico');
       if (isNonMediaAsset) return;
 
+      // Ignore byte-range segment chunks (.m4s, bytestart=, byteend=, range=, sq=)
+      const isSegmentChunk = url.includes('bytestart=') || url.includes('byteend=') ||
+                             url.includes('range=') || url.includes('&sq=') ||
+                             url.includes('segment=') || url.includes('.m4s');
+      if (isSegmentChunk) return;
+
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
                           contentType.includes('application/x-mpegurl') || 
