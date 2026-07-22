@@ -341,15 +341,6 @@
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           const netMedia = (netRes && netRes.media) ? netRes.media : [];
 
-          if (directSrc && !directSrc.startsWith('blob:') && !netMedia.some(m => m.url === directSrc)) {
-            netMedia.unshift({
-              url: directSrc,
-              contentType: 'video/mp4',
-              filename: 'video_stream.mp4',
-              contentLength: 0
-            });
-          }
-
           if (netMedia.length > 0) {
             hasFound = true;
             if (formatSearchInterval) clearInterval(formatSearchInterval);

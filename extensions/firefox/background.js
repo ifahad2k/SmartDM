@@ -173,6 +173,11 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                              .replace(/[\?&]range=\d+-\d+/g, '');
       }
 
+      // Filter out HLS/DASH segment chunks (.ts, .m4s, fragment files)
+      const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
+                             (url.includes('.m4s') && !url.includes('master'));
+      if (isSegmentChunk) return;
+
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
                           contentType.includes('application/x-mpegurl') || 
@@ -181,52 +186,63 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       
       const isMediaExt = url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
-                         url.includes('.flv') || url.includes('.ts') || url.includes('.mov') ||
-                         url.includes('.m4v') || url.includes('.avi') || url.includes('.mkv');
+                         url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
+                         url.includes('.avi') || url.includes('.mkv');
 
       if (isMediaMime || isMediaExt) {
         if (!detectedMediaMap.has(details.tabId)) {
           detectedMediaMap.set(details.tabId, []);
         }
         const mediaList = detectedMediaMap.get(details.tabId);
-        if (!mediaList.some((m) => m.url === targetUrl)) {
-          if (mediaList.length >= 35) mediaList.shift();
-          mediaList.push({
-            url: targetUrl,
-            contentType: contentType,
-            contentLength: contentLength,
-            filename: getFilenameFromUrl(targetUrl)
-          });
 
-          // If this is an m3u8 playlist, fetch and parse variants to extract clean quality profiles
-          if (targetUrl.includes('.m3u8')) {
-            fetch(targetUrl)
-              .then((r) => r.text())
-              .then((text) => {
-                if (text.includes('#EXT-X-STREAM-INF')) {
-                  const variants = parseM3u8Formats(text, targetUrl);
-                  variants.forEach((v) => {
-                    if (!mediaList.some((m) => m.url === v.url)) {
-                      mediaList.push({
-                        url: v.url,
-                        contentType: 'application/x-mpegurl',
-                        contentLength: 0,
-                        filename: v.title + '.mp4',
-                        customTitle: v.title,
-                        customBadge: v.badge
-                      });
-                    }
+        // If this is an m3u8 playlist, fetch and parse variants BEFORE adding to mediaList
+        if (targetUrl.includes('.m3u8')) {
+          fetch(targetUrl)
+            .then((r) => r.text())
+            .then((text) => {
+              if (text.includes('#EXT-X-STREAM-INF')) {
+                const variants = parseM3u8Formats(text, targetUrl);
+                variants.forEach((v) => {
+                  if (!mediaList.some((m) => m.url === v.url)) {
+                    if (mediaList.length >= 35) mediaList.shift();
+                    mediaList.push({
+                      url: v.url,
+                      contentType: 'application/x-mpegurl',
+                      contentLength: 0,
+                      filename: v.title + '.mp4',
+                      customTitle: v.title,
+                      customBadge: v.badge
+                    });
+                  }
+                });
+              } else {
+                if (!mediaList.some((m) => m.url === targetUrl)) {
+                  if (mediaList.length >= 35) mediaList.shift();
+                  mediaList.push({
+                    url: targetUrl,
+                    contentType: 'application/x-mpegurl',
+                    contentLength: contentLength,
+                    filename: getFilenameFromUrl(targetUrl),
+                    customTitle: 'HLS Video Stream',
+                    customBadge: 'HLS Stream'
                   });
                 }
-              })
-              .catch(() => {});
-          } else if (targetUrl.includes('.mpd')) {
-            fetch(targetUrl)
-              .then((r) => r.text())
-              .then((text) => {
-                const mpdFormats = parseMpdFormats(text, targetUrl);
+              }
+            })
+            .catch(() => {});
+          return;
+        }
+
+        // If this is an mpd manifest, fetch and parse representations BEFORE adding
+        if (targetUrl.includes('.mpd')) {
+          fetch(targetUrl)
+            .then((r) => r.text())
+            .then((text) => {
+              const mpdFormats = parseMpdFormats(text, targetUrl);
+              if (mpdFormats.length > 0) {
                 mpdFormats.forEach((f) => {
                   if (!mediaList.some((m) => m.url === f.url)) {
+                    if (mediaList.length >= 35) mediaList.shift();
                     mediaList.push({
                       url: f.url,
                       videoUrl: f.videoUrl,
@@ -239,9 +255,21 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                     });
                   }
                 });
-              })
-              .catch(() => {});
-          }
+              }
+            })
+            .catch(() => {});
+          return;
+        }
+
+        // Standard direct media URL (mp4, webm, mp3, m4a, etc.)
+        if (!mediaList.some((m) => m.url === targetUrl)) {
+          if (mediaList.length >= 35) mediaList.shift();
+          mediaList.push({
+            url: targetUrl,
+            contentType: contentType,
+            contentLength: contentLength,
+            filename: getFilenameFromUrl(targetUrl)
+          });
         }
       }
     },
