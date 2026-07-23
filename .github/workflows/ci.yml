@@ -54,10 +54,14 @@ jobs:
         shell: pwsh
         run: .\gradlew.bat --no-daemon clean check architectureTest integrationTest
 
+      - name: Install Xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Run UI tests on Ubuntu
         if: runner.os == 'Linux'
         shell: bash
-        run: ./gradlew --no-daemon uiTest
+        run: xvfb-run -a ./gradlew --no-daemon uiTest
 
       - name: Run UI tests on Windows
         if: runner.os == 'Windows'

@@ -21,11 +21,11 @@ public class SqlCipherDatabase {
         this.key = key;
         
         SQLiteConfig config = new SQLiteConfig();
+        config.enforceForeignKeys(true);
         
-        // Pass the key to the Willena SQLCipher JDBC driver
+        // Pass the key to the Willena SQLCipher JDBC driver properly
         String encodedKey = Base64.getEncoder().encodeToString(key);
         config.setPragma(SQLiteConfig.Pragma.PASSWORD, encodedKey);
-        config.enforceForeignKeys(true);
         
         this.dataSource = new SQLiteDataSource(config);
         this.dataSource.setUrl(url);
