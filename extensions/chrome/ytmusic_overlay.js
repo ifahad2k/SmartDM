@@ -303,6 +303,71 @@
     });
 
     playerBar.appendChild(host);
+
+    // Also inject into the main player area (album art / video)
+    const mainPlayer = document.querySelector('ytmusic-player:not([data-smartdm-main-player-attached])');
+    if (mainPlayer) {
+        mainPlayer.setAttribute('data-smartdm-main-player-attached', 'true');
+        const host2 = document.createElement('div');
+        host2.className = 'smartdm-main-player-host';
+        host2.style.position = 'absolute';
+        host2.style.top = '12px';
+        host2.style.left = '12px';
+        host2.style.zIndex = '99999';
+        host2.style.pointerEvents = 'auto';
+        
+        const shadow2 = host2.attachShadow({ mode: 'open' });
+        shadow2.innerHTML = shadow.innerHTML; // Reuse the same UI
+        
+        const bannerBtn2 = shadow2.querySelector('.idm-banner');
+        const popover2 = shadow2.querySelector('.popover');
+        const content2 = shadow2.querySelector('.popover-content');
+
+        document.addEventListener('click', (e) => {
+          if (popover2.classList.contains('active')) {
+            const path = e.composedPath ? e.composedPath() : [];
+            if (!path.includes(host2) && !host2.contains(e.target)) {
+              popover2.classList.remove('active');
+            }
+          }
+        });
+
+        bannerBtn2.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const currentVideoUrl = getCanonicalUrl(window.location.href);
+
+          const isActive = popover2.classList.contains('active');
+          if (isActive) {
+            popover2.classList.remove('active');
+            return;
+          }
+
+          popover2.classList.add('active');
+
+          fetchYtDlpFormats(currentVideoUrl, (res) => {
+            if (res && res.success && res.formats && res.formats.length > 0) {
+              renderFormatItems(content2, res.formats, currentVideoUrl, popover2);
+            } else if (res && res.success === false) {
+              content2.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">Error fetching formats.</div>';
+            } else {
+              content2.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
+            }
+          });
+
+          if (!ytDlpCache[currentVideoUrl] || ytDlpCache[currentVideoUrl].status !== 'done') {
+            content2.innerHTML = `
+              <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+                <div class="spinner"></div>
+                <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching...</span>
+              </div>
+            `;
+          }
+        });
+        
+        mainPlayer.appendChild(host2);
+    }
   }
 
   function scanThumbnails() {
@@ -598,21 +663,22 @@
 
   function scanPlaylist() {
     // Inject into Sort button area (Tracklist header)
-    const sortButton = document.querySelector('ytmusic-sort-filter-button-renderer:not([' + PROCESSED_ATTR + '])');
-    if (sortButton) {
-        sortButton.setAttribute(PROCESSED_ATTR, 'true');
+    // Sometimes the sort button isn't there, so we target the shelf header itself
+    const shelfHeader = document.querySelector('ytmusic-playlist-shelf-renderer #header:not([' + PROCESSED_ATTR + ']), ytmusic-shelf-renderer #header:not([' + PROCESSED_ATTR + '])');
+    if (shelfHeader) {
+        shelfHeader.setAttribute(PROCESSED_ATTR, 'true');
         const host = createPlaylistDownloadHost();
         host.style.marginLeft = '12px';
-        sortButton.insertAdjacentElement('afterend', host);
+        shelfHeader.appendChild(host);
     }
 
     // Inject into Main header buttons (Album/Playlist header)
-    const headerButtons = document.querySelector('ytmusic-detail-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + ']), ytmusic-responsive-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + '])');
-    if (headerButtons) {
-        headerButtons.setAttribute(PROCESSED_ATTR, 'true');
+    const headerMenu = document.querySelector('ytmusic-detail-header-renderer ytmusic-menu-renderer:not([' + PROCESSED_ATTR + ']), ytmusic-responsive-header-renderer ytmusic-menu-renderer:not([' + PROCESSED_ATTR + '])');
+    if (headerMenu) {
+        headerMenu.setAttribute(PROCESSED_ATTR, 'true');
         const host = createPlaylistDownloadHost();
         host.style.marginRight = '12px';
-        headerButtons.insertBefore(host, headerButtons.firstChild);
+        headerMenu.insertBefore(host, headerMenu.firstChild);
     }
   }
 
