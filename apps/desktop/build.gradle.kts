@@ -20,7 +20,7 @@ dependencies {
     implementation(project(":modules:download-http"))
     implementation(project(":modules:persistence-sqlcipher"))
     implementation(project(":modules:secure-storage"))
-    runtimeOnly(project(":modules:file-catalog"))
+    implementation(project(":modules:file-catalog"))
     runtimeOnly(project(":modules:search-local"))
     runtimeOnly(project(":modules:organization-local"))
     runtimeOnly(project(":modules:ai-gemini"))
