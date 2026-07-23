@@ -222,8 +222,9 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         }
 
         YtDlpExtractor extractor = new YtDlpExtractor(toolMgr);
-        java.util.concurrent.Semaphore concurrencyLimit = new java.util.concurrent.Semaphore(1);
+        java.util.concurrent.Semaphore concurrencyLimit = new java.util.concurrent.Semaphore(5);
         java.util.concurrent.atomic.AtomicBoolean isRateLimited = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Object startLock = new Object();
 
         for (MediaBatchItem item : items) {
             executorService.submit(() -> {
@@ -241,9 +242,16 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
 
                 try {
                     concurrencyLimit.acquire();
+                    
+                    // Stagger the start of each process by 600ms to avoid simultaneous burst that triggers YouTube 429
+                    synchronized (startLock) {
+                        Thread.sleep(600);
+                    }
+                    
                     MediaMetadata meta = extractor.extractMetadataAsync(item.getUrl()).get(90, TimeUnit.SECONDS);
                     item.setMetadata(meta);
-                    Thread.sleep(1500); // 1.5s delay to prevent YouTube HTTP 429 rate limit
+                    
+                    Thread.sleep(400); // Minor cooldown after finishing
                 } catch (Exception e) {
                     item.setMetadata(null);
                     if (e.getMessage() != null && e.getMessage().contains("HTTP Error 429")) {
