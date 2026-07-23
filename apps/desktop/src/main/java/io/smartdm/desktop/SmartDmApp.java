@@ -480,7 +480,7 @@ public class SmartDmApp extends Application {
             if (workspaceRef[0] != null) {
                 javafx.application.Platform.runLater(() -> workspaceRef[0].refresh());
             }
-        });
+        }, catalogService);
         schedulerWorkspaceRef.set(shell.getSchedulerWorkspace());
         queueWorkspaceRef.set(shell.getQueueWorkspace());
 
