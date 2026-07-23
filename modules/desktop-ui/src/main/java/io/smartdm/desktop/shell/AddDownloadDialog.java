@@ -59,6 +59,8 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         
         GridPane grid = new GridPane();
         grid.getStyleClass().add("idm-grid");
+        grid.setPrefWidth(650);
+        grid.setMinWidth(650);
         
         ColumnConstraints labelCol = new ColumnConstraints();
         labelCol.setHalignment(HPos.RIGHT);
@@ -358,6 +360,10 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             try {
                 java.util.List<io.smartdm.domain.organization.FolderSuggestion> suggestions = 
                     smartFolderService.suggestFolders(url, fileName, null, probedBytes > 0 ? probedBytes : 0L);
+                System.out.println("SUGGESTIONS FETCHED: " + suggestions.size());
+                for (io.smartdm.domain.organization.FolderSuggestion s : suggestions) {
+                    System.out.println(" -> " + s.displayName() + " " + s.score() + " " + s.reason());
+                }
                 suggestionPanel.setSuggestions(suggestions);
                 sizeToScene();
             } catch (Exception ex) {
