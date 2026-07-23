@@ -126,6 +126,17 @@
       depth++;
     }
 
+    if (window.location.hostname.includes('instagram.com')) {
+      let el = mediaEl;
+      for (let i = 0; i < 7; i++) {
+        if (el.parentElement && el.parentElement !== document.body) {
+          el = el.parentElement;
+          container = el;
+          if (el.tagName.toLowerCase() === 'article') break;
+        }
+      }
+    }
+
     if (window.getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
     }

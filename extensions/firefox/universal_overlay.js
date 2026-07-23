@@ -15,6 +15,38 @@
   const PLAYER_PROCESSED_ATTR = 'data-smartdm-universal-attached';
   const THUMB_PROCESSED_ATTR = 'data-smartdm-universal-thumb-attached';
 
+  const ytDlpCache = {};
+
+  function prefetchYtDlpFormats(url) {
+    if (!ytDlpCache[url]) {
+      ytDlpCache[url] = { status: 'fetching', formats: null, callbacks: [] };
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          ytDlpCache[url].status = 'done';
+          ytDlpCache[url].formats = res;
+          ytDlpCache[url].callbacks.forEach(cb => cb(res));
+          ytDlpCache[url].callbacks = [];
+        } else {
+          const cbs = ytDlpCache[url].callbacks || [];
+          delete ytDlpCache[url];
+          cbs.forEach(cb => cb(res));
+        }
+      });
+    }
+  }
+
+  function getCachedYtDlpFormats(url, callback) {
+    if (!ytDlpCache[url]) {
+      prefetchYtDlpFormats(url);
+    }
+    if (ytDlpCache[url].status === 'done') {
+      callback(ytDlpCache[url].formats);
+    } else {
+      ytDlpCache[url].callbacks.push(callback);
+    }
+  }
+
+
   function initUniversalOverlay() {
     const observer = new MutationObserver(() => {
       scanPlayers();
@@ -33,21 +65,37 @@
   function isThumbnailVideo(mediaEl) {
     if (!mediaEl) return false;
 
+    // A main video usually has controls, or is large.
+    if (mediaEl.hasAttribute('controls')) return false;
+    
+    // If it's a large video, it's almost certainly the main player, not a thumbnail preview.
+    if (mediaEl.offsetWidth >= 500 || mediaEl.offsetHeight >= 400) return false;
+
+    // Check if it's inside a link (most thumbnails are wrapped in a tags)
+    let el = mediaEl;
+    let depth = 0;
+    while(el && el !== document.body && depth < 5) {
+        if (el.tagName === 'A') return true;
+        el = el.parentElement;
+        depth++;
+    }
+
     // Check dimensions - thumbnail preview videos are small/medium grid cards
     if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 500) {
       const parentCard = mediaEl.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, [class*="thumb"], [class*="card"], [class*="grid"], [class*="item"]');
       if (parentCard) return true;
     }
 
-    // Check ancestors for thumbnail card classes/attributes
+    // Fallback: check classes for explicit thumbnail indicators
     let current = mediaEl;
-    let depth = 0;
+    depth = 0;
     while (current && current.parentElement && depth < 8) {
       current = current.parentElement;
       const cls = (current.className || '').toString().toLowerCase();
       const id = (current.id || '').toString().toLowerCase();
-      if (cls.includes('thumb') || cls.includes('preview') || cls.includes('card') || cls.includes('grid') ||
-          id.includes('thumb') || id.includes('preview') || id.includes('card')) {
+      
+      // Be more restrictive: only match if it explicitly says 'thumb' or 'preview'
+      if (cls.includes('thumb') || cls.includes('preview') || id.includes('thumb') || id.includes('preview')) {
         return true;
       }
       depth++;
@@ -61,20 +109,32 @@
     let container = mediaEl.parentElement || mediaEl;
     let depth = 0;
 
+    // Look for common video player wrapper classes
     while (current && current.parentElement && current.parentElement !== document.body && depth < 8) {
       current = current.parentElement;
       const tag = current.tagName.toLowerCase();
+      const cls = (current.className || '').toString().toLowerCase();
       
       if (tag === 'article' || current.getAttribute('role') === 'dialog' || current.getAttribute('role') === 'region') {
         container = current;
         break;
       }
 
-      const style = window.getComputedStyle(current);
-      if (style.position === 'relative' || style.position === 'absolute' || style.position === 'fixed') {
-        container = current;
+      if (cls.includes('player') || cls.includes('video-wrapper') || cls.includes('vjs-') || cls.includes('plyr') || cls.includes('html5-video-container')) {
+          container = current;
       }
       depth++;
+    }
+
+    if (window.location.hostname.includes('instagram.com')) {
+      let el = mediaEl;
+      for (let i = 0; i < 7; i++) {
+        if (el.parentElement && el.parentElement !== document.body) {
+          el = el.parentElement;
+          container = el;
+          if (el.tagName.toLowerCase() === 'article') break;
+        }
+      }
     }
 
     if (window.getComputedStyle(container).position === 'static') {
@@ -88,8 +148,13 @@
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
+
+
     // Do NOT attach banner to thumbnail videos inside cards or grid feeds
     if (isThumbnailVideo(mediaEl)) return;
+
+    // Immediately fetch video resolutions when the new link opens so they are already saved when clicked
+    prefetchYtDlpFormats(window.location.href);
 
     const container = findTopPlayerContainer(mediaEl);
     if (container.querySelector('.smartdm-universal-host')) return;
@@ -353,6 +418,7 @@
         }
       }
 
+      const directSrc = mediaEl.src || mediaEl.currentSrc;
       let hasFound = false;
 
       const checkFormats = () => {
@@ -383,11 +449,14 @@
         });
       };
 
-      checkFormats();
-      formatSearchInterval = setInterval(checkFormats, 1000);
+      const isSocial = pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com') || pageUrl.includes('twitter.com') || pageUrl.includes('tiktok.com');
+      if (isSocial) {
+        checkFormats();
+        formatSearchInterval = setInterval(checkFormats, 1000);
+      }
 
-      // Async query yt-dlp formats
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: pageUrl }, (res) => {
+      // Async query yt-dlp formats (uses cache for instant response)
+      getCachedYtDlpFormats(pageUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
           if (formatSearchInterval) clearInterval(formatSearchInterval);
@@ -396,13 +465,13 @@
         }
       });
 
-      // 10-second timeout: if no formats found, display "No media formats detected."
+      // 40-second timeout: if no formats found after 40 seconds, display "No media formats detected."
       formatSearchTimeout = setTimeout(() => {
         if (formatSearchInterval) clearInterval(formatSearchInterval);
         if (!hasFound) {
           content.innerHTML = '<div class="status-text">No media formats detected.</div>';
         }
-      }, 10000);
+      }, 40000);
     });
 
     container.appendChild(host);
@@ -559,11 +628,11 @@
     }
 
     const host = document.createElement('div');
-    host.className = 'smartdm-universal-thumb-host';
+    host.className = 'smartdm-universal-host';
     host.style.position = 'absolute';
-    host.style.top = '8px';
-    host.style.right = '8px';
-    host.style.zIndex = '999999';
+    host.style.top = '16px';
+    host.style.right = '16px';
+    host.style.zIndex = '2147483647';
     host.style.pointerEvents = 'auto';
 
     const shadow = host.attachShadow({ mode: 'open' });
@@ -680,25 +749,6 @@
           text-align: center;
           padding: 8px;
         }
-        .spinner-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 16px;
-          gap: 10px;
-        }
-        .spinner {
-          width: 22px;
-          height: 22px;
-          border: 3px solid rgba(56, 189, 248, 0.2);
-          border-top-color: #38bdf8;
-          border-radius: 50%;
-          animation: smartdm-spin 0.8s linear infinite;
-        }
-        @keyframes smartdm-spin {
-          to { transform: rotate(360deg); }
-        }
       </style>
       <button class="thumb-btn">
         <svg class="icon" viewBox="0 0 24 24">
@@ -719,6 +769,9 @@
     const thumbBtn = shadow.querySelector('.thumb-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
+    
+
+
 
     // Auto-close popover on outside click
     document.addEventListener('click', (e) => {
@@ -761,24 +814,12 @@
 
       let hasFound = false;
 
-      const checkThumbFormats = () => {
-        chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-          const netMedia = (netRes && netRes.media) ? netRes.media : [];
+      // We do not use network-intercepted media for thumbnails on tube sites.
+      // Tube site thumbnail hovers always use yt-dlp to get the full video.
 
-          if (netMedia.length > 0) {
-            hasFound = true;
-            if (thumbInterval) clearInterval(thumbInterval);
-            if (thumbTimeout) clearTimeout(thumbTimeout);
-            renderThumbnailFormats(content, [], netMedia, videoUrl, popover);
-          }
-        });
-      };
 
-      checkThumbFormats();
-      thumbInterval = setInterval(checkThumbFormats, 1000);
-
-      // Async query yt-dlp formats
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+      // Async query yt-dlp formats (uses cache for instant response)
+      getCachedYtDlpFormats(videoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
           if (thumbInterval) clearInterval(thumbInterval);
