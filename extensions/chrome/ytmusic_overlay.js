@@ -309,11 +309,11 @@
     const thumbnailElements = document.querySelectorAll('ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item');
     thumbnailElements.forEach((container) => {
       if (container.getAttribute(PROCESSED_ATTR)) return;
-      container.setAttribute(PROCESSED_ATTR, 'true');
-
-      let thumbAnchor = container.querySelector('a[href*="/watch?v="]');
+      
+      let thumbAnchor = container.querySelector('a[href*="watch?v="]');
       
       if (thumbAnchor && !thumbAnchor.closest('ytmusic-player-bar')) {
+        container.setAttribute(PROCESSED_ATTR, 'true');
         attachBadge(container, thumbAnchor.href);
       }
     });
@@ -454,13 +454,12 @@
           padding: 8px;
         }
       </style>
-      <button class="badge-btn">
+      <button class="badge-btn" title="Download Audio">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        SmartDM
       </button>
       <div class="popover">
         <div class="popover-title">Select Audio Quality</div>
@@ -528,10 +527,9 @@
   function scanPlaylist() {
     if (!window.location.pathname.startsWith('/playlist')) return;
 
-    const actionContainer = document.querySelector('ytmusic-detail-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + ']), ytmusic-menu-renderer:not([' + PROCESSED_ATTR + '])');
+    // YT Music Playlist action bar might be inside a ytmusic-detail-header-renderer or ytmusic-responsive-header-renderer
+    const actionContainer = document.querySelector('ytmusic-detail-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + ']), ytmusic-responsive-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + ']), ytmusic-detail-header-renderer ytmusic-menu-renderer:not([' + PROCESSED_ATTR + '])');
     if (!actionContainer) return;
-    
-    if (!actionContainer.closest('ytmusic-detail-header-renderer') && !actionContainer.closest('.immersive-header')) return;
     
     actionContainer.setAttribute(PROCESSED_ATTR, 'true');
 
