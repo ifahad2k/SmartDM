@@ -98,8 +98,9 @@
   function scanPlayer() {
     if (!window.location.pathname.startsWith('/watch') && !window.location.pathname.startsWith('/shorts')) return;
 
+    const videoUrl = getCanonicalUrl(window.location.href);
     // Immediately prefetch formats for the active watch video page in background
-    fetchYtDlpFormats(window.location.href, () => {});
+    fetchYtDlpFormats(videoUrl, () => {});
 
     const player = document.querySelector('#movie_player:not([' + PLAYER_PROCESSED_ATTR + ']), .html5-video-player:not([' + PLAYER_PROCESSED_ATTR + '])');
     if (!player) return;
