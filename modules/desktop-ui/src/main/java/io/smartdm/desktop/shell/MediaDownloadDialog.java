@@ -43,25 +43,27 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private final TextField destinationField;
     private Consumer<Download> onDownloadAdded;
     private final io.smartdm.organization.SmartFolderService smartFolderService;
+    private final io.smartdm.domain.repository.DownloadRepository repository;
     private FolderSuggestionPanel suggestionPanel;
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded) {
-        this(owner, metadata, null, onDownloadAdded, null);
+        this(owner, metadata, null, onDownloadAdded, null, null);
     }
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
-        this(owner, metadata, null, onDownloadAdded, smartFolderService);
+        this(owner, metadata, null, onDownloadAdded, smartFolderService, null);
     }
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded) {
-        this(owner, metadata, preferredFormatId, onDownloadAdded, null);
+        this(owner, metadata, preferredFormatId, onDownloadAdded, null, null);
     }
 
-    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.domain.repository.DownloadRepository repository) {
         super(owner, "Media Download - " + metadata.title(), Modality.NONE);
         this.metadata = metadata;
         this.onDownloadAdded = onDownloadAdded;
         this.smartFolderService = smartFolderService;
+        this.repository = repository;
 
         setAlwaysOnTop(true);
         toFront();
@@ -273,8 +275,9 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         boolean fileExists = Files.exists(targetPath);
         boolean isPartExists = Files.exists(Paths.get(targetPath.toString() + ".part")) || Files.exists(Paths.get(targetPath.toString() + ".ytdl"));
+        boolean destActive = isDestinationActive(targetPath);
 
-        if (fileExists || isPartExists) {
+        if (fileExists || isPartExists || destActive) {
             Stage owner = (Stage) getScene().getWindow();
             FileCollisionDialog dialog = new FileCollisionDialog(owner, targetPath.getFileName().toString());
             FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
@@ -305,7 +308,23 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         }
     }
 
+    private boolean isDestinationActive(Path path) {
+        if (repository == null) return false;
+        for (io.smartdm.domain.Download d : repository.findAll()) {
+            if (d.state() != io.smartdm.domain.DownloadState.COMPLETED && 
+                d.state() != io.smartdm.domain.DownloadState.CANCELED && 
+                d.state() != io.smartdm.domain.DownloadState.FAILED) {
+                if (d.destination().value().toAbsolutePath().equals(path.toAbsolutePath())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private Path generateUniquePath(Path targetPath) {
+        if (!Files.exists(targetPath) && !isDestinationActive(targetPath)) return targetPath;
+
         String name = targetPath.getFileName().toString();
         String dir = (targetPath.getParent() != null) ? targetPath.getParent().toString() : ".";
         int dotIdx = name.lastIndexOf('.');
@@ -317,7 +336,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         do {
             newPath = Paths.get(dir, base + " (" + count + ")" + ext);
             count++;
-        } while (Files.exists(newPath) || Files.exists(Paths.get(newPath.toString() + ".part")));
+        } while (Files.exists(newPath) || Files.exists(Paths.get(newPath.toString() + ".part")) || isDestinationActive(newPath));
         return newPath;
     }
 

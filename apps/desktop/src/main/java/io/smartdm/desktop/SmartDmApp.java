@@ -765,7 +765,8 @@ public class SmartDmApp extends Application {
                             repository.save(dl);
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                         },
-                        smartFolderService
+                        smartFolderService,
+                        repository
                     );
                     bringStageToFrontAndFocus(dlg);
                 });
