@@ -127,12 +127,30 @@
     }
 
     if (window.location.hostname.includes('instagram.com')) {
-      let el = mediaEl;
-      for (let i = 0; i < 7; i++) {
-        if (el.parentElement && el.parentElement !== document.body) {
-          el = el.parentElement;
-          container = el;
-          if (el.tagName.toLowerCase() === 'article') break;
+      // Find the element that is visually on top of the video (the click catcher)
+      const rect = mediaEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        // Temporarily hide our own host if it exists so we don't pick it up
+        const existingHost = document.querySelector('.smartdm-universal-host');
+        if (existingHost) existingHost.style.display = 'none';
+        
+        const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        
+        if (existingHost) existingHost.style.display = '';
+
+        if (topElement && topElement !== mediaEl && !mediaEl.contains(topElement)) {
+          // topElement is the click catcher!
+          container = topElement;
+        } else {
+          // Fallback to moving up the tree
+          let el = mediaEl;
+          for (let i = 0; i < 7; i++) {
+            if (el.parentElement && el.parentElement !== document.body) {
+              el = el.parentElement;
+              container = el;
+              if (el.tagName.toLowerCase() === 'article') break;
+            }
+          }
         }
       }
     }
