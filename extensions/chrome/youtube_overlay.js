@@ -351,8 +351,8 @@
   }
 
   function scanThumbnails() {
-    // Find exact thumbnail image link anchors across all YouTube pages and layouts (home, watch sidebar, search, playlists, shorts)
     const thumbAnchors = document.querySelectorAll('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, ytd-thumbnail a[href*="/watch"], ytd-thumbnail a[href*="/shorts"], div.yt-lockup-view-model__image a[href*="/watch"], div.yt-lockup-view-model__image a[href*="/shorts"]');
+    
     thumbAnchors.forEach((anchor) => {
       if (anchor.closest('#player, #movie_player, .html5-video-player')) return;
       if (anchor.getAttribute(PROCESSED_ATTR)) return;
@@ -360,26 +360,19 @@
       const rawUrl = anchor.getAttribute('href') || anchor.href;
       if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
 
-      // Check if this thumbnail container already has a smartdm-host to prevent duplicates on hover or preview animations
-      const thumbContainer = anchor.closest('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail') || anchor;
-      if (thumbContainer.querySelector('.smartdm-host')) {
+      const wrapper = anchor.closest('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail') || anchor;
+      
+      if (wrapper.querySelector('.smartdm-host')) {
         anchor.setAttribute(PROCESSED_ATTR, 'true');
         return;
       }
 
       anchor.setAttribute(PROCESSED_ATTR, 'true');
-      attachBadge(anchor, rawUrl);
+      attachBadge(wrapper, rawUrl);
     });
   }
 
-  function attachBadge(anchor, rawUrl) {
-    if (getComputedStyle(anchor).position === 'static' || !getComputedStyle(anchor).position) {
-      anchor.style.position = 'relative';
-    }
-    if (anchor.parentElement && getComputedStyle(anchor.parentElement).position === 'static') {
-      anchor.parentElement.style.position = 'relative';
-    }
-
+  function attachBadge(wrapper, rawUrl) {
     const videoUrl = getCanonicalUrl(rawUrl);
 
     const host = document.createElement('div');
@@ -387,7 +380,7 @@
     host.style.position = 'absolute';
     host.style.top = '6px';
     host.style.right = '6px';
-    host.style.zIndex = '9999';
+    host.style.zIndex = '99999';
     host.style.pointerEvents = 'auto';
 
     const shadow = host.attachShadow({ mode: 'open' });
@@ -398,107 +391,106 @@
         .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
         .badge-btn {
-          background: rgba(15, 23, 42, 0.85);
+          background: rgba(15, 23, 42, 0.9);
           backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
           color: #38bdf8;
           border: 1px solid rgba(56, 189, 248, 0.4);
           border-radius: 6px;
-          padding: 4px 8px;
+          padding: 6px 12px;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 11px;
-          font-weight: 600;
+          font-size: 12px;
+          font-weight: 700;
           cursor: pointer;
           display: flex;
           align-items: center;
-          gap: 4px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-          transition: all 0.2s ease;
-          opacity: 0.85;
+          gap: 6px;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+          transition: background 0.2s ease, border-color 0.2s ease;
+          outline: none;
         }
         .badge-btn:hover {
-          opacity: 1;
-          background: rgba(14, 165, 233, 0.9);
-          color: #ffffff;
-          border-color: #ffffff;
-        }
-        .badge-btn svg {
-          width: 12px;
-          height: 12px;
-          fill: currentColor;
+          background: rgba(14, 165, 233, 0.2);
+          border-color: #38bdf8;
+          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
         }
         .popover {
           position: absolute;
-          top: 32px;
+          top: 36px;
           right: 0;
-          background: rgba(15, 23, 42, 0.96);
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(56, 189, 248, 0.3);
-          border-radius: 10px;
-          padding: 10px;
           width: 250px;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+          background: rgba(15, 23, 42, 0.95);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(56, 189, 248, 0.3);
+          border-radius: 8px;
+          padding: 12px;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
           display: none;
           flex-direction: column;
-          gap: 6px;
-          z-index: 10000;
+          gap: 8px;
+          color: #f8fafc;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          z-index: 100000;
         }
         .popover.active {
           display: flex;
         }
-        .popover-header {
-          font-size: 11px;
+        .popover-title {
           font-weight: 700;
           color: #38bdf8;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          padding-bottom: 4px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+          font-size: 13px;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+          padding-bottom: 8px;
+          margin-bottom: 4px;
         }
+        .popover-content {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          max-height: 230px;
+          overflow-y: auto;
+          padding-right: 4px;
+        }
+        .popover-content::-webkit-scrollbar { width: 5px; }
+        .popover-content::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 4px; }
         .format-item {
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 6px 8px;
           border-radius: 6px;
-          background: rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
           color: #e2e8f0;
           font-size: 11px;
           cursor: pointer;
           transition: all 0.15s ease;
-          border: 1px solid transparent;
         }
         .format-item:hover {
-          background: rgba(56, 189, 248, 0.15);
-          border-color: rgba(56, 189, 248, 0.4);
+          background: rgba(56, 189, 248, 0.25);
+          border-color: #38bdf8;
           color: #ffffff;
         }
-        .format-badge {
-          font-weight: 700;
-          color: #38bdf8;
-        }
-        .format-size {
-          color: #94a3b8;
-          font-size: 10px;
-        }
+        .format-badge { font-weight: 700; color: #38bdf8; }
+        .format-size { color: #94a3b8; font-size: 10px; }
+        .status-text { font-size: 11px; color: #94a3b8; padding: 10px; text-align: center; }
       </style>
       <div style="position: relative;">
-        <div class="badge-btn" title="Download with SmartDM">
-          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        <button class="badge-btn" title="Download with SmartDM">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
           SmartDM
-        </div>
+        </button>
         <div class="popover">
-          <div class="popover-header">
-            <span>Select Quality / Format</span>
-            <span style="cursor:pointer; color:#94a3b8; font-size:13px;" id="close-pop">&times;</span>
-          </div>
+          <div class="popover-title">SmartDM Video Download</div>
           <div class="popover-content">
-            <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
-              <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-              <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+            <div class="spinner-container">
+              <div class="spinner"></div>
+              <span class="status-text" style="padding:0;">Searching for video formats...</span>
             </div>
           </div>
         </div>
@@ -507,13 +499,16 @@
 
     const badgeBtn = shadow.querySelector('.badge-btn');
     const popover = shadow.querySelector('.popover');
-    const closePop = shadow.querySelector('#close-pop');
     const content = shadow.querySelector('.popover-content');
 
-    closePop.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      popover.classList.remove('active');
+    // Auto-close on click outside
+    document.addEventListener('click', (e) => {
+      if (popover.classList.contains('active')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        if (!path.includes(host) && !host.contains(e.target)) {
+          popover.classList.remove('active');
+        }
+      }
     });
 
     badgeBtn.addEventListener('click', (e) => {
@@ -542,23 +537,35 @@
           const errMsg = (res.error && res.error.includes("not running")) 
             ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
             : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>";
-          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
+          content.innerHTML = '<div class="status-text" style="color:#ef4444; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {
           content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
 
       if (!ytDlpCache[videoUrl] || ytDlpCache[videoUrl].status !== 'done') {
-        content.innerHTML = `
-          <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
-            <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-            <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+        content.innerHTML = \`
+          <div class="spinner-container">
+            <div class="spinner"></div>
+            <span class="status-text" style="padding:0;">Searching for video formats...</span>
           </div>
-        `;
+        \`;
       }
     });
 
-    anchor.appendChild(host);
+    let attachTarget = wrapper.querySelector('#overlays, .yt-lockup-view-model__overlays');
+    if (!attachTarget) {
+      attachTarget = wrapper;
+      if (getComputedStyle(wrapper).position === 'static' || !getComputedStyle(wrapper).position) {
+        wrapper.style.position = 'relative';
+      }
+    } else {
+      if (getComputedStyle(attachTarget).position === 'static' || !getComputedStyle(attachTarget).position) {
+        attachTarget.style.position = 'relative';
+      }
+    }
+
+    attachTarget.appendChild(host);
   }
 
   if (document.readyState === 'loading') {
