@@ -28,6 +28,7 @@ import io.smartdm.securestorage.linux.SecretServiceMasterKeyStorage;
 import io.smartdm.persistence.SqlCipherDatabase;
 import io.smartdm.persistence.SqlCipherDownloadRepository;
 import io.smartdm.persistence.SqlCipherCategoryRepository;
+import io.smartdm.persistence.SqlCipherCatalogRepository;
 import io.smartdm.domain.repository.CategoryRepository;
 import io.smartdm.application.ProfileLock;
 
