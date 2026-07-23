@@ -42,4 +42,8 @@ public class SqlCipherDatabase {
     public Connection getConnection() throws SQLException {
         return dataSource.getConnection();
     }
+
+    public javax.sql.DataSource dataSource() {
+        return dataSource;
+    }
 }

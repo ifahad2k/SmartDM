@@ -47,6 +47,11 @@ import javafx.application.Platform;
 public class SmartDmApp extends Application {
 
     private ExecutorService enginePool;
+    private java.util.concurrent.ExecutorService mediaExecutor;
+    private java.util.concurrent.ExecutorService processIoExecutor;
+    private java.util.concurrent.ScheduledExecutorService processScheduler;
+    private io.smartdm.platform.api.process.NativeProcessController nativeProcessController;
+    private io.smartdm.media.api.MediaDownloadRunner mediaDownloadRunner;
     private ProfileLock profileLock;
     private static final java.util.Map<String, io.smartdm.media.api.MediaMetadata> metadataCache = new java.util.concurrent.ConcurrentHashMap<>();
     private SingleDownloadCoordinator coordinator;
@@ -187,20 +192,29 @@ public class SmartDmApp extends Application {
             }
         };
 
-        io.smartdm.platform.api.process.NativeProcessController processController;
+        io.smartdm.media.api.job.MediaJobStore mediaJobStore = new io.smartdm.persistence.SqlCipherMediaJobStore(database.dataSource());
+
+        mediaExecutor = java.util.concurrent.Executors.newFixedThreadPool(4, new io.smartdm.desktop.util.NamedDaemonThreadFactory("media-worker"));
+        processIoExecutor = java.util.concurrent.Executors.newCachedThreadPool(new io.smartdm.desktop.util.NamedDaemonThreadFactory("process-io"));
+        processScheduler = java.util.concurrent.Executors.newScheduledThreadPool(2, new io.smartdm.desktop.util.NamedDaemonThreadFactory("process-scheduler"));
+
         if (System.getProperty("os.name").toLowerCase().contains("win")) {
-            processController = new io.smartdm.platform.windows.process.WindowsNativeProcessController();
+            nativeProcessController = new io.smartdm.platform.windows.process.WindowsNativeProcessController(
+                    processIoExecutor, processScheduler);
         } else {
-            processController = new io.smartdm.platform.linux.process.LinuxNativeProcessController();
+            nativeProcessController = new io.smartdm.platform.linux.process.LinuxNativeProcessController(
+                    processIoExecutor, processScheduler);
         }
-        
-        io.smartdm.media.api.MediaDownloadRunner runner = new io.smartdm.media.ytdlp.YtDlpMediaDownloadRunner(
-            processController,
-            repository,
-            publisher,
-            new io.smartdm.media.ytdlp.LocalMediaToolManager(),
-            directories,
-            enginePool
+
+        mediaDownloadRunner = new io.smartdm.media.ytdlp.YtDlpMediaDownloadRunner(
+                nativeProcessController,
+                repository,
+                mediaJobStore,
+                publisher,
+                new io.smartdm.media.ytdlp.LocalMediaToolManager(),
+                directories,
+                mediaExecutor,
+                java.time.Clock.systemUTC()
         );
         
         // Runner is injected directly into dialogs and used locally.
@@ -315,8 +329,8 @@ public class SmartDmApp extends Application {
         DownloadsWorkspace workspace = new DownloadsWorkspace(new DownloadActionListener() {
             @Override
             public void onPause(Download download) {
-                if (runner.isMediaDownload(download.id())) {
-                    runner.pauseDownload(download);
+                if (mediaDownloadRunner.isMediaDownload(download.id())) {
+                    mediaDownloadRunner.pauseDownload(download);
                 } else {
                     if (download.state() == DownloadState.QUEUED) {
                         download.updateScheduledStartTime(null);
@@ -341,8 +355,8 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onResume(Download download) {
-                if (runner.isMediaDownload(download.id())) {
-                    runner.resumeDownload(download);
+                if (mediaDownloadRunner.isMediaDownload(download.id())) {
+                    mediaDownloadRunner.resumeDownload(download);
                 } else {
                     if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED || download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
                         boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
@@ -366,8 +380,8 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onCancel(Download download) {
-                if (runner.isMediaDownload(download.id())) {
-                    runner.cancelDownload(download);
+                if (mediaDownloadRunner.isMediaDownload(download.id())) {
+                    mediaDownloadRunner.cancelDownload(download);
                 } else {
                     coordinator.cancel(download.id()).thenRun(() -> {
                         download.updateState(DownloadState.CANCELED);
@@ -384,9 +398,9 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onDelete(Download download, boolean permanent) {
-                boolean isMedia = runner.isMediaDownload(download.id());
+                boolean isMedia = mediaDownloadRunner.isMediaDownload(download.id());
                 if (isMedia) {
-                    runner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value()));
+                    mediaDownloadRunner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value()));
                 } else {
                     try {
                         coordinator.cancel(download.id(), false).get(2, java.util.concurrent.TimeUnit.SECONDS);
@@ -406,7 +420,7 @@ public class SmartDmApp extends Application {
                 if (permanent) {
                     enginePool.submit(() -> {
                         if (download.destination() != null && download.destination().value() != null) {
-                            runner.deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
+                            mediaDownloadRunner.deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
                         }
                         try {
                             Path partFile = directories.getCacheDirectory().resolve("temp")
@@ -535,10 +549,10 @@ public class SmartDmApp extends Application {
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, runner);
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, runner);
+                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -583,7 +597,7 @@ public class SmartDmApp extends Application {
                             repository.save(dl);
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                         },
-                        runner
+                        mediaDownloadRunner
                     );
                     d.showAndWait();
                     if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
@@ -626,10 +640,37 @@ public class SmartDmApp extends Application {
         if (coordinator != null) {
             coordinator.shutdown();
         }
+        if (mediaDownloadRunner != null) {
+            mediaDownloadRunner.close();
+        }
         if (enginePool != null) {
             enginePool.shutdownNow();
             try {
                 enginePool.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (mediaExecutor != null) {
+            mediaExecutor.shutdownNow();
+            try {
+                mediaExecutor.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (processIoExecutor != null) {
+            processIoExecutor.shutdownNow();
+            try {
+                processIoExecutor.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (processScheduler != null) {
+            processScheduler.shutdownNow();
+            try {
+                processScheduler.awaitTermination(2, TimeUnit.SECONDS);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
@@ -721,7 +762,7 @@ public class SmartDmApp extends Application {
         ExecutorService enginePool,
         SingleDownloadCoordinator coordinator,
         io.smartdm.organization.SmartFolderService smartFolderService,
-        io.smartdm.media.api.MediaDownloadRunner runner
+        io.smartdm.media.api.MediaDownloadRunner mediaDownloadRunner
     ) {
         boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId) || (videoUrl != null && !videoUrl.isBlank());
 
@@ -791,7 +832,7 @@ public class SmartDmApp extends Application {
                         },
                         smartFolderService,
                         repository,
-                        runner
+                        mediaDownloadRunner
                     );
                     bringStageToFrontAndFocus(dlg);
                 });

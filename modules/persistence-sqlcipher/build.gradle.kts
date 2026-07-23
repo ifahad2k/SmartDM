@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":modules:persistence-api"))
+    implementation(project(":modules:media-api"))
     implementation(libs.sqlite.jdbc)
     implementation(libs.flyway.core)
 }

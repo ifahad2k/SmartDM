@@ -50,6 +50,8 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private final io.smartdm.domain.repository.DownloadRepository repository;
     private final io.smartdm.media.api.MediaDownloadRunner runner;
     private FolderSuggestionPanel suggestionPanel;
+    private Button startButton;
+    private javafx.scene.control.ProgressIndicator progressIndicator;
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded, io.smartdm.media.api.MediaDownloadRunner runner) {
         this(owner, metadata, null, onDownloadAdded, null, null, runner);
@@ -264,19 +266,23 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button downloadBtn = new Button("Start Download");
-        downloadBtn.getStyleClass().addAll("btn", "btn-primary");
-        downloadBtn.setOnAction(e -> startMediaDownload());
+        startButton = new Button("Start Download");
+        startButton.getStyleClass().addAll("btn", "btn-primary");
+        startButton.setOnAction(e -> startSelectedMediaDownload());
 
         Button cancelBtn = new Button("Cancel");
         cancelBtn.getStyleClass().addAll("btn", "btn-ghost");
         cancelBtn.setOnAction(e -> close());
 
-        footer.getChildren().addAll(spacer, downloadBtn, cancelBtn);
+        progressIndicator = new javafx.scene.control.ProgressIndicator();
+        progressIndicator.setVisible(false);
+        progressIndicator.setPrefSize(24, 24);
+
+        footer.getChildren().addAll(spacer, progressIndicator, startButton, cancelBtn);
         root.setBottom(footer);
     }
 
-    private void startMediaDownload() {
+    private void startSelectedMediaDownload() {
         MediaFormat selectedFormat = formatCombo.getValue();
         String filename = nameField.getText().trim();
         if (filename.isEmpty()) filename = "download." + (selectedFormat != null ? selectedFormat.ext() : "mp4");
@@ -284,65 +290,83 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         Path targetPath = Paths.get(dir, filename).toAbsolutePath();
 
-        CompletableFuture.supplyAsync(() -> {
-            boolean fileExists = Files.exists(targetPath);
-            boolean isPartExists = Files.exists(Paths.get(targetPath.toString() + ".part")) || Files.exists(Paths.get(targetPath.toString() + ".ytdl"));
-            boolean destActive = isDestinationActive(targetPath);
-            return fileExists || isPartExists || destActive;
-        }, IO_EXECUTOR).thenAccept(hasCollision -> {
-            Platform.runLater(() -> {
-                if (hasCollision) {
-                    handleCollision(targetPath, selectedFormat);
-                } else {
-                    finishDownloadStart(targetPath, selectedFormat);
+        if (repository != null) {
+            for (Download d : repository.findAll()) {
+                if (d.state() != DownloadState.COMPLETED &&
+                    d.state() != DownloadState.CANCELED &&
+                    d.state() != DownloadState.FAILED) {
+                    if (d.destination().value().equals(targetPath.toString())) {
+                        showMediaFailure("Collision", new RuntimeException("Another active download is using this destination."));
+                        return;
+                    }
                 }
-            });
-        }).exceptionally(ex -> {
-            System.err.println("Failed to check file collision: " + ex.getMessage());
-            return null;
-        });
-    }
-
-    private void handleCollision(Path targetPath, MediaFormat selectedFormat) {
-        Stage owner = (Stage) getScene().getWindow();
-        FileCollisionDialog dialog = new FileCollisionDialog(owner, targetPath.getFileName().toString());
-        FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
-
-        if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {
-            return;
+            }
         }
 
-        CompletableFuture.runAsync(() -> {
-            Path finalTargetPath = targetPath;
-            if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
-                finalTargetPath = generateUniquePath(targetPath);
-            } else if (choice == FileCollisionDialog.CollisionChoice.OVERWRITE) {
-                runner.deleteMediaFiles(targetPath);
+        boolean fileExists = Files.exists(targetPath);
+        if (fileExists) {
+            Stage owner = (Stage) getScene().getWindow();
+            FileCollisionDialog dialog = new FileCollisionDialog(owner, targetPath.getFileName().toString());
+            FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
+
+            if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {
+                return;
+            } else if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
+                targetPath = generateUniquePath(targetPath);
             }
-            final Path p = finalTargetPath;
-            Platform.runLater(() -> finishDownloadStart(p, selectedFormat));
-        }, IO_EXECUTOR).exceptionally(ex -> {
-            System.err.println("Failed to resolve collision: " + ex.getMessage());
-            return null;
-        });
+            // If OVERWRITE, we will delete below via runner
+        }
+
+        startButton.setDisable(true);
+        progressIndicator.setVisible(true);
+
+        SourceUri source = SourceUri.of(metadata.webpageUrl());
+        Destination dest = Destination.of(targetPath.toAbsolutePath().toString());
+        Download download = Download.create(source, dest);
+        String formatArgument = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
+
+        java.util.concurrent.CompletionStage<Void> preparation;
+        if (fileExists && Files.exists(targetPath)) {
+            // Need to overwrite
+            preparation = runner.deleteMediaFiles(targetPath);
+        } else {
+            preparation = CompletableFuture.completedFuture(null);
+        }
+        
+        Path finalTargetPath = targetPath;
+        java.util.concurrent.CompletionStage<Void> operation =
+                preparation.thenCompose(ignored ->
+                        runner.startDownload(
+                                download,
+                                finalTargetPath,
+                                metadata.webpageUrl(),
+                                formatArgument));
+
+        io.smartdm.desktop.util.FxCompletion.observe(
+                operation,
+                ignored -> {
+                    progressIndicator.setVisible(false);
+                    close();
+                    if (onDownloadAdded != null) {
+                        onDownloadAdded.accept(download);
+                    }
+                },
+                failure -> {
+                    startButton.setDisable(false);
+                    progressIndicator.setVisible(false);
+                    showMediaFailure(
+                            "Could not start media download",
+                            failure);
+                });
     }
 
-    private void finishDownloadStart(Path targetPath, MediaFormat selectedFormat) {
-        try {
-            SourceUri source = SourceUri.of(metadata.webpageUrl());
-            Destination dest = Destination.of(targetPath.toAbsolutePath().toString());
-            Download download = Download.create(source, dest);
-
-            if (onDownloadAdded != null) {
-                onDownloadAdded.accept(download);
-            }
-
-            String formatArg = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
-            runner.startDownload(download, targetPath, metadata.webpageUrl(), formatArg);
-            javafx.application.Platform.runLater(this::close);
-        } catch (Exception ex) {
-            System.err.println("Failed to start media download: " + ex.getMessage());
-        }
+    private void showMediaFailure(String message, Throwable failure) {
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
+        alert.setTitle("Error");
+        alert.setHeaderText(message);
+        alert.setContentText(failure != null ? failure.getMessage() : "Unknown error");
+        alert.initOwner(getScene().getWindow());
+        alert.showAndWait();
     }
 
     private boolean isDestinationActive(Path path) {

@@ -8,22 +8,39 @@ import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
 import io.smartdm.domain.repository.DownloadRepository;
 import io.smartdm.media.api.MediaDownloadRunner;
+import io.smartdm.media.api.MediaOperationException;
 import io.smartdm.media.api.MediaToolManager;
+import io.smartdm.media.api.job.MediaJobDescriptor;
+import io.smartdm.media.api.job.MediaJobStatus;
+import io.smartdm.media.api.job.MediaJobStore;
 import io.smartdm.platform.PlatformDirectories;
 import io.smartdm.platform.api.process.*;
 
+import java.io.BufferedReader;
+import java.io.EOFException;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -39,6 +56,9 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     private static final class MediaJobContext {
         private final TaskInfo taskInfo;
         private final AtomicReference<RequestedStop> requestedStop = new AtomicReference<>(RequestedStop.NONE);
+        private final AtomicBoolean completionHandled = new AtomicBoolean(false);
+        private final ReentrantLock operationLock = new ReentrantLock();
+        
         private volatile NativeProcessSession processSession;
         private volatile long lastPersistNanos;
         private volatile double maxProgressPct;
@@ -49,11 +69,13 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     }
 
     private final NativeProcessController processController;
-    private final DownloadRepository repository;
+    private final DownloadRepository downloadRepository;
+    private final MediaJobStore mediaJobStore;
     private final DownloadEvent.Publisher eventPublisher;
     private final MediaToolManager toolManager;
     private final PlatformDirectories platformDirectories;
     private final ExecutorService mediaExecutor;
+    private final Clock clock;
 
     private final ConcurrentMap<DownloadId, MediaJobContext> jobs = new ConcurrentHashMap<>();
 
@@ -62,26 +84,62 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
 
     public YtDlpMediaDownloadRunner(
             NativeProcessController processController,
-            DownloadRepository repository,
+            DownloadRepository downloadRepository,
+            MediaJobStore mediaJobStore,
             DownloadEvent.Publisher eventPublisher,
             MediaToolManager toolManager,
             PlatformDirectories platformDirectories,
-            ExecutorService mediaExecutor) {
-        this.processController = processController;
-        this.repository = repository;
-        this.eventPublisher = eventPublisher;
-        this.toolManager = toolManager;
-        this.platformDirectories = platformDirectories;
-        this.mediaExecutor = mediaExecutor;
+            ExecutorService mediaExecutor,
+            Clock clock) {
+        this.processController = Objects.requireNonNull(processController);
+        this.downloadRepository = Objects.requireNonNull(downloadRepository);
+        this.mediaJobStore = Objects.requireNonNull(mediaJobStore);
+        this.eventPublisher = Objects.requireNonNull(eventPublisher);
+        this.toolManager = Objects.requireNonNull(toolManager);
+        this.platformDirectories = Objects.requireNonNull(platformDirectories);
+        this.mediaExecutor = Objects.requireNonNull(mediaExecutor);
+        this.clock = Objects.requireNonNull(clock);
     }
 
-    private Path mediaTempDirectory(DownloadId id) {
-        return platformDirectories
+    private CompletionStage<Void> onMediaExecutor(Runnable operation) {
+        return CompletableFuture.runAsync(operation, mediaExecutor);
+    }
+
+    private Path managedJobDirectory(DownloadId id) {
+        Path mediaRoot = platformDirectories
                 .getCacheDirectory()
                 .resolve("media")
-                .resolve(id.value())
                 .toAbsolutePath()
                 .normalize();
+
+        Path jobDirectory = mediaRoot
+                .resolve(id.value())
+                .normalize();
+
+        if (!jobDirectory.startsWith(mediaRoot)) {
+            throw new MediaOperationException(
+                    "MEDIA_TEMP_PATH_INVALID",
+                    "Media job directory escaped the cache root");
+        }
+
+        return jobDirectory;
+    }
+
+    private void deleteManagedDirectory(DownloadId id) {
+        Path directory = managedJobDirectory(id);
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        } catch (IOException exception) {
+            throw new MediaOperationException(
+                    "MEDIA_DELETE_FAILED",
+                    "Could not delete managed media files",
+                    exception);
+        }
     }
 
     private boolean shouldPersist(MediaJobContext context) {
@@ -94,37 +152,76 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         return false;
     }
 
+    private void updateDownloadState(MediaJobContext context, DownloadState state, MediaJobStatus mediaStatus) {
+        Download download = context.taskInfo.download();
+        download.updateState(state);
+        downloadRepository.save(download);
+
+        MediaJobDescriptor current = mediaJobStore.find(download.id())
+                .orElseThrow(() -> new MediaOperationException(
+                        "MEDIA_JOB_MISSING",
+                        "Media descriptor is missing"));
+
+        mediaJobStore.save(current.withStatus(mediaStatus, clock.instant()));
+
+        eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), state, download));
+    }
+
+    @Override
+    public boolean isMediaDownload(DownloadId id) {
+        Objects.requireNonNull(id);
+        return jobs.containsKey(id) || mediaJobStore.exists(id);
+    }
+
     @Override
     public CompletionStage<Void> startDownload(Download download, Path targetPath, String webpageUrl, String formatArg) {
         return CompletableFuture.runAsync(() -> {
             TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg);
-            MediaJobContext context = new MediaJobContext(info);
-            jobs.put(download.id(), context);
-
+            MediaJobContext newContext = new MediaJobContext(info);
+            
+            MediaJobContext existing = jobs.putIfAbsent(download.id(), newContext);
+            if (existing != null) {
+                throw new MediaOperationException("MEDIA_JOB_ALREADY_ACTIVE", "A media job is already active for this download");
+            }
+            
             try {
                 Path ytDlpExecutable = toolManager.getYtDlpPath().orElseThrow(() -> new IllegalStateException("yt-dlp not found"));
                 if (ytDlpExecutable == null || !Files.exists(ytDlpExecutable)) {
                     throw new RuntimeException("MEDIA_TOOL_UNAVAILABLE");
                 }
+                
+                Path normalizedTarget = targetPath.toAbsolutePath().normalize();
+                Path targetParent = normalizedTarget.getParent();
+                if (targetParent == null) {
+                    throw new MediaOperationException("MEDIA_DESTINATION_INVALID", "Destination has no parent directory");
+                }
+                Files.createDirectories(targetParent);
+                if (!Files.isWritable(targetParent)) {
+                    throw new MediaOperationException("MEDIA_DESTINATION_NOT_WRITABLE", "Destination folder is not writable");
+                }
 
-                Path tempDir = mediaTempDirectory(download.id());
+                Instant now = clock.instant();
+                MediaJobDescriptor descriptor = new MediaJobDescriptor(
+                        download.id(), webpageUrl, formatArg, MediaJobStatus.CREATED, now, now);
+                mediaJobStore.save(descriptor);
+
+                Path tempDir = managedJobDirectory(download.id());
                 Files.createDirectories(tempDir);
 
-                download.updateState(DownloadState.DOWNLOADING);
-                if (repository != null) repository.save(download);
-                if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.DOWNLOADING, download));
+                updateDownloadState(newContext, DownloadState.DOWNLOADING, MediaJobStatus.RUNNING);
 
-                Path tempOutputFile = tempDir.resolve("download_temp");
+                Path outputManifest = tempDir.resolve("smartdm-final-output.txt");
+                Path outputTemplate = tempDir.resolve("media-output.%(ext)s");
 
                 List<String> args = new ArrayList<>(List.of(
                         "--newline",
                         "--continue",
                         "-N", "4",
-                        "--paths", "temp:" + tempDir.toString(),
-                        "--paths", "home:" + tempDir.toString(),
                         "-f", formatArg,
-                        "-o", tempOutputFile.toString(),
-                        info.webpageUrl()
+                        "-o", outputTemplate.toString(),
+                        "--print-to-file", "after_move:%(filepath)s",
+                        outputManifest.toString(),
+                        webpageUrl
                 ));
 
                 NativeProcessRequest request = new NativeProcessRequest(
@@ -139,23 +236,23 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                 NativeProcessOutputListener listener = new NativeProcessOutputListener() {
                     @Override
                     public void onStdoutLine(String line) {
-                        handleYtDlpOutput(context, line);
+                        handleYtDlpOutput(newContext, line);
                     }
                     @Override
                     public void onStderrLine(String line) {
-                        handleYtDlpErrorOutput(context, line);
+                        handleYtDlpErrorOutput(newContext, line);
                     }
                 };
 
                 NativeProcessSession session = processController.start(request, listener);
-                context.processSession = session;
+                newContext.processSession = session;
 
                 session.completion().whenCompleteAsync((result, error) -> {
-                    handleCompletion(context, result, error, tempOutputFile, tempDir);
+                    handleCompletion(newContext, result, error, outputManifest, tempDir, targetPath);
                 }, mediaExecutor);
 
             } catch (Exception e) {
-                handleError(context, "MEDIA_PROCESS_START_FAILED");
+                failJob(newContext, "MEDIA_PROCESS_START_FAILED", e);
             }
         }, mediaExecutor);
     }
@@ -203,222 +300,279 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                         context.taskInfo.download().updateSegments(segs);
                         context.taskInfo.download().updateProgress(ByteCount.of(finalDownloaded), ByteCount.of(finalTotal));
 
-                        if (repository != null && shouldPersist(context)) {
-                            repository.save(context.taskInfo.download());
+                        if (shouldPersist(context)) {
+                            downloadRepository.save(context.taskInfo.download());
                         }
-                        if (eventPublisher != null) {
-                            eventPublisher.publish(new DownloadEvent.ProgressUpdated(context.taskInfo.download().id(), ByteCount.of(finalDownloaded), ByteCount.of(finalTotal), context.taskInfo.download()));
-                        }
+                        eventPublisher.publish(new DownloadEvent.ProgressUpdated(context.taskInfo.download().id(), ByteCount.of(finalDownloaded), ByteCount.of(finalTotal), context.taskInfo.download()));
                     }
                 }
             } catch (Exception e) {
-                System.err.println("YTDLP_PROCESS_KILL_FAILED: " + e.getMessage());
+                // Ignore parse errors from yt-dlp
             }
         }
     }
 
     private void handleYtDlpErrorOutput(MediaJobContext context, String line) {
-        // Typically logged or ignored
+        // Ignored for now
     }
 
-    private void handleCompletion(MediaJobContext context, NativeProcessResult result, Throwable error, Path tempOutputFile, Path tempDir) {
-        RequestedStop stop = context.requestedStop.get();
-        Download download = context.taskInfo.download();
-        Path targetPath = context.taskInfo.targetPath();
-
-        if (stop == RequestedStop.PAUSE) {
-            // Already handled state in pause method
-            return;
-        } else if (stop == RequestedStop.CANCEL) {
-            // Already handled state in cancel method
-            applyCancelPolicy(tempDir);
-            return;
-        } else if (stop == RequestedStop.DELETE) {
-            // Already handled in delete method
-            return;
-        }
-
-        if (error != null) {
-            handleError(context, "MEDIA_PROCESS_TERMINATION_FAILED");
-            return;
-        }
-
-        if (result.timedOut()) {
-            handleError(context, "MEDIA_PROCESS_TIMEOUT");
-            return;
-        }
-
-        if (result.stdoutLimitExceeded() || result.stderrLimitExceeded()) {
-            handleError(context, "MEDIA_OUTPUT_LIMIT_EXCEEDED");
-            return;
-        }
-
-        if (result.exitCode() == 0) {
-            boolean success = false;
-            try {
-                if (Files.exists(tempOutputFile)) {
-                    Files.move(tempOutputFile, targetPath, StandardCopyOption.REPLACE_EXISTING);
-                    success = true;
-                } else {
-                    try (Stream<Path> s = Files.list(tempDir)) {
-                        Optional<Path> out = s.filter(f -> !f.toString().endsWith(".part") && !f.toString().endsWith(".ytdl")).findFirst();
-                        if (out.isPresent()) {
-                            Files.move(out.get(), targetPath, StandardCopyOption.REPLACE_EXISTING);
-                            success = true;
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                handleError(context, "MEDIA_FINALIZATION_FAILED");
+    private void handleCompletion(MediaJobContext context, NativeProcessResult result, Throwable error, Path outputManifest, Path tempDir, Path targetPath) {
+        context.operationLock.lock();
+        try {
+            if (!context.completionHandled.compareAndSet(false, true)) {
                 return;
             }
-
-            if (success) {
-                download.updateState(DownloadState.COMPLETED);
-                if (repository != null) repository.save(download);
-                if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.COMPLETED, download));
-                applyCompletedPolicy(tempDir);
-                jobs.remove(download.id());
-            } else {
-                handleError(context, "MEDIA_OUTPUT_MISSING");
+            RequestedStop stop = context.requestedStop.get();
+            switch (stop) {
+                case PAUSE, CANCEL, DELETE, SHUTDOWN -> { return; }
+                case NONE -> {}
             }
-        } else {
-            handleError(context, "MEDIA_TOOL_EXIT_FAILED");
+
+            if (error != null) {
+                failJob(context, "MEDIA_PROCESS_FAILED", error);
+                return;
+            }
+            if (result.timedOut()) {
+                failJob(context, "MEDIA_PROCESS_TIMEOUT", null);
+                return;
+            }
+            if (result.stdoutLimitExceeded() || result.stderrLimitExceeded()) {
+                failJob(context, "MEDIA_OUTPUT_LIMIT_EXCEEDED", null);
+                return;
+            }
+            if (result.exitCode() != 0) {
+                failJob(context, "MEDIA_TOOL_EXIT_FAILED", null);
+                return;
+            }
+            
+            finalizeCompletedJob(context, outputManifest, tempDir, targetPath);
+        } finally {
+            context.operationLock.unlock();
         }
     }
 
-    private void handleError(MediaJobContext context, String errorCode) {
-        Download download = context.taskInfo.download();
-        download.updateState(DownloadState.FAILED);
-        if (repository != null) repository.save(download);
-        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.FAILED, download));
-        // Keep partials on failure for resume
-        jobs.remove(download.id());
+    private void failJob(MediaJobContext context, String code, Throwable error) {
+        updateDownloadState(context, DownloadState.FAILED, MediaJobStatus.FAILED);
+        jobs.remove(context.taskInfo.download().id(), context);
     }
 
-    private void applyCancelPolicy(Path tempDir) {
-        deleteDirSilently(tempDir);
-    }
-
-    private void applyCompletedPolicy(Path tempDir) {
-        deleteDirSilently(tempDir);
-    }
-
-    private void deleteDirSilently(Path dir) {
+    private void finalizeCompletedJob(MediaJobContext context, Path outputManifest, Path tempDir, Path targetPath) {
         try {
-            if (Files.exists(dir)) {
-                try (Stream<Path> walk = Files.walk(dir)) {
-                    walk.sorted(java.util.Comparator.reverseOrder())
-                            .map(Path::toFile)
-                            .forEach(java.io.File::delete);
-                }
-            }
+            Path finalOutput = readFinalOutputPath(outputManifest, tempDir);
+            finalizeOutput(finalOutput, targetPath);
+            updateDownloadState(context, DownloadState.COMPLETED, MediaJobStatus.COMPLETED);
+            deleteManagedDirectory(context.taskInfo.download().id());
+            jobs.remove(context.taskInfo.download().id(), context);
         } catch (Exception e) {
-            System.err.println("YTDLP_CLEANUP_FAILED: " + e.getMessage());
+            failJob(context, "MEDIA_FINALIZATION_FAILED", e);
+        }
+    }
+
+    private Path readFinalOutputPath(Path manifest, Path approvedTempRoot) {
+        if (!Files.isRegularFile(manifest)) {
+            throw new MediaOperationException("MEDIA_OUTPUT_MANIFEST_MISSING", "yt-dlp did not report its final output");
+        }
+        final String line;
+        try (BufferedReader reader = Files.newBufferedReader(manifest, StandardCharsets.UTF_8)) {
+            line = reader.readLine();
+        } catch (IOException exception) {
+            throw new MediaOperationException("MEDIA_OUTPUT_MANIFEST_READ_FAILED", "Could not read yt-dlp output manifest", exception);
+        }
+        if (line == null || line.isBlank()) {
+            throw new MediaOperationException("MEDIA_OUTPUT_MANIFEST_EMPTY", "yt-dlp output manifest was empty");
+        }
+        if (line.length() > 32_768) {
+            throw new MediaOperationException("MEDIA_OUTPUT_MANIFEST_INVALID", "yt-dlp output path was too long");
+        }
+        Path output = Path.of(line).toAbsolutePath().normalize();
+        Path approved = approvedTempRoot.toAbsolutePath().normalize();
+        if (!output.startsWith(approved)) {
+            throw new MediaOperationException("MEDIA_OUTPUT_OUTSIDE_TEMP_ROOT", "yt-dlp reported an output outside the managed directory");
+        }
+        if (!Files.isRegularFile(output)) {
+            throw new MediaOperationException("MEDIA_OUTPUT_MISSING", "The reported media output does not exist");
+        }
+        return output;
+    }
+
+    private void finalizeOutput(Path source, Path target) {
+        Path normalizedSource = source.toAbsolutePath().normalize();
+        Path normalizedTarget = target.toAbsolutePath().normalize();
+        Path targetParent = Objects.requireNonNull(normalizedTarget.getParent(), "Target parent is required");
+        try {
+            Files.createDirectories(targetParent);
+            try {
+                Files.move(normalizedSource, normalizedTarget, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (FileSystemException atomicFailure) {
+                copyThroughDestinationTemp(normalizedSource, normalizedTarget);
+            }
+        } catch (IOException exception) {
+            throw new MediaOperationException("MEDIA_FINALIZATION_FAILED", "Could not finalize the media output", exception);
+        }
+    }
+
+    private void copyThroughDestinationTemp(Path source, Path target) throws IOException {
+        Path parent = target.getParent();
+        String tempName = "." + target.getFileName() + ".smartdm-finalizing-" + UUID.randomUUID();
+        Path destinationTemp = parent.resolve(tempName).normalize();
+        if (!destinationTemp.getParent().equals(parent)) {
+            throw new IOException("Destination temporary path escaped its parent");
+        }
+        long expectedSize = Files.size(source);
+        try {
+            try (FileChannel input = FileChannel.open(source, StandardOpenOption.READ);
+                 FileChannel output = FileChannel.open(destinationTemp, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+                long position = 0;
+                while (position < expectedSize) {
+                    long transferred = input.transferTo(position, expectedSize - position, output);
+                    if (transferred <= 0) {
+                        throw new EOFException("Media copy stopped before completion");
+                    }
+                    position += transferred;
+                }
+                output.force(true);
+            }
+            long copiedSize = Files.size(destinationTemp);
+            if (copiedSize != expectedSize) {
+                throw new IOException("Copied media size did not match source size");
+            }
+            try {
+                Files.move(destinationTemp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(destinationTemp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.delete(source);
+        } catch (Throwable failure) {
+            try {
+                Files.deleteIfExists(destinationTemp);
+            } catch (IOException cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            if (failure instanceof IOException ioFailure) throw ioFailure;
+            if (failure instanceof RuntimeException runtimeFailure) throw runtimeFailure;
+            throw new IOException("Unexpected media finalization failure", failure);
         }
     }
 
     @Override
     public CompletionStage<Void> pauseDownload(Download download) {
-        return CompletableFuture.runAsync(() -> {
-            MediaJobContext context = jobs.get(download.id());
-            if (context != null) {
-                context.requestedStop.set(RequestedStop.PAUSE);
-                if (context.processSession != null) {
-                    try {
-                        context.processSession.killTree().toCompletableFuture().get();
-                    } catch (Exception e) {
-                        System.err.println("YTDLP_PROCESS_KILL_FAILED: " + e.getMessage());
-                    }
+        Objects.requireNonNull(download);
+        MediaJobContext context = jobs.get(download.id());
+        if (context == null) {
+            return CompletableFuture.failedFuture(new MediaOperationException("MEDIA_JOB_NOT_ACTIVE", "The media job is not active"));
+        }
+        if (!context.requestedStop.compareAndSet(RequestedStop.NONE, RequestedStop.PAUSE)) {
+            return CompletableFuture.failedFuture(new MediaOperationException("MEDIA_OPERATION_CONFLICT", "Another media operation is already in progress"));
+        }
+        
+        MediaJobDescriptor current = mediaJobStore.find(download.id())
+                .orElseThrow(() -> new MediaOperationException("MEDIA_JOB_MISSING", "Media descriptor is missing"));
+        mediaJobStore.save(current.withStatus(MediaJobStatus.PAUSING, clock.instant()));
+
+        NativeProcessSession session = context.processSession;
+        CompletionStage<Void> termination = session == null ? CompletableFuture.completedFuture(null) : session.killTree();
+
+        return termination.thenRunAsync(() -> {
+            context.operationLock.lock();
+            try {
+                if (context.completionHandled.compareAndSet(false, true)) {
+                    updateDownloadState(context, DownloadState.PAUSED, MediaJobStatus.PAUSED);
                 }
+            } finally {
+                context.operationLock.unlock();
             }
-            download.updateState(DownloadState.PAUSED);
-            if (repository != null) repository.save(download);
-            if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.PAUSED, download));
         }, mediaExecutor);
     }
 
     @Override
     public CompletionStage<Void> resumeDownload(Download download) {
-        return CompletableFuture.runAsync(() -> {
-            MediaJobContext context = jobs.get(download.id());
-            if (context != null) {
-                context.requestedStop.set(RequestedStop.NONE);
-                startDownload(context.taskInfo.download(), context.taskInfo.targetPath(), context.taskInfo.webpageUrl(), context.taskInfo.formatArg());
-            } else {
-                download.updateState(DownloadState.FAILED);
-                if (repository != null) repository.save(download);
-                if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.FAILED, download));
+        Objects.requireNonNull(download);
+        return CompletableFuture.supplyAsync(() -> mediaJobStore.find(download.id())
+                .orElseThrow(() -> new MediaOperationException("MEDIA_JOB_NOT_FOUND", "No persisted media job exists")), mediaExecutor)
+        .thenCompose(descriptor -> {
+            MediaJobContext oldContext = jobs.get(download.id());
+            if (oldContext != null && oldContext.processSession != null && oldContext.processSession.isAlive()) {
+                return CompletableFuture.failedFuture(new MediaOperationException("MEDIA_JOB_ALREADY_ACTIVE", "The media process is already running"));
             }
-        }, mediaExecutor);
+            Path targetPath = Path.of(download.destination().value());
+            return startDownload(download, targetPath, descriptor.webpageUrl(), descriptor.formatArgument());
+        });
     }
 
     @Override
     public CompletionStage<Void> cancelDownload(Download download) {
-        return CompletableFuture.runAsync(() -> {
-            MediaJobContext context = jobs.remove(download.id());
-            if (context != null) {
-                context.requestedStop.set(RequestedStop.CANCEL);
-                if (context.processSession != null) {
-                    try {
-                        context.processSession.killTree().toCompletableFuture().get();
-                    } catch (Exception e) {
-                        System.err.println("YTDLP_PROCESS_KILL_FAILED: " + e.getMessage());
-                    }
+        Objects.requireNonNull(download);
+        MediaJobContext context = jobs.get(download.id());
+        if (context == null) {
+            return onMediaExecutor(() -> {
+                deleteManagedDirectory(download.id());
+                download.updateState(DownloadState.CANCELED);
+                downloadRepository.save(download);
+                MediaJobDescriptor current = mediaJobStore.find(download.id()).orElse(null);
+                if (current != null) {
+                    mediaJobStore.save(current.withStatus(MediaJobStatus.CANCELED, clock.instant()));
                 }
-            } else {
-                Path tempDir = mediaTempDirectory(download.id());
-                applyCancelPolicy(tempDir);
+                eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.CANCELED, download));
+            });
+        }
+        if (!context.requestedStop.compareAndSet(RequestedStop.NONE, RequestedStop.CANCEL)) {
+            return CompletableFuture.failedFuture(new MediaOperationException("MEDIA_OPERATION_CONFLICT", "Another media operation is already in progress"));
+        }
+
+        CompletionStage<Void> termination = context.processSession == null ? CompletableFuture.completedFuture(null) : context.processSession.killTree();
+        return termination.thenRunAsync(() -> {
+            context.operationLock.lock();
+            try {
+                if (context.completionHandled.compareAndSet(false, true)) {
+                    deleteManagedDirectory(download.id());
+                    updateDownloadState(context, DownloadState.CANCELED, MediaJobStatus.CANCELED);
+                    jobs.remove(download.id(), context);
+                }
+            } finally {
+                context.operationLock.unlock();
             }
-            download.updateState(DownloadState.CANCELED);
-            if (repository != null) repository.save(download);
-            if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.CANCELED, download));
         }, mediaExecutor);
     }
 
     @Override
     public CompletionStage<Void> deleteDownload(Download download, boolean permanent, Path targetPath) {
-        return CompletableFuture.runAsync(() -> {
-            MediaJobContext context = jobs.remove(download.id());
-            if (context != null) {
-                context.requestedStop.set(RequestedStop.DELETE);
-                if (context.processSession != null) {
-                    try {
-                        context.processSession.killTree().toCompletableFuture().get();
-                    } catch (Exception e) {
-                        System.err.println("YTDLP_PROCESS_KILL_FAILED: " + e.getMessage());
-                    }
-                }
-            }
+        Objects.requireNonNull(download);
+        Objects.requireNonNull(targetPath);
+        MediaJobContext context = jobs.get(download.id());
+        CompletionStage<Void> termination;
+        if (context == null || context.processSession == null) {
+            termination = CompletableFuture.completedFuture(null);
+        } else {
+            context.requestedStop.set(RequestedStop.DELETE);
+            termination = context.processSession.killTree();
+        }
 
-            try {
-                if (permanent) {
+        return termination.thenRunAsync(() -> {
+            if (permanent) {
+                try {
                     Files.deleteIfExists(targetPath);
+                } catch (IOException e) {
+                    // Ignore target delete failure on full delete
                 }
-            } catch (IOException e) {
-                throw new RuntimeException("MEDIA_DELETE_FAILED", e);
             }
-
-            deleteDirSilently(mediaTempDirectory(download.id()));
+            deleteManagedDirectory(download.id());
+            mediaJobStore.delete(download.id());
+            if (context != null) {
+                jobs.remove(download.id(), context);
+            }
         }, mediaExecutor);
     }
 
     @Override
     public CompletionStage<Void> deleteMediaFiles(Path targetPath) {
-        return CompletableFuture.runAsync(() -> {
+        return onMediaExecutor(() -> {
             try {
                 Files.deleteIfExists(targetPath);
             } catch (IOException e) {
-                throw new RuntimeException("MEDIA_DELETE_FAILED", e);
+                throw new MediaOperationException("MEDIA_DELETE_FAILED", "Could not delete media files", e);
             }
-        }, mediaExecutor);
-    }
-
-    @Override
-    public boolean isMediaDownload(DownloadId id) {
-        // Simple heuristic: if it's in our jobs or if we can determine from domain (though usually tracker relies on caller)
-        // Since we removed static tracker, this is used to check if an ID belongs to media.
-        return true; 
+        });
     }
 
     @Override
@@ -430,12 +584,11 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                 terminations.add(context.processSession.killTree().toCompletableFuture());
             }
         }
-        
         try {
             CompletableFuture.allOf(terminations.toArray(new CompletableFuture<?>[0]))
                     .get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("YTDLP_SHUTDOWN_FAILED: " + e.getMessage());
+            // Ignored
         }
     }
 }
