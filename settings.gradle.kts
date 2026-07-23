@@ -10,7 +10,11 @@ rootProject.name = "smartdm"
 
 dependencyResolutionManagement {
     repositories {
-        mavenCentral()
+        mavenCentral {
+            content {
+                excludeGroupByRegex("com\\.unknown\\..*")
+            }
+        }
     }
 }
 
