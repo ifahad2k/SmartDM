@@ -21,6 +21,8 @@
     } catch (e) {
       return window.location.href;
     }
+  }
+
   const ytDlpCache = {};
 
   function fetchYtDlpFormats(url, callback) {

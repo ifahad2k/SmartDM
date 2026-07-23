@@ -544,12 +544,12 @@
       });
 
       if (!ytDlpCache[videoUrl] || ytDlpCache[videoUrl].status !== 'done') {
-        content.innerHTML = \`
+        content.innerHTML = `
           <div class="spinner-container">
             <div class="spinner"></div>
             <span class="status-text" style="padding:0;">Searching for video formats...</span>
           </div>
-        \`;
+        `;
       }
     });
 
