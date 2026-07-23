@@ -394,6 +394,10 @@ public class SingleDownloadCoordinator {
     }
 
     public CompletableFuture<Void> cancel(DownloadId id) {
+        return cancel(id, true);
+    }
+
+    public CompletableFuture<Void> cancel(DownloadId id, boolean saveToRepository) {
         DownloadSession session = sessions.get(id);
         if (session != null) {
             session.cancelled = true;
@@ -408,16 +412,20 @@ public class SingleDownloadCoordinator {
                     try { future.get(); } catch (Exception ignored) {}
                 }
                 session.download.updateState(DownloadState.CANCELED);
-                repository.save(session.download);
+                if (saveToRepository) {
+                    repository.save(session.download);
+                }
                 eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, session.download));
             });
         } else {
             return CompletableFuture.runAsync(() -> {
-                repository.findById(id).ifPresent(d -> {
-                    d.updateState(DownloadState.CANCELED);
-                    repository.save(d);
-                    eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, d));
-                });
+                if (saveToRepository) {
+                    repository.findById(id).ifPresent(d -> {
+                        d.updateState(DownloadState.CANCELED);
+                        repository.save(d);
+                        eventPublisher.publish(new DownloadEvent.StateChanged(id, DownloadState.CANCELED, d));
+                    });
+                }
             });
         }
     }

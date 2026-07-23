@@ -374,7 +374,9 @@ public class SmartDmApp extends Application {
                 if (isMedia) {
                     io.smartdm.desktop.shell.MediaDownloadTracker.deleteDownload(download, permanent);
                 } else {
-                    coordinator.cancel(download.id());
+                    try {
+                        coordinator.cancel(download.id(), false).get(2, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception ignored) {}
                 }
                 
                 scheduleRepo.delete(download.id().value());

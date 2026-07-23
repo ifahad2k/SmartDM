@@ -79,7 +79,11 @@ public final class MediaDownloadTracker {
     }
 
     public static void deleteDownload(Download download, boolean permanent) {
-        cancelDownload(download);
+        download.updateState(DownloadState.CANCELED);
+        if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.CANCELED, download));
+        Process p = activeProcesses.remove(download.id());
+        killProcessTree(p);
+        maxProgressMap.remove(download.id());
         TaskInfo info = taskRegistry.remove(download.id());
         if (permanent) {
             deleteMediaFiles(download.destination().value());
