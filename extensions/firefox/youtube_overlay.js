@@ -52,8 +52,6 @@
     });
   }
 
-
-
   function renderFormatItems(container, formats, videoUrl, popover) {
     container.innerHTML = '';
     const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
@@ -307,36 +305,33 @@
   }
 
   function scanThumbnails() {
-    const thumbAnchors = document.querySelectorAll('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, ytd-thumbnail a[href*="/watch"], ytd-thumbnail a[href*="/shorts"], div.yt-lockup-view-model__image a[href*="/watch"], div.yt-lockup-view-model__image a[href*="/shorts"]');
-    
-    thumbAnchors.forEach((anchor) => {
-      if (anchor.closest('#player, #movie_player, .html5-video-player')) return;
-      if (anchor.getAttribute(PROCESSED_ATTR)) return;
+    const thumbnailElements = document.querySelectorAll('ytd-thumbnail, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, a#thumbnail');
+    thumbnailElements.forEach((el) => {
+      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, a#thumbnail') || el;
+      if (container.getAttribute(PROCESSED_ATTR)) return;
+      container.setAttribute(PROCESSED_ATTR, 'true');
 
-      const rawUrl = anchor.getAttribute('href') || anchor.href;
-      if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
-
-      const wrapper = anchor.closest('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail') || anchor;
-      
-      if (wrapper.querySelector('.smartdm-host')) {
-        anchor.setAttribute(PROCESSED_ATTR, 'true');
-        return;
+      let thumbAnchor = container.querySelector('a#thumbnail, a.ytd-thumbnail, a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (!thumbAnchor && container.tagName === 'A') {
+        thumbAnchor = container;
       }
-
-      anchor.setAttribute(PROCESSED_ATTR, 'true');
-      attachBadge(anchor, rawUrl);
+      if (thumbAnchor) {
+        attachBadge(thumbAnchor);
+      }
     });
   }
 
-  function attachBadge(anchor, rawUrl) {
-    if (getComputedStyle(anchor).position === 'static' || !getComputedStyle(anchor).position) {
-      anchor.style.position = 'relative';
-    }
+  function attachBadge(anchor) {
+    if (anchor.getAttribute(PROCESSED_ATTR)) return;
+    anchor.setAttribute(PROCESSED_ATTR, 'true');
+
     const parent = anchor.parentElement;
-    if (parent && (getComputedStyle(parent).position === 'static' || !getComputedStyle(parent).position)) {
+    if (parent && getComputedStyle(parent).position === 'static') {
       parent.style.position = 'relative';
     }
 
+    const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
+    if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
     const videoUrl = getCanonicalUrl(rawUrl);
 
     const host = document.createElement('div');
@@ -355,46 +350,48 @@
         .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
         .badge-btn {
-          background: rgba(15, 23, 42, 0.9);
+          background: rgba(15, 23, 42, 0.85);
           backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
           color: #38bdf8;
           border: 1px solid rgba(56, 189, 248, 0.4);
           border-radius: 6px;
-          padding: 6px 12px;
+          padding: 4px 8px;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 12px;
-          font-weight: 700;
+          font-size: 11px;
+          font-weight: 600;
           cursor: pointer;
           display: flex;
           align-items: center;
-          gap: 6px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-          transition: background 0.2s ease, border-color 0.2s ease;
-          outline: none;
+          gap: 4px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+          transition: all 0.2s ease;
+          opacity: 0.85;
         }
         .badge-btn:hover {
-          background: rgba(14, 165, 233, 0.2);
-          border-color: #38bdf8;
-          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
+          opacity: 1;
+          background: rgba(14, 165, 233, 0.9);
+          color: #ffffff;
+          border-color: #ffffff;
+          transform: translateY(-1px);
         }
         .popover {
           position: absolute;
-          top: 36px;
+          top: 28px;
           right: 0;
           width: 250px;
-          background: rgba(15, 23, 42, 0.95);
+          background: rgba(15, 23, 42, 0.75);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(56, 189, 248, 0.3);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 8px;
-          padding: 12px;
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
+          padding: 10px;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
           display: none;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
           color: #f8fafc;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-size: 12px;
           z-index: 100000;
         }
         .popover.active {
@@ -403,65 +400,77 @@
         .popover-title {
           font-weight: 700;
           color: #38bdf8;
-          font-size: 13px;
+          font-size: 12px;
           border-bottom: 1px solid rgba(255,255,255,0.1);
-          padding-bottom: 8px;
-          margin-bottom: 4px;
+          padding-bottom: 4px;
+          margin-bottom: 2px;
         }
         .popover-content {
+          max-height: 200px;
+          overflow-y: auto;
           display: flex;
           flex-direction: column;
           gap: 6px;
-          max-height: 230px;
-          overflow-y: auto;
           padding-right: 4px;
         }
-        .popover-content::-webkit-scrollbar { width: 5px; }
-        .popover-content::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 4px; }
+        .popover-content::-webkit-scrollbar {
+          width: 4px;
+        }
+        .popover-content::-webkit-scrollbar-thumb {
+          background: rgba(56, 189, 248, 0.5);
+          border-radius: 4px;
+        }
         .format-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 6px 8px;
-          border-radius: 6px;
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.08);
-          color: #e2e8f0;
-          font-size: 11px;
+          border-radius: 4px;
+          padding: 6px 8px;
           cursor: pointer;
-          transition: all 0.15s ease;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          transition: background 0.15s;
         }
         .format-item:hover {
-          background: rgba(56, 189, 248, 0.25);
+          background: rgba(56, 189, 248, 0.2);
           border-color: #38bdf8;
-          color: #ffffff;
         }
-        .format-badge { font-weight: 700; color: #38bdf8; }
-        .format-size { color: #94a3b8; font-size: 10px; }
-        .status-text { font-size: 11px; color: #94a3b8; padding: 10px; text-align: center; }
+        .format-info {
+          display: flex;
+          flex-direction: column;
+        }
+        .format-name {
+          font-weight: 600;
+        }
+        .format-ext {
+          color: #38bdf8;
+          font-weight: 700;
+          font-size: 11px;
+        }
+        .status-text {
+          font-size: 11px;
+          color: #94a3b8;
+          text-align: center;
+          padding: 8px;
+        }
       </style>
-      <div style="position: relative;">
-        <button class="badge-btn" title="Download with SmartDM">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          SmartDM
-        </button>
-        <div class="popover">
-          <div class="popover-title">SmartDM Video Download</div>
-          <div class="popover-content">
-            <div class="spinner-container">
-              <div class="spinner"></div>
-              <span class="status-text" style="padding:0;">Searching for video formats...</span>
-            </div>
-          </div>
+      <button class="badge-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        SmartDM
+      </button>
+      <div class="popover">
+        <div class="popover-title">SmartDM Video Download</div>
+        <div class="popover-content">
+          <div class="status-text">Fetching formats...</div>
         </div>
       </div>
     `;
 
-    const badgeBtn = shadow.querySelector('.badge-btn');
+    const btn = shadow.querySelector('.badge-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
 
@@ -475,9 +484,9 @@
       }
     });
 
-    badgeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+    btn.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
 
       const isActive = popover.classList.contains('active');
       document.querySelectorAll('.smartdm-host, .smartdm-player-host').forEach((h) => {
@@ -509,14 +518,17 @@
 
       if (!ytDlpCache[videoUrl] || ytDlpCache[videoUrl].status !== 'done') {
         content.innerHTML = `
-          <div class="spinner-container">
-            <div class="spinner"></div>
-            <span class="status-text" style="padding:0;">Searching for video formats...</span>
+          <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+            <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+            <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
           </div>
         `;
       }
     });
 
+    if (anchor.style.position === 'static' || !anchor.style.position) {
+      anchor.style.position = 'relative';
+    }
     anchor.appendChild(host);
   }
 
