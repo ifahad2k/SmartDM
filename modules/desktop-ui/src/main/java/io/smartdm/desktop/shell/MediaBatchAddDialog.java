@@ -88,14 +88,16 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
     private final TextField destinationField;
     private final Consumer<Download> onDownloadAdded;
     private final ExecutorService executorService;
+    private final io.smartdm.media.api.MediaDownloadRunner runner;
     private final Button downloadBtn;
     private int processedCount = 0;
 
-    public MediaBatchAddDialog(Stage owner, List<String> urls, ExecutorService executorService, Consumer<Download> onDownloadAdded) {
+    public MediaBatchAddDialog(Stage owner, List<String> urls, ExecutorService executorService, Consumer<Download> onDownloadAdded, io.smartdm.media.api.MediaDownloadRunner runner) {
         // Use null owner to make the window completely independent of the main app
         super(null, "SmartDM — Media Batch Download", Modality.NONE);
         this.executorService = executorService;
         this.onDownloadAdded = onDownloadAdded;
+        this.runner = runner;
 
         setAlwaysOnTop(true);
         toFront();
@@ -303,7 +305,7 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
                     }
 
                     String formatArg = (fmt != null && fmt.formatId() != null) ? fmt.formatId() : "bestaudio";
-                    MediaDownloadTracker.startDownload(download, targetPath, item.getMetadata().webpageUrl(), formatArg);
+                    runner.startDownload(download, targetPath, item.getMetadata().webpageUrl(), formatArg);
                 } catch (Exception ex) {
                     System.err.println("Failed to queue batch item: " + ex.getMessage());
                 }

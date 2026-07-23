@@ -48,26 +48,28 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private Consumer<Download> onDownloadAdded;
     private final io.smartdm.organization.SmartFolderService smartFolderService;
     private final io.smartdm.domain.repository.DownloadRepository repository;
+    private final io.smartdm.media.api.MediaDownloadRunner runner;
     private FolderSuggestionPanel suggestionPanel;
 
-    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded) {
-        this(owner, metadata, null, onDownloadAdded, null, null);
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded, io.smartdm.media.api.MediaDownloadRunner runner) {
+        this(owner, metadata, null, onDownloadAdded, null, null, runner);
     }
 
-    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
-        this(owner, metadata, null, onDownloadAdded, smartFolderService, null);
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.media.api.MediaDownloadRunner runner) {
+        this(owner, metadata, null, onDownloadAdded, smartFolderService, null, runner);
     }
 
-    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded) {
-        this(owner, metadata, preferredFormatId, onDownloadAdded, null, null);
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.media.api.MediaDownloadRunner runner) {
+        this(owner, metadata, preferredFormatId, onDownloadAdded, null, null, runner);
     }
 
-    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.domain.repository.DownloadRepository repository) {
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.domain.repository.DownloadRepository repository, io.smartdm.media.api.MediaDownloadRunner runner) {
         super(owner, "Media Download - " + metadata.title(), Modality.NONE);
         this.metadata = metadata;
         this.onDownloadAdded = onDownloadAdded;
         this.smartFolderService = smartFolderService;
         this.repository = repository;
+        this.runner = runner;
 
         setAlwaysOnTop(true);
         toFront();
@@ -315,7 +317,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
             if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
                 finalTargetPath = generateUniquePath(targetPath);
             } else if (choice == FileCollisionDialog.CollisionChoice.OVERWRITE) {
-                MediaDownloadTracker.deleteMediaFiles(targetPath);
+                runner.deleteMediaFiles(targetPath);
             }
             final Path p = finalTargetPath;
             Platform.runLater(() -> finishDownloadStart(p, selectedFormat));
@@ -336,7 +338,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
             }
 
             String formatArg = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
-            MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), formatArg);
+            runner.startDownload(download, targetPath, metadata.webpageUrl(), formatArg);
             javafx.application.Platform.runLater(this::close);
         } catch (Exception ex) {
             System.err.println("Failed to start media download: " + ex.getMessage());

@@ -25,15 +25,32 @@ public final class MainShell extends VBox {
     private SchedulerWorkspace schedulerWorkspace;
     private CatalogWorkspace catalogWorkspace;
 
+    private final Stage stage;
+    private final DownloadsWorkspace workspace;
+    private final Consumer<Download> onDownloadRequested;
+    private final io.smartdm.catalog.CatalogService catalogService;
+    private final io.smartdm.organization.SmartFolderService smartFolderService;
+    private final io.smartdm.media.api.MediaDownloadRunner runner;
+
     public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate) {
-        this(stage, onDownloadRequested, workspace, mainQueue, mainQueueItems, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate, null, null);
+        this(stage, onDownloadRequested, workspace, mainQueue, mainQueueItems, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate, null, null, null);
     }
 
     public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate, io.smartdm.catalog.CatalogService catalogService) {
-        this(stage, onDownloadRequested, workspace, mainQueue, mainQueueItems, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate, catalogService, null);
+        this(stage, onDownloadRequested, workspace, mainQueue, mainQueueItems, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate, catalogService, null, null);
+    }
+    
+    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate, io.smartdm.catalog.CatalogService catalogService, io.smartdm.organization.SmartFolderService smartFolderService) {
+        this(stage, onDownloadRequested, workspace, mainQueue, mainQueueItems, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate, catalogService, smartFolderService, null);
     }
 
-    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate, io.smartdm.catalog.CatalogService catalogService, io.smartdm.organization.SmartFolderService smartFolderService) {
+    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate, io.smartdm.catalog.CatalogService catalogService, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.media.api.MediaDownloadRunner runner) {
+        this.stage = stage;
+        this.workspace = workspace;
+        this.onDownloadRequested = onDownloadRequested;
+        this.catalogService = catalogService;
+        this.smartFolderService = smartFolderService;
+        this.runner = runner;
         getStyleClass().addAll("os-window", "glass");
         
         // Custom Title Bar
@@ -120,7 +137,7 @@ public final class MainShell extends VBox {
             } else if ("Scheduler".equals(nav) && schedulerWorkspace != null) {
                 schedulerWorkspace.deleteSelected();
             }
-        }, smartFolderService);
+        }, smartFolderService, runner);
         
         queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate);
         VBox.setVgrow(queueWorkspace, Priority.ALWAYS);

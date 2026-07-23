@@ -38,3 +38,16 @@ This file is used by the AI agent to continuously document all actions taken, fi
 * **SDM-003 (Accurate Project Documentation):** Demoted Phase 0-5 completion claims to `IN_PROGRESS` and `NOT_STARTED` for future phases pending checklist satisfaction. Dynamically generated `PHASE_STATUS.md` with true exit-gate checklists and `KNOWN_LIMITATIONS.md` with real limitations extracted from the plan.
 * **SDM-004 (Erroneous Repository Hygiene):** Purged obsolete `scratch/` files and tracked Gradle caches. Upgraded `.class` checking in CI to use `git ls-files` recursively.
 * **SDM-005 (Readme Accuracy):** Removed misleading features (e.g., Natural Language Search) and honestly separated existing Phase 0-5 functionality from Phase 6-12 planned work in `README.md`.
+
+## Batch 2 — Media process remediation
+
+- Baseline commit: a895a0af16b006500b155dd3b17c832ff8e821f9
+- Branch: remediation-fixes
+- Status: IN_PROGRESS
+- Started: 2026-07-24
+- Scope:
+  - bounded native process execution
+  - platform-correct media temp directories
+  - async media control
+  - removal of static tracker
+  - architecture and CI verification

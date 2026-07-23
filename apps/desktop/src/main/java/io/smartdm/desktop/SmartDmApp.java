@@ -198,10 +198,12 @@ public class SmartDmApp extends Application {
             processController,
             repository,
             publisher,
-            new io.smartdm.media.ytdlp.LocalMediaToolManager()
+            new io.smartdm.media.ytdlp.LocalMediaToolManager(),
+            directories,
+            enginePool
         );
         
-        io.smartdm.desktop.shell.MediaDownloadTracker.init(runner);
+        // Runner is injected directly into dialogs and used locally.
 
         io.smartdm.download.engine.limit.TokenBucketRateLimiter globalLimiter = 
             new io.smartdm.download.engine.limit.TokenBucketRateLimiter(null, null);
@@ -313,27 +315,25 @@ public class SmartDmApp extends Application {
         DownloadsWorkspace workspace = new DownloadsWorkspace(new DownloadActionListener() {
             @Override
             public void onPause(Download download) {
-                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
-                    io.smartdm.desktop.shell.MediaDownloadTracker.pauseDownload(download);
-                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
-                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                    return;
-                }
-                if (download.state() == DownloadState.QUEUED) {
-                    download.updateScheduledStartTime(null);
-                    download.updateState(DownloadState.PAUSED);
-                    scheduleRepo.delete(download.id().value());
-                    repository.save(download);
-                    
-                    boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                    if (removed) {
-                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
-                    }
-                    
-                    if (workspaceRef[0] != null) workspaceRef[0].updateDownload(download);
+                if (runner.isMediaDownload(download.id())) {
+                    runner.pauseDownload(download);
                 } else {
-                    coordinator.pause(download.id());
-                    download.updateState(DownloadState.PAUSED);
+                    if (download.state() == DownloadState.QUEUED) {
+                        download.updateScheduledStartTime(null);
+                        download.updateState(DownloadState.PAUSED);
+                        scheduleRepo.delete(download.id().value());
+                        repository.save(download);
+                        
+                        boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                        if (removed) {
+                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        }
+                        
+                        if (workspaceRef[0] != null) workspaceRef[0].updateDownload(download);
+                    } else {
+                        coordinator.pause(download.id());
+                        download.updateState(DownloadState.PAUSED);
+                    }
                 }
                 if (workspaceRef[0] != null) workspaceRef[0].refresh();
                 if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
@@ -341,52 +341,52 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onResume(Download download) {
-                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
-                    io.smartdm.desktop.shell.MediaDownloadTracker.resumeDownload(download);
-                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
-                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                    return;
-                }
-                if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED || download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
-                    boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                    if (removed) {
-                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                if (runner.isMediaDownload(download.id())) {
+                    runner.resumeDownload(download);
+                } else {
+                    if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED || download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
+                        boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                        if (removed) {
+                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        }
+                        
+                        download.updateState(DownloadState.PROBING);
+                        repository.save(download);
+                        if (workspaceRef[0] != null) {
+                            workspaceRef[0].refresh();
+                        }
+                        if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                        
+                        enginePool.submit(() -> coordinator.execute(download));
                     }
-                    
-                    download.updateState(DownloadState.PROBING);
-                    repository.save(download);
-                    if (workspaceRef[0] != null) {
-                        workspaceRef[0].refresh();
-                    }
-                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                    
-                    enginePool.submit(() -> coordinator.execute(download));
                 }
+                if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
             }
 
             @Override
             public void onCancel(Download download) {
-                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
-                    io.smartdm.desktop.shell.MediaDownloadTracker.cancelDownload(download);
-                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
-                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                    return;
-                }
-                coordinator.cancel(download.id()).thenRun(() -> {
-                    download.updateState(DownloadState.CANCELED);
-                    Platform.runLater(() -> {
-                        if (workspaceRef[0] != null) {
-                            workspaceRef[0].refresh();
-                        }
+                if (runner.isMediaDownload(download.id())) {
+                    runner.cancelDownload(download);
+                } else {
+                    coordinator.cancel(download.id()).thenRun(() -> {
+                        download.updateState(DownloadState.CANCELED);
+                        Platform.runLater(() -> {
+                            if (workspaceRef[0] != null) {
+                                workspaceRef[0].refresh();
+                            }
+                        });
                     });
-                });
+                }
+                if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
             }
 
             @Override
             public void onDelete(Download download, boolean permanent) {
-                boolean isMedia = io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id());
+                boolean isMedia = runner.isMediaDownload(download.id());
                 if (isMedia) {
-                    io.smartdm.desktop.shell.MediaDownloadTracker.deleteDownload(download, permanent);
+                    runner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value()));
                 } else {
                     try {
                         coordinator.cancel(download.id(), false).get(2, java.util.concurrent.TimeUnit.SECONDS);
@@ -405,7 +405,9 @@ public class SmartDmApp extends Application {
 
                 if (permanent) {
                     enginePool.submit(() -> {
-                        io.smartdm.desktop.shell.MediaDownloadTracker.deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
+                        if (download.destination() != null && download.destination().value() != null) {
+                            runner.deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
+                        }
                         try {
                             Path partFile = directories.getCacheDirectory().resolve("temp")
                                     .resolve(download.id().value() + ".part");
@@ -533,10 +535,10 @@ public class SmartDmApp extends Application {
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, runner);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, runner);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -580,7 +582,8 @@ public class SmartDmApp extends Application {
                         dl -> {
                             repository.save(dl);
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                        }
+                        },
+                        runner
                     );
                     d.showAndWait();
                     if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
@@ -717,7 +720,8 @@ public class SmartDmApp extends Application {
         AtomicReference<QueueCoordinator> queueCoordinatorRef,
         ExecutorService enginePool,
         SingleDownloadCoordinator coordinator,
-        io.smartdm.organization.SmartFolderService smartFolderService
+        io.smartdm.organization.SmartFolderService smartFolderService,
+        io.smartdm.media.api.MediaDownloadRunner runner
     ) {
         boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId) || (videoUrl != null && !videoUrl.isBlank());
 
@@ -786,7 +790,8 @@ public class SmartDmApp extends Application {
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                         },
                         smartFolderService,
-                        repository
+                        repository,
+                        runner
                     );
                     bringStageToFrontAndFocus(dlg);
                 });

@@ -21,16 +21,18 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
     private java.util.function.Consumer<Download> onDownloadAdded;
 
     private final io.smartdm.organization.SmartFolderService smartFolderService;
+    private final io.smartdm.media.api.MediaDownloadRunner runner;
 
-    public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded) {
-        this(owner, existingDownloads, onDownloadAdded, null);
+    public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded, io.smartdm.media.api.MediaDownloadRunner runner) {
+        this(owner, existingDownloads, onDownloadAdded, null, runner);
     }
 
-    public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
+    public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.media.api.MediaDownloadRunner runner) {
         super(owner, "Enter new address to download", Modality.APPLICATION_MODAL);
         this.existingDownloads = existingDownloads;
         this.onDownloadAdded = onDownloadAdded;
         this.smartFolderService = smartFolderService;
+        this.runner = runner;
 
         VBox content = new VBox(10);
         
@@ -88,7 +90,7 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
                 extractor.extractMetadataAsync(resultUrl)
                     .thenAccept(meta -> javafx.application.Platform.runLater(() -> {
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
-                            MediaDownloadDialog dlg = new MediaDownloadDialog(null, meta, onDownloadAdded);
+                            MediaDownloadDialog dlg = new MediaDownloadDialog(null, meta, onDownloadAdded, runner);
                             dlg.show();
                         } else {
                             AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads, smartFolderService);

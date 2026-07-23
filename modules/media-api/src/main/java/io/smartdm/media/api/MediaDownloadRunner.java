@@ -1,14 +1,34 @@
 package io.smartdm.media.api;
 
 import io.smartdm.domain.Download;
-import java.nio.file.Path;
+import io.smartdm.domain.DownloadId;
 
-public interface MediaDownloadRunner {
-    void startDownload(Download download, Path targetPath, String webpageUrl, String formatArg);
-    void pauseDownload(Download download);
-    void resumeDownload(Download download);
-    void cancelDownload(Download download);
-    void deleteDownload(Download download, boolean permanent, Path targetPath);
-    void deleteMediaFiles(Path targetPath);
-    boolean isMediaDownload(io.smartdm.domain.DownloadId id);
+import java.nio.file.Path;
+import java.util.concurrent.CompletionStage;
+
+public interface MediaDownloadRunner extends AutoCloseable {
+
+    CompletionStage<Void> startDownload(
+            Download download,
+            Path targetPath,
+            String webpageUrl,
+            String formatArgument);
+
+    CompletionStage<Void> pauseDownload(Download download);
+
+    CompletionStage<Void> resumeDownload(Download download);
+
+    CompletionStage<Void> cancelDownload(Download download);
+
+    CompletionStage<Void> deleteDownload(
+            Download download,
+            boolean permanent,
+            Path targetPath);
+
+    CompletionStage<Void> deleteMediaFiles(Path targetPath);
+
+    boolean isMediaDownload(DownloadId id);
+
+    @Override
+    void close();
 }
