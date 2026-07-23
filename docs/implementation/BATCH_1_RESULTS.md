@@ -10,7 +10,7 @@ This document outlines the completion evidence for the first batch of issues (SD
 - CI GitHub Action `ci.yml` updated to run on `remediation-fixes` branch.
 - Immutable SHAs pinned for all GitHub Actions (`actions/checkout`, `actions/setup-java`, `gradle/actions/setup-gradle`, `actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808`).
 - CI #130 and #131 failed before Gradle execution due to bad upload-artifact SHA. This has now been fixed in commit `ec5be18`.
-- CI #132 (or latest) passed on Ubuntu and Windows. Workflow URLs recorded in TEST_EVIDENCE.md
+- CI #137 failed. Batch 2 is IN_PROGRESS.
 - Results will be recorded in `TEST_EVIDENCE.md` with successful workflow URLs once they pass.
 
 ### 2. SDM-002: Gradle Supply-Chain Metadata

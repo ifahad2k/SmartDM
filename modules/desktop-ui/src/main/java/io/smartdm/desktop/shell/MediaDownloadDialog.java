@@ -291,11 +291,22 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
                 return;
             } else if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
                 targetPath = generateUniquePath(targetPath);
-            } else if (choice == FileCollisionDialog.CollisionChoice.OVERWRITE) {
-                MediaDownloadTracker.deleteMediaFiles(targetPath);
             }
+            
+            final Path finalTargetPath = targetPath;
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                if (choice == FileCollisionDialog.CollisionChoice.OVERWRITE) {
+                    MediaDownloadTracker.deleteMediaFiles(finalTargetPath);
+                }
+                finishDownloadStart(finalTargetPath, selectedFormat);
+            });
+            return;
         }
 
+        finishDownloadStart(targetPath, selectedFormat);
+    }
+
+    private void finishDownloadStart(Path targetPath, MediaFormat selectedFormat) {
         try {
             SourceUri source = SourceUri.of(metadata.webpageUrl());
             Destination dest = Destination.of(targetPath);
@@ -307,7 +318,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
             String formatArg = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
             MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), formatArg);
-            close();
+            javafx.application.Platform.runLater(this::close);
         } catch (Exception ex) {
             System.err.println("Failed to start media download: " + ex.getMessage());
         }

@@ -47,7 +47,7 @@ jobs:
       - name: Verify on Ubuntu
         if: runner.os == 'Linux'
         shell: bash
-        run: ./gradlew --no-daemon clean check architectureTest integrationTest
+        run: chmod +x gradlew && ./gradlew --no-daemon clean check architectureTest integrationTest
 
       - name: Verify on Windows
         if: runner.os == 'Windows'

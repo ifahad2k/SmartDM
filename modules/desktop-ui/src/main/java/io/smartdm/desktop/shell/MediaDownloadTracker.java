@@ -94,6 +94,7 @@ public final class MediaDownloadTracker {
     }
 
     public static void deleteMediaFiles(Path targetPath) {
+        io.smartdm.desktop.utils.FxThreadGuard.requireBackgroundThread();
         if (targetPath == null) return;
         
         try { Thread.sleep(200); } catch (Exception ignored) {}

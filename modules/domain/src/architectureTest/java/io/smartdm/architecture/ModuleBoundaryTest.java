@@ -15,9 +15,17 @@ class ModuleBoundaryTest {
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "io.smartdm.infrastructure..",
                         "io.smartdm.securestorage..",
-                        "io.smartdm.ui.."
+                        "io.smartdm.desktop..",
+                        "io.smartdm.catalog..",
+                        "io.smartdm.media..",
+                        "io.smartdm.ai..",
+                        "javafx..",
+                        "java.sql..",
+                        "javax.sql..",
+                        "java.net.http..",
+                        "com.fasterxml.jackson.."
                 )
-                .because("Domain must be independent of infrastructure and UI concerns.")
+                .because("Domain must be completely decoupled from UI, AI SDKs, Media tools, Jackson, JDBC, JavaFX, and File IO.")
                 .check(importedClasses);
     }
 }
