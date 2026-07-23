@@ -64,6 +64,11 @@
 
   function isThumbnailVideo(mediaEl) {
     if (!mediaEl) return false;
+    
+    const host = window.location.hostname.toLowerCase();
+    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
+      return false; // Social media feed videos are always main videos
+    }
 
     // A main video usually has controls, or is large.
     if (mediaEl.hasAttribute('controls')) return false;
@@ -126,7 +131,8 @@
       depth++;
     }
 
-    if (window.location.hostname.includes('instagram.com')) {
+    const hostDomain = window.location.hostname.toLowerCase();
+    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('tiktok.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
       return document.body;
     }
 
