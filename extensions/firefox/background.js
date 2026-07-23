@@ -174,6 +174,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
       const targetUrl = details.url;
 
+
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
                           contentType.includes('application/x-mpegurl') || 
@@ -307,12 +308,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD') {
+  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH') {
     chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
       if (chrome.runtime.lastError) {
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
-        sendResponse(response);
+        sendResponse(response || { success: true });
       }
     });
     return true; // Async response

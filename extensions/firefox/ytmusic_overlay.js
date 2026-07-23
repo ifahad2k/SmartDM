@@ -319,6 +319,11 @@
         const shadow2 = host2.attachShadow({ mode: 'open' });
         shadow2.innerHTML = shadow.innerHTML; // Reuse the same UI
         
+        // Override the popover CSS to drop down instead of up
+        const styleOverride = document.createElement('style');
+        styleOverride.textContent = '.popover { bottom: auto; right: auto; top: 32px; left: 0; }';
+        shadow2.appendChild(styleOverride);
+        
         const bannerBtn2 = shadow2.querySelector('.idm-banner');
         const popover2 = shadow2.querySelector('.popover');
         const content2 = shadow2.querySelector('.popover-content');
@@ -638,14 +643,31 @@
         e.stopPropagation();
         
         const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-        btn.innerHTML = '<span style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</span>';
+        btn.innerHTML = '<span style="color:#38bdf8; font-weight:bold;">Scraping Playlist...</span>';
         
-        runtime.sendMessage({
-            type: 'START_MEDIA_DOWNLOAD',
-            url: window.location.href, // Playlist URL
-            formatId: 'bestaudio/best', // Hint for audio only
-            fileName: null
-        }, () => {
+        // Grab all unique watch URLs from the playlist
+        const trackLinks = Array.from(document.querySelectorAll('ytmusic-playlist-shelf-renderer a[href*="watch?v="], ytmusic-shelf-renderer a[href*="watch?v="]'))
+            .map(a => getCanonicalUrl(a.href).split('&list=')[0]) // Clean URL so they download as single tracks
+            .filter((value, index, self) => self.indexOf(value) === index);
+        
+        if (trackLinks.length > 0) {
+            runtime.sendMessage({
+                type: 'ADD_BATCH',
+                urls: trackLinks
+            }, () => {
+                setTimeout(() => {
+                    btn.innerHTML = `
+                        <svg class="icon" viewBox="0 0 24 24">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download Playlist
+                    `;
+                }, 1000);
+            });
+        } else {
+            btn.innerHTML = '<span style="color:#ef4444; font-weight:bold;">No tracks found!</span>';
             setTimeout(() => {
                 btn.innerHTML = `
                     <svg class="icon" viewBox="0 0 24 24">
@@ -655,8 +677,8 @@
                     </svg>
                     Download Playlist
                 `;
-            }, 1000);
-        });
+            }, 2000);
+        }
     });
     return host;
   }
