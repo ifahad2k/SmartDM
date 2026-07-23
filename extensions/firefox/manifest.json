@@ -18,8 +18,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
+      "matches": ["*://www.youtube.com/*"],
       "js": ["youtube_overlay.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://music.youtube.com/*"],
+      "js": ["ytmusic_overlay.js"],
       "run_at": "document_idle"
     },
     {
