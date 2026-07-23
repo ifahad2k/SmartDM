@@ -446,6 +446,10 @@ public class SmartDmApp extends Application {
             System.err.println("Warning: Failed to load downloads from database: " + e.getMessage());
         }
 
+        // ── 5. Catalog Service Setup ─────────────────────────────────────
+        SqlCipherCatalogRepository catalogRepo = new SqlCipherCatalogRepository(database);
+        io.smartdm.catalog.CatalogService catalogService = new io.smartdm.catalog.CatalogService(catalogRepo);
+
         // ── 6. UI Wire Up ────────────────────────────────────────────────
 
         MainShell shell = new MainShell(primaryStage, download -> {

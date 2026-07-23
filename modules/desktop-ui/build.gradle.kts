@@ -10,6 +10,8 @@ dependencies {
     implementation(project(":modules:media-api"))
     implementation(project(":modules:media-ytdlp"))
     implementation(project(":modules:media-ffmpeg"))
+    implementation(project(":modules:file-catalog"))
+    implementation(project(":modules:persistence-sqlcipher"))
     
     testImplementation(libs.bundles.testing)
     uiTestImplementation(libs.bundles.testing)

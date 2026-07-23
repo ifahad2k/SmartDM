@@ -22,9 +22,13 @@ public final class MainShell extends VBox {
     private final NavigationRail navigationRail;
     private final TopBar topBar;
     private QueueWorkspace queueWorkspace;
-    private SchedulerWorkspace schedulerWorkspace;
+    private CatalogWorkspace catalogWorkspace;
 
     public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate) {
+        this(stage, onDownloadRequested, workspace, mainQueue, mainQueueItems, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate, null);
+    }
+
+    public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate, io.smartdm.catalog.CatalogService catalogService) {
         getStyleClass().addAll("os-window", "glass");
         
         // Custom Title Bar
@@ -118,6 +122,11 @@ public final class MainShell extends VBox {
         
         schedulerWorkspace = new SchedulerWorkspace(scheduledDownloadsSupplier, onDownloadUpdate, mainQueueItems, workspace);
         VBox.setVgrow(schedulerWorkspace, Priority.ALWAYS);
+
+        if (catalogService != null) {
+            catalogWorkspace = new CatalogWorkspace(catalogService);
+            VBox.setVgrow(catalogWorkspace, Priority.ALWAYS);
+        }
         
         StatusBar statusBar = new StatusBar();
         mainContent.getChildren().addAll(topBar, workspace, statusBar);
@@ -130,6 +139,8 @@ public final class MainShell extends VBox {
                 mainContent.getChildren().addAll(topBar, queueWorkspace, statusBar);
             } else if ("Scheduler".equals(nav)) {
                 mainContent.getChildren().addAll(topBar, schedulerWorkspace, statusBar);
+            } else if ("Catalog".equals(nav) && catalogWorkspace != null) {
+                mainContent.getChildren().addAll(topBar, catalogWorkspace, statusBar);
             } else {
                 // other views placeholder
                 VBox placeholder = new VBox(new Label(nav + " (Coming Soon)"));
