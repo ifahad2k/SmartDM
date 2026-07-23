@@ -20,6 +20,7 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
 
+@SuppressWarnings({"deprecation", "unchecked", "this-escape"})
 public class CatalogWorkspace extends VBox {
 
     private final CatalogService catalogService;
