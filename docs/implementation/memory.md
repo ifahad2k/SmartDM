@@ -2,10 +2,10 @@
 
 This file is used by the AI agent to continuously document all actions taken, files modified, and progress made during each implementation phase.
 
-## Current Phase: Phase 6
+## Current Phase: Phase 0-5 Audit Remediation (Batch 1)
 
-- **Date:** 2026-07-19
-- **Status:** Phase 6 PENDING.
+- **Date:** 2026-07-23
+- **Status:** Remediation Fixes Pending CI Validation.
 
 ### Action Log
 * Set up the base directory structure according to the implementation plan.
@@ -32,3 +32,9 @@ This file is used by the AI agent to continuously document all actions taken, fi
 * **Phase 4:** Single-download vertical slice implemented. SQLite DB, Java HttpClient download engine, and custom Glassmorphic JavaFX dialogs built based on HTML designs.
 * **Phase 5:** Segmentation and multi-threaded downloading engine (`SegmentWorker`, `SegmentedFileChannel`) implemented. Dynamic pause/resume verification and SQLite database commits (V3, V4 migrations) integrated to recover from process crashes and ensure file integrity.
 
+### Audit Remediation (Batch 1)
+* **SDM-001 (CI/CD Pipeline Trust):** Pinned GitHub actions to immutable SHAs (`actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808`). Ensured CI pipeline fails on strict checks.
+* **SDM-002 (Gradle Supply-Chain Metadata):** Generated authentic SHA-256 dependency verification metadata (`gradle/verification-metadata.xml`) via `--write-verification-metadata sha256`. Restored true Logback SHA and successfully ran local strict build.
+* **SDM-003 (Accurate Project Documentation):** Demoted Phase 0-5 completion claims to `IN_PROGRESS` and `NOT_STARTED` for future phases pending checklist satisfaction. Dynamically generated `PHASE_STATUS.md` with true exit-gate checklists and `KNOWN_LIMITATIONS.md` with real limitations extracted from the plan.
+* **SDM-004 (Erroneous Repository Hygiene):** Purged obsolete `scratch/` files and tracked Gradle caches. Upgraded `.class` checking in CI to use `git ls-files` recursively.
+* **SDM-005 (Readme Accuracy):** Removed misleading features (e.g., Natural Language Search) and honestly separated existing Phase 0-5 functionality from Phase 6-12 planned work in `README.md`.

@@ -2,11 +2,13 @@
 
 ## Phase 0 - Product, legal, privacy, and supply-chain lock
 
-- Status: COMPLETED
+- Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 2026-07-20
+- Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: ADR-0, ADR-006, ADR-001
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-0
 - Known limitations: KNOWN_LIMITATIONS.md#phase-0
 - Approved deviations: none
@@ -26,11 +28,13 @@
 
 ## Phase 1 - Repository and engineering foundation
 
-- Status: COMPLETED
+- Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 2026-07-20
+- Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-1
 - Known limitations: KNOWN_LIMITATIONS.md#phase-1
 - Approved deviations: none
@@ -45,11 +49,13 @@
 
 ## Phase 2 - Secure local profile and encrypted persistence
 
-- Status: COMPLETED
+- Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 2026-07-20
+- Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-2
 - Known limitations: KNOWN_LIMITATIONS.md#phase-2
 - Approved deviations: none
@@ -65,11 +71,13 @@
 
 ## Phase 3 - Minimal JavaFX shell and theme system
 
-- Status: COMPLETED
+- Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 2026-07-20
+- Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-3
 - Known limitations: KNOWN_LIMITATIONS.md#phase-3
 - Approved deviations: none
@@ -84,11 +92,13 @@
 
 ## Phase 4 - Single-download vertical slice
 
-- Status: COMPLETED
+- Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 2026-07-20
+- Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-4
 - Known limitations: KNOWN_LIMITATIONS.md#phase-4
 - Approved deviations: none
@@ -104,11 +114,13 @@
 
 ## Phase 5 - Segmentation, pause/resume, verification, and recovery
 
-- Status: COMPLETED
+- Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 2026-07-20
+- Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-5
 - Known limitations: KNOWN_LIMITATIONS.md#phase-5
 - Approved deviations: none
@@ -129,6 +141,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-6
 - Known limitations: KNOWN_LIMITATIONS.md#phase-6
 - Approved deviations: none
@@ -148,6 +162,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-7
 - Known limitations: KNOWN_LIMITATIONS.md#phase-7
 - Approved deviations: none
@@ -166,6 +182,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-8
 - Known limitations: KNOWN_LIMITATIONS.md#phase-8
 - Approved deviations: none
@@ -187,6 +205,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-9
 - Known limitations: KNOWN_LIMITATIONS.md#phase-9
 - Approved deviations: none
@@ -207,6 +227,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-10
 - Known limitations: KNOWN_LIMITATIONS.md#phase-10
 - Approved deviations: none
@@ -227,6 +249,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-11
 - Known limitations: KNOWN_LIMITATIONS.md#phase-11
 - Approved deviations: none
@@ -246,6 +270,8 @@
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-12
 - Known limitations: KNOWN_LIMITATIONS.md#phase-12
 - Approved deviations: none
@@ -260,11 +286,13 @@
 
 ## Phase 13 - Local natural-language search
 
-- Status: IN_PROGRESS
-- Started: 2026-07-17
+- Status: NOT_STARTED
+- Started: 
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-13
 - Known limitations: KNOWN_LIMITATIONS.md#phase-13
 - Approved deviations: none
@@ -279,11 +307,13 @@
 
 ## Phase 14 - Optional Gemini consented fallback
 
-- Status: IN_PROGRESS
-- Started: 2026-07-17
+- Status: NOT_STARTED
+- Started: 
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-14
 - Known limitations: KNOWN_LIMITATIONS.md#phase-14
 - Approved deviations: none
@@ -299,11 +329,13 @@
 
 ## Phase 15 - Local safety scanner and risk center
 
-- Status: IN_PROGRESS
-- Started: 2026-07-17
+- Status: NOT_STARTED
+- Started: 
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-15
 - Known limitations: KNOWN_LIMITATIONS.md#phase-15
 - Approved deviations: none
@@ -319,11 +351,13 @@
 
 ## Phase 16 - Remaining IDM-parity workflows
 
-- Status: IN_PROGRESS
-- Started: 2026-07-17
+- Status: NOT_STARTED
+- Started: 
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-16
 - Known limitations: KNOWN_LIMITATIONS.md#phase-16
 - Approved deviations: none
@@ -338,11 +372,13 @@
 
 ## Phase 17 - UX, accessibility, localization, and performance hardening
 
-- Status: IN_PROGRESS
-- Started: 2026-07-17
+- Status: NOT_STARTED
+- Started: 
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: None
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-17
 - Known limitations: KNOWN_LIMITATIONS.md#phase-17
 - Approved deviations: none
@@ -358,11 +394,13 @@
 
 ## Phase 18 - Packaging, browser-extension bundling, update, and release hardening
 
-- Status: IN_PROGRESS
-- Started: 2026-07-17
+- Status: NOT_STARTED
+- Started: 
 - Completed: 
 - Baseline commit: 
 - Completion commit: 
+- ADRs: ADR-0
+- Database migrations: None
 - Test evidence: TEST_EVIDENCE.md#phase-18
 - Known limitations: KNOWN_LIMITATIONS.md#phase-18
 - Approved deviations: none
