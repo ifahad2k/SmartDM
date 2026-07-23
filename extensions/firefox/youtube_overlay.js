@@ -305,34 +305,31 @@
   }
 
   function scanThumbnails() {
-    const thumbnailElements = document.querySelectorAll('ytd-thumbnail, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, a#thumbnail');
-    thumbnailElements.forEach((el) => {
-      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, a#thumbnail') || el;
-      if (container.getAttribute(PROCESSED_ATTR)) return;
-      container.setAttribute(PROCESSED_ATTR, 'true');
+    const anchors = document.querySelectorAll('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, ytd-thumbnail a[href*="/watch"], ytd-thumbnail a[href*="/shorts"], div.yt-lockup-view-model__image a[href*="/watch"], div.yt-lockup-view-model__image a[href*="/shorts"]');
+    
+    anchors.forEach((anchor) => {
+      if (anchor.closest('#player, #movie_player, .html5-video-player')) return;
 
-      let thumbAnchor = container.querySelector('a#thumbnail, a.ytd-thumbnail, a[href*="/watch?v="], a[href*="/shorts/"]');
-      if (!thumbAnchor && container.tagName === 'A') {
-        thumbAnchor = container;
+      // Check if this anchor already has our badge as a direct child
+      let hasBadge = false;
+      for (let i = 0; i < anchor.children.length; i++) {
+        if (anchor.children[i].classList.contains('smartdm-host')) {
+          hasBadge = true;
+          break;
+        }
       }
-      if (thumbAnchor) {
-        attachBadge(thumbAnchor);
-      }
+      if (hasBadge) return;
+
+      anchor.setAttribute(PROCESSED_ATTR, 'true');
+      attachBadge(anchor);
     });
   }
 
   function attachBadge(anchor) {
-    if (anchor.getAttribute(PROCESSED_ATTR)) return;
-    anchor.setAttribute(PROCESSED_ATTR, 'true');
-
     const parent = anchor.parentElement;
     if (parent && getComputedStyle(parent).position === 'static') {
       parent.style.position = 'relative';
     }
-
-    const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
-    if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
-    const videoUrl = getCanonicalUrl(rawUrl);
 
     const host = document.createElement('div');
     host.className = 'smartdm-host';
@@ -485,8 +482,13 @@
     });
 
     btn.addEventListener('click', (e) => {
-      e.preventDefault();
       e.stopPropagation();
+      e.preventDefault();
+
+      // Resolve URL dynamically on click to handle YouTube SPA element recycling
+      const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
+      if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
+      const currentVideoUrl = getCanonicalUrl(rawUrl);
 
       const isActive = popover.classList.contains('active');
       document.querySelectorAll('.smartdm-host, .smartdm-player-host').forEach((h) => {
@@ -503,9 +505,9 @@
 
       popover.classList.add('active');
 
-      fetchYtDlpFormats(videoUrl, (res) => {
+      fetchYtDlpFormats(currentVideoUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
-          renderFormatItems(content, res.formats, videoUrl, popover);
+          renderFormatItems(content, res.formats, currentVideoUrl, popover);
         } else if (res && res.success === false) {
           const errMsg = (res.error && res.error.includes("not running")) 
             ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
@@ -516,7 +518,7 @@
         }
       });
 
-      if (!ytDlpCache[videoUrl] || ytDlpCache[videoUrl].status !== 'done') {
+      if (!ytDlpCache[currentVideoUrl] || ytDlpCache[currentVideoUrl].status !== 'done') {
         content.innerHTML = `
           <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
             <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
