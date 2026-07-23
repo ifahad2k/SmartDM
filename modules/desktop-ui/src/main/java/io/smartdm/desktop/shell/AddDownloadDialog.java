@@ -41,10 +41,18 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     private final java.util.List<io.smartdm.domain.Download> existingDownloads;
     private java.util.function.Consumer<io.smartdm.domain.Download> onDownloadAdded;
     private final HttpProbeClient prober;
+    private final io.smartdm.organization.SmartFolderService smartFolderService;
+    private FolderSuggestionPanel suggestionPanel;
+    private long probedBytes = 0L;
     
     public AddDownloadDialog(Stage owner, java.util.List<io.smartdm.domain.Download> existingDownloads) {
+        this(owner, existingDownloads, null);
+    }
+
+    public AddDownloadDialog(Stage owner, java.util.List<io.smartdm.domain.Download> existingDownloads, io.smartdm.organization.SmartFolderService smartFolderService) {
         super(owner, "Download File Info", Modality.NONE);
         this.existingDownloads = existingDownloads;
+        this.smartFolderService = smartFolderService;
         this.prober = new HttpProbeClient();
         
         // Ensure the window pops up over everything (like IDM)
@@ -147,8 +155,17 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         HBox saveBox = new HBox(8, destinationField, browseBtn);
         grid.add(saveLabel, 0, 3);
         grid.add(saveBox, 1, 3);
-        
-        // --- Row 4: Remember path ---
+
+        // Smart Folder Suggestion Chips
+        suggestionPanel = new FolderSuggestionPanel(path -> {
+            if (path != null) {
+                destinationField.setText(path.toAbsolutePath().toString());
+            }
+        });
+        grid.add(suggestionPanel, 1, 4);
+        GridPane.setColumnSpan(suggestionPanel, 2);
+
+        // --- Row 5: Remember path ---
         rememberPathCheck = new CheckBox("Remember this path for \"General\" category");
         rememberPathCheck.getStyleClass().add("idm-label");
         rememberPathCheck.setSelected(true);
@@ -157,18 +174,18 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         fileSizeLabel.getStyleClass().add("idm-label");
         fileSizeLabel.setStyle("-fx-font-weight: bold;");
         
-        grid.add(rememberPathCheck, 1, 4);
-        grid.add(fileSizeLabel, 2, 4);
+        grid.add(rememberPathCheck, 1, 5);
+        grid.add(fileSizeLabel, 2, 5);
         
-        // --- Row 5: Description ---
+        // --- Row 6: Description ---
         Label descLabel = new Label("Description");
         descLabel.getStyleClass().add("idm-label");
         
         descriptionField = new TextField("");
         descriptionField.getStyleClass().add("text-input");
         GridPane.setColumnSpan(descriptionField, 2);
-        grid.add(descLabel, 0, 5);
-        grid.add(descriptionField, 1, 5);
+        grid.add(descLabel, 0, 6);
+        grid.add(descriptionField, 1, 6);
         
         dialogBody.getChildren().add(grid);
         
@@ -179,6 +196,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                     String filename = extractFilename(newValue);
                     nameField.setText(filename);
                     probeUrl(newValue);
+                    updateSmartFolderSuggestions();
                 } catch (Exception ignored) {}
             }
         });
@@ -352,6 +370,21 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     public void setUrlText(String url) {
         if (urlField != null) {
             urlField.setText(url);
+            updateSmartFolderSuggestions();
         }
+    }
+
+    private void updateSmartFolderSuggestions() {
+        if (smartFolderService == null || suggestionPanel == null) return;
+        String url = urlField.getText();
+        String fileName = nameField.getText();
+        if (url == null || url.isBlank()) return;
+
+        javafx.application.Platform.runLater(() -> {
+            java.util.List<io.smartdm.domain.organization.FolderSuggestion> suggestions = 
+                smartFolderService.suggestFolders(url, fileName, null, probedBytes > 0 ? probedBytes : 0L);
+            suggestionPanel.setSuggestions(suggestions);
+            sizeToScene();
+        });
     }
 }

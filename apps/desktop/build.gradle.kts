@@ -22,7 +22,7 @@ dependencies {
     implementation(project(":modules:secure-storage"))
     implementation(project(":modules:file-catalog"))
     runtimeOnly(project(":modules:search-local"))
-    runtimeOnly(project(":modules:organization-local"))
+    implementation(project(":modules:organization-local"))
     runtimeOnly(project(":modules:ai-gemini"))
     runtimeOnly(project(":modules:safety-rules"))
     runtimeOnly(project(":modules:safety-windows-defender"))

@@ -20,10 +20,17 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
     private final java.util.List<Download> existingDownloads;
     private java.util.function.Consumer<Download> onDownloadAdded;
 
+    private final io.smartdm.organization.SmartFolderService smartFolderService;
+
     public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded) {
+        this(owner, existingDownloads, onDownloadAdded, null);
+    }
+
+    public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
         super(owner, "Enter new address to download", Modality.APPLICATION_MODAL);
         this.existingDownloads = existingDownloads;
         this.onDownloadAdded = onDownloadAdded;
+        this.smartFolderService = smartFolderService;
 
         VBox content = new VBox(10);
         
@@ -84,7 +91,7 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
                             MediaDownloadDialog dlg = new MediaDownloadDialog(null, meta, onDownloadAdded);
                             dlg.show();
                         } else {
-                            AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads);
+                            AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads, smartFolderService);
                             d.setOnDownloadAdded(onDownloadAdded);
                             d.setUrlText(resultUrl);
                             d.show();
@@ -92,7 +99,7 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
                     }))
                     .exceptionally(ex -> {
                         javafx.application.Platform.runLater(() -> {
-                            AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads);
+                            AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads, smartFolderService);
                             d.setOnDownloadAdded(onDownloadAdded);
                             d.setUrlText(resultUrl);
                             d.show();
@@ -100,7 +107,7 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
                         return null;
                     });
             } else {
-                AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads);
+                AddDownloadDialog d = new AddDownloadDialog(null, existingDownloads, smartFolderService);
                 d.setOnDownloadAdded(onDownloadAdded);
                 d.setUrlText(resultUrl);
                 d.show();

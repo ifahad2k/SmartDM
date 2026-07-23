@@ -20,7 +20,15 @@ import io.smartdm.domain.Destination;
 import java.nio.file.Paths;
 
 public final class TopBar extends HBox {
+
+    private final io.smartdm.organization.SmartFolderService smartFolderService;
+
     public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected) {
+        this(existingDownloadsProvider, onDownloadAdded, onStartQueueRequested, onDeleteSelected, null);
+    }
+
+    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected, io.smartdm.organization.SmartFolderService smartFolderService) {
+        this.smartFolderService = smartFolderService;
         getStyleClass().add("topbar");
 
         // Search Field
@@ -79,7 +87,7 @@ public final class TopBar extends HBox {
                     }
                 }
             } else {
-                EnterUrlDialog d = new EnterUrlDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get(), onDownloadAdded);
+                EnterUrlDialog d = new EnterUrlDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get(), onDownloadAdded, smartFolderService);
                 d.show();
             }
         });

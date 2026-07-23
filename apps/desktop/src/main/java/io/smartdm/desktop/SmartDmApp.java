@@ -453,6 +453,10 @@ public class SmartDmApp extends Application {
         SqlCipherCatalogRepository catalogRepo = new SqlCipherCatalogRepository(database);
         io.smartdm.catalog.CatalogService catalogService = new io.smartdm.catalog.CatalogService(catalogRepo);
 
+        // ── 5b. Smart Folder Service Setup ───────────────────────────────
+        io.smartdm.persistence.SqlCipherFolderAffinityRepository affinityRepo = new io.smartdm.persistence.SqlCipherFolderAffinityRepository(database);
+        io.smartdm.organization.SmartFolderService smartFolderService = new io.smartdm.organization.SmartFolderService(categoryRepo, catalogRepo, affinityRepo);
+
         // ── 6. UI Wire Up ────────────────────────────────────────────────
 
         MainShell shell = new MainShell(primaryStage, download -> {
