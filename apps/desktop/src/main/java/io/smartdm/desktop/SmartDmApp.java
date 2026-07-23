@@ -455,7 +455,7 @@ public class SmartDmApp extends Application {
 
         // ── 5b. Smart Folder Service Setup ───────────────────────────────
         io.smartdm.persistence.SqlCipherFolderAffinityRepository affinityRepo = new io.smartdm.persistence.SqlCipherFolderAffinityRepository(database);
-        io.smartdm.organization.SmartFolderService smartFolderService = new io.smartdm.organization.SmartFolderService(categoryRepo, catalogRepo, affinityRepo);
+        io.smartdm.organization.SmartFolderService smartFolderService = new io.smartdm.organization.SmartFolderService(categoryRepository, catalogRepo, affinityRepo);
 
         // ── 6. UI Wire Up ────────────────────────────────────────────────
 
