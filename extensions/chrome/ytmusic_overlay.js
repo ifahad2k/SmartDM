@@ -652,7 +652,7 @@
         
         if (trackLinks.length > 0) {
             runtime.sendMessage({
-                type: 'ADD_BATCH',
+                type: 'ADD_MEDIA_BATCH',
                 urls: trackLinks
             }, () => {
                 setTimeout(() => {

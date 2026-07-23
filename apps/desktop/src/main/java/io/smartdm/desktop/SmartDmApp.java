@@ -546,6 +546,20 @@ public class SmartDmApp extends Application {
                         }
                     }
                 });
+            } else if (message instanceof io.smartdm.browser.protocol.AddMediaBatchRequest req) {
+                javafx.application.Platform.runLater(() -> {
+                    io.smartdm.desktop.shell.MediaBatchAddDialog d = new io.smartdm.desktop.shell.MediaBatchAddDialog(
+                        primaryStage, 
+                        req.urls(), 
+                        enginePool, 
+                        dl -> {
+                            repository.save(dl);
+                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                        }
+                    );
+                    d.showAndWait();
+                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                });
             }
             return "{\"status\":\"ok\",\"version\":\"1.0\"}";
         });
