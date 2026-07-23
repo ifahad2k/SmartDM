@@ -628,12 +628,18 @@ public class SmartDmApp extends Application {
         
         String lower = url.toLowerCase();
         
-        // Check direct video/audio extensions
+        // Check direct video/audio extensions FIRST
         if (lower.contains(".mp4") || lower.contains(".m3u8") || lower.contains(".mpd") ||
             lower.contains(".webm") || lower.contains(".m4a") || lower.contains(".mp3") ||
             lower.contains(".ts") || lower.contains(".mov") || lower.contains(".flv") ||
             lower.contains(".mkv") || lower.contains(".avi")) {
             return true;
+        }
+
+        // Explicitly exclude common image extensions BEFORE matching generic route patterns like /v/
+        if (lower.contains(".jpg") || lower.contains(".jpeg") || lower.contains(".png") || 
+            lower.contains(".gif") || lower.contains(".webp") || lower.contains(".bmp")) {
+            return false;
         }
 
         // Check universal video route patterns
