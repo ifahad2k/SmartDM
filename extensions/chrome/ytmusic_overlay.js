@@ -638,106 +638,50 @@
     `;
 
     const btn = shadow.querySelector('.idm-banner');
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         
-        if (btn.dataset.scraping === 'true') return;
-        btn.dataset.scraping = 'true';
-        
         const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+        btn.innerHTML = '<span style="color:#38bdf8; font-weight:bold;">Sending to SDM...</span>';
         
-        // Try to parse total track count from the subtitle (e.g. "50 songs")
-        let totalCount = 100; // Default fallback
-        const subtitle = document.querySelector('ytmusic-detail-header-renderer .second-subtitle');
-        if (subtitle && subtitle.textContent) {
-            const match = subtitle.textContent.match(/(\d+)\s+(songs|videos|tracks)/i);
-            if (match && match[1]) {
-                totalCount = parseInt(match[1], 10);
-            }
-        }
+        // Grab all unique watch URLs from the playlist currently loaded in the DOM
+        const trackLinks = Array.from(document.querySelectorAll('ytmusic-playlist-shelf-renderer a[href*="watch?v="], ytmusic-shelf-renderer a[href*="watch?v="]'))
+            .map(a => getCanonicalUrl(a.href).split('&list=')[0])
+            .filter((value, index, self) => self.indexOf(value) === index);
         
-        btn.innerHTML = '<span style="color:#ffffff; font-weight:bold; z-index:2; position:relative;">Scraping Playlist... 0%</span>';
-        btn.style.position = 'relative';
-        btn.style.overflow = 'hidden';
-        
-        // Add a progress bar element behind the text
-        const progressBg = document.createElement('div');
-        progressBg.style.position = 'absolute';
-        progressBg.style.left = '0';
-        progressBg.style.top = '0';
-        progressBg.style.height = '100%';
-        progressBg.style.width = '0%';
-        progressBg.style.backgroundColor = '#0ea5e9';
-        progressBg.style.zIndex = '1';
-        progressBg.style.transition = 'width 0.3s ease';
-        btn.appendChild(progressBg);
-
-        const textSpan = btn.querySelector('span');
-
-        let previousCount = 0;
-        let unchangedCount = 0;
-        let trackLinks = [];
-        
-        const scrapeInterval = setInterval(() => {
-            // Scroll down
-            window.scrollBy(0, 1500);
+        if (trackLinks.length > 0) {
+            // Log to browser console so we know exactly what is being sent
+            console.log("[SmartDM] Sending " + trackLinks.length + " tracks to desktop app:", trackLinks);
             
-            // Collect links
-            trackLinks = Array.from(document.querySelectorAll('ytmusic-playlist-shelf-renderer a[href*="watch?v="], ytmusic-shelf-renderer a[href*="watch?v="]'))
-                .map(a => getCanonicalUrl(a.href).split('&list=')[0])
-                .filter((value, index, self) => self.indexOf(value) === index);
-                
-            let currentCount = trackLinks.length;
-            let percent = Math.min(100, Math.round((currentCount / totalCount) * 100));
-            
-            progressBg.style.width = percent + '%';
-            textSpan.textContent = `Scraping Playlist... ${percent}%`;
-            
-            if (currentCount === previousCount) {
-                unchangedCount++;
-            } else {
-                unchangedCount = 0;
-            }
-            previousCount = currentCount;
-            
-            // Stop if we hit the total, or if we haven't seen new tracks in 8 attempts (lazy load finished)
-            if (currentCount >= totalCount || unchangedCount >= 8) {
-                clearInterval(scrapeInterval);
-                finishScraping();
-            }
-        }, 500);
-        
-        function finishScraping() {
-            progressBg.style.width = '100%';
-            textSpan.textContent = 'Opening SDM...';
-            
-            if (trackLinks.length > 0) {
-                runtime.sendMessage({
-                    type: 'ADD_MEDIA_BATCH',
-                    urls: trackLinks
-                }, () => {
-                    setTimeout(() => resetBtn(), 1500);
-                });
-            } else {
-                textSpan.style.color = '#ef4444';
-                textSpan.textContent = 'No tracks found!';
-                setTimeout(() => resetBtn(), 2000);
-            }
-        }
-        
-        function resetBtn() {
-            btn.dataset.scraping = 'false';
-            btn.style.position = '';
-            btn.style.overflow = '';
-            btn.innerHTML = `
-                <svg class="icon" viewBox="0 0 24 24">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Download Playlist
-            `;
+            runtime.sendMessage({
+                type: 'ADD_MEDIA_BATCH',
+                urls: trackLinks
+            }, (response) => {
+                console.log("[SmartDM] Background script responded:", response);
+                setTimeout(() => {
+                    btn.innerHTML = `
+                        <svg class="icon" viewBox="0 0 24 24">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download Playlist
+                    `;
+                }, 1000);
+            });
+        } else {
+            btn.innerHTML = '<span style="color:#ef4444; font-weight:bold;">No tracks found!</span>';
+            setTimeout(() => {
+                btn.innerHTML = `
+                    <svg class="icon" viewBox="0 0 24 24">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Playlist
+                `;
+            }, 2000);
         }
     });
     return host;

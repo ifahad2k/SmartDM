@@ -174,12 +174,16 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         root.setBottom(footer);
 
         // Start Fetching
-        for (String url : urls) {
-            MediaBatchItem item = new MediaBatchItem(url);
-            items.add(item);
+        System.out.println("[MediaBatchAddDialog] Received URLs: " + (urls == null ? "null" : urls.size()));
+        if (urls != null) {
+            for (String url : urls) {
+                MediaBatchItem item = new MediaBatchItem(url);
+                items.add(item);
+            }
+            startMetadataFetch(urls, headerSub);
+        } else {
+            headerSub.setText("Error: No URLs received.");
         }
-
-        startMetadataFetch(urls, headerSub);
     }
 
     private void startMetadataFetch(List<String> urls, Label headerSub) {
