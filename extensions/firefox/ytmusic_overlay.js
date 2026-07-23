@@ -713,12 +713,19 @@
             textSpan.textContent = 'Opening SDM...';
             
             if (trackLinks.length > 0) {
-                runtime.sendMessage({
-                    type: 'ADD_MEDIA_BATCH',
-                    urls: trackLinks
-                }, () => {
-                    setTimeout(() => resetBtn(), 1500);
-                });
+                // Wrap in try-catch to avoid hanging if extension context was invalidated
+                try {
+                    runtime.sendMessage({
+                        type: 'ADD_MEDIA_BATCH',
+                        urls: trackLinks
+                    }, () => {
+                        setTimeout(() => resetBtn(), 1500);
+                    });
+                } catch (err) {
+                    textSpan.style.color = '#ef4444';
+                    textSpan.textContent = 'Extension Error (Refresh Page)';
+                    setTimeout(() => resetBtn(), 3000);
+                }
             } else {
                 textSpan.style.color = '#ef4444';
                 textSpan.textContent = 'No tracks found!';
