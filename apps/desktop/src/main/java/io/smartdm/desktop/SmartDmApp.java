@@ -706,6 +706,8 @@ public class SmartDmApp extends Application {
             String targetStreamUrl = (videoUrl != null && !videoUrl.isBlank()) ? videoUrl : url;
             enginePool.submit(() -> {
                 io.smartdm.media.api.MediaMetadata meta = metadataCache.get(url);
+                String extractionError = null;
+                
                 // Only invoke yt-dlp metadata dump if direct stream URL was not provided and not in cache
                 if (meta == null && (videoUrl == null || videoUrl.isBlank()) && toolMgr.isAvailable()) {
                     try {
@@ -714,7 +716,26 @@ public class SmartDmApp extends Application {
                         if (meta != null) metadataCache.put(url, meta);
                     } catch (Exception ex) {
                         System.err.println("Media metadata extraction failed: " + ex.getMessage());
+                        extractionError = ex.getMessage();
                     }
+                }
+
+                if (meta == null && url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
+                    final String err = extractionError;
+                    javafx.application.Platform.runLater(() -> {
+                        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
+                        alert.setTitle("YouTube Extraction Failed");
+                        alert.setHeaderText("YouTube Bot Protection / Rate Limit");
+                        if (err != null && err.contains("429")) {
+                            alert.setContentText("YouTube has temporarily blocked your IP (HTTP Error 429: Too Many Requests). Please wait a few minutes before trying again, or use a VPN.");
+                        } else if (err != null && err.contains("PO Token")) {
+                            alert.setContentText("YouTube is blocking yt-dlp (PO Token required). Wait for a yt-dlp update or try again later.");
+                        } else {
+                            alert.setContentText("Failed to extract video formats from YouTube. They may have updated their bot protection.\n\nError: " + (err != null ? err : "Unknown Error"));
+                        }
+                        alert.showAndWait();
+                    });
+                    return; // Abort opening the dialog
                 }
 
                 final io.smartdm.media.api.MediaMetadata finalMeta;
