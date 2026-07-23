@@ -5,38 +5,37 @@
 This document outlines the completion evidence for the first batch of issues (SDM-001 through SDM-005) identified in the Phase 0-12 Audit.
 
 ### 1. SDM-001: CI/CD Pipeline Trust & Evidence
-**Status:** Completed
+**Status:** In Progress (Awaiting Green CI)
 **Evidence:**
 - CI GitHub Action `ci.yml` updated to run on `remediation-fixes` branch.
-- Immutable SHAs pinned for all GitHub Actions (`actions/checkout`, `actions/setup-java`, `gradle/actions/setup-gradle`, `actions/upload-artifact`).
-- Validation step added ensuring workflow triggers properly across Windows and Ubuntu on the same commit SHA.
-- Re-run successfully verified via GitHub Actions (`b3ce184`).
-- Results recorded in `TEST_EVIDENCE.md`.
+- Immutable SHAs pinned for all GitHub Actions (`actions/checkout`, `actions/setup-java`, `gradle/actions/setup-gradle`, `actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808`).
+- CI #130 and #131 failed before Gradle execution due to bad upload-artifact SHA. This has now been fixed in commit `ec5be18`.
+- We are currently awaiting successful Ubuntu and Windows workflow runs before labeling this as strictly complete.
+- Results will be recorded in `TEST_EVIDENCE.md` with successful workflow URLs once they pass.
 
 ### 2. SDM-002: Gradle Supply-Chain Metadata
 **Status:** Completed
 **Evidence:**
-- Authentic SHA-256 dependency verification metadata generated using `./gradlew --write-verification-metadata sha256 clean check`.
+- Authentic SHA-256 dependency verification metadata properly regenerated. The temporary `deadbeef` checksum has been reverted to the true hash (`3e1533d0321f8815eef46750aee0111b41554f9a4644c3c4d2d404744b09f60f`) in commit `ec5be18`.
 - Complete XML committed to `gradle/verification-metadata.xml`.
 - Strict mode is enabled (`<verify-metadata>true</verify-metadata>`).
-- Local verification failure proven on temporary branch by modifying dependency checksum and successfully failing the build.
+- Local verification failure was proven on a temporary branch previously. The current branch runs successfully in strict mode.
 
 ### 3. SDM-003: Accurate Project Documentation
 **Status:** Completed
 **Evidence:**
 - Historical Phase 0-5 completion claims accurately pruned from `memory.md`.
-- `PHASE_STATUS.md` generated dynamically based on the master implementation plan, strictly tracking Phase progression.
-- Real Exit-gate checklists derived from the implementation plan populated into `PHASE_STATUS.md` and explicitly tracked.
-- `KNOWN_LIMITATIONS.md` updated with phase-specific accepted temporary limitations.
-- `Implementation_Tracker.md` usage deprecated in favor of `PHASE_STATUS.md`.
+- `PHASE_STATUS.md` dynamically regenerated directly from the implementation plan, correctly scraping actual real Exit-Gate checklists for all 19 phases.
+- Real Exit-gate checklists populated into `PHASE_STATUS.md`.
+- `KNOWN_LIMITATIONS.md` updated with phase-specific accepted temporary limitations for all 19 phases.
+- `Implementation_Tracker.md` usage deprecated.
 
 ### 4. SDM-004: Erroneous Repository Hygiene
 **Status:** Completed
 **Evidence:**
 - Obsolete root `scratch/` directory and `.class` files removed.
-- Caches (`.gradle/`, `build-logic/build/`) untracked from Git via `git rm -r --cached`.
-- Replaced naïve `ls *.class` in CI with `git ls-files` check. The CI pipeline now accurately fails if any forbidden temporary or compiled files are checked into the repository index.
-- Confirmed `clean check` operates cleanly on a fresh clone.
+- Caches (`.gradle/`, `build-logic/build/`) untracked from Git.
+- Replaced naïve `ls *.class` in CI with `git ls-files` check. The CI pipeline now actively fails if any forbidden temporary or compiled files are checked into the repository index.
 
 ### 5. SDM-005: Readme Accuracy
 **Status:** Completed
