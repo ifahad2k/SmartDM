@@ -127,32 +127,7 @@
     }
 
     if (window.location.hostname.includes('instagram.com')) {
-      // Find the element that is visually on top of the video (the click catcher)
-      const rect = mediaEl.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        // Temporarily hide our own host if it exists so we don't pick it up
-        const existingHost = document.querySelector('.smartdm-universal-host');
-        if (existingHost) existingHost.style.display = 'none';
-        
-        const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        
-        if (existingHost) existingHost.style.display = '';
-
-        if (topElement && topElement !== mediaEl && !mediaEl.contains(topElement)) {
-          // topElement is the click catcher!
-          container = topElement;
-        } else {
-          // Fallback to moving up the tree
-          let el = mediaEl;
-          for (let i = 0; i < 7; i++) {
-            if (el.parentElement && el.parentElement !== document.body) {
-              el = el.parentElement;
-              container = el;
-              if (el.tagName.toLowerCase() === 'article') break;
-            }
-          }
-        }
-      }
+      return document.body;
     }
 
     if (window.getComputedStyle(container).position === 'static') {
@@ -179,11 +154,38 @@
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
-    host.style.position = 'absolute';
-    host.style.top = '16px';
-    host.style.right = '16px';
-    host.style.zIndex = '2147483647'; // Maximum z-index
-    host.style.pointerEvents = 'auto';
+    
+    if (container === document.body) {
+      host.style.position = 'fixed';
+      host.style.zIndex = '2147483647';
+      host.style.pointerEvents = 'auto';
+      
+      const syncPos = () => {
+        const rect = mediaEl.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
+          host.style.opacity = '0';
+          host.style.pointerEvents = 'none';
+        } else {
+          host.style.opacity = '1';
+          host.style.pointerEvents = 'auto';
+          host.style.top = (rect.top + 16) + 'px';
+          host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
+        }
+      };
+      
+      window.addEventListener('scroll', syncPos, true);
+      window.addEventListener('resize', syncPos);
+      setInterval(syncPos, 100);
+      
+      // Delay first sync slightly to ensure host has width
+      setTimeout(syncPos, 50);
+    } else {
+      host.style.position = 'absolute';
+      host.style.top = '16px';
+      host.style.right = '16px';
+      host.style.zIndex = '2147483647'; // Maximum z-index
+      host.style.pointerEvents = 'auto';
+    }
 
     const shadow = host.attachShadow({ mode: 'open' });
 
