@@ -305,31 +305,34 @@
   }
 
   function scanThumbnails() {
-    const anchors = document.querySelectorAll('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, ytd-thumbnail a[href*="/watch"], ytd-thumbnail a[href*="/shorts"], div.yt-lockup-view-model__image a[href*="/watch"], div.yt-lockup-view-model__image a[href*="/shorts"]');
-    
-    anchors.forEach((anchor) => {
-      if (anchor.closest('#player, #movie_player, .html5-video-player')) return;
+    const thumbnailElements = document.querySelectorAll('ytd-thumbnail, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, a#thumbnail, yt-lockup-view-model, a.yt-lockup-view-model__content-image');
+    thumbnailElements.forEach((el) => {
+      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, yt-lockup-view-model, a#thumbnail, a.yt-lockup-view-model__content-image') || el;
+      if (container.getAttribute(PROCESSED_ATTR)) return;
+      container.setAttribute(PROCESSED_ATTR, 'true');
 
-      // Check if this anchor already has our badge as a direct child
-      let hasBadge = false;
-      for (let i = 0; i < anchor.children.length; i++) {
-        if (anchor.children[i].classList.contains('smartdm-host')) {
-          hasBadge = true;
-          break;
-        }
+      let thumbAnchor = container.querySelector('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, a[href*="/watch?v="], a[href*="/shorts/"]');
+      if (!thumbAnchor && container.tagName === 'A') {
+        thumbAnchor = container;
       }
-      if (hasBadge) return;
-
-      anchor.setAttribute(PROCESSED_ATTR, 'true');
-      attachBadge(anchor);
+      if (thumbAnchor && !thumbAnchor.closest('#player, #movie_player, .html5-video-player')) {
+        attachBadge(thumbAnchor);
+      }
     });
   }
 
   function attachBadge(anchor) {
+    if (anchor.getAttribute(PROCESSED_ATTR)) return;
+    anchor.setAttribute(PROCESSED_ATTR, 'true');
+
     const parent = anchor.parentElement;
     if (parent && getComputedStyle(parent).position === 'static') {
       parent.style.position = 'relative';
     }
+
+    const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
+    if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
+    const videoUrl = getCanonicalUrl(rawUrl);
 
     const host = document.createElement('div');
     host.className = 'smartdm-host';
@@ -485,7 +488,6 @@
       e.stopPropagation();
       e.preventDefault();
 
-      // Resolve URL dynamically on click to handle YouTube SPA element recycling
       const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
       if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
       const currentVideoUrl = getCanonicalUrl(rawUrl);
