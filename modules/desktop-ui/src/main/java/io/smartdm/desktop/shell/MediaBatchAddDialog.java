@@ -36,6 +36,7 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         private final SimpleStringProperty title = new SimpleStringProperty("Fetching...");
         private final SimpleStringProperty duration = new SimpleStringProperty("");
         private final SimpleStringProperty status = new SimpleStringProperty("Pending");
+        private final javafx.beans.property.SimpleBooleanProperty selected = new javafx.beans.property.SimpleBooleanProperty(true);
         private MediaMetadata metadata;
         private MediaFormat selectedFormat;
 
@@ -50,6 +51,9 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         public SimpleStringProperty durationProperty() { return duration; }
         public String getStatus() { return status.get(); }
         public SimpleStringProperty statusProperty() { return status; }
+        public boolean isSelected() { return selected.get(); }
+        public void setSelected(boolean sel) { selected.set(sel); }
+        public javafx.beans.property.SimpleBooleanProperty selectedProperty() { return selected; }
         public MediaMetadata getMetadata() { return metadata; }
         public MediaFormat getSelectedFormat() { return selectedFormat; }
 
@@ -73,6 +77,7 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
                 } else {
                     title.set("Failed to fetch");
                     status.set("Error");
+                    selected.set(false); // Deselect errored items automatically
                 }
             });
         }
@@ -87,7 +92,8 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
     private int processedCount = 0;
 
     public MediaBatchAddDialog(Stage owner, List<String> urls, ExecutorService executorService, Consumer<Download> onDownloadAdded) {
-        super(owner, "SmartDM — Media Batch Download", Modality.NONE);
+        // Use null owner to make the window completely independent of the main app
+        super(null, "SmartDM — Media Batch Download", Modality.NONE);
         this.executorService = executorService;
         this.onDownloadAdded = onDownloadAdded;
 
@@ -105,14 +111,35 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         // Table
         table = new TableView<>();
         table.setItems(items);
+        table.setEditable(true);
         table.getStyleClass().add("queue-list");
-        table.setStyle("-fx-control-inner-background: #1C1E26; -fx-text-fill: white; -fx-border-color: #2D313E; -fx-border-radius: 6; -fx-background-radius: 6; -fx-table-cell-border-color: transparent;");
+        
+        // Apply inline CSS to fix the bright white header background and borders
+        table.setStyle("-fx-control-inner-background: #1C1E26; -fx-text-fill: white; -fx-border-color: #2D313E; -fx-border-radius: 6; -fx-background-radius: 6; -fx-table-cell-border-color: transparent; -fx-base: #1C1E26;");
+        
         table.setPrefHeight(250);
         VBox.setVgrow(table, Priority.ALWAYS);
 
+        TableColumn<MediaBatchItem, Boolean> selectCol = new TableColumn<>();
+        CheckBox selectAllCb = new CheckBox();
+        selectAllCb.setSelected(true);
+        selectAllCb.setOnAction(e -> {
+            boolean sel = selectAllCb.isSelected();
+            for (MediaBatchItem item : items) {
+                if (!"Error".equals(item.getStatus())) {
+                    item.setSelected(sel);
+                }
+            }
+        });
+        selectCol.setGraphic(selectAllCb);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(javafx.scene.control.cell.CheckBoxTableCell.forTableColumn(selectCol));
+        selectCol.setPrefWidth(40);
+        selectCol.setEditable(true);
+
         TableColumn<MediaBatchItem, String> titleCol = new TableColumn<>("Title");
         titleCol.setCellValueFactory(cellData -> cellData.getValue().titleProperty());
-        titleCol.setPrefWidth(300);
+        titleCol.setPrefWidth(260);
 
         TableColumn<MediaBatchItem, String> durCol = new TableColumn<>("Duration");
         durCol.setCellValueFactory(cellData -> cellData.getValue().durationProperty());
@@ -120,8 +147,9 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
 
         TableColumn<MediaBatchItem, String> statCol = new TableColumn<>("Status");
         statCol.setCellValueFactory(cellData -> cellData.getValue().statusProperty());
-        statCol.setPrefWidth(100);
+        statCol.setPrefWidth(80);
 
+        table.getColumns().add(selectCol);
         table.getColumns().add(titleCol);
         table.getColumns().add(durCol);
         table.getColumns().add(statCol);
@@ -194,21 +222,51 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         }
 
         YtDlpExtractor extractor = new YtDlpExtractor(toolMgr);
+        java.util.concurrent.Semaphore concurrencyLimit = new java.util.concurrent.Semaphore(1);
+        java.util.concurrent.atomic.AtomicBoolean isRateLimited = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         for (MediaBatchItem item : items) {
             executorService.submit(() -> {
-                try {
-                    MediaMetadata meta = extractor.extractMetadataAsync(item.getUrl()).get(30, TimeUnit.SECONDS);
-                    item.setMetadata(meta);
-                } catch (Exception e) {
+                if (isRateLimited.get()) {
                     item.setMetadata(null);
-                } finally {
                     Platform.runLater(() -> {
                         processedCount++;
-                        headerSub.setText("Processed " + processedCount + " of " + items.size() + " items...");
                         if (processedCount == items.size()) {
-                            headerSub.setText("Ready to download " + items.size() + " items.");
+                            headerSub.setText("Aborted due to YouTube Bot Protection (IP Rate Limit).");
                             downloadBtn.setDisable(false);
+                        }
+                    });
+                    return;
+                }
+
+                try {
+                    concurrencyLimit.acquire();
+                    MediaMetadata meta = extractor.extractMetadataAsync(item.getUrl()).get(90, TimeUnit.SECONDS);
+                    item.setMetadata(meta);
+                    Thread.sleep(1500); // 1.5s delay to prevent YouTube HTTP 429 rate limit
+                } catch (Exception e) {
+                    item.setMetadata(null);
+                    if (e.getMessage() != null && e.getMessage().contains("HTTP Error 429")) {
+                        isRateLimited.set(true);
+                    } else if (e.getCause() != null && e.getCause().getMessage() != null && e.getCause().getMessage().contains("HTTP Error 429")) {
+                        isRateLimited.set(true);
+                    }
+                } finally {
+                    concurrencyLimit.release();
+                    Platform.runLater(() -> {
+                        if (!isRateLimited.get()) {
+                            processedCount++;
+                            headerSub.setText("Processed " + processedCount + " of " + items.size() + " items...");
+                            if (processedCount == items.size()) {
+                                headerSub.setText("Ready to download " + items.size() + " items.");
+                                downloadBtn.setDisable(false);
+                            }
+                        } else {
+                            processedCount++;
+                            if (processedCount == items.size()) {
+                                headerSub.setText("Aborted due to YouTube Bot Protection (IP Rate Limit).");
+                                downloadBtn.setDisable(false);
+                            }
                         }
                     });
                 }
@@ -219,7 +277,7 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
     private void startBatchDownload() {
         String dir = destinationField.getText().trim();
         for (MediaBatchItem item : items) {
-            if (item.getMetadata() != null && item.getMetadata().title() != null) {
+            if (item.isSelected() && item.getMetadata() != null && item.getMetadata().title() != null) {
                 MediaFormat fmt = item.getSelectedFormat();
                 String ext = (fmt != null && fmt.ext() != null) ? fmt.ext() : "m4a";
                 String filename = sanitizeFilename(item.getMetadata().title()) + "." + ext;

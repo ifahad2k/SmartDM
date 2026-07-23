@@ -79,13 +79,16 @@ public class YtDlpExtractor implements MediaExtractor {
                     jsonOutput = jsonOutput.substring(start, end + 1);
                     JsonNode root = mapper.readTree(jsonOutput);
                     return parseMetadata(root, url);
+                } else if (errOutput != null && errOutput.contains("HTTP Error 429")) {
+                    throw new RuntimeException("HTTP Error 429: Too Many Requests");
                 }
             } catch (Exception ex) {
+                if (ex instanceof RuntimeException) throw (RuntimeException) ex;
                 System.err.println("YtDlpExtractor error for URL [" + url + "]: " + ex.getMessage());
             }
 
-            // Return empty metadata on extraction failure
-            return new MediaMetadata("video", "Media Stream", 0, url, null, List.of(), List.of());
+            // Return null on extraction failure to correctly display as "Failed to fetch" in UI
+            return null;
         });
     }
 
