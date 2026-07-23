@@ -359,20 +359,27 @@
 
       const rawUrl = anchor.getAttribute('href') || anchor.href;
       if (!rawUrl || (!rawUrl.includes('/watch?v=') && !rawUrl.includes('/shorts/'))) return;
-
-      const wrapper = anchor.closest('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail') || anchor;
       
+      const wrapper = anchor.closest('ytd-thumbnail, div.yt-lockup-view-model__image, a#thumbnail') || anchor;
       if (wrapper.querySelector('.smartdm-host')) {
         anchor.setAttribute(PROCESSED_ATTR, 'true');
         return;
       }
 
       anchor.setAttribute(PROCESSED_ATTR, 'true');
-      attachBadge(wrapper, rawUrl);
+      attachBadge(anchor, rawUrl);
     });
   }
 
-  function attachBadge(wrapper, rawUrl) {
+  function attachBadge(anchor, rawUrl) {
+    if (getComputedStyle(anchor).position === 'static' || !getComputedStyle(anchor).position) {
+      anchor.style.position = 'relative';
+    }
+    const parent = anchor.parentElement;
+    if (parent && (getComputedStyle(parent).position === 'static' || !getComputedStyle(parent).position)) {
+      parent.style.position = 'relative';
+    }
+
     const videoUrl = getCanonicalUrl(rawUrl);
 
     const host = document.createElement('div');
@@ -553,19 +560,7 @@
       }
     });
 
-    let attachTarget = wrapper.querySelector('#overlays, .yt-lockup-view-model__overlays');
-    if (!attachTarget) {
-      attachTarget = wrapper;
-      if (getComputedStyle(wrapper).position === 'static' || !getComputedStyle(wrapper).position) {
-        wrapper.style.position = 'relative';
-      }
-    } else {
-      if (getComputedStyle(attachTarget).position === 'static' || !getComputedStyle(attachTarget).position) {
-        attachTarget.style.position = 'relative';
-      }
-    }
-
-    attachTarget.appendChild(host);
+    anchor.appendChild(host);
   }
 
   if (document.readyState === 'loading') {
