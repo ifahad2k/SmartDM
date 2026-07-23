@@ -156,7 +156,7 @@
     prefetchYtDlpFormats(window.location.href);
 
     const container = findTopPlayerContainer(mediaEl);
-    if (container.querySelector('.smartdm-universal-host')) return;
+    if (container !== document.body && container.querySelector('.smartdm-universal-host')) return;
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
