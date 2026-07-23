@@ -187,7 +187,21 @@ public class SmartDmApp extends Application {
             }
         };
 
-        io.smartdm.desktop.shell.MediaDownloadTracker.init(repository, publisher);
+        io.smartdm.platform.api.process.NativeProcessController processController;
+        if (System.getProperty("os.name").toLowerCase().contains("win")) {
+            processController = new io.smartdm.platform.windows.process.WindowsNativeProcessController();
+        } else {
+            processController = new io.smartdm.platform.linux.process.LinuxNativeProcessController();
+        }
+        
+        io.smartdm.media.api.MediaDownloadRunner runner = new io.smartdm.media.ytdlp.YtDlpMediaDownloadRunner(
+            processController,
+            repository,
+            publisher,
+            new io.smartdm.media.ytdlp.LocalMediaToolManager()
+        );
+        
+        io.smartdm.desktop.shell.MediaDownloadTracker.init(runner);
 
         io.smartdm.download.engine.limit.TokenBucketRateLimiter globalLimiter = 
             new io.smartdm.download.engine.limit.TokenBucketRateLimiter(null, null);

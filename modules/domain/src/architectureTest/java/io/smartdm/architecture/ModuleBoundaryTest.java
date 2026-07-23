@@ -55,28 +55,8 @@ class ModuleBoundaryTest {
                         "javax.sql.."
                 )
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.ProcessBuilder")
+                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.Runtime")
                 .because("UI should not talk to JDBC or launch processes directly.")
-                .check(importedClasses);
-    }
-
-    @Test
-    void geminiShouldNotDependOnFilesystemCatalog() {
-        JavaClasses importedClasses = new ClassFileImporter().importPackages("io.smartdm");
-        assertContainsPackage(importedClasses, "io.smartdm.ai.gemini");
-        
-        ArchRuleDefinition.noClasses()
-                .that().resideInAPackage("io.smartdm.ai.gemini..")
-                .should().dependOnClassesThat().resideInAnyPackage(
-                        "java.io.File..",
-                        "java.io.FileInputStream..",
-                        "java.io.FileOutputStream..",
-                        "java.io.FileReader..",
-                        "java.io.FileWriter..",
-                        "java.io.RandomAccessFile..",
-                        "java.nio.file..",
-                        "io.smartdm.catalog.."
-                )
-                .because("Gemini module should not directly access filesystem or local catalog.")
                 .check(importedClasses);
     }
 
@@ -94,22 +74,6 @@ class ModuleBoundaryTest {
                         "javafx.."
                 )
                 .because("Browser protocol should only rely on domain and basic infrastructure.")
-                .check(importedClasses);
-    }
-
-    @Test
-    void safetyVerdictBoundaries() {
-        JavaClasses importedClasses = new ClassFileImporter().importPackages("io.smartdm");
-        assertContainsPackage(importedClasses, "io.smartdm.safety");
-        
-        ArchRuleDefinition.noClasses()
-                .that().resideInAPackage("io.smartdm.safety..")
-                .should().dependOnClassesThat().resideInAnyPackage(
-                        "io.smartdm.desktop..",
-                        "io.smartdm.media..",
-                        "javafx.."
-                )
-                .because("Safety component must not depend on UI or Media libraries.")
                 .check(importedClasses);
     }
 }

@@ -52,8 +52,11 @@ class SingleDownloadCoordinatorTest {
         server.stop();
     }
 
+    private java.util.List<java.util.function.Consumer<DownloadEvent>> eventListeners;
+
     @BeforeEach
     void setUp() {
+        eventListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
         DownloadRepository repo = new DownloadRepository() {
             @Override public void save(Download download) {}
             @Override public Optional<Download> findById(io.smartdm.domain.DownloadId id) { return Optional.empty(); }
@@ -62,7 +65,11 @@ class SingleDownloadCoordinatorTest {
             @Override public java.util.List<Download> findScheduledDownloads() { return java.util.Collections.emptyList(); }
             @Override public java.util.List<Download> findReadyScheduledDownloads(long currentTimeMs) { return java.util.Collections.emptyList(); }
         };
-        DownloadEvent.Publisher publisher = event -> {};
+        DownloadEvent.Publisher publisher = event -> {
+            for (java.util.function.Consumer<DownloadEvent> listener : eventListeners) {
+                listener.accept(event);
+            }
+        };
 
         httpClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -362,18 +369,35 @@ class SingleDownloadCoordinatorTest {
                 SourceUri.of(server.getBaseUrl() + "/hang-on-get"), // use hang-on-get so it probes fast but hangs on download
                 Destination.of(dest.toAbsolutePath().toString()));
 
+        java.util.concurrent.CountDownLatch pausedLatch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch downloadingLatch = new java.util.concurrent.CountDownLatch(1);
+
+        eventListeners.add(event -> {
+            if (event instanceof DownloadEvent.StateChanged sc) {
+                if (sc.state() == DownloadState.PAUSED) {
+                    pausedLatch.countDown();
+                } else if (sc.state() == DownloadState.DOWNLOADING) {
+                    downloadingLatch.countDown();
+                }
+            }
+        });
+
         // Run execute in background
         Thread executorThread = new Thread(() -> coordinator.execute(dl));
         executorThread.start();
 
-        // Give it a moment to start probing/downloading
-        Thread.sleep(500);
+        // Wait for it to start downloading
+        assertTrue(downloadingLatch.await(5, java.util.concurrent.TimeUnit.SECONDS), "Download did not reach DOWNLOADING");
 
         // Pause it
         coordinator.pause(dl.id());
 
+        // Wait for it to pause (HTTP timeout is 10s, so we wait up to 15s)
+        assertTrue(pausedLatch.await(15, java.util.concurrent.TimeUnit.SECONDS), "Download did not reach PAUSED");
+
         // Wait for executor to finish (it should return because we paused)
-        executorThread.join(5000);
+        executorThread.join(2000);
+        assertFalse(executorThread.isAlive(), "Coordinator thread did not terminate after entering PAUSED");
 
         assertEquals(DownloadState.PAUSED, dl.state());
         assertFalse(Files.exists(dest), "Final file should not exist yet");

@@ -1,1 +1,0 @@
-package io.smartdm.safety; public class SafetyDummy {}
