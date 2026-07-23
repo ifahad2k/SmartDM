@@ -71,7 +71,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         inputCol.setFillWidth(true);
         
         ColumnConstraints metaCol = new ColumnConstraints();
-        metaCol.setPrefWidth(90);
+        metaCol.setPrefWidth(120);
         metaCol.setHalignment(HPos.CENTER);
         
         grid.getColumnConstraints().addAll(labelCol, inputCol, metaCol);
@@ -251,6 +251,8 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                     long size = result.size().value();
                     if (size > 0) {
                         fileSizeLabel.setText(formatSize(size));
+                        this.probedBytes = size;
+                        updateSmartFolderSuggestions();
                     } else {
                         fileSizeLabel.setText("Unknown size");
                     }
@@ -381,10 +383,14 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         if (url == null || url.isBlank()) return;
 
         javafx.application.Platform.runLater(() -> {
-            java.util.List<io.smartdm.domain.organization.FolderSuggestion> suggestions = 
-                smartFolderService.suggestFolders(url, fileName, null, probedBytes > 0 ? probedBytes : 0L);
-            suggestionPanel.setSuggestions(suggestions);
-            sizeToScene();
+            try {
+                java.util.List<io.smartdm.domain.organization.FolderSuggestion> suggestions = 
+                    smartFolderService.suggestFolders(url, fileName, null, probedBytes > 0 ? probedBytes : 0L);
+                suggestionPanel.setSuggestions(suggestions);
+                sizeToScene();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         });
     }
 }
