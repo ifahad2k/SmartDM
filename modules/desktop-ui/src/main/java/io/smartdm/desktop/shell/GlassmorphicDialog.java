@@ -48,6 +48,7 @@ public abstract class GlassmorphicDialog extends Stage {
         
         Label titleLabel = new Label(title);
         titleLabel.getStyleClass().add("app-title");
+        titleLabel.setMaxWidth(500);
         
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);

@@ -71,9 +71,14 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         GridPane grid = new GridPane();
         grid.getStyleClass().add("idm-grid");
+        grid.setPrefWidth(650);
+        grid.setMinWidth(650);
+        grid.setMaxWidth(650);
 
         ColumnConstraints labelCol = new ColumnConstraints();
         labelCol.setHalignment(HPos.RIGHT);
+        labelCol.setMinWidth(110);
+        labelCol.setPrefWidth(110);
 
         ColumnConstraints inputCol = new ColumnConstraints();
         inputCol.setHgrow(Priority.ALWAYS);

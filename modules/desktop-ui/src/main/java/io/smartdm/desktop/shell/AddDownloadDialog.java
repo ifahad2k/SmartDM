@@ -64,6 +64,8 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         
         ColumnConstraints labelCol = new ColumnConstraints();
         labelCol.setHalignment(HPos.RIGHT);
+        labelCol.setMinWidth(110);
+        labelCol.setPrefWidth(110);
         
         ColumnConstraints inputCol = new ColumnConstraints();
         inputCol.setHgrow(Priority.ALWAYS);
