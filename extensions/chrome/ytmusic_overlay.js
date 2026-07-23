@@ -637,6 +637,7 @@
       </button>
     `;
 
+    const btn = shadow.querySelector('.idm-banner');
     btn.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
