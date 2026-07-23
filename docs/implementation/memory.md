@@ -51,3 +51,13 @@ This file is used by the AI agent to continuously document all actions taken, fi
   - async media control
   - removal of static tracker
   - architecture and CI verification
+
+### Remaining Batch 2 Remediation Inventory
+
+| Concern | Current files | Planned replacement |
+|---|---|---|
+| Media identity | SmartDmApp.java, YtDlpMediaDownloadRunner.java, MediaDownloadIntegrationTest.java, MediaDownloadRunner.java | MediaJobStore |
+| Start operation | EnterUrlDialog.java, MainShell.java, MediaBatchAddDialog.java, MediaDownloadDialog.java, TopBar.java, SmartDmApp.java | CompletionStage chain |
+| Delete operation | SmartDmApp.java, MediaDownloadDialog.java, SqlCipherDownloadRepository.java | Await runner then remove record |
+| Shutdown | SmartDmApp.java | App-owned resources |
+| Output discovery | YtDlpMediaDownloadRunner.java | yt-dlp final-output manifest |
