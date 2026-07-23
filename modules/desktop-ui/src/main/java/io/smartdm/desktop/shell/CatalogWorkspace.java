@@ -87,6 +87,7 @@ public class CatalogWorkspace extends VBox {
         refreshRoots();
     }
 
+    @SuppressWarnings({"deprecation", "unchecked"})
     private void setupRootTable() {
         rootTable.setItems(rootList);
         rootTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
@@ -121,6 +122,7 @@ public class CatalogWorkspace extends VBox {
         rootTable.getColumns().addAll(nameCol, pathCol, statusCol, actionCol);
     }
 
+    @SuppressWarnings({"deprecation", "unchecked"})
     private void setupFileTable() {
         fileTable.setItems(fileList);
         fileTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);

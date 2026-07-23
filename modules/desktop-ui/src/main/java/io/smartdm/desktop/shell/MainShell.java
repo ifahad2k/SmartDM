@@ -22,6 +22,7 @@ public final class MainShell extends VBox {
     private final NavigationRail navigationRail;
     private final TopBar topBar;
     private QueueWorkspace queueWorkspace;
+    private SchedulerWorkspace schedulerWorkspace;
     private CatalogWorkspace catalogWorkspace;
 
     public MainShell(Stage stage, Consumer<Download> onDownloadRequested, DownloadsWorkspace workspace, io.smartdm.domain.DownloadQueue mainQueue, javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems, Consumer<io.smartdm.domain.DownloadQueue.Status> onQueueStatusChange, java.util.function.Supplier<java.util.List<Download>> scheduledDownloadsSupplier, Consumer<Download> onDownloadUpdate) {
