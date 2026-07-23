@@ -306,15 +306,18 @@
   }
 
   function scanThumbnails() {
-    const thumbnailElements = document.querySelectorAll('ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item');
-    thumbnailElements.forEach((container) => {
-      if (container.getAttribute(PROCESSED_ATTR)) return;
+    const thumbnailElements = document.querySelectorAll('ytmusic-responsive-list-item-renderer ytmusic-thumbnail-renderer, ytmusic-two-row-item-renderer ytmusic-thumbnail-renderer, ytmusic-player-queue-item ytmusic-thumbnail-renderer');
+    thumbnailElements.forEach((thumbnail) => {
+      if (thumbnail.getAttribute(PROCESSED_ATTR)) return;
       
+      const container = thumbnail.closest('ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item');
+      if (!container) return;
+
       let thumbAnchor = container.querySelector('a[href*="watch?v="]');
       
       if (thumbAnchor && !thumbAnchor.closest('ytmusic-player-bar')) {
-        container.setAttribute(PROCESSED_ATTR, 'true');
-        attachBadge(container, thumbAnchor.href);
+        thumbnail.setAttribute(PROCESSED_ATTR, 'true');
+        attachBadge(thumbnail, thumbAnchor.href);
       }
     });
   }
@@ -330,14 +333,9 @@
     host.className = 'smartdm-music-host';
     host.style.position = 'absolute';
     
-    if (container.tagName === 'YTMUSIC-RESPONSIVE-LIST-ITEM-RENDERER' || container.tagName === 'YTMUSIC-PLAYER-QUEUE-ITEM') {
-      host.style.top = '50%';
-      host.style.right = '48px'; // Left of the 3 dots
-      host.style.transform = 'translateY(-50%)';
-    } else { // YTMUSIC-TWO-ROW-ITEM-RENDERER (Grid)
-      host.style.top = '6px';
-      host.style.right = '6px';
-    }
+    // Position on the top-left of the thumbnail itself
+    host.style.top = '4px';
+    host.style.left = '4px';
     
     host.style.zIndex = '99999';
     host.style.pointerEvents = 'auto';
@@ -527,17 +525,18 @@
   function scanPlaylist() {
     if (!window.location.pathname.startsWith('/playlist')) return;
 
-    // YT Music Playlist action bar might be inside a ytmusic-detail-header-renderer or ytmusic-responsive-header-renderer
-    const actionContainer = document.querySelector('ytmusic-detail-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + ']), ytmusic-responsive-header-renderer #top-level-buttons:not([' + PROCESSED_ATTR + ']), ytmusic-detail-header-renderer ytmusic-menu-renderer:not([' + PROCESSED_ATTR + '])');
-    if (!actionContainer) return;
+    // Target the sort button container or the shelf header
+    const sortButton = document.querySelector('ytmusic-sort-filter-button-renderer:not([' + PROCESSED_ATTR + ']), ytmusic-shelf-renderer #header:not([' + PROCESSED_ATTR + '])');
+    if (!sortButton) return;
     
-    actionContainer.setAttribute(PROCESSED_ATTR, 'true');
+    sortButton.setAttribute(PROCESSED_ATTR, 'true');
 
     const host = document.createElement('div');
     host.className = 'smartdm-playlist-host';
     host.style.display = 'inline-block';
-    host.style.marginRight = '8px';
+    host.style.marginLeft = '12px'; // Put it to the right of the sort button
     host.style.pointerEvents = 'auto';
+    host.style.verticalAlign = 'middle';
 
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
@@ -603,10 +602,10 @@
         });
     });
 
-    if (actionContainer.firstChild) {
-        actionContainer.insertBefore(host, actionContainer.firstChild);
+    if (sortButton.tagName === 'YTMUSIC-SORT-FILTER-BUTTON-RENDERER') {
+        sortButton.insertAdjacentElement('afterend', host);
     } else {
-        actionContainer.appendChild(host);
+        sortButton.appendChild(host);
     }
   }
 
