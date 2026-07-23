@@ -132,7 +132,7 @@ public final class MediaDownloadTracker {
         try {
             long pid = p.pid();
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                new ProcessBuilder("taskkill", "/F", "/T", "/PID", String.valueOf(pid)).start().waitFor();
+                Runtime.getRuntime().exec(new String[]{"taskkill", "/F", "/T", "/PID", String.valueOf(pid)}).waitFor();
             } else {
                 p.descendants().forEach(ProcessHandle::destroyForcibly);
                 p.destroyForcibly();
@@ -167,7 +167,7 @@ public final class MediaDownloadTracker {
 
                 Path tempOutputFile = appTempDir.resolve(info.targetPath().getFileName());
 
-                ProcessBuilder pb = new ProcessBuilder(
+                String[] cmd = {
                     ytDlp.toString(),
                     "--newline",
                     "--continue",
@@ -177,10 +177,9 @@ public final class MediaDownloadTracker {
                     "-f", formatArg,
                     "-o", tempOutputFile.toString(),
                     info.webpageUrl()
-                );
-                pb.redirectErrorStream(true);
-
-                Process p = pb.start();
+                };
+                
+                Process p = Runtime.getRuntime().exec(cmd);
                 activeProcesses.put(info.download().id(), p);
 
                 Pattern progressPattern = Pattern.compile("\\[download\\]\\s+([\\d\\.]+)%");

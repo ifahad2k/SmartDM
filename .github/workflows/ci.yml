@@ -61,7 +61,7 @@ jobs:
       - name: Run UI tests on Ubuntu
         if: runner.os == 'Linux'
         shell: bash
-        run: xvfb-run -a ./gradlew --no-daemon uiTest
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" ./gradlew --no-daemon uiTest
 
       - name: Run UI tests on Windows
         if: runner.os == 'Windows'

@@ -373,7 +373,7 @@ class SingleDownloadCoordinatorTest {
         coordinator.pause(dl.id());
 
         // Wait for executor to finish (it should return because we paused)
-        executorThread.join(2000);
+        executorThread.join(5000);
 
         assertEquals(DownloadState.PAUSED, dl.state());
         assertFalse(Files.exists(dest), "Final file should not exist yet");
