@@ -519,10 +519,10 @@ public class SmartDmApp extends Application {
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator);
+                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -696,7 +696,8 @@ public class SmartDmApp extends Application {
         java.util.List<io.smartdm.domain.QueueItem> mainQueueItems,
         AtomicReference<QueueCoordinator> queueCoordinatorRef,
         ExecutorService enginePool,
-        SingleDownloadCoordinator coordinator
+        SingleDownloadCoordinator coordinator,
+        io.smartdm.organization.SmartFolderService smartFolderService
     ) {
         boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId) || (videoUrl != null && !videoUrl.isBlank());
 
@@ -742,7 +743,8 @@ public class SmartDmApp extends Application {
                         dl -> {
                             repository.save(dl);
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
-                        }
+                        },
+                        smartFolderService
                     );
                     bringStageToFrontAndFocus(dlg);
                 });
@@ -750,7 +752,7 @@ public class SmartDmApp extends Application {
         } else {
             // Open standard file download dialog
             javafx.application.Platform.runLater(() -> {
-                io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll());
+                io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll(), smartFolderService);
                 d.setOnDownloadAdded(dl -> {
                     repository.save(dl);
                     if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {

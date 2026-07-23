@@ -42,15 +42,26 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private final TextField nameField;
     private final TextField destinationField;
     private Consumer<Download> onDownloadAdded;
+    private final io.smartdm.organization.SmartFolderService smartFolderService;
+    private FolderSuggestionPanel suggestionPanel;
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded) {
-        this(owner, metadata, null, onDownloadAdded);
+        this(owner, metadata, null, onDownloadAdded, null);
+    }
+
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
+        this(owner, metadata, null, onDownloadAdded, smartFolderService);
     }
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded) {
+        this(owner, metadata, preferredFormatId, onDownloadAdded, null);
+    }
+
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
         super(owner, "Media Download - " + metadata.title(), Modality.NONE);
         this.metadata = metadata;
         this.onDownloadAdded = onDownloadAdded;
+        this.smartFolderService = smartFolderService;
 
         setAlwaysOnTop(true);
         toFront();
@@ -219,7 +230,18 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         grid.add(saveHeader, 0, 4);
         grid.add(saveBox, 1, 4);
 
+        // Smart Folder Suggestion Chips
+        suggestionPanel = new FolderSuggestionPanel(path -> {
+            if (path != null) {
+                destinationField.setText(path.toAbsolutePath().toString());
+            }
+        });
+        grid.add(suggestionPanel, 1, 5);
+        GridPane.setColumnSpan(suggestionPanel, 2);
+
         dialogBody.getChildren().add(grid);
+        updateSmartFolderSuggestions();
+        sizeToScene();
 
         // Footer
         HBox footer = new HBox();
@@ -302,5 +324,19 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private static String sanitizeFilename(String name) {
         if (name == null || name.isBlank()) return "video";
         return name.replaceAll("[\\\\/:*?\"<>|\0]", "_").trim();
+    }
+
+    private void updateSmartFolderSuggestions() {
+        if (smartFolderService == null || suggestionPanel == null) return;
+        String url = metadata != null ? metadata.webpageUrl() : "";
+        String fileName = nameField.getText();
+        long fileSize = (formatCombo.getValue() != null) ? formatCombo.getValue().fileSize() : 0L;
+
+        Platform.runLater(() -> {
+            java.util.List<io.smartdm.domain.organization.FolderSuggestion> suggestions = 
+                smartFolderService.suggestFolders(url, fileName, "video/mp4", fileSize);
+            suggestionPanel.setSuggestions(suggestions);
+            sizeToScene();
+        });
     }
 }
