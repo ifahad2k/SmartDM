@@ -435,12 +435,31 @@
       let pageUrl = window.location.href;
       if (pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com')) {
         let el = mediaEl;
+        let found = false;
         while (el && el !== document.body) {
-          if (el.tagName === 'A' && el.href && (el.href.includes('/reel/') || el.href.includes('/watch') || el.href.includes('/status/') || el.href.includes('/p/'))) {
+          if (el.tagName === 'A' && el.href && (el.href.includes('/reel/') || el.href.includes('/watch') || el.href.includes('/videos/') || el.href.includes('/status/') || el.href.includes('/p/'))) {
             pageUrl = el.href;
+            found = true;
             break;
           }
           el = el.parentElement;
+        }
+        
+        if (!found) {
+          let container = mediaEl.closest('article, [role="article"], [data-pagelet*="FeedUnit"], .x1yztbdb');
+          if (!container) container = findTopPlayerContainer(mediaEl);
+          
+          if (container) {
+            const links = container.querySelectorAll('a[href]');
+            for (let i = 0; i < links.length; i++) {
+              let href = links[i].href;
+              if (href.includes('/reel/') || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
+                pageUrl = href;
+                found = true;
+                break;
+              }
+            }
+          }
         }
       }
 
