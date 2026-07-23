@@ -32,9 +32,6 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     private final TextField urlField;
     private final TextField nameField;
     private final TextField destinationField;
-    private final ComboBox<String> categoryCombo;
-    private final TextField descriptionField;
-    private final CheckBox rememberPathCheck;
     private final Label fileSizeLabel;
     
     private final Button downloadBtn;
@@ -82,37 +79,27 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         
         urlField = new TextField("");
         urlField.getStyleClass().add("text-input");
-        GridPane.setColumnSpan(urlField, 2);
         grid.add(urlLabel, 0, 0);
         grid.add(urlField, 1, 0);
         
-        // --- Row 1: Category ---
-        Label catLabel = new Label("Category");
-        catLabel.getStyleClass().add("idm-label");
+        // --- Row 1: File Size ---
+        Label sizeHeader = new Label("File Size");
+        sizeHeader.getStyleClass().add("idm-label");
         
-        categoryCombo = new ComboBox<>();
-        categoryCombo.getItems().addAll("General", "Compressed", "Programs", "Documents", "Video", "Music");
-        categoryCombo.getSelectionModel().select(0);
-        categoryCombo.getStyleClass().add("text-input");
-        categoryCombo.setPrefWidth(200);
-        
-        Button addCatBtn = new Button("+");
-        addCatBtn.getStyleClass().add("btn-icon-sq");
-        HBox catBox = new HBox(8, categoryCombo, addCatBtn);
-        catBox.setAlignment(Pos.CENTER_LEFT);
-        
-        grid.add(catLabel, 0, 1);
-        grid.add(catBox, 1, 1);
-        
-        // File Icon (Row 1-2 right col)
+        fileSizeLabel = new Label("Probing...");
+        fileSizeLabel.getStyleClass().add("idm-label");
+        grid.add(sizeHeader, 0, 1);
+        grid.add(fileSizeLabel, 1, 1);
+
+        // File Icon (Row 0-2 right col)
         javafx.scene.image.ImageView fileIcon = new javafx.scene.image.ImageView();
         fileIcon.setFitWidth(32);
         fileIcon.setFitHeight(32);
         fileIcon.setPreserveRatio(true);
-        GridPane.setRowSpan(fileIcon, 2);
+        GridPane.setRowSpan(fileIcon, 3);
         GridPane.setValignment(fileIcon, VPos.CENTER);
         GridPane.setHalignment(fileIcon, HPos.CENTER);
-        grid.add(fileIcon, 2, 1);
+        grid.add(fileIcon, 2, 0);
         
         // --- Row 2: File Name ---
         Label nameLabel = new Label("File Name");
@@ -164,28 +151,6 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         });
         grid.add(suggestionPanel, 1, 4);
         GridPane.setColumnSpan(suggestionPanel, 2);
-
-        // --- Row 5: Remember path ---
-        rememberPathCheck = new CheckBox("Remember this path for \"General\" category");
-        rememberPathCheck.getStyleClass().add("idm-label");
-        rememberPathCheck.setSelected(true);
-        
-        fileSizeLabel = new Label("Probing...");
-        fileSizeLabel.getStyleClass().add("idm-label");
-        fileSizeLabel.setStyle("-fx-font-weight: bold;");
-        
-        grid.add(rememberPathCheck, 1, 5);
-        grid.add(fileSizeLabel, 2, 5);
-        
-        // --- Row 6: Description ---
-        Label descLabel = new Label("Description");
-        descLabel.getStyleClass().add("idm-label");
-        
-        descriptionField = new TextField("");
-        descriptionField.getStyleClass().add("text-input");
-        GridPane.setColumnSpan(descriptionField, 2);
-        grid.add(descLabel, 0, 6);
-        grid.add(descriptionField, 1, 6);
         
         dialogBody.getChildren().add(grid);
         
@@ -212,8 +177,15 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             }
         });
         
-        categoryCombo.valueProperty().addListener((obs, oldV, newV) -> {
-            rememberPathCheck.setText("Remember this path for \"" + newV + "\" category");
+        nameField.textProperty().addListener((obs, oldV, newV) -> {
+            if (newV != null && !newV.isBlank()) {
+                io.smartdm.desktop.util.SystemIconExtractor.getFileIconAsync(newV)
+                    .thenAccept(img -> Platform.runLater(() -> {
+                        if (img != null) {
+                            fileIcon.setImage(img);
+                        }
+                    }));
+            }
         });
         
         // Footer
