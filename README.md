@@ -2,20 +2,20 @@
 
 > A free, local-first download manager for Windows and Linux built with Java 21 LTS and JavaFX.
 
-SmartDM is a powerful, privacy-first download manager that provides reliable high-speed segmented downloads, browser capture integration, media extraction, and local natural-language search. It operates completely locally with no proprietary backend, telemetry, or premium feature gates.
+SmartDM is a powerful, privacy-first download manager that provides reliable high-speed segmented downloads. It operates completely locally with no proprietary backend, telemetry, or premium feature gates.
 
 ## Key Features (Available Now)
 
-- **Reliable Transfers:** High-speed segmented downloading with pause, resume, retry, queues, and scheduling.
-- **Browser Integration:** Native capture integration for Google Chrome and Mozilla Firefox.
-- **Media Extraction:** Built-in YouTube and media selection powered by locally executed `yt-dlp` and `FFmpeg`.
-- **Privacy & Security:** Local encryption for all managed secrets, history, catalogs, and settings. No accounts, cloud sync, or license servers.
-- **Local File Intelligence:** Intelligent local file indexing and duplicate discovery.
+- **Reliable Transfers:** High-speed segmented downloading with dynamic pause, resume, and multi-threaded segmentation.
+- **Crash Recovery:** Built-in SQLite persistence ensures download progress survives unexpected process termination.
+- **Privacy & Security:** Local encryption for all managed secrets, history, and settings using AES/GCM and SQLCipher. No accounts, cloud sync, or license servers.
 
 ## In Development (Planned)
 
-- **Smart Destination Suggestions:** Intelligent local destination-folder suggestions.
-- **Natural Language Search:** Find downloaded files using natural language search directly on your device.
+- **Browser Integration:** Native capture integration for Google Chrome and Mozilla Firefox.
+- **Media Extraction:** Built-in video media selection powered by locally executed `yt-dlp` and `FFmpeg`.
+- **Advanced Queues:** Multiple named queues and hierarchical bandwidth limiters.
+- **Local File Intelligence:** Intelligent local file indexing and duplicate discovery.
 - **Optional AI Fallback:** Optional Gemini assistance using your own free API key behind an explicit consent gate.
 
 ## Technology Stack
