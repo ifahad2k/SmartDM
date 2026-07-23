@@ -51,7 +51,7 @@ public class FolderSuggestionPanel extends VBox {
 
             chip.setOnAction(e -> {
                 if (onFolderSelected != null) {
-                    onFolderSelected.accept(sug.folderPath());
+                    onFolderSelected.accept(java.nio.file.Path.of(sug.folderPath()));
                 }
             });
 

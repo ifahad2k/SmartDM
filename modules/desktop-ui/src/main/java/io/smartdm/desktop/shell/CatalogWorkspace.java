@@ -41,6 +41,7 @@ public class CatalogWorkspace extends VBox {
         // Header
         VBox headerBox = new VBox(4);
         Label title = new Label("Local File Catalog & Duplicate Center");
+        title.setId("catalogTitle");
         title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #F3F4F6;");
         Label subtitle = new Label("Index approved local folders and detect duplicates using 3-tier fingerprinting.");
         subtitle.setStyle("-fx-font-size: 13px; -fx-text-fill: #9CA3AF;");
@@ -51,16 +52,25 @@ public class CatalogWorkspace extends VBox {
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         Button addFolderBtn = new Button("+ Add Folder to Index");
+        addFolderBtn.setId("addFolderBtn");
+        addFolderBtn.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+        addFolderBtn.setAccessibleText("Add a new local folder to the catalog index");
         addFolderBtn.setStyle("-fx-background-color: linear-gradient(to bottom right, #37E9FF, #9B6BFF); -fx-text-fill: #04141A; -fx-font-weight: bold; -fx-background-radius: 8px; -fx-padding: 8px 16px; -fx-cursor: hand;");
         addFolderBtn.setOnAction(e -> handleAddFolder());
 
-        Button checkDupBtn = new Button("🔍 Check File for Duplicates...");
+        Button checkDupBtn = new Button("Check File for Duplicates...");
+        checkDupBtn.setId("checkDupBtn");
+        checkDupBtn.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+        checkDupBtn.setAccessibleText("Check file for duplicates");
         checkDupBtn.setStyle("-fx-background-color: rgba(255, 255, 255, 0.08); -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8px; -fx-background-radius: 8px; -fx-text-fill: #F3F4F6; -fx-font-weight: bold; -fx-padding: 8px 16px; -fx-cursor: hand;");
         checkDupBtn.setOnAction(e -> handleCheckDuplicate());
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
+        searchField.setId("searchField");
+        searchField.setAccessibleRole(javafx.scene.AccessibleRole.TEXT_FIELD);
+        searchField.setAccessibleText("Search indexed files and fingerprints");
         searchField.setPromptText("Search indexed files (FTS5)...");
         searchField.setPrefWidth(280);
         searchField.setStyle("-fx-background-color: rgba(255, 255, 255, 0.06); -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8px; -fx-background-radius: 8px; -fx-text-fill: #F3F4F6; -fx-prompt-text-fill: #6B7280; -fx-padding: 8px 12px;");

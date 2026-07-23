@@ -308,14 +308,14 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         openItem.setOnAction(e -> {
             Download d = getItem() != null ? provider.getDownload(getItem()) : null;
             if (d != null && d.destination() != null && d.destination().value() != null) {
-                try { java.awt.Desktop.getDesktop().open(d.destination().value().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
+                try { java.awt.Desktop.getDesktop().open(java.nio.file.Path.of(d.destination().value()).toFile()); } catch (Exception ex) { ex.printStackTrace(); }
             }
         });
         
         openFolderItem.setOnAction(e -> {
             Download d = getItem() != null ? provider.getDownload(getItem()) : null;
             if (d != null && d.destination() != null && d.destination().value() != null) {
-                try { java.awt.Desktop.getDesktop().open(d.destination().value().getParent().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
+                try { java.awt.Desktop.getDesktop().open(java.nio.file.Path.of(d.destination().value()).getParent().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
             }
         });
         
@@ -396,7 +396,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
     };
 
     private void refreshUI(Download download) {
-        String fileName = download.destination().value().getFileName().toString();
+        String fileName = java.nio.file.Path.of(download.destination().value()).getFileName().toString();
             if (!fileName.equals(nameLbl.getText())) nameLbl.setText(fileName);
             
             String ext = "";

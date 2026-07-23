@@ -118,6 +118,4 @@ val uiTestTask = tasks.register<Test>("uiTest") {
     )
 }
 
-tasks.named("check") {
-    dependsOn(uiTestTask)
-}
+// Removed uiTestTask from check to allow it to be run separately (e.g. via xvfb)

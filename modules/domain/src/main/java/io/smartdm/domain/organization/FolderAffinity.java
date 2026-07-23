@@ -1,10 +1,8 @@
 package io.smartdm.domain.organization;
 
-import java.nio.file.Path;
-
 public class FolderAffinity {
 
-    private final Path folderPath;
+    private final String folderPath;
     private String categoryId;
     private String extensionAffinity;
     private String sourceHostAffinity;
@@ -13,7 +11,7 @@ public class FolderAffinity {
     private boolean isPinned;
     private boolean isBlacklisted;
 
-    public FolderAffinity(Path folderPath, String categoryId, String extensionAffinity, String sourceHostAffinity, int choiceCount, long lastUsedAt, boolean isPinned, boolean isBlacklisted) {
+    public FolderAffinity(String folderPath, String categoryId, String extensionAffinity, String sourceHostAffinity, int choiceCount, long lastUsedAt, boolean isPinned, boolean isBlacklisted) {
         this.folderPath = folderPath;
         this.categoryId = categoryId;
         this.extensionAffinity = extensionAffinity;
@@ -24,7 +22,7 @@ public class FolderAffinity {
         this.isBlacklisted = isBlacklisted;
     }
 
-    public Path getFolderPath() { return folderPath; }
+    public String getFolderPath() { return folderPath; }
     public String getCategoryId() { return categoryId; }
     public void setCategoryId(String categoryId) { this.categoryId = categoryId; }
     public String getExtensionAffinity() { return extensionAffinity; }

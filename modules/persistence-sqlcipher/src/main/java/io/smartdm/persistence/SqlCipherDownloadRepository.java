@@ -54,7 +54,7 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                 try (PreparedStatement stmt = conn.prepareStatement(insertDownloadSql)) {
                     stmt.setString(1, download.id().value());
                     stmt.setString(2, download.source().value().toString());
-                    stmt.setString(3, download.destination().value().toString());
+                    stmt.setString(3, download.destination().value());
                     stmt.setString(4, download.state().name());
                     stmt.setLong(5, download.totalBytes().value());
                     stmt.setLong(6, download.downloadedBytes().value());
@@ -216,7 +216,7 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
     private Download mapRow(ResultSet rs, Connection conn) throws SQLException {
         DownloadId id = new DownloadId(rs.getString("id"));
         SourceUri source = SourceUri.of(rs.getString("source_uri"));
-        Destination dest = Destination.of(Path.of(rs.getString("destination_path")));
+        Destination dest = Destination.of(rs.getString("destination_path"));
         DownloadState state = DownloadState.valueOf(rs.getString("state"));
         ByteCount total = ByteCount.of(rs.getLong("total_bytes"));
         ByteCount downloaded = ByteCount.of(rs.getLong("downloaded_bytes"));

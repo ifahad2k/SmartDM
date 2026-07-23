@@ -90,8 +90,8 @@ public class SingleDownloadCoordinator {
         if (download.state() == DownloadState.VERIFYING) {
             try {
                 long expectedSize = download.totalBytes().value();
-                if (expectedSize > 0 && java.nio.file.Files.exists(download.destination().value()) &&
-                    java.nio.file.Files.size(download.destination().value()) == expectedSize) {
+                if (expectedSize > 0 && java.nio.file.Files.exists(Path.of(download.destination().value())) &&
+                    java.nio.file.Files.size(Path.of(download.destination().value())) == expectedSize) {
                     
                     Path partFile = tempDir.resolve(download.id().value() + ".part");
                     if (!java.nio.file.Files.exists(partFile)) {
@@ -161,7 +161,8 @@ public class SingleDownloadCoordinator {
             if (download.categoryId() == null && categoryRepository != null) {
                 // Auto-assign category
                 String mimeType = probeResult.mimeType();
-                String ext = download.destination().value().getFileName().toString();
+                Path destPath = Path.of(download.destination().value());
+                String ext = destPath.getFileName().toString();
                 int lastDot = ext.lastIndexOf('.');
                 String extension = (lastDot != -1) ? ext.substring(lastDot + 1).toLowerCase() : "";
                 

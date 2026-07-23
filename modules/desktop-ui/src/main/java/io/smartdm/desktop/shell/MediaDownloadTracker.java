@@ -86,7 +86,7 @@ public final class MediaDownloadTracker {
         maxProgressMap.remove(download.id());
         TaskInfo info = taskRegistry.remove(download.id());
         if (permanent) {
-            deleteMediaFiles(download.destination().value());
+            deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
             if (info != null && info.targetPath() != null) {
                 deleteMediaFiles(info.targetPath());
             }

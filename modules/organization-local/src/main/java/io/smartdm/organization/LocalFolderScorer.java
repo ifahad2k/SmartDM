@@ -39,7 +39,7 @@ public class LocalFolderScorer {
             // 1. Category match
             if (categoryRepository != null) {
                 for (Category cat : categoryRepository.findAll()) {
-                    if (cat.defaultDestination() != null && cat.defaultDestination().value().equals(path)) {
+                    if (cat.defaultDestination() != null && cat.defaultDestination().value().equals(path.toAbsolutePath().toString())) {
                         for (CategoryRule rule : cat.rules()) {
                             if (rule.type() == CategoryRule.RuleType.EXTENSION && extension.equalsIgnoreCase(rule.value())) {
                                 score += 50.0;
@@ -58,7 +58,7 @@ public class LocalFolderScorer {
 
             // 2. Folder affinity & learning
             if (affinityRepository != null) {
-                Optional<FolderAffinity> affOpt = affinityRepository.findByPath(path);
+                Optional<FolderAffinity> affOpt = affinityRepository.findByPath(path.toAbsolutePath().toString());
                 if (affOpt.isPresent()) {
                     FolderAffinity aff = affOpt.get();
                     if (aff.isBlacklisted()) continue;
@@ -167,7 +167,7 @@ public class LocalFolderScorer {
 
             String primaryReason = String.join(", ", reasons);
             String displayName = path.getFileName() != null ? path.getFileName().toString() : path.toString();
-            suggestions.add(new FolderSuggestion(path, displayName, score, primaryReason, hasDuplicate));
+            suggestions.add(new FolderSuggestion(path.toAbsolutePath().toString(), displayName, score, primaryReason, hasDuplicate));
         }
 
         // Sort descending by score

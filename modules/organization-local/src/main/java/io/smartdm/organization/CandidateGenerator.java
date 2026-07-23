@@ -50,7 +50,7 @@ public class CandidateGenerator {
         if (categoryRepository != null) {
             for (Category cat : categoryRepository.findAll()) {
                 if (cat.defaultDestination() != null) {
-                    addIfValid(candidates, cat.defaultDestination().value());
+                    addIfValid(candidates, Path.of(cat.defaultDestination().value()));
                 }
             }
         }
@@ -66,7 +66,7 @@ public class CandidateGenerator {
         if (affinityRepository != null) {
             for (FolderAffinity aff : affinityRepository.findAll()) {
                 if (!aff.isBlacklisted()) {
-                    addIfValid(candidates, aff.getFolderPath());
+                    addIfValid(candidates, Path.of(aff.getFolderPath()));
                 }
             }
         }

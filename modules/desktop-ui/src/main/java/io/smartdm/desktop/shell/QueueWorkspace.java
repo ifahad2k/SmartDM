@@ -233,7 +233,7 @@ public final class QueueWorkspace extends VBox {
         DeleteConfirmDialog dialog;
         if (selected.size() == 1) {
             Download d = downloadsWorkspace.getDownload(selected.get(0));
-            dialog = new DeleteConfirmDialog(owner, d.destination().value().getFileName().toString());
+            dialog = new DeleteConfirmDialog(owner, java.nio.file.Path.of(d.destination().value()).getFileName().toString());
         } else {
             dialog = new DeleteConfirmDialog(owner, selected.size());
         }

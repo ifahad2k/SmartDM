@@ -3,8 +3,6 @@ package io.smartdm.persistence;
 import io.smartdm.domain.organization.FolderAffinity;
 import io.smartdm.domain.repository.FolderAffinityRepository;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -37,7 +35,7 @@ public class SqlCipherFolderAffinityRepository implements FolderAffinityReposito
         """;
         try (Connection conn = database.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, affinity.getFolderPath().toAbsolutePath().normalize().toString());
+            stmt.setString(1, affinity.getFolderPath());
             stmt.setString(2, affinity.getCategoryId());
             stmt.setString(3, affinity.getExtensionAffinity());
             stmt.setString(4, affinity.getSourceHostAffinity());
@@ -52,12 +50,12 @@ public class SqlCipherFolderAffinityRepository implements FolderAffinityReposito
     }
 
     @Override
-    public Optional<FolderAffinity> findByPath(Path folderPath) {
+    public Optional<FolderAffinity> findByPath(String folderPath) {
         if (folderPath == null) return Optional.empty();
         String sql = "SELECT * FROM folder_affinity WHERE folder_path = ?";
         try (Connection conn = database.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, folderPath.toAbsolutePath().normalize().toString());
+            stmt.setString(1, folderPath);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     return Optional.of(mapRow(rs));
@@ -86,7 +84,7 @@ public class SqlCipherFolderAffinityRepository implements FolderAffinityReposito
     }
 
     @Override
-    public void recordChoiceHistory(String url, String sourceHost, String mimeType, String extension, Path chosenFolder, Path suggestedFolder, String action) {
+    public void recordChoiceHistory(String url, String sourceHost, String mimeType, String extension, String chosenFolder, String suggestedFolder, String action) {
         String sql = """
             INSERT INTO folder_choice_history (id, download_url, source_host, mime_type, file_extension, chosen_folder_path, suggested_folder_path, action, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -98,8 +96,8 @@ public class SqlCipherFolderAffinityRepository implements FolderAffinityReposito
             stmt.setString(3, sourceHost);
             stmt.setString(4, mimeType);
             stmt.setString(5, extension);
-            stmt.setString(6, chosenFolder != null ? chosenFolder.toAbsolutePath().normalize().toString() : "");
-            stmt.setString(7, suggestedFolder != null ? suggestedFolder.toAbsolutePath().normalize().toString() : null);
+            stmt.setString(6, chosenFolder != null ? chosenFolder : "");
+            stmt.setString(7, suggestedFolder);
             stmt.setString(8, action);
             stmt.setLong(9, System.currentTimeMillis());
             stmt.executeUpdate();
@@ -124,7 +122,7 @@ public class SqlCipherFolderAffinityRepository implements FolderAffinityReposito
 
     private FolderAffinity mapRow(ResultSet rs) throws Exception {
         return new FolderAffinity(
-            Paths.get(rs.getString("folder_path")),
+            rs.getString("folder_path"),
             rs.getString("category_id"),
             rs.getString("extension_affinity"),
             rs.getString("source_host_affinity"),

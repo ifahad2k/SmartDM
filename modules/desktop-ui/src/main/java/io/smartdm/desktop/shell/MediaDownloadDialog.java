@@ -31,8 +31,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.function.Consumer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
 
 public final class MediaDownloadDialog extends GlassmorphicDialog {
+    private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private final MediaMetadata metadata;
     private final Label titleLabel;
@@ -278,38 +282,53 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         Path targetPath = Paths.get(dir, filename).toAbsolutePath();
 
-        boolean fileExists = Files.exists(targetPath);
-        boolean isPartExists = Files.exists(Paths.get(targetPath.toString() + ".part")) || Files.exists(Paths.get(targetPath.toString() + ".ytdl"));
-        boolean destActive = isDestinationActive(targetPath);
-
-        if (fileExists || isPartExists || destActive) {
-            Stage owner = (Stage) getScene().getWindow();
-            FileCollisionDialog dialog = new FileCollisionDialog(owner, targetPath.getFileName().toString());
-            FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
-
-            if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {
-                return;
-            } else if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
-                targetPath = generateUniquePath(targetPath);
-            }
-            
-            final Path finalTargetPath = targetPath;
-            java.util.concurrent.CompletableFuture.runAsync(() -> {
-                if (choice == FileCollisionDialog.CollisionChoice.OVERWRITE) {
-                    MediaDownloadTracker.deleteMediaFiles(finalTargetPath);
+        CompletableFuture.supplyAsync(() -> {
+            boolean fileExists = Files.exists(targetPath);
+            boolean isPartExists = Files.exists(Paths.get(targetPath.toString() + ".part")) || Files.exists(Paths.get(targetPath.toString() + ".ytdl"));
+            boolean destActive = isDestinationActive(targetPath);
+            return fileExists || isPartExists || destActive;
+        }, IO_EXECUTOR).thenAccept(hasCollision -> {
+            Platform.runLater(() -> {
+                if (hasCollision) {
+                    handleCollision(targetPath, selectedFormat);
+                } else {
+                    finishDownloadStart(targetPath, selectedFormat);
                 }
-                finishDownloadStart(finalTargetPath, selectedFormat);
             });
+        }).exceptionally(ex -> {
+            System.err.println("Failed to check file collision: " + ex.getMessage());
+            return null;
+        });
+    }
+
+    private void handleCollision(Path targetPath, MediaFormat selectedFormat) {
+        Stage owner = (Stage) getScene().getWindow();
+        FileCollisionDialog dialog = new FileCollisionDialog(owner, targetPath.getFileName().toString());
+        FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
+
+        if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {
             return;
         }
 
-        finishDownloadStart(targetPath, selectedFormat);
+        CompletableFuture.runAsync(() -> {
+            Path finalTargetPath = targetPath;
+            if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
+                finalTargetPath = generateUniquePath(targetPath);
+            } else if (choice == FileCollisionDialog.CollisionChoice.OVERWRITE) {
+                MediaDownloadTracker.deleteMediaFiles(targetPath);
+            }
+            final Path p = finalTargetPath;
+            Platform.runLater(() -> finishDownloadStart(p, selectedFormat));
+        }, IO_EXECUTOR).exceptionally(ex -> {
+            System.err.println("Failed to resolve collision: " + ex.getMessage());
+            return null;
+        });
     }
 
     private void finishDownloadStart(Path targetPath, MediaFormat selectedFormat) {
         try {
             SourceUri source = SourceUri.of(metadata.webpageUrl());
-            Destination dest = Destination.of(targetPath);
+            Destination dest = Destination.of(targetPath.toAbsolutePath().toString());
             Download download = Download.create(source, dest);
 
             if (onDownloadAdded != null) {
@@ -330,7 +349,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
             if (d.state() != io.smartdm.domain.DownloadState.COMPLETED && 
                 d.state() != io.smartdm.domain.DownloadState.CANCELED && 
                 d.state() != io.smartdm.domain.DownloadState.FAILED) {
-                if (d.destination().value().toAbsolutePath().equals(path.toAbsolutePath())) {
+                if (d.destination().value().equals(path.toAbsolutePath().toString())) {
                     return true;
                 }
             }
@@ -367,11 +386,16 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         String fileName = nameField.getText();
         long fileSize = (formatCombo.getValue() != null) ? formatCombo.getValue().fileSize() : 0L;
 
-        Platform.runLater(() -> {
-            java.util.List<io.smartdm.domain.organization.FolderSuggestion> suggestions = 
-                smartFolderService.suggestFolders(url, fileName, "video/mp4", fileSize);
-            suggestionPanel.setSuggestions(suggestions);
-            sizeToScene();
+        CompletableFuture.supplyAsync(() -> {
+            return smartFolderService.suggestFolders(url, fileName, "video/mp4", fileSize);
+        }, IO_EXECUTOR).thenAccept(suggestions -> {
+            Platform.runLater(() -> {
+                suggestionPanel.setSuggestions(suggestions);
+                sizeToScene();
+            });
+        }).exceptionally(ex -> {
+            System.err.println("Failed to fetch smart folders: " + ex.getMessage());
+            return null;
         });
     }
 }

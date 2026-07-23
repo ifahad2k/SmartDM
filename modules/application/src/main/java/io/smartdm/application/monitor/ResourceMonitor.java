@@ -56,8 +56,8 @@ public class ResourceMonitor {
                     long downloaded = d.downloadedBytes().value();
                     long remaining = (total > downloaded) ? (total - downloaded) : 0;
                     
-                    Path dest = d.destination().value();
-                    File destRoot = getRoot(dest.toFile());
+                    String destPath = d.destination().value();
+                    File destRoot = getRoot(new File(destPath));
                     if (destRoot != null) {
                         String key = destRoot.getAbsolutePath();
                         remainingPerDrive.put(key, remainingPerDrive.getOrDefault(key, 0L) + remaining);

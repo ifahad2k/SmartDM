@@ -36,7 +36,7 @@ class SqlCipherDownloadRepositoryTest {
     @Test
     void shouldSaveAndLoadDownloadWithSegments(@TempDir Path tempDir) {
         DownloadId id = DownloadId.generate();
-        Download download = new Download(id, SourceUri.of("https://example.com/file.zip"), Destination.of(tempDir.resolve("file.zip").toAbsolutePath()));
+        Download download = new Download(id, SourceUri.of("https://example.com/file.zip"), Destination.of(tempDir.resolve("file.zip").toAbsolutePath().toString()));
         download.updateState(DownloadState.DOWNLOADING);
         
         List<DownloadSegment> segments = List.of(
@@ -78,7 +78,7 @@ class SqlCipherDownloadRepositoryTest {
     @Test
     void shouldDeleteDownloadAndCascadeSegments(@TempDir Path tempDir) throws Exception {
         DownloadId id = DownloadId.generate();
-        Download download = new Download(id, SourceUri.of("https://example.com/file.zip"), Destination.of(tempDir.resolve("file.zip").toAbsolutePath()));
+        Download download = new Download(id, SourceUri.of("https://example.com/file.zip"), Destination.of(tempDir.resolve("file.zip").toAbsolutePath().toString()));
         download.updateSegments(List.of(
             new DownloadSegment(0, 0, 10, 99)
         ));

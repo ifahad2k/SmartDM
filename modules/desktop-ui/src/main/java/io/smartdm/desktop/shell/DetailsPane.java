@@ -175,7 +175,7 @@ public final class DetailsPane extends VBox {
     private void refreshUI() {
         if (activeDownload == null) return;
         
-        String fileName = activeDownload.destination().value().getFileName().toString();
+        String fileName = java.nio.file.Path.of(activeDownload.destination().value()).getFileName().toString();
         if (!fileName.equals(title.getText())) title.setText(fileName);
         
         String state = activeDownload.state().toString().toLowerCase();
@@ -203,7 +203,7 @@ public final class DetailsPane extends VBox {
         
         // Destination
         String destPath = activeDownload.destination().value().toString();
-        String folder = activeDownload.destination().value().getParent() != null ? activeDownload.destination().value().getParent().toString() : destPath;
+        String folder = java.nio.file.Path.of(activeDownload.destination().value()).getParent() != null ? java.nio.file.Path.of(activeDownload.destination().value()).getParent().toString() : destPath;
         if (!folder.equals(suggestedFolderVal.getText())) suggestedFolderVal.setText(folder);
         
         // Segments

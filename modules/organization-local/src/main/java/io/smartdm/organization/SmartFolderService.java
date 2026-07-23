@@ -35,19 +35,19 @@ public class SmartFolderService {
         String sourceHost = extractHost(url);
         String extension = getExtension(fileName);
 
-        Optional<FolderAffinity> affOpt = affinityRepository.findByPath(chosenFolder);
+        Optional<FolderAffinity> affOpt = affinityRepository.findByPath(chosenFolder.toAbsolutePath().toString());
         FolderAffinity affinity;
         if (affOpt.isPresent()) {
             affinity = affOpt.get();
             affinity.incrementChoiceCount();
             affinity.setLastUsedAt(System.currentTimeMillis());
         } else {
-            affinity = new FolderAffinity(chosenFolder, null, extension, sourceHost, 1, System.currentTimeMillis(), false, false);
+            affinity = new FolderAffinity(chosenFolder.toAbsolutePath().toString(), null, extension, sourceHost, 1, System.currentTimeMillis(), false, false);
         }
         affinityRepository.save(affinity);
 
         String action = (suggestedFolder != null && suggestedFolder.equals(chosenFolder)) ? "ACCEPTED" : "OVERRIDDEN";
-        affinityRepository.recordChoiceHistory(url, sourceHost, mimeType, extension, chosenFolder, suggestedFolder, action);
+        affinityRepository.recordChoiceHistory(url, sourceHost, mimeType, extension, chosenFolder.toAbsolutePath().toString(), suggestedFolder != null ? suggestedFolder.toAbsolutePath().toString() : null, action);
     }
 
     public void resetLearnedPreferences() {

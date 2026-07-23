@@ -157,7 +157,7 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                     return;
                 }
                 Stage owner = (Stage) listView.getScene().getWindow();
-                DeleteConfirmDialog dialog = new DeleteConfirmDialog(owner, download.destination().value().getFileName().toString());
+                DeleteConfirmDialog dialog = new DeleteConfirmDialog(owner, java.nio.file.Path.of(download.destination().value()).getFileName().toString());
                 DeleteConfirmDialog.DeleteChoice choice = dialog.showAndGetChoice();
 
                 if (choice == DeleteConfirmDialog.DeleteChoice.CANCEL) {
@@ -274,7 +274,7 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         DeleteConfirmDialog dialog;
         if (selected.size() == 1) {
             Download d = downloadMap.get(selected.get(0));
-            dialog = new DeleteConfirmDialog(owner, d.destination().value().getFileName().toString());
+            dialog = new DeleteConfirmDialog(owner, java.nio.file.Path.of(d.destination().value()).getFileName().toString());
         } else {
             dialog = new DeleteConfirmDialog(owner, selected.size());
         }

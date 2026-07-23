@@ -2737,3 +2737,42 @@ Without that stabilization, Phase 13 would be built on uncertain schemas and inc
 - [FileCatalogScanner](https://github.com/ifahad2k/SmartDM/blob/main/modules/file-catalog/src/main/java/io/smartdm/catalog/FileCatalogScanner.java)
 - [DuplicateDetector](https://github.com/ifahad2k/SmartDM/blob/main/modules/file-catalog/src/main/java/io/smartdm/catalog/DuplicateDetector.java)
 - [LocalFolderScorer](https://github.com/ifahad2k/SmartDM/blob/main/modules/organization-local/src/main/java/io/smartdm/organization/LocalFolderScorer.java)
+
+
+FEATURE PRESERVATION RULE MUST FOLLOW
+
+The remediation audit is not authorization to delete legitimate functionality
+added after or outside the original Phase 0–12 plan.
+
+Before deleting, reverting, disabling, or relocating any feature code:
+
+1. Identify whether it is:
+   - production functionality;
+   - experimental functionality;
+   - generated output;
+   - obsolete duplicate code;
+   - test fixture;
+   - temporary scratch material.
+
+2. Preserve all production and intentional experimental features unless:
+   - the project owner explicitly approves removal; or
+   - the feature creates a confirmed security or data-integrity risk that
+     cannot safely remain enabled.
+
+3. If a new feature conflicts with the implementation plan:
+   - do not delete it automatically;
+   - document the conflict;
+   - create or propose an ADR;
+   - isolate or disable the feature behind a capability flag if necessary;
+   - wait for project-owner approval.
+
+4. Before any deletion:
+   - list every file proposed for deletion;
+   - explain why each file is not required;
+   - check references and dependencies;
+   - run relevant tests;
+   - present the proposed diff for review.
+
+5. Repository cleanup may delete only clearly generated, duplicated, temporary,
+   or owner-approved files. It must not remove functional source code merely
+   because that functionality is not mentioned in the original phase plan.

@@ -83,7 +83,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("normal.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/normal"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -100,7 +100,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("chunked.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/chunked"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -117,7 +117,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("loop.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/redirect1"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -134,7 +134,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("wrong-length.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/wrong-length"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -151,7 +151,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("disconnect.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/disconnect"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -187,7 +187,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("timeout.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/timeout"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         timeoutCoord.execute(dl);
 
@@ -204,7 +204,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("error-" + errorCode + ".txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/error" + errorCode),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -262,7 +262,7 @@ class SingleDownloadCoordinatorTest {
 
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/normal"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -288,7 +288,7 @@ class SingleDownloadCoordinatorTest {
         }
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/normal"),
-                Destination.of(impossibleDest));
+                Destination.of(impossibleDest.toAbsolutePath().toString()));
 
         coordinator.execute(dl);
 
@@ -312,7 +312,7 @@ class SingleDownloadCoordinatorTest {
         try {
             Download dl = Download.create(
                     SourceUri.of(server.getBaseUrl() + "/normal"),
-                    Destination.of(dest));
+                    Destination.of(dest.toAbsolutePath().toString()));
 
             coordinator.execute(dl);
 
@@ -334,7 +334,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("cancel.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/timeout"),
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         // Cancel immediately
         dl.updateState(DownloadState.CANCELED);
@@ -360,7 +360,7 @@ class SingleDownloadCoordinatorTest {
         Path dest = tempDir.resolve("pause_test.txt");
         Download dl = Download.create(
                 SourceUri.of(server.getBaseUrl() + "/hang-on-get"), // use hang-on-get so it probes fast but hangs on download
-                Destination.of(dest));
+                Destination.of(dest.toAbsolutePath().toString()));
 
         // Run execute in background
         Thread executorThread = new Thread(() -> coordinator.execute(dl));

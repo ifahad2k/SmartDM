@@ -295,7 +295,7 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
 
                 try {
                     SourceUri source = SourceUri.of(item.getMetadata().webpageUrl());
-                    Destination dest = Destination.of(targetPath);
+                    Destination dest = Destination.of(targetPath.toAbsolutePath().toString());
                     Download download = Download.create(source, dest);
 
                     if (onDownloadAdded != null) {

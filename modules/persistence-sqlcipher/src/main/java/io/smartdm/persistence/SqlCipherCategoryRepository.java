@@ -123,7 +123,7 @@ public class SqlCipherCategoryRepository implements CategoryRepository {
         CategoryId id = CategoryId.of(rs.getString("id"));
         String name = rs.getString("name");
         String destPathStr = rs.getString("default_destination_path");
-        Destination defaultDest = destPathStr != null ? Destination.of(Path.of(destPathStr)) : null;
+        Destination defaultDest = destPathStr != null ? Destination.of(destPathStr) : null;
 
         List<CategoryRule> rules = new ArrayList<>();
         String rulesSql = "SELECT * FROM category_rule WHERE category_id = ?";

@@ -391,7 +391,7 @@ public class SmartDmApp extends Application {
 
                 if (permanent) {
                     enginePool.submit(() -> {
-                        io.smartdm.desktop.shell.MediaDownloadTracker.deleteMediaFiles(download.destination().value());
+                        io.smartdm.desktop.shell.MediaDownloadTracker.deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
                         try {
                             Path partFile = directories.getCacheDirectory().resolve("temp")
                                     .resolve(download.id().value() + ".part");
@@ -535,7 +535,7 @@ public class SmartDmApp extends Application {
                                 String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
                                 if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
                                 String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                                io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename));
+                                io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename).toAbsolutePath().toString());
                                 io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
                                 repository.save(dl);
                                 if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {

@@ -1,9 +1,7 @@
 package io.smartdm.domain.organization;
 
-import java.nio.file.Path;
-
 public record FolderSuggestion(
-    Path folderPath,
+    String folderPath,
     String displayName,
     double score,
     String reason,

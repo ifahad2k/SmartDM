@@ -287,7 +287,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             }
         }
         
-        io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath);
+        io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath.toAbsolutePath().toString());
         return io.smartdm.domain.Download.create(source, dest);
     }
 
@@ -312,7 +312,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     private boolean isDestinationActive(Path path) {
         if (existingDownloads == null) return false;
         for (io.smartdm.domain.Download d : existingDownloads) {
-            if (d.destination().value().toAbsolutePath().equals(path.toAbsolutePath())) {
+            if (java.nio.file.Path.of(d.destination().value()).toAbsolutePath().equals(path.toAbsolutePath())) {
                 return true;
             }
         }

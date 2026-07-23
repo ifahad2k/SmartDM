@@ -77,7 +77,7 @@ public final class TopBar extends HBox {
                             String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
                             if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
                             String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                            io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename));
+                            io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename).toAbsolutePath().toString());
                             io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
                             onDownloadAdded.accept(dl);
                         } catch (Exception ex) {}
@@ -106,7 +106,7 @@ public final class TopBar extends HBox {
                             filename = "download_" + System.currentTimeMillis();
                         }
                         String defaultDir = Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                        Destination dest = Destination.of(Paths.get(defaultDir, filename));
+                        Destination dest = Destination.of(Paths.get(defaultDir, filename).toAbsolutePath().toString());
                         Download dl = Download.create(SourceUri.of(url), dest);
                         onDownloadAdded.accept(dl);
                     } catch (Exception ex) {

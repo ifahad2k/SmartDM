@@ -234,7 +234,7 @@ public final class SchedulerWorkspace extends VBox {
         javafx.stage.Stage owner = (javafx.stage.Stage) getScene().getWindow();
         DeleteConfirmDialog dialog;
         if (selected.size() == 1) {
-            dialog = new DeleteConfirmDialog(owner, selected.get(0).destination().value().getFileName().toString());
+            dialog = new DeleteConfirmDialog(owner, java.nio.file.Path.of(selected.get(0).destination().value()).getFileName().toString());
         } else {
             dialog = new DeleteConfirmDialog(owner, selected.size());
         }
