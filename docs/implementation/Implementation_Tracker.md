@@ -15,7 +15,7 @@ This document tracks the high-level progress of the SmartDM phases based on the 
 | Phase 8 | Chrome/Firefox native browser integration | COMPLETE | 2026-07-21 | 2026-07-22 | Manifest V3 Chrome & Firefox extensions, native host IPC, IDM-style auto-launch plan |
 | Phase 9 | yt-dlp and FFmpeg media subsystem | COMPLETE | 2026-07-21 | 2026-07-22 | LocalMediaToolManager, YtDlpExtractor, MediaDownloadTracker with isolated temp folder downloads |
 | Phase 10 | YouTube & media thumbnail SmartDM panel | COMPLETE | 2026-07-21 | 2026-07-22 | Universal overlay script, thumbnail badges, main video banner, clean format deduplication |
-| Phase 11 | Local file catalog and duplicate detection | NOT STARTED | | | |
+| Phase 11 | Local file catalog and duplicate detection | COMPLETE | 2026-07-23 | 2026-07-23 | Catalog database V10 schema, DefaultPathFilter exclusions, QuickFingerprint, 3-tier DuplicateDetector, FileCatalogScanner |
 | Phase 12 | Local smart folder selection | NOT STARTED | | | |
 | Phase 13 | Local natural-language search | NOT STARTED | | | |
 | Phase 14 | Optional Gemini consented fallback | NOT STARTED | | | |

@@ -138,3 +138,27 @@
 - [x] Property-based tests for segment counting and validation
 - [x] Local test verification for verification & recovery
 
+---
+
+## Phase 11 — Local file catalog and duplicate detection
+
+- Status: COMPLETE
+- Started: 2026-07-23
+- Completed: 2026-07-23
+- Baseline commit: pending
+- Completion commit: pending
+- ADRs: None
+- Migrations: `V10__create_catalog_tables.sql`
+- Test evidence: `SqlCipherCatalogRepositoryTest`, `QuickFingerprintCalculatorTest`, `DuplicateDetectorTest` all passing.
+- Known limitations: none
+- Approved deviations: none
+
+### Checklist
+- [x] Approved catalog root management (`CatalogRoot`) & consent boundary
+- [x] Exclude OS/system paths & sensitive locations (`DefaultPathFilter`)
+- [x] Encrypted persistence for catalog roots, files, and FTS5 search (`V10__create_catalog_tables.sql`)
+- [x] Quick fingerprint calculator (head + tail + size SHA-256) & full SHA-256
+- [x] 3-tier duplicate detection (Possible Match, Strong Match, Exact Match)
+- [x] Non-blocking filesystem scanner with permission failure tolerance
+
+
