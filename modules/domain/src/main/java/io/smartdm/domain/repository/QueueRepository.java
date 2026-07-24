@@ -1,5 +1,6 @@
 package io.smartdm.domain.repository;
 
+import io.smartdm.domain.DownloadId;
 import io.smartdm.domain.DownloadQueue;
 import io.smartdm.domain.QueueItem;
 
@@ -15,4 +16,6 @@ public interface QueueRepository {
     void saveQueueItems(String queueId, List<QueueItem> items);
     List<QueueItem> findItemsByQueueId(String queueId);
     void deleteQueueItem(String itemId);
+
+    Optional<String> findQueueIdForDownload(DownloadId downloadId);
 }

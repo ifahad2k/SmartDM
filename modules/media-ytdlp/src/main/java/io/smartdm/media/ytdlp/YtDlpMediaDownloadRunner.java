@@ -424,12 +424,19 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     private void finalizeCompletedJob(MediaJobContext context, Path outputManifest, Path tempDir, Path targetPath) {
         try {
             Path finalOutput = readFinalOutputPath(outputManifest, tempDir);
-            finalizeOutput(finalOutput, targetPath, DestinationConflictPolicy.REPLACE);
+            finalizeOutput(finalOutput, targetPath, context.taskInfo.conflictPolicy());
             updateDownloadState(context, DownloadState.COMPLETED, MediaJobStatus.COMPLETED);
-            deleteManagedDirectory(context.taskInfo.download().id());
-            jobs.remove(context.taskInfo.download().id(), context);
         } catch (Exception e) {
             failJob(context, "MEDIA_FINALIZATION_FAILED", e);
+            return;
+        }
+
+        try {
+            deleteManagedDirectory(context.taskInfo.download().id());
+        } catch (Exception cleanupFailure) {
+            System.err.println("Warning: Managed directory cleanup failed for download " + context.taskInfo.download().id() + ": " + cleanupFailure.getMessage());
+        } finally {
+            jobs.remove(context.taskInfo.download().id(), context);
         }
     }
 
@@ -482,7 +489,7 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                 Files.move(normalizedSource, normalizedTarget, moveOptions);
                 return;
             } catch (FileSystemException atomicFailure) {
-                copyThroughDestinationTemp(normalizedSource, normalizedTarget);
+                copyThroughDestinationTemp(normalizedSource, normalizedTarget, policy);
             }
         } catch (IOException exception) {
             throw new MediaOperationException("MEDIA_FINALIZATION_FAILED", "Could not finalize the media output", exception);
@@ -508,7 +515,7 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         return candidate;
     }
 
-    private void copyThroughDestinationTemp(Path source, Path target) throws IOException {
+    private void copyThroughDestinationTemp(Path source, Path target, DestinationConflictPolicy policy) throws IOException {
         Path parent = target.getParent();
         String tempName = "." + target.getFileName() + ".smartdm-finalizing-" + UUID.randomUUID();
         Path destinationTemp = parent.resolve(tempName).normalize();
@@ -533,10 +540,17 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
             if (copiedSize != expectedSize) {
                 throw new IOException("Copied media size did not match source size");
             }
+            CopyOption[] moveOptions = (policy == DestinationConflictPolicy.REPLACE)
+                    ? new CopyOption[] { StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING }
+                    : new CopyOption[] { StandardCopyOption.ATOMIC_MOVE };
             try {
-                Files.move(destinationTemp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(destinationTemp, target, moveOptions);
             } catch (AtomicMoveNotSupportedException exception) {
-                Files.move(destinationTemp, target, StandardCopyOption.REPLACE_EXISTING);
+                if (policy == DestinationConflictPolicy.REPLACE) {
+                    Files.move(destinationTemp, target, StandardCopyOption.REPLACE_EXISTING);
+                } else {
+                    Files.move(destinationTemp, target);
+                }
             }
             Files.delete(source);
         } catch (Throwable failure) {

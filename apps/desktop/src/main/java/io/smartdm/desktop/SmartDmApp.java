@@ -133,6 +133,8 @@ public class SmartDmApp extends Application {
         AtomicReference<io.smartdm.desktop.shell.SchedulerWorkspace> schedulerWorkspaceRef = new AtomicReference<>();
         javafx.collections.ObservableList<io.smartdm.domain.QueueItem> mainQueueItems = javafx.collections.FXCollections.observableArrayList();
 
+        io.smartdm.domain.repository.QueueRepository queueRepository = new io.smartdm.persistence.SqlCipherQueueRepository(database);
+
         // ── 5. Event Publisher & Coordinator ────────────────────────────
         AtomicReference<QueueCoordinator> queueCoordinatorRef = new AtomicReference<>();
         AtomicReference<io.smartdm.download.engine.queue.QueueCoordinator.DownloadStarter> starterRef = new AtomicReference<>();
@@ -146,8 +148,13 @@ public class SmartDmApp extends Application {
                     }
                     Platform.runLater(() -> {
                         if (state == DownloadState.COMPLETED) {
-                            mainQueueItems.removeIf(item -> item.getDownloadId().equals(event.downloadId()));
-                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                            String qId = queueRepository.findQueueIdForDownload(event.downloadId()).orElse("main-queue");
+                            if (qId.equals("main-queue")) {
+                                mainQueueItems.removeIf(item -> item.getDownloadId().equals(event.downloadId()));
+                                if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                            } else if (queueCoordinatorRef.get() != null) {
+                                queueCoordinatorRef.get().markDownloadFinished(event.downloadId());
+                            }
                         }
                     });
                 } else if (state == DownloadState.REQUIRES_AUTH) {
@@ -240,11 +247,17 @@ public class SmartDmApp extends Application {
                         d.updateState(io.smartdm.domain.DownloadState.PROBING);
                         
                         javafx.application.Platform.runLater(() -> {
-                            boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(d.id()));
-                            if (removed) {
-                                if (queueCoordinatorRef.get() != null) {
-                                    queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                            String targetQueueId = queueRepository.findQueueIdForDownload(d.id()).orElse("main-queue");
+                            if (targetQueueId.equals("main-queue")) {
+                                boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(d.id()));
+                                if (removed) {
+                                    if (queueCoordinatorRef.get() != null) {
+                                        queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                                    }
+                                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
                                 }
+                            } else if (queueCoordinatorRef.get() != null) {
+                                queueCoordinatorRef.get().markDownloadFinished(d.id());
                                 if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
                             }
                         });
@@ -270,7 +283,6 @@ public class SmartDmApp extends Application {
                 }
             };
         
-        io.smartdm.domain.repository.QueueRepository queueRepository = new io.smartdm.persistence.SqlCipherQueueRepository(database);
         io.smartdm.download.engine.queue.QueueCoordinator queueCoordinator = new io.smartdm.download.engine.queue.QueueCoordinator(starter, queueRepository, enginePool);
         queueCoordinatorRef.set(queueCoordinator);
         starterRef.set(starter);
@@ -362,9 +374,14 @@ public class SmartDmApp extends Application {
                         scheduleRepo.delete(download.id().value());
                         repository.save(download);
                         
-                        boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                        if (removed) {
-                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        String qId = queueRepository.findQueueIdForDownload(download.id()).orElse("main-queue");
+                        if (qId.equals("main-queue")) {
+                            boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                            if (removed && queueCoordinatorRef.get() != null) {
+                                queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                            }
+                        } else if (queueCoordinatorRef.get() != null) {
+                            queueCoordinatorRef.get().markDownloadFinished(download.id());
                         }
                         
                         if (workspaceRef[0] != null) workspaceRef[0].updateDownload(download);
@@ -390,9 +407,14 @@ public class SmartDmApp extends Application {
                     );
                 } else {
                     if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED || download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
-                        boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                        if (removed) {
-                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        String qId = queueRepository.findQueueIdForDownload(download.id()).orElse("main-queue");
+                        if (qId.equals("main-queue")) {
+                            boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                            if (removed && queueCoordinatorRef.get() != null) {
+                                queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                            }
+                        } else if (queueCoordinatorRef.get() != null) {
+                            queueCoordinatorRef.get().markDownloadFinished(download.id());
                         }
                         
                         download.updateState(DownloadState.PROBING);
@@ -446,8 +468,13 @@ public class SmartDmApp extends Application {
                                     scheduleRepo.delete(download.id().value());
                                     repository.delete(download.id());
                                     Platform.runLater(() -> {
-                                        mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                                        queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                                        String qId = queueRepository.findQueueIdForDownload(download.id()).orElse("main-queue");
+                                        if (qId.equals("main-queue")) {
+                                            mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                                            queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                                        } else {
+                                            queueCoordinator.markDownloadFinished(download.id());
+                                        }
                                         if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
                                         if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
                                     });
@@ -467,8 +494,13 @@ public class SmartDmApp extends Application {
                     repository.delete(download.id());
 
                     Platform.runLater(() -> {
-                        mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                        queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                        String qId = queueRepository.findQueueIdForDownload(download.id()).orElse("main-queue");
+                        if (qId.equals("main-queue")) {
+                            mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                            queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                        } else {
+                            queueCoordinator.markDownloadFinished(download.id());
+                        }
                         if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
                         if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
                     });
@@ -495,10 +527,20 @@ public class SmartDmApp extends Application {
                 // Transition the download state gracefully to QUEUED
                 coordinator.queue(download.id());
                 
-                boolean exists = mainQueueItems.stream().anyMatch(item -> item.getDownloadId().equals(download.id()));
-                if (!exists) {
-                    mainQueueItems.add(new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", download.id(), 1, mainQueueItems.size()));
-                    if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                String qId = queueRepository.findQueueIdForDownload(download.id()).orElse("main-queue");
+                if (qId.equals("main-queue")) {
+                    boolean exists = mainQueueItems.stream().anyMatch(item -> item.getDownloadId().equals(download.id()));
+                    if (!exists) {
+                        mainQueueItems.add(new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", download.id(), 1, mainQueueItems.size()));
+                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                    }
+                } else {
+                    java.util.List<io.smartdm.domain.QueueItem> qItems = new java.util.ArrayList<>(queueRepository.findItemsByQueueId(qId));
+                    boolean exists = qItems.stream().anyMatch(item -> item.getDownloadId().equals(download.id()));
+                    if (!exists) {
+                        qItems.add(new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), qId, download.id(), 1, qItems.size()));
+                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems(qId, qItems);
+                    }
                 }
                 
                 if (workspaceRef[0] != null) workspaceRef[0].refresh();
@@ -659,7 +701,8 @@ public class SmartDmApp extends Application {
                                     repository.save(dl);
                                     createdDownloads.add(dl);
                                     if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
-                                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size() + newQueueItems.size());
+                                        String qId = queueRepository.findQueueIdForDownload(dl.id()).orElse("main-queue");
+                                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), qId, dl.id(), 1, mainQueueItems.size() + newQueueItems.size());
                                         newQueueItems.add(item);
                                     } else {
                                         coordinator.execute(dl);
@@ -676,7 +719,11 @@ public class SmartDmApp extends Application {
                                 }
                             }
                             Platform.runLater(() -> {
-                                mainQueueItems.addAll(newQueueItems);
+                                for (io.smartdm.domain.QueueItem qi : newQueueItems) {
+                                    if (qi.getQueueId().equals("main-queue")) {
+                                        mainQueueItems.add(qi);
+                                    }
+                                }
                                 if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
                                 if (workspaceRef[0] != null) {
                                     for (io.smartdm.domain.Download dl : createdDownloads) {

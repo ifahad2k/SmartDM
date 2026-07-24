@@ -162,6 +162,23 @@ public class SqlCipherQueueRepository implements QueueRepository {
         }
     }
 
+    @Override
+    public Optional<String> findQueueIdForDownload(DownloadId downloadId) {
+        String sql = "SELECT queue_id FROM queue_item WHERE download_id = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, downloadId.value());
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.ofNullable(rs.getString("queue_id"));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to find queue_id for download: " + downloadId, e);
+        }
+        return Optional.empty();
+    }
+
     private DownloadQueue mapQueue(ResultSet rs) throws SQLException {
         Long bwLimit = rs.getObject("bandwidth_limit_bytes") != null ? rs.getLong("bandwidth_limit_bytes") : null;
         return new DownloadQueue(
