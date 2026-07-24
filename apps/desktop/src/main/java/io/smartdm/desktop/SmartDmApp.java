@@ -516,22 +516,40 @@ public class SmartDmApp extends Application {
 
         // ── 4. Populate Workspace from database at startup ─────────────
         try {
-            for (Download dl : repository.findAll()) {
-                workspace.addDownload(dl);
-                if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
-                    io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
-                    mainQueueItems.add(item);
+            java.util.List<Download> allDownloads = repository.findAll();
+            for (Download dl : allDownloads) {
+                if (mediaJobStore.exists(dl.id())) {
+                    activeMediaIds.add(dl.id());
                 }
+                workspace.addDownload(dl);
             }
-            queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
-            
-            enginePool.submit(() -> {
-                for (Download dl : repository.findAll()) {
-                    if (mediaJobStore.exists(dl.id())) {
-                        activeMediaIds.add(dl.id());
+
+            if (restoredQueues.isEmpty()) {
+                for (Download dl : allDownloads) {
+                    if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                        mainQueueItems.add(item);
                     }
                 }
-            });
+                queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+            } else {
+                java.util.List<io.smartdm.domain.QueueItem> restoredMainItems = queueRepository.findItemsByQueueId("main-queue");
+                if (restoredMainItems != null) {
+                    mainQueueItems.addAll(restoredMainItems);
+                }
+                java.util.Set<io.smartdm.domain.DownloadId> existingQueuedIds = new java.util.HashSet<>();
+                for (io.smartdm.domain.DownloadQueue q : restoredQueues) {
+                    for (io.smartdm.domain.QueueItem qi : queueRepository.findItemsByQueueId(q.getId())) {
+                        existingQueuedIds.add(qi.getDownloadId());
+                    }
+                }
+                for (Download dl : allDownloads) {
+                    if (dl.state() == io.smartdm.domain.DownloadState.QUEUED && !existingQueuedIds.contains(dl.id())) {
+                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                        mainQueueItems.add(item);
+                    }
+                }
+            }
 
             for (io.smartdm.domain.Schedule s : scheduleRepo.findAll()) {
                 scheduleRunner.updateSchedule(s);

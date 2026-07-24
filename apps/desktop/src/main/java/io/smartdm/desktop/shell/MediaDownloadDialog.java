@@ -36,7 +36,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.CompletableFuture;
 
 public final class MediaDownloadDialog extends GlassmorphicDialog {
-    private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private final MediaMetadata metadata;
     private final Label titleLabel;
@@ -340,7 +339,8 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
                                 download,
                                 finalTargetPath,
                                 metadata.webpageUrl(),
-                                formatArgument));
+                                formatArgument,
+                                io.smartdm.media.api.DestinationConflictPolicy.REPLACE));
 
         io.smartdm.desktop.util.FxCompletion.observe(
                 operation,
@@ -414,7 +414,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         CompletableFuture.supplyAsync(() -> {
             return smartFolderService.suggestFolders(url, fileName, "video/mp4", fileSize);
-        }, IO_EXECUTOR).thenAccept(suggestions -> {
+        }).thenAccept(suggestions -> {
             Platform.runLater(() -> {
                 suggestionPanel.setSuggestions(suggestions);
                 sizeToScene();

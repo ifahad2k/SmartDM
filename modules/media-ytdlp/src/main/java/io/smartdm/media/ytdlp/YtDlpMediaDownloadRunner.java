@@ -107,6 +107,21 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         this.clock = Objects.requireNonNull(clock);
     }
 
+    public YtDlpMediaDownloadRunner(
+            NativeProcessController processController,
+            DownloadRepository downloadRepository,
+            MediaJobStore mediaJobStore,
+            DownloadEvent.Publisher eventPublisher,
+            MediaToolManager toolManager,
+            PlatformDirectories platformDirectories,
+            Clock clock) {
+        this(processController, downloadRepository, mediaJobStore, eventPublisher, toolManager, platformDirectories, Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "media-runner-worker");
+            t.setDaemon(true);
+            return t;
+        }), clock);
+    }
+
     private CompletionStage<Void> onMediaExecutor(Runnable operation) {
         return CompletableFuture.runAsync(operation, mediaExecutor);
     }
@@ -163,12 +178,21 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         download.updateState(state);
         downloadRepository.save(download);
 
-        MediaJobDescriptor current = mediaJobStore.find(download.id())
-                .orElseThrow(() -> new MediaOperationException(
-                        "MEDIA_JOB_MISSING",
-                        "Media descriptor is missing"));
-
-        mediaJobStore.save(current.withStatus(mediaStatus, clock.instant()));
+        MediaJobDescriptor current = mediaJobStore.find(download.id()).orElse(null);
+        if (current != null) {
+            mediaJobStore.save(current.withStatus(mediaStatus, clock.instant()));
+        } else if (mediaStatus != null) {
+            Instant now = clock.instant();
+            MediaJobDescriptor newDesc = new MediaJobDescriptor(
+                    download.id(),
+                    context.taskInfo.webpageUrl(),
+                    context.taskInfo.formatArg(),
+                    context.taskInfo.conflictPolicy(),
+                    mediaStatus,
+                    now,
+                    now);
+            mediaJobStore.save(newDesc);
+        }
 
         eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), state, download));
     }
@@ -186,13 +210,15 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
 
     @Override
     public CompletionStage<Void> startDownload(Download download, Path targetPath, String webpageUrl, String formatArg, DestinationConflictPolicy conflictPolicy) {
-        return CompletableFuture.runAsync(() -> {
+        CompletableFuture<Void> startFuture = new CompletableFuture<>();
+        mediaExecutor.execute(() -> {
             TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg, conflictPolicy);
             MediaJobContext newContext = new MediaJobContext(info);
             
             MediaJobContext existing = jobs.putIfAbsent(download.id(), newContext);
             if (existing != null) {
-                throw new MediaOperationException("MEDIA_JOB_ALREADY_ACTIVE", "A media job is already active for this download");
+                startFuture.completeExceptionally(new MediaOperationException("MEDIA_JOB_ALREADY_ACTIVE", "A media job is already active for this download"));
+                return;
             }
             
             try {
@@ -213,7 +239,7 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
 
                 Instant now = clock.instant();
                 MediaJobDescriptor descriptor = new MediaJobDescriptor(
-                        download.id(), webpageUrl, formatArg, MediaJobStatus.CREATED, now, now);
+                        download.id(), webpageUrl, formatArg, conflictPolicy, MediaJobStatus.CREATED, now, now);
                 mediaJobStore.save(descriptor);
 
                 Path tempDir = managedJobDirectory(download.id());
@@ -262,10 +288,15 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                     handleCompletion(newContext, result, error, outputManifest, tempDir, targetPath);
                 }, mediaExecutor);
 
+                startFuture.complete(null);
+
             } catch (Exception e) {
+                jobs.remove(download.id(), newContext);
                 failJob(newContext, "MEDIA_PROCESS_START_FAILED", e);
+                startFuture.completeExceptionally(e instanceof MediaOperationException ? e : new MediaOperationException("MEDIA_PROCESS_START_FAILED", "Could not start media download", e));
             }
-        }, mediaExecutor);
+        });
+        return startFuture;
     }
 
     private void handleYtDlpOutput(MediaJobContext context, String line) {
@@ -539,13 +570,16 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         CompletionStage<Void> termination = session == null ? CompletableFuture.completedFuture(null) : session.killTree();
 
         return termination.thenRunAsync(() -> {
+            boolean claimed = false;
             context.operationLock.lock();
             try {
-                if (context.completionHandled.compareAndSet(false, true)) {
-                    updateDownloadState(context, DownloadState.PAUSED, MediaJobStatus.PAUSED);
-                }
+                claimed = context.completionHandled.compareAndSet(false, true);
             } finally {
                 context.operationLock.unlock();
+            }
+            if (claimed) {
+                updateDownloadState(context, DownloadState.PAUSED, MediaJobStatus.PAUSED);
+                jobs.remove(download.id(), context);
             }
         }, mediaExecutor);
     }
@@ -553,15 +587,15 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     @Override
     public CompletionStage<Void> resumeDownload(Download download) {
         Objects.requireNonNull(download);
+        MediaJobContext oldContext = jobs.get(download.id());
+        if (oldContext != null && oldContext.processSession != null && oldContext.processSession.isAlive()) {
+            return CompletableFuture.failedFuture(new MediaOperationException("MEDIA_JOB_ALREADY_ACTIVE", "The media process is already running"));
+        }
         return CompletableFuture.supplyAsync(() -> mediaJobStore.find(download.id())
                 .orElseThrow(() -> new MediaOperationException("MEDIA_JOB_NOT_FOUND", "No persisted media job exists")), mediaExecutor)
         .thenCompose(descriptor -> {
-            MediaJobContext oldContext = jobs.get(download.id());
-            if (oldContext != null && oldContext.processSession != null && oldContext.processSession.isAlive()) {
-                return CompletableFuture.failedFuture(new MediaOperationException("MEDIA_JOB_ALREADY_ACTIVE", "The media process is already running"));
-            }
             Path targetPath = Path.of(download.destination().value());
-            return startDownload(download, targetPath, descriptor.webpageUrl(), descriptor.formatArgument());
+            return startDownload(download, targetPath, descriptor.webpageUrl(), descriptor.formatArgument(), descriptor.conflictPolicy());
         });
     }
 
@@ -587,15 +621,17 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
 
         CompletionStage<Void> termination = context.processSession == null ? CompletableFuture.completedFuture(null) : context.processSession.killTree();
         return termination.thenRunAsync(() -> {
+            boolean claimed = false;
             context.operationLock.lock();
             try {
-                if (context.completionHandled.compareAndSet(false, true)) {
-                    deleteManagedDirectory(download.id());
-                    updateDownloadState(context, DownloadState.CANCELED, MediaJobStatus.CANCELED);
-                    jobs.remove(download.id(), context);
-                }
+                claimed = context.completionHandled.compareAndSet(false, true);
             } finally {
                 context.operationLock.unlock();
+            }
+            if (claimed) {
+                deleteManagedDirectory(download.id());
+                updateDownloadState(context, DownloadState.CANCELED, MediaJobStatus.CANCELED);
+                jobs.remove(download.id(), context);
             }
         }, mediaExecutor);
     }

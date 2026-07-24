@@ -82,10 +82,15 @@ public class QueueCoordinator {
         triggerCoordination();
     }
 
+    private final AtomicBoolean pendingTrigger = new AtomicBoolean(false);
+
     private void triggerCoordination() {
+        pendingTrigger.set(true);
         if (coordinationRunning.compareAndSet(false, true)) {
             try {
-                coordinate();
+                while (pendingTrigger.getAndSet(false)) {
+                    coordinate();
+                }
             } finally {
                 coordinationRunning.set(false);
             }
@@ -125,7 +130,12 @@ public class QueueCoordinator {
                         continue; // Skip downloads scheduled for the future
                     }
                     activeInQueue.add(item.getDownloadId());
-                    starter.startDownload(item.getDownloadId());
+                    try {
+                        starter.startDownload(item.getDownloadId());
+                    } catch (RuntimeException failure) {
+                        activeInQueue.remove(item.getDownloadId());
+                        throw failure;
+                    }
                 }
             }
         }

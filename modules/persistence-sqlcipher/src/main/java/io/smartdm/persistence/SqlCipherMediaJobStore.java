@@ -55,6 +55,7 @@ public final class SqlCipherMediaJobStore implements MediaJobStore {
                 SELECT download_id,
                        webpage_url,
                        format_argument,
+                       conflict_policy,
                        status,
                        created_at,
                        updated_at
@@ -72,10 +73,16 @@ public final class SqlCipherMediaJobStore implements MediaJobStore {
                     return Optional.empty();
                 }
 
+                String policyStr = result.getString("conflict_policy");
+                io.smartdm.media.api.DestinationConflictPolicy policy = (policyStr != null && !policyStr.isBlank())
+                        ? io.smartdm.media.api.DestinationConflictPolicy.valueOf(policyStr)
+                        : io.smartdm.media.api.DestinationConflictPolicy.REPLACE;
+
                 return Optional.of(new MediaJobDescriptor(
                         new DownloadId(result.getString("download_id")),
                         result.getString("webpage_url"),
                         result.getString("format_argument"),
+                        policy,
                         MediaJobStatus.valueOf(result.getString("status")),
                         Instant.parse(result.getString("created_at")),
                         Instant.parse(result.getString("updated_at"))));
@@ -96,14 +103,16 @@ public final class SqlCipherMediaJobStore implements MediaJobStore {
                     download_id,
                     webpage_url,
                     format_argument,
+                    conflict_policy,
                     status,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(download_id) DO UPDATE SET
                     webpage_url = excluded.webpage_url,
                     format_argument = excluded.format_argument,
+                    conflict_policy = excluded.conflict_policy,
                     status = excluded.status,
                     updated_at = excluded.updated_at
                 """;
@@ -114,9 +123,10 @@ public final class SqlCipherMediaJobStore implements MediaJobStore {
             statement.setString(1, descriptor.downloadId().value());
             statement.setString(2, descriptor.webpageUrl());
             statement.setString(3, descriptor.formatArgument());
-            statement.setString(4, descriptor.status().name());
-            statement.setString(5, descriptor.createdAt().toString());
-            statement.setString(6, descriptor.updatedAt().toString());
+            statement.setString(4, descriptor.conflictPolicy() != null ? descriptor.conflictPolicy().name() : io.smartdm.media.api.DestinationConflictPolicy.REPLACE.name());
+            statement.setString(5, descriptor.status().name());
+            statement.setString(6, descriptor.createdAt().toString());
+            statement.setString(7, descriptor.updatedAt().toString());
 
             statement.executeUpdate();
         } catch (SQLException exception) {

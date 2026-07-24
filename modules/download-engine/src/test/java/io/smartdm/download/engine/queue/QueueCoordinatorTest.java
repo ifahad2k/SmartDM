@@ -57,18 +57,37 @@ class QueueCoordinatorTest {
 
     @Test
     void shouldRestoreQueueWithoutImmediateSideEffects() {
+        Set<DownloadId> started = ConcurrentHashMap.newKeySet();
+
         QueueCoordinator.DownloadStarter starter = new QueueCoordinator.DownloadStarter() {
-            @Override public void startDownload(DownloadId id) {}
-            @Override public void pauseDownload(DownloadId id) {}
-            @Override public boolean isActive(DownloadId id) { return false; }
+            @Override public void startDownload(DownloadId id) { started.add(id); }
+            @Override public void pauseDownload(DownloadId id) { started.remove(id); }
+            @Override public boolean isActive(DownloadId id) { return started.contains(id); }
             @Override public boolean isScheduledFuture(DownloadId id) { return false; }
         };
 
         QueueCoordinator coordinator = new QueueCoordinator(starter);
-        DownloadQueue queue = DownloadQueue.createNew("Saved Queue", 3, null);
-        DownloadId id1 = DownloadId.generate();
-        QueueItem item1 = QueueItem.createNew(queue.getId(), id1, 2, 1);
 
-        coordinator.restoreQueue(queue, List.of(item1));
+        DownloadQueue queue1 = new DownloadQueue("q1", "Queue 1", 1, null, DownloadQueue.Status.ACTIVE);
+        DownloadQueue queue2 = new DownloadQueue("q2", "Queue 2", 2, null, DownloadQueue.Status.PAUSED);
+
+        DownloadId id1 = DownloadId.generate();
+        DownloadId id2 = DownloadId.generate();
+        DownloadId id3 = DownloadId.generate();
+
+        QueueItem item1 = QueueItem.createNew("q1", id1, 10, 1);
+        QueueItem item2 = QueueItem.createNew("q1", id2, 5, 2);
+        QueueItem item3 = QueueItem.createNew("q2", id3, 1, 1);
+
+        coordinator.restoreQueue(queue1, List.of(item1, item2));
+        coordinator.restoreQueue(queue2, List.of(item3));
+
+        // Activate Queue 1
+        coordinator.updateQueue(queue1);
+        assertThat(started).containsExactly(id1);
+
+        // Activate Queue 2
+        coordinator.updateQueue(queue2.withStatus(DownloadQueue.Status.ACTIVE));
+        assertThat(started).contains(id1, id3);
     }
 }

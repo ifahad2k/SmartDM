@@ -1,0 +1,1 @@
+ALTER TABLE media_job ADD COLUMN conflict_policy TEXT NOT NULL DEFAULT 'REPLACE';
