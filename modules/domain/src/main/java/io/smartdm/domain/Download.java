@@ -16,6 +16,7 @@ public class Download {
     private volatile Long scheduledStartTime;
     private volatile String expectedHash;
     private volatile CategoryId categoryId;
+    private volatile AuthCredential credential;
     private volatile CredentialReference credentialReference;
     private volatile ProxyProfileReference proxyProfileReference;
     private final List<DownloadSegment> segments = new ArrayList<>();
@@ -59,6 +60,10 @@ public class Download {
         this.categoryId = categoryId;
     }
 
+    public void updateCredential(AuthCredential credential) {
+        this.credential = credential;
+    }
+
     public void updateCredentialReference(CredentialReference credential) {
         this.credentialReference = credential;
     }
@@ -77,6 +82,7 @@ public class Download {
     public Long scheduledStartTime() { return scheduledStartTime; }
     public String expectedHash() { return expectedHash; }
     public CategoryId categoryId() { return categoryId; }
+    public AuthCredential credential() { return credential; }
     public CredentialReference credentialReference() { return credentialReference; }
     public ProxyProfileReference proxyProfileReference() { return proxyProfileReference; }
     

@@ -219,8 +219,8 @@ public class SmartDmApp extends Application {
         
         // Runner is injected directly into dialogs and used locally.
 
-        io.smartdm.download.engine.limit.TokenBucketRateLimiter globalLimiter = 
-            new io.smartdm.download.engine.limit.TokenBucketRateLimiter(null, null);
+        io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter globalLimiter = 
+            new io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter(null, null);
 
         coordinator = new SingleDownloadCoordinator(
                 repository, categoryRepository, probeClient, httpClient, publisher,
@@ -307,7 +307,7 @@ public class SmartDmApp extends Application {
                 } catch (Exception e) {
                     System.err.println("Error checking scheduled downloads: " + e.getMessage());
                 }
-            }, scheduleRepo::save);
+            }, scheduleRepo::save, scheduleRepo::saveExecution);
         scheduleRunner.start();
 
         resourceMonitor = 
