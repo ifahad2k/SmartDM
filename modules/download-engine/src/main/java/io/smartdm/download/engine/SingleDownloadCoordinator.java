@@ -40,10 +40,21 @@ public class SingleDownloadCoordinator {
     private final DownloadRepository repository;
     private final CategoryRepository categoryRepository;
     private final HttpProbeClient probeClient;
-    private final HttpClient httpClient;
+    private final io.smartdm.download.http.SafeRedirectHttpClient httpClient;
     private final DownloadEvent.Publisher eventPublisher;
     private final Path tempDir;
     private final ExecutorService segmentExecutor;
+    private java.util.function.Consumer<RecoveryFaultPoint> faultInjectionHook;
+
+    public void setFaultInjectionHook(java.util.function.Consumer<RecoveryFaultPoint> hook) {
+        this.faultInjectionHook = hook;
+    }
+
+    private void injectFault(RecoveryFaultPoint point) {
+        if (faultInjectionHook != null) {
+            faultInjectionHook.accept(point);
+        }
+    }
 
     private final ConcurrentHashMap<DownloadId, DownloadSession> sessions = new ConcurrentHashMap<>();
 
@@ -62,7 +73,7 @@ public class SingleDownloadCoordinator {
         }
     }
 
-    private final io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter;
+    private final io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter;
 
     public SingleDownloadCoordinator(
             DownloadRepository repository,
@@ -71,11 +82,11 @@ public class SingleDownloadCoordinator {
             HttpClient httpClient,
             DownloadEvent.Publisher eventPublisher,
             Path tempDir,
-            io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter) {
+            io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.probeClient = probeClient;
-        this.httpClient = httpClient;
+        this.httpClient = new io.smartdm.download.http.SafeRedirectHttpClient(httpClient);
         this.eventPublisher = eventPublisher;
         this.tempDir = tempDir;
         this.rateLimiter = rateLimiter;
@@ -208,6 +219,16 @@ public class SingleDownloadCoordinator {
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
 
+            if (download.downloadedBytes().value() == download.totalBytes().value() && download.totalBytes().value() > 0) {
+                Path destPath = Path.of(download.destination().value());
+                if (java.nio.file.Files.exists(destPath) && java.nio.file.Files.size(destPath) == download.totalBytes().value()) {
+                    download.updateState(DownloadState.COMPLETED);
+                    repository.save(download);
+                    eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
+                    return;
+                }
+            }
+
             // ── Phase 2: Execute Workers ──────────────────────────────────────
             channel = new SegmentedFileChannel(download.destination(), tempDir, download.id().value() + ".part");
             session.channel = channel;
@@ -227,15 +248,17 @@ public class SingleDownloadCoordinator {
                 eventPublisher.publish(new DownloadEvent.ProgressUpdated(
                         download.id(), download.downloadedBytes(), download.totalBytes(), download));
                 long now = System.currentTimeMillis();
-                if (now - lastSaveTime[0] > 5000) {
+                if (now - lastSaveTime[0] > 5000 || faultInjectionHook != null) {
                     synchronized (lastSaveTime) {
-                        if (now - lastSaveTime[0] > 5000) {
+                        if (now - lastSaveTime[0] > 5000 || faultInjectionHook != null) {
                             try { session.channel.force(true); } catch(Exception ignored){}
                             repository.save(download);
                             lastSaveTime[0] = now;
+                            injectFault(RecoveryFaultPoint.AFTER_PROGRESS_COMMIT);
                         }
                     }
                 }
+                injectFault(RecoveryFaultPoint.AFTER_SEGMENT_WRITE);
             };
 
             for (DownloadSegment segment : download.segments()) {
@@ -319,8 +342,11 @@ public class SingleDownloadCoordinator {
             }
 
             // ── Phase 4: Commit ──────────────────────────────────────
+            injectFault(RecoveryFaultPoint.BEFORE_FINAL_MOVE);
             channel.commit();
+            injectFault(RecoveryFaultPoint.AFTER_FINAL_MOVE);
 
+            injectFault(RecoveryFaultPoint.BEFORE_COMPLETION_COMMIT);
             download.updateState(DownloadState.COMPLETED);
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
@@ -333,15 +359,16 @@ public class SingleDownloadCoordinator {
         } finally {
             if (session != null) {
                 sessions.remove(download.id());
-                if (download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
+                if (download.state() == DownloadState.CANCELED) {
                     if (session.channel != null) {
                         session.channel.cleanup();
                     }
-                } else if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED) {
+                } else if (download.state() == DownloadState.FAILED || download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED) {
                     try { if (session.channel != null) session.channel.close(); } catch(Exception ignored){}
                 }
             } else if (channel != null) {
-                if (download.state() == DownloadState.FAILED) channel.cleanup();
+                if (download.state() == DownloadState.CANCELED) channel.cleanup();
+                else try { channel.close(); } catch(Exception ignored){}
             }
         }
     }

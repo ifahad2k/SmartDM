@@ -72,14 +72,14 @@ class SingleDownloadCoordinatorTest {
         };
 
         httpClient = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
         HttpProbeClient probeClient = new HttpProbeClient(httpClient);
 
         coordinator = new SingleDownloadCoordinator(
                 repo, null, probeClient, httpClient, publisher, tempDir.resolve("parts"),
-                new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
+                new io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter(Long.MAX_VALUE, null));
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -182,14 +182,14 @@ class SingleDownloadCoordinatorTest {
             @Override public java.util.List<Download> findReadyScheduledDownloads(long currentTimeMs) { return java.util.Collections.emptyList(); }
         };
         HttpClient shortTimeoutClient = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(Duration.ofSeconds(2))
                 .build();
         HttpProbeClient shortProbe = new HttpProbeClient(shortTimeoutClient);
         SingleDownloadCoordinator timeoutCoord = new SingleDownloadCoordinator(
                 repo, null, shortProbe, shortTimeoutClient, event -> {},
                 tempDir.resolve("timeout-parts"),
-                new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
+                new io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter(Long.MAX_VALUE, null));
 
         Path dest = tempDir.resolve("timeout.txt");
         Download dl = Download.create(

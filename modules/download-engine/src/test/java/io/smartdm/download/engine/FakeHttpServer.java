@@ -25,7 +25,8 @@ public class FakeHttpServer {
             byte[] body = "Hello World! This is a known length file.".getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "text/plain");
             if (exchange.getRequestMethod().equalsIgnoreCase("HEAD")) {
-                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseHeaders().add("Content-Length", String.valueOf(body.length));
+                exchange.sendResponseHeaders(200, -1);
                 exchange.close();
             } else {
                 exchange.sendResponseHeaders(200, body.length);

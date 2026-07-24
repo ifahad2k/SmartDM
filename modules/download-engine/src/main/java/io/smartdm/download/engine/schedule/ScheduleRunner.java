@@ -19,15 +19,17 @@ public class ScheduleRunner {
     private final Consumer<DownloadQueue.Status> queueStatusUpdater;
     private final Runnable scheduledDownloadsStarter;
     private final Consumer<Schedule> scheduleUpdater;
+    private final Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater;
     private final Map<String, Schedule> schedules = new ConcurrentHashMap<>();
     private ScheduledExecutorService executor;
     private DownloadQueue.Status lastEmittedQueueStatus = null;
 
-    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater) {
+    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater, Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater) {
         this.clock = clock;
         this.queueStatusUpdater = queueStatusUpdater;
         this.scheduledDownloadsStarter = scheduledDownloadsStarter;
         this.scheduleUpdater = scheduleUpdater;
+        this.scheduleExecutionUpdater = scheduleExecutionUpdater;
     }
     
     public void start() {
@@ -59,12 +61,19 @@ public class ScheduleRunner {
             scheduledDownloadsStarter.run();
         }
         
-        LocalDateTime now = LocalDateTime.now(clock);
-        int currentDayOfWeek = now.getDayOfWeek().getValue();
-        LocalTime currentTime = now.toLocalTime();
-        
         for (Schedule schedule : schedules.values()) {
             if (!schedule.isActive()) continue;
+            
+            java.time.ZoneId zoneId = java.time.ZoneId.systemDefault();
+            try {
+                if (schedule.getTimezoneId() != null) {
+                    zoneId = java.time.ZoneId.of(schedule.getTimezoneId());
+                }
+            } catch (Exception ignored) { }
+            
+            LocalDateTime now = LocalDateTime.now(clock.withZone(zoneId));
+            int currentDayOfWeek = now.getDayOfWeek().getValue();
+            LocalTime currentTime = now.toLocalTime();
             
             // Check day of week
             List<Integer> days = schedule.getDaysOfWeek();
@@ -119,6 +128,10 @@ public class ScheduleRunner {
                     if (scheduleUpdater != null) {
                         scheduleUpdater.accept(schedule);
                     }
+                    if (scheduleExecutionUpdater != null) {
+                        scheduleExecutionUpdater.accept(io.smartdm.domain.ScheduleExecution.createNew(
+                            schedule.getId(), System.currentTimeMillis(), io.smartdm.domain.ScheduleExecution.Status.SUCCESS));
+                    }
                 }
             } else if (schedule.getEndTime().isPresent()) {
                 // One-time stop
@@ -145,6 +158,10 @@ public class ScheduleRunner {
                     schedule.setLastRunTime(System.currentTimeMillis());
                     if (scheduleUpdater != null) {
                         scheduleUpdater.accept(schedule);
+                    }
+                    if (scheduleExecutionUpdater != null) {
+                        scheduleExecutionUpdater.accept(io.smartdm.domain.ScheduleExecution.createNew(
+                            schedule.getId(), System.currentTimeMillis(), io.smartdm.domain.ScheduleExecution.Status.SUCCESS));
                     }
                 }
             }

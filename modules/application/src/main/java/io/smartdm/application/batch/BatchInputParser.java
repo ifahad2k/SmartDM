@@ -14,25 +14,36 @@ public class BatchInputParser {
     private static final Pattern NUMERIC_PATTERN = Pattern.compile("\\[(\\d+)-(\\d+)\\]");
 
     public static List<String> parse(String input) {
-        Set<String> uniqueUrls = new LinkedHashSet<>();
-        
         if (input == null || input.trim().isEmpty()) {
             return new ArrayList<>();
         }
+        
+        if (input.length() > 100_000) {
+            throw new IllegalArgumentException("Batch input too large. Maximum allowed size is 100,000 characters.");
+        }
+
+        Set<String> uniqueUrls = new LinkedHashSet<>();
 
         String[] lines = input.split("\\r?\\n");
         for (String line : lines) {
             String cleanLine = line.trim();
-            // Handle CSV cases simply: split by comma if line has multiple items
-            // but we usually expect URLs per line or comma separated URLs.
             String[] tokens = cleanLine.split(",");
             for (String token : tokens) {
                 String candidate = token.trim();
                 if (candidate.isEmpty()) continue;
 
                 if (NUMERIC_PATTERN.matcher(candidate).find()) {
-                    uniqueUrls.addAll(expandPattern(candidate));
+                    List<String> expanded = expandPattern(candidate);
+                    for (String e : expanded) {
+                        if (uniqueUrls.size() >= 500) {
+                            throw new IllegalArgumentException("Too many URLs in batch. Maximum allowed is 500.");
+                        }
+                        uniqueUrls.add(e);
+                    }
                 } else if (isValidUrl(candidate)) {
+                    if (uniqueUrls.size() >= 500) {
+                        throw new IllegalArgumentException("Too many URLs in batch. Maximum allowed is 500.");
+                    }
                     uniqueUrls.add(candidate);
                 }
             }

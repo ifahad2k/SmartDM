@@ -28,8 +28,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash, category_id) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash, category_id, credential_id, proxy_profile_id) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
@@ -38,7 +38,9 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                      "last_modified=excluded.last_modified, " +
                      "scheduled_start_time=excluded.scheduled_start_time, " +
                      "expected_hash=excluded.expected_hash, " +
-                     "category_id=excluded.category_id";
+                     "category_id=excluded.category_id, " +
+                     "credential_id=excluded.credential_id, " +
+                     "proxy_profile_id=excluded.proxy_profile_id";
 
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
         
@@ -74,6 +76,16 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                         stmt.setString(11, download.categoryId().value());
                     } else {
                         stmt.setNull(11, java.sql.Types.VARCHAR);
+                    }
+                    if (download.credentialReference() != null) {
+                        stmt.setString(12, download.credentialReference().id());
+                    } else {
+                        stmt.setNull(12, java.sql.Types.VARCHAR);
+                    }
+                    if (download.proxyProfileReference() != null) {
+                        stmt.setString(13, download.proxyProfileReference().id());
+                    } else {
+                        stmt.setNull(13, java.sql.Types.VARCHAR);
                     }
                     stmt.executeUpdate();
                 }
@@ -229,6 +241,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         }
         String expectedHash = rs.getString("expected_hash");
         String categoryIdStr = rs.getString("category_id");
+        String credentialId = rs.getString("credential_id");
+        String proxyProfileId = rs.getString("proxy_profile_id");
         
         Download d = new Download(id, source, dest);
         d.updateState(state);
@@ -238,6 +252,12 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         d.updateExpectedHash(expectedHash);
         if (categoryIdStr != null) {
             d.updateCategoryId(CategoryId.of(categoryIdStr));
+        }
+        if (credentialId != null) {
+            d.updateCredentialReference(new io.smartdm.domain.CredentialReference(credentialId));
+        }
+        if (proxyProfileId != null) {
+            d.updateProxyProfileReference(new io.smartdm.domain.ProxyProfileReference(proxyProfileId));
         }
         
         // Load segments

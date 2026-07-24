@@ -122,7 +122,7 @@ public class SmartDmApp extends Application {
         // proxySelector.setConfig(ProxyConfig.system()); // System by default
 
         HttpClient httpClient = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .proxy(proxySelector)
                 .build();
         HttpProbeClient probeClient = new HttpProbeClient(httpClient);

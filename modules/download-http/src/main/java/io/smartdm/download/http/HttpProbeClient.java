@@ -14,16 +14,16 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 public class HttpProbeClient {
-    private final HttpClient httpClient;
+    private final SafeRedirectHttpClient httpClient;
 
     public HttpProbeClient(HttpClient httpClient) {
-        this.httpClient = httpClient;
+        this.httpClient = new SafeRedirectHttpClient(httpClient);
     }
 
     public HttpProbeClient() {
         this(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build());
     }
 

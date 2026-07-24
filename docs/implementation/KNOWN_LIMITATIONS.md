@@ -28,7 +28,7 @@ JavaFX shell theme system lacks automatic OS-level dark mode synchronization. Us
 
 ## Phase 4 - Single-download vertical slice
 
-Single-download slice lacks pause/resume and multi-threading capabilities. Large file downloads must finish in a single session.
+None (pause/resume and multi-threading capabilities are fully implemented and verified via Phase 5).
 
 ---
 

@@ -1,4 +1,4 @@
-package io.smartdm.download.engine.limit;
+package io.smartdm.download.engine.bandwidth;
 
 import org.junit.jupiter.api.Test;
 import java.util.concurrent.CountDownLatch;

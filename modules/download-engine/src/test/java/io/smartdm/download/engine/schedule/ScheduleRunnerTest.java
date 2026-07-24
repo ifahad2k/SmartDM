@@ -21,7 +21,7 @@ class ScheduleRunnerTest {
         // Setup clock fixed at 12:00 PM
         Clock clock = Clock.fixed(Instant.parse("2026-07-19T12:00:00Z"), ZoneId.of("UTC"));
         
-        ScheduleRunner runner = new ScheduleRunner(clock, statusRef::set, () -> {}, schedule -> {});
+        ScheduleRunner runner = new ScheduleRunner(clock, statusRef::set, () -> {}, schedule -> {}, execution -> {});
         
         // Window from 11:00 AM to 1:00 PM (Active)
         Schedule scheduleActive = Schedule.createNew(
@@ -29,7 +29,8 @@ class ScheduleRunnerTest {
             LocalTime.of(11, 0), 
             LocalTime.of(13, 0), 
             List.of(), 
-            Schedule.MissedTriggerPolicy.IGNORE
+            Schedule.MissedTriggerPolicy.IGNORE,
+            "UTC"
         );
         
         runner.updateSchedule(scheduleActive);
@@ -43,7 +44,8 @@ class ScheduleRunnerTest {
             LocalTime.of(13, 0), 
             LocalTime.of(14, 0), 
             List.of(), 
-            Schedule.MissedTriggerPolicy.IGNORE
+            Schedule.MissedTriggerPolicy.IGNORE,
+            "UTC"
         );
         
         runner.updateSchedule(schedulePaused);

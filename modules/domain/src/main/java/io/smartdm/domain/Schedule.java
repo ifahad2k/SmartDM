@@ -23,9 +23,10 @@ public class Schedule {
     private final List<Integer> daysOfWeek; // 1 (Monday) to 7 (Sunday)
     private final boolean active;
     private final MissedTriggerPolicy missedTriggerPolicy;
+    private final String timezoneId;
     private long lastRunTime;
 
-    public Schedule(String id, String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, boolean active, MissedTriggerPolicy missedTriggerPolicy) {
+    public Schedule(String id, String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, boolean active, MissedTriggerPolicy missedTriggerPolicy, String timezoneId) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.startTime = startTime;
@@ -33,11 +34,12 @@ public class Schedule {
         this.daysOfWeek = daysOfWeek != null ? List.copyOf(daysOfWeek) : List.of();
         this.active = active;
         this.missedTriggerPolicy = Objects.requireNonNull(missedTriggerPolicy, "missedTriggerPolicy must not be null");
+        this.timezoneId = timezoneId != null ? timezoneId : java.time.ZoneId.systemDefault().getId();
         this.lastRunTime = 0;
     }
 
-    public static Schedule createNew(String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, MissedTriggerPolicy missedTriggerPolicy) {
-        return new Schedule(UUID.randomUUID().toString(), name, startTime, endTime, daysOfWeek, true, missedTriggerPolicy);
+    public static Schedule createNew(String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, MissedTriggerPolicy missedTriggerPolicy, String timezoneId) {
+        return new Schedule(UUID.randomUUID().toString(), name, startTime, endTime, daysOfWeek, true, missedTriggerPolicy, timezoneId);
     }
 
     public String getId() {
@@ -66,6 +68,10 @@ public class Schedule {
 
     public MissedTriggerPolicy getMissedTriggerPolicy() {
         return missedTriggerPolicy;
+    }
+
+    public String getTimezoneId() {
+        return timezoneId;
     }
 
     public long getLastRunTime() {

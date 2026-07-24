@@ -10,4 +10,7 @@ public interface ScheduleRepository {
     Optional<Schedule> findById(String id);
     List<Schedule> findAll();
     void delete(String id);
+    
+    void saveExecution(io.smartdm.domain.ScheduleExecution execution);
+    List<io.smartdm.domain.ScheduleExecution> findExecutionsByScheduleId(String scheduleId);
 }

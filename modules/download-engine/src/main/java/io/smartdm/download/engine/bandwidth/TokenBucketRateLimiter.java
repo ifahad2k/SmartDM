@@ -1,4 +1,4 @@
-package io.smartdm.download.engine.limit;
+package io.smartdm.download.engine.bandwidth;
 
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;

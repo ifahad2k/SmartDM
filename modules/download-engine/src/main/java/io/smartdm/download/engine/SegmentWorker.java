@@ -9,12 +9,14 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.Callable;
 
+import io.smartdm.download.http.SafeRedirectHttpClient;
+
 public class SegmentWorker implements Callable<Void> {
-    private final HttpClient httpClient;
+    private final SafeRedirectHttpClient httpClient;
     private final HttpRequest baseRequest;
     private final DownloadSegment segment;
     private final SegmentedFileChannel channel;
-    private final io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter;
+    private final io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter;
     private final ProgressCallback progressCallback;
     private final String etag;
     private final String lastModified;
@@ -24,7 +26,7 @@ public class SegmentWorker implements Callable<Void> {
         void onProgress(DownloadSegment segment, long bytesRead);
     }
 
-    public SegmentWorker(HttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback, String etag, String lastModified) {
+    public SegmentWorker(SafeRedirectHttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback, String etag, String lastModified) {
         this.httpClient = httpClient;
         this.baseRequest = baseRequest;
         this.segment = segment;
@@ -55,7 +57,7 @@ public class SegmentWorker implements Callable<Void> {
         if (segment.endOffset() >= 0) {
             builder.header("Range", "bytes=" + segment.currentOffset() + "-" + segment.endOffset());
             isRangeRequest = true;
-        } else if (segment.startOffset() > 0) {
+        } else if (segment.startOffset() > 0 || segment.currentOffset() > 0) {
             builder.header("Range", "bytes=" + segment.currentOffset() + "-");
             isRangeRequest = true;
         }
