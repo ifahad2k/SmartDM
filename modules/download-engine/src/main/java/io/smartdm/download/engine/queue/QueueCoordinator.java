@@ -25,7 +25,7 @@ public class QueueCoordinator {
     
     private final DownloadStarter starter;
     private final io.smartdm.domain.repository.QueueRepository queueRepo;
-    private final java.util.concurrent.Executor persistenceExecutor;
+    private final java.util.concurrent.Executor queueCommandExecutor;
     private final Map<String, DownloadQueue> queues = new ConcurrentHashMap<>();
     private final Map<String, List<QueueItem>> queueItems = new ConcurrentHashMap<>();
     private final Map<String, Set<DownloadId>> activeDownloadsPerQueue = new ConcurrentHashMap<>();
@@ -38,13 +38,9 @@ public class QueueCoordinator {
     public QueueCoordinator(DownloadStarter starter, io.smartdm.domain.repository.QueueRepository queueRepo, java.util.concurrent.Executor persistenceExecutor) {
         this.starter = starter;
         this.queueRepo = queueRepo;
-        this.persistenceExecutor = persistenceExecutor != null 
+        this.queueCommandExecutor = persistenceExecutor != null 
                 ? persistenceExecutor 
-                : java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                    Thread t = new Thread(r, "queue-persistence-worker");
-                    t.setDaemon(true);
-                    return t;
-                });
+                : Runnable::run;
     }
 
     public void restoreQueue(DownloadQueue queue, List<QueueItem> items) {
@@ -54,38 +50,44 @@ public class QueueCoordinator {
     }
 
     public void updateQueue(DownloadQueue queue) {
-        queues.put(queue.getId(), queue);
-        activeDownloadsPerQueue.putIfAbsent(queue.getId(), ConcurrentHashMap.newKeySet());
-        if (queueRepo != null && persistenceExecutor != null) {
-            persistenceExecutor.execute(() -> queueRepo.saveQueue(queue));
-        }
-        triggerCoordination();
+        queueCommandExecutor.execute(() -> {
+            queues.put(queue.getId(), queue);
+            activeDownloadsPerQueue.putIfAbsent(queue.getId(), ConcurrentHashMap.newKeySet());
+            if (queueRepo != null) {
+                queueRepo.saveQueue(queue);
+            }
+            triggerCoordination();
+        });
     }
 
     public void updateQueueItems(String queueId, List<QueueItem> items) {
-        // Sort items by priority, then order index
-        List<QueueItem> sorted = items.stream()
-            .sorted(Comparator.comparingInt(QueueItem::getPriority).reversed()
-            .thenComparingInt(QueueItem::getOrderIndex))
-            .collect(Collectors.toCollection(CopyOnWriteArrayList::new));
-        queueItems.put(queueId, sorted);
-        if (queueRepo != null && persistenceExecutor != null) {
-            persistenceExecutor.execute(() -> queueRepo.saveQueueItems(queueId, sorted));
-        }
-        triggerCoordination();
+        queueCommandExecutor.execute(() -> {
+            // Sort items by priority, then order index
+            List<QueueItem> sorted = items.stream()
+                .sorted(Comparator.comparingInt(QueueItem::getPriority).reversed()
+                .thenComparingInt(QueueItem::getOrderIndex))
+                .collect(Collectors.toCollection(CopyOnWriteArrayList::new));
+            queueItems.put(queueId, sorted);
+            if (queueRepo != null) {
+                queueRepo.saveQueueItems(queueId, sorted);
+            }
+            triggerCoordination();
+        });
     }
     
     public void markDownloadFinished(DownloadId id) {
-        activeDownloadsPerQueue.values().forEach(set -> set.remove(id));
-        // Also remove from queueItems to prevent restart
-        for (Map.Entry<String, List<QueueItem>> entry : queueItems.entrySet()) {
-            boolean removed = entry.getValue().removeIf(item -> item.getDownloadId().equals(id));
-            if (removed && queueRepo != null && persistenceExecutor != null) {
-                List<QueueItem> current = entry.getValue();
-                persistenceExecutor.execute(() -> queueRepo.saveQueueItems(entry.getKey(), current));
+        queueCommandExecutor.execute(() -> {
+            activeDownloadsPerQueue.values().forEach(set -> set.remove(id));
+            // Also remove from queueItems to prevent restart
+            for (Map.Entry<String, List<QueueItem>> entry : queueItems.entrySet()) {
+                boolean removed = entry.getValue().removeIf(item -> item.getDownloadId().equals(id));
+                if (removed && queueRepo != null) {
+                    List<QueueItem> current = entry.getValue();
+                    queueRepo.saveQueueItems(entry.getKey(), current);
+                }
             }
-        }
-        triggerCoordination();
+            triggerCoordination();
+        });
     }
 
     private final AtomicBoolean pendingTrigger = new AtomicBoolean(false);

@@ -64,6 +64,7 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         
         private final AtomicReference<String> lastDiagnostic = new AtomicReference<>();
         private final AtomicReference<String> detectedFailure = new AtomicReference<>();
+        private final java.util.concurrent.atomic.AtomicLong parseFailureCount = new java.util.concurrent.atomic.AtomicLong(0);
         
         private volatile NativeProcessSession processSession;
         private volatile long lastPersistNanos;
@@ -349,14 +350,17 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                     }
                 }
             } catch (Exception e) {
-                // Ignore parse errors from yt-dlp
+                long failureCount = context.parseFailureCount.incrementAndGet();
+                if (failureCount % 100 == 1) {
+                    System.err.println("Warning: Media progress line parse error (count=" + failureCount + "): " + e.getMessage());
+                }
             }
         }
     }
 
     private void handleYtDlpErrorOutput(MediaJobContext context, String line) {
         if (line == null || line.isBlank()) return;
-        String sanitized = sanitizeUrl(line.trim());
+        String sanitized = sanitizeDiagnosticMessage(line.trim());
         context.lastDiagnostic.set(sanitized);
 
         if (line.contains("No space left")) {
@@ -370,9 +374,16 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         }
     }
 
-    private static String sanitizeUrl(String text) {
+    private static String sanitizeDiagnosticMessage(String text) {
         if (text == null) return null;
-        return text.replaceAll("(https?://[^?\\s]+)\\?[^\\s]*", "$1?[REDACTED]");
+        String sanitized = text.replaceAll("(https?://[^?\\s]+)\\?[^\\s]*", "$1?[REDACTED]");
+        sanitized = sanitized.replaceAll("[a-zA-Z]:\\\\[^\\s:]+", "[REDACTED_PATH]");
+        sanitized = sanitized.replaceAll("/(?:[^/\\s]+/)+[^/\\s]+", "[REDACTED_PATH]");
+        sanitized = sanitized.replaceAll("\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b", "[REDACTED_IP]");
+        if (sanitized.length() > 500) {
+            sanitized = sanitized.substring(0, 500) + "... [TRUNCATED]";
+        }
+        return sanitized;
     }
 
     private void handleCompletion(MediaJobContext context, NativeProcessResult result, Throwable error, Path outputManifest, Path tempDir, Path targetPath) {

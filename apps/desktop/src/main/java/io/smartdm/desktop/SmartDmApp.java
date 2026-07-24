@@ -282,8 +282,13 @@ public class SmartDmApp extends Application {
                     }).orElse(false);
                 }
             };
-        
-        io.smartdm.download.engine.queue.QueueCoordinator queueCoordinator = new io.smartdm.download.engine.queue.QueueCoordinator(starter, queueRepository, enginePool);
+
+        java.util.concurrent.ExecutorService queueExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "queue-command-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        io.smartdm.download.engine.queue.QueueCoordinator queueCoordinator = new io.smartdm.download.engine.queue.QueueCoordinator(starter, queueRepository, queueExecutor);
         queueCoordinatorRef.set(queueCoordinator);
         starterRef.set(starter);
 
