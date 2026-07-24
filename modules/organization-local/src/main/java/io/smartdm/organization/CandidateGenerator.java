@@ -71,6 +71,9 @@ public class CandidateGenerator {
             }
         }
 
+        if (candidates.size() > 50) {
+            return candidates.stream().limit(50).collect(java.util.stream.Collectors.toSet());
+        }
         return candidates;
     }
 
@@ -78,11 +81,35 @@ public class CandidateGenerator {
         if (path == null) return;
         try {
             Path abs = path.toAbsolutePath().normalize();
-            if (Files.exists(abs) && Files.isDirectory(abs) && Files.isWritable(abs)) {
-                if (!DefaultPathFilter.isExcludedPath(abs)) {
-                    candidates.add(abs);
-                }
+            if (isSafeCandidatePath(abs)) {
+                candidates.add(abs);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            System.err.println("Warning: Candidate path check failed: " + ex.getMessage());
+        }
+    }
+
+    public static boolean isSafeCandidatePath(Path path) {
+        if (path == null) return false;
+        try {
+            Path norm = path.toAbsolutePath().normalize();
+            String pathStr = norm.toString().toLowerCase();
+
+            // Reject OS system directories (Windows & Unix)
+            if (pathStr.startsWith("c:\\windows") || pathStr.startsWith("c:\\program files")
+                    || pathStr.startsWith("c:\\program files (x86)")
+                    || pathStr.startsWith("/proc") || pathStr.startsWith("/sys")
+                    || pathStr.startsWith("/dev") || pathStr.startsWith("/etc")
+                    || pathStr.startsWith("/bin") || pathStr.startsWith("/sbin")
+                    || pathStr.startsWith("/usr/bin") || pathStr.startsWith("/var/run")) {
+                return false;
+            }
+
+            // Path must exist, be a directory, and be writable
+            return Files.exists(norm) && Files.isDirectory(norm) && Files.isWritable(norm)
+                    && !DefaultPathFilter.isExcludedPath(norm);
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

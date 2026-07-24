@@ -126,7 +126,9 @@ public class LocalFolderScorer {
                 } else if (freeSpace > 10L * 1024 * 1024 * 1024) { // >10GB
                     score += 5.0;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                System.err.println("Warning: Disk space check failed for " + path + ": " + ex.getMessage());
+            }
 
             // 5. Semantic extension-to-folder mapping
             String extLower = extension.toLowerCase();

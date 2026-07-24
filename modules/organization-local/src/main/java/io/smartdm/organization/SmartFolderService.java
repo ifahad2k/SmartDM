@@ -26,7 +26,12 @@ public class SmartFolderService {
     public List<FolderSuggestion> suggestFolders(String url, String fileName, String mimeType, long expectedBytes) {
         String sourceHost = extractHost(url);
         List<Path> candidates = new ArrayList<>(candidateGenerator.generateCandidates());
-        return localFolderScorer.scoreCandidates(candidates, fileName, mimeType, sourceHost, expectedBytes);
+        List<FolderSuggestion> suggestions = localFolderScorer.scoreCandidates(candidates, fileName, mimeType, sourceHost, expectedBytes);
+        suggestions.sort((a, b) -> Double.compare(b.score(), a.score()));
+        if (suggestions.size() > 3) {
+            return new ArrayList<>(suggestions.subList(0, 3));
+        }
+        return suggestions;
     }
 
     public java.util.concurrent.CompletableFuture<List<FolderSuggestion>> suggestFoldersAsync(

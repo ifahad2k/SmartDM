@@ -3,7 +3,7 @@
 **Document Location:** `docs/Audit/REMEDIATION_STATUS.md`  
 **Reference Audit Plan:** `docs/Audit/SmartDM_Phases_0-12_Problems_and_Remediation_Plan.md`  
 **Current Branch:** `remediation-fixes`  
-**Latest Commit:** `remediation-batch-5`  
+**Latest Commit:** `remediation-batch-6`  
 **Date:** 2026-07-25  
 
 ---
@@ -17,41 +17,38 @@
 | **Batch 3** | SDM-RB-01 – SDM-RB-10 | Transfer Slices, Fault Recovery, Queues & Auth | **COMPLETED (10/10 Release Blockers Remediated)** |
 | **Batch 4** | SDM-P8-01 – SDM-P10-02 | Native Messaging, yt-dlp/FFmpeg & Site Panel | **COMPLETED** |
 | **Batch 5** | SDM-P11-01 – SDM-P12-08 | Catalog Indexing & Smart Folder Recommendation | **COMPLETED** |
-| **Batch 6** | SDM-006 – SDM-008 | Cross-Cutting Hardening & Performance Budgets | **Not Started** |
+| **Batch 6** | SDM-006 – SDM-008 | Cross-Cutting Hardening & Performance Budgets | **COMPLETED (ALL 6 REMEDIATION BATCHES COMPLETE)** |
 
 ---
 
-## 2. Detailed Progress on Batch 5 (Phases 11–12 Remediation - Completed)
+## 2. Detailed Progress on Batch 6 (Cross-Cutting Hardening - Completed)
 
-### SDM-P11-01 & SDM-P11-02: Staged File Hashing & Cost-Ordered Duplicate Detection
+### SDM-P12-04 & SDM-P12-05: Folder Control Actions & System Path Safety
+- **Severity:** High / Critical
+- **Status:** `COMPLETED`
+- **Actions Completed:**
+  - Added `setBlacklisted` & `setPinned` control methods to `FolderAffinityRepository`.
+  - Implemented `isSafeCandidatePath` in `CandidateGenerator` rejecting OS system directory escapes (`C:\Windows`, `C:\Program Files`, `/proc`, `/sys`, `/etc`).
+
+### SDM-P12-06 & SDM-P12-07: Configurable Scoring Weights & Bounded Generation
+- **Severity:** Medium / High
+- **Status:** `COMPLETED`
+- **Actions Completed:**
+  - Extracted `FolderScoringWeights` and `FolderFeatureVector` data records for pure-data scoring calculations.
+  - Enforced upper limit of 50 generated candidates in `CandidateGenerator` and top 3 returned suggestions in `SmartFolderService`.
+
+### SDM-006: Elimination of Silent Exception Swallowing
 - **Severity:** High
 - **Status:** `COMPLETED`
 - **Actions Completed:**
-  - `FileCatalogScanner` records file metadata without computing hashes during initial directory traversal.
-  - `DuplicateDetector` queries Tier 1 (Name+Size) candidates first; computes quick fingerprints only when candidates exist, and full SHA-256 hashes only for strong matches.
+  - Replaced silent `catch (Exception ignored) {}` blocks across organization and catalog modules with structured stderr logging (`System.err.println(...)`).
 
-### SDM-P11-03, SDM-P11-06 & SDM-P11-07: Scan Error Tracking, MIME Probe Fix & Unique Inode Upserts
-- **Severity:** High / Medium
+### SDM-007 & SDM-008: Deterministic Unit Tests & Full Verification
+- **Severity:** High
 - **Status:** `COMPLETED`
 - **Actions Completed:**
-  - Created `CatalogScanError` domain model and `catalog_scan_error` table via Flyway migration `V18`.
-  - Updated `FileCatalogScanner` to log permission and access errors (`ACCESS_DENIED`, `METADATA_FAILED`, `FILE_DISAPPEARED`).
-  - Passed actual `Path file` to `Files.probeContentType(file)` instead of basename.
-  - Created `idx_catalog_file_root_relpath` unique index and `ON CONFLICT(root_id, relative_path)` upsert clause in `SqlCipherCatalogRepository`.
-
-### SDM-P12-01 & SDM-P12-03: Catalog Root Resolution in Folder Scorer & Recency Decay
-- **Severity:** High / Medium
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Updated `LocalFolderScorer` to resolve relative catalog paths against their catalog root before matching candidate folders.
-  - Added timestamp recency decay calculation based on `getLastUsedAt()` to folder affinity choice scoring.
-
-### SDM-P12-02 & SDM-P11-08: Asynchronous Smart Folder Service & Benchmark Verification
-- **Severity:** Critical / High
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Added `suggestFoldersAsync` returning `CompletableFuture<List<FolderSuggestion>>` in `SmartFolderService` to run folder scoring asynchronously on background threads without blocking JavaFX.
-  - Verified catalog test suite.
+  - Created unit test suite `LocalFolderScorerTest.java` verifying scoring weights, system path safety, and blacklist rules.
+  - Verified full automated Gradle test suite (`BUILD SUCCESSFUL in 25s`).
 
 ---
 
@@ -60,10 +57,11 @@
 - **Batch 2 (SDM-P0-01 to SDM-P3-02):** Completed. Linux SecretService hardened, ArchUnit boundaries established, UI thread blocking guards added.
 - **Batch 3 (SDM-RB-01 to SDM-RB-10):** Completed. 10 release blockers remediated.
 - **Batch 4 (SDM-P8-01 to SDM-P10-02):** Completed. Native messaging envelope hardened, browser sandbox detection added, media tool manifest created, explicit cookie consent policy enforced, YouTube site adapter added.
+- **Batch 5 (SDM-P11-01 to SDM-P12-08):** Completed. Staged file hashing, cost-ordered duplicate detection, scan error tracking, root path resolution, recency decay, async folder suggestions added.
 
 ---
 
-## 4. Verification Evidence
+## 4. Final Remediation Verification Evidence
 - **Automated Gradle Check**: `.\gradlew.bat --no-daemon check architectureTest integrationTest`
-- **Build Status**: `BUILD SUCCESSFUL in 49s`
+- **Build Status**: `BUILD SUCCESSFUL in 25s`
 - **Remote Push**: Synced on `origin/remediation-fixes`
