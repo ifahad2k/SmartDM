@@ -32,7 +32,7 @@ public class SafeRedirectHttpClient {
 
 
     private <T> CompletableFuture<HttpResponse<T>> sendWithRedirects(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler, int redirectCount, Set<URI> visitedUris) {
-        if (redirectCount > MAX_REDIRECTS) {
+        if (redirectCount >= MAX_REDIRECTS) {
             return CompletableFuture.failedFuture(new RuntimeException("Too many redirects"));
         }
         
@@ -70,7 +70,9 @@ public class SafeRedirectHttpClient {
                     
                     int origPort = request.uri().getPort() != -1 ? request.uri().getPort() : ("https".equalsIgnoreCase(request.uri().getScheme()) ? 443 : 80);
                     int newPort = newUri.getPort() != -1 ? newUri.getPort() : ("https".equalsIgnoreCase(newUri.getScheme()) ? 443 : 80);
-                    boolean isCrossOrigin = !request.uri().getHost().equalsIgnoreCase(newUri.getHost()) || origPort != newPort || !request.uri().getScheme().equalsIgnoreCase(newUri.getScheme());
+                    String origHost = request.uri().getHost();
+                    String newHost = newUri.getHost();
+                    boolean isCrossOrigin = origHost == null || newHost == null || !origHost.equalsIgnoreCase(newHost) || origPort != newPort || !request.uri().getScheme().equalsIgnoreCase(newUri.getScheme());
                     
                     for (Map.Entry<String, List<String>> entry : request.headers().map().entrySet()) {
                         String headerName = entry.getKey();

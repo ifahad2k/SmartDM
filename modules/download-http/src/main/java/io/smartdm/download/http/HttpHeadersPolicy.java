@@ -4,6 +4,6 @@ import java.util.Set;
 
 public class HttpHeadersPolicy {
     public static final Set<String> ALLOWED_USER_HEADERS = Set.of(
-        "Accept", "Accept-Language", "User-Agent", "Referer", "Cache-Control"
+        "Accept", "Accept-Language", "User-Agent", "Cache-Control"
     );
 }

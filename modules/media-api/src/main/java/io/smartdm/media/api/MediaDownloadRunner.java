@@ -14,6 +14,15 @@ public interface MediaDownloadRunner extends AutoCloseable {
             String webpageUrl,
             String formatArgument);
 
+    default CompletionStage<Void> startDownload(
+            Download download,
+            Path targetPath,
+            String webpageUrl,
+            String formatArgument,
+            DestinationConflictPolicy conflictPolicy) {
+        return startDownload(download, targetPath, webpageUrl, formatArgument);
+    }
+
     CompletionStage<Void> pauseDownload(Download download);
 
     CompletionStage<Void> resumeDownload(Download download);

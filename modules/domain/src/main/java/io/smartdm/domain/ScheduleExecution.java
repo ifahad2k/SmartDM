@@ -6,6 +6,7 @@ import java.util.UUID;
 public class ScheduleExecution {
     
     public enum Status {
+        CLAIMED,
         SUCCESS,
         FAILED
     }
@@ -40,5 +41,9 @@ public class ScheduleExecution {
 
     public Status getStatus() {
         return status;
+    }
+
+    public ScheduleExecution withStatus(Status newStatus) {
+        return new ScheduleExecution(this.id, this.scheduleId, this.executionTimeMillis, newStatus);
     }
 }

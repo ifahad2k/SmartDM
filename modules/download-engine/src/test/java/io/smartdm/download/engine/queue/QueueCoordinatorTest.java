@@ -54,4 +54,21 @@ class QueueCoordinatorTest {
         
         assertThat(started).contains(id1, id3);
     }
+
+    @Test
+    void shouldRestoreQueueWithoutImmediateSideEffects() {
+        QueueCoordinator.DownloadStarter starter = new QueueCoordinator.DownloadStarter() {
+            @Override public void startDownload(DownloadId id) {}
+            @Override public void pauseDownload(DownloadId id) {}
+            @Override public boolean isActive(DownloadId id) { return false; }
+            @Override public boolean isScheduledFuture(DownloadId id) { return false; }
+        };
+
+        QueueCoordinator coordinator = new QueueCoordinator(starter);
+        DownloadQueue queue = DownloadQueue.createNew("Saved Queue", 3, null);
+        DownloadId id1 = DownloadId.generate();
+        QueueItem item1 = QueueItem.createNew(queue.getId(), id1, 2, 1);
+
+        coordinator.restoreQueue(queue, List.of(item1));
+    }
 }

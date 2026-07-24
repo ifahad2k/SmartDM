@@ -15,20 +15,31 @@ import java.util.function.Consumer;
 
 public class ScheduleRunner {
     
+    @FunctionalInterface
+    public interface ScheduleOccurrenceClaimer {
+        boolean claim(io.smartdm.domain.ScheduleExecution occurrence);
+    }
+
     private final Clock clock;
     private final Consumer<DownloadQueue.Status> queueStatusUpdater;
     private final Runnable scheduledDownloadsStarter;
     private final Consumer<Schedule> scheduleUpdater;
+    private final ScheduleOccurrenceClaimer occurrenceClaimer;
     private final Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater;
     private final Map<String, Schedule> schedules = new ConcurrentHashMap<>();
     private ScheduledExecutorService executor;
     private DownloadQueue.Status lastEmittedQueueStatus = null;
 
     public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater, Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater) {
+        this(clock, queueStatusUpdater, scheduledDownloadsStarter, scheduleUpdater, null, scheduleExecutionUpdater);
+    }
+
+    public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater, ScheduleOccurrenceClaimer occurrenceClaimer, Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater) {
         this.clock = clock;
         this.queueStatusUpdater = queueStatusUpdater;
         this.scheduledDownloadsStarter = scheduledDownloadsStarter;
         this.scheduleUpdater = scheduleUpdater;
+        this.occurrenceClaimer = occurrenceClaimer;
         this.scheduleExecutionUpdater = scheduleExecutionUpdater;
     }
     
@@ -123,14 +134,36 @@ public class ScheduleRunner {
                 }
                 
                 if (shouldTriggerNow) {
-                    queueStatusUpdater.accept(DownloadQueue.Status.ACTIVE);
-                    schedule.setLastRunTime(System.currentTimeMillis());
-                    if (scheduleUpdater != null) {
-                        scheduleUpdater.accept(schedule);
+                    LocalDateTime scheduledDateTime = now.toLocalDate().atTime(start);
+                    long scheduledInstant = scheduledDateTime.atZone(zoneId).toInstant().toEpochMilli();
+                    io.smartdm.domain.ScheduleExecution claim = new io.smartdm.domain.ScheduleExecution(
+                            java.util.UUID.randomUUID().toString(),
+                            schedule.getId(),
+                            scheduledInstant,
+                            io.smartdm.domain.ScheduleExecution.Status.CLAIMED
+                    );
+
+                    if (occurrenceClaimer != null) {
+                        boolean claimed = occurrenceClaimer.claim(claim);
+                        if (!claimed) {
+                            continue;
+                        }
                     }
-                    if (scheduleExecutionUpdater != null) {
-                        scheduleExecutionUpdater.accept(io.smartdm.domain.ScheduleExecution.createNew(
-                            schedule.getId(), System.currentTimeMillis(), io.smartdm.domain.ScheduleExecution.Status.SUCCESS));
+
+                    try {
+                        queueStatusUpdater.accept(DownloadQueue.Status.ACTIVE);
+                        schedule.setLastRunTime(scheduledInstant);
+                        if (scheduleUpdater != null) {
+                            scheduleUpdater.accept(schedule);
+                        }
+                        if (scheduleExecutionUpdater != null) {
+                            scheduleExecutionUpdater.accept(claim.withStatus(io.smartdm.domain.ScheduleExecution.Status.SUCCESS));
+                        }
+                    } catch (RuntimeException failure) {
+                        if (scheduleExecutionUpdater != null) {
+                            scheduleExecutionUpdater.accept(claim.withStatus(io.smartdm.domain.ScheduleExecution.Status.FAILED));
+                        }
+                        throw failure;
                     }
                 }
             } else if (schedule.getEndTime().isPresent()) {

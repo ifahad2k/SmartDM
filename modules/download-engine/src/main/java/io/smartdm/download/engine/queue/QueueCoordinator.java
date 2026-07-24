@@ -41,6 +41,12 @@ public class QueueCoordinator {
         this.persistenceExecutor = persistenceExecutor;
     }
 
+    public void restoreQueue(DownloadQueue queue, List<QueueItem> items) {
+        queues.put(queue.getId(), queue);
+        activeDownloadsPerQueue.put(queue.getId(), ConcurrentHashMap.newKeySet());
+        queueItems.put(queue.getId(), new CopyOnWriteArrayList<>(items));
+    }
+
     public void updateQueue(DownloadQueue queue) {
         queues.put(queue.getId(), queue);
         activeDownloadsPerQueue.putIfAbsent(queue.getId(), ConcurrentHashMap.newKeySet());

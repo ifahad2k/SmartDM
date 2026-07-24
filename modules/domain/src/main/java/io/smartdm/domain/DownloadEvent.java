@@ -6,6 +6,7 @@ public interface DownloadEvent {
     Download download();
     
     record StateChanged(DownloadId downloadId, DownloadState state, Download download) implements DownloadEvent {}
+    record Failed(DownloadId downloadId, DownloadState state, String errorCode, String diagnostic, Download download) implements DownloadEvent {}
     
     record ProgressUpdated(DownloadId downloadId, ByteCount bytesDownloaded, ByteCount totalBytes, Download download) implements DownloadEvent {
         @Override

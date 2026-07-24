@@ -46,13 +46,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import io.smartdm.media.api.DestinationConflictPolicy;
+
 public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
 
     private enum RequestedStop {
         NONE, PAUSE, CANCEL, DELETE, SHUTDOWN
     }
 
-    private record TaskInfo(Download download, Path targetPath, String webpageUrl, String formatArg) {}
+    private record TaskInfo(Download download, Path targetPath, String webpageUrl, String formatArg, DestinationConflictPolicy conflictPolicy) {}
 
     private static final class MediaJobContext {
         private final TaskInfo taskInfo;
@@ -179,8 +181,13 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
 
     @Override
     public CompletionStage<Void> startDownload(Download download, Path targetPath, String webpageUrl, String formatArg) {
+        return startDownload(download, targetPath, webpageUrl, formatArg, DestinationConflictPolicy.REPLACE);
+    }
+
+    @Override
+    public CompletionStage<Void> startDownload(Download download, Path targetPath, String webpageUrl, String formatArg, DestinationConflictPolicy conflictPolicy) {
         return CompletableFuture.runAsync(() -> {
-            TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg);
+            TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg, conflictPolicy);
             MediaJobContext newContext = new MediaJobContext(info);
             
             MediaJobContext existing = jobs.putIfAbsent(download.id(), newContext);
@@ -375,8 +382,11 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         finalizeCompletedJob(context, outputManifest, tempDir, targetPath);
     }
 
-    private void failJob(MediaJobContext context, String code, Throwable error) {
+    private void failJob(MediaJobContext context, String defaultCode, Throwable error) {
+        String code = context.detectedFailure.get() != null ? context.detectedFailure.get() : defaultCode;
+        String diagnostic = context.lastDiagnostic.get() != null ? context.lastDiagnostic.get() : (error != null ? error.getMessage() : null);
         updateDownloadState(context, DownloadState.FAILED, MediaJobStatus.FAILED);
+        eventPublisher.publish(new DownloadEvent.Failed(context.taskInfo.download().id(), DownloadState.FAILED, code, diagnostic, context.taskInfo.download()));
         jobs.remove(context.taskInfo.download().id(), context);
     }
 
@@ -417,12 +427,6 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
             throw new MediaOperationException("MEDIA_OUTPUT_MISSING", "The reported media output does not exist");
         }
         return output;
-    }
-
-    public enum DestinationConflictPolicy {
-        FAIL,
-        RENAME,
-        REPLACE
     }
 
     private void finalizeOutput(Path source, Path target, DestinationConflictPolicy policy) {
@@ -648,8 +652,15 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         try {
             CompletableFuture.allOf(terminations.toArray(new CompletableFuture<?>[0]))
                     .get(5, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            // Ignored
+        } catch (TimeoutException failure) {
+            throw new MediaOperationException("MEDIA_SHUTDOWN_TIMEOUT", "Active media processes did not terminate in time", failure);
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new MediaOperationException("MEDIA_SHUTDOWN_INTERRUPTED", "Media shutdown was interrupted", failure);
+        } catch (ExecutionException failure) {
+            throw new MediaOperationException("MEDIA_SHUTDOWN_FAILED", "One or more media processes failed to terminate", failure.getCause());
+        } catch (Exception failure) {
+            throw new MediaOperationException("MEDIA_SHUTDOWN_FAILED", "Shutdown failed", failure);
         }
     }
 }

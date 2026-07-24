@@ -54,6 +54,7 @@ public class SmartDmApp extends Application {
     private io.smartdm.media.api.MediaDownloadRunner mediaDownloadRunner;
     private ProfileLock profileLock;
     private static final java.util.Map<String, io.smartdm.media.api.MediaMetadata> metadataCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<io.smartdm.domain.DownloadId> activeMediaIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private SingleDownloadCoordinator coordinator;
     private io.smartdm.download.engine.schedule.ScheduleRunner scheduleRunner;
     private io.smartdm.application.monitor.ResourceMonitor resourceMonitor;
@@ -265,13 +266,25 @@ public class SmartDmApp extends Application {
                 }
             };
         
-        io.smartdm.download.engine.queue.QueueCoordinator queueCoordinator = new io.smartdm.download.engine.queue.QueueCoordinator(starter);
+        io.smartdm.domain.repository.QueueRepository queueRepository = new io.smartdm.persistence.SqlCipherQueueRepository(database);
+        io.smartdm.download.engine.queue.QueueCoordinator queueCoordinator = new io.smartdm.download.engine.queue.QueueCoordinator(starter, queueRepository, enginePool);
         queueCoordinatorRef.set(queueCoordinator);
         starterRef.set(starter);
 
-        // Setup a Default Main Queue (Concurrency 4), default to PAUSED so items can be scheduled or queued
-        io.smartdm.domain.DownloadQueue[] currentQueueRef = { new io.smartdm.domain.DownloadQueue("main-queue", "Main Queue", 4, null, io.smartdm.domain.DownloadQueue.Status.PAUSED) };
-        queueCoordinator.updateQueue(currentQueueRef[0]);
+        java.util.List<io.smartdm.domain.DownloadQueue> restoredQueues = queueRepository.findAllQueues();
+        io.smartdm.domain.DownloadQueue[] currentQueueRef = new io.smartdm.domain.DownloadQueue[1];
+
+        if (restoredQueues.isEmpty()) {
+            io.smartdm.domain.DownloadQueue mainQueue = new io.smartdm.domain.DownloadQueue("main-queue", "Main Queue", 4, null, io.smartdm.domain.DownloadQueue.Status.PAUSED);
+            queueCoordinator.updateQueue(mainQueue);
+            currentQueueRef[0] = mainQueue;
+        } else {
+            for (io.smartdm.domain.DownloadQueue queue : restoredQueues) {
+                java.util.List<io.smartdm.domain.QueueItem> items = queueRepository.findItemsByQueueId(queue.getId());
+                queueCoordinator.restoreQueue(queue, items);
+            }
+            currentQueueRef[0] = restoredQueues.get(0);
+        }
 
         scheduleRunner = 
             new io.smartdm.download.engine.schedule.ScheduleRunner(java.time.Clock.systemDefaultZone(), status -> {
@@ -307,7 +320,7 @@ public class SmartDmApp extends Application {
                 } catch (Exception e) {
                     System.err.println("Error checking scheduled downloads: " + e.getMessage());
                 }
-            }, scheduleRepo::save, scheduleRepo::saveExecution);
+            }, scheduleRepo::save, scheduleRepo::saveExecutionClaim, scheduleRepo::saveExecution);
         scheduleRunner.start();
 
         resourceMonitor = 
@@ -329,7 +342,7 @@ public class SmartDmApp extends Application {
         DownloadsWorkspace workspace = new DownloadsWorkspace(new DownloadActionListener() {
             @Override
             public void onPause(Download download) {
-                if (mediaDownloadRunner.isMediaDownload(download.id())) {
+                if (activeMediaIds.contains(download.id())) {
                     io.smartdm.desktop.util.FxCompletion.observe(
                             mediaDownloadRunner.pauseDownload(download),
                             ignored -> {
@@ -362,7 +375,7 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onResume(Download download) {
-                if (mediaDownloadRunner.isMediaDownload(download.id())) {
+                if (activeMediaIds.contains(download.id())) {
                     io.smartdm.desktop.util.FxCompletion.observe(
                             mediaDownloadRunner.resumeDownload(download),
                             ignored -> {
@@ -394,7 +407,7 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onCancel(Download download) {
-                if (mediaDownloadRunner.isMediaDownload(download.id())) {
+                if (activeMediaIds.contains(download.id())) {
                     io.smartdm.desktop.util.FxCompletion.observe(
                             mediaDownloadRunner.cancelDownload(download),
                             ignored -> {
@@ -419,12 +432,13 @@ public class SmartDmApp extends Application {
 
             @Override
             public void onDelete(Download download, boolean permanent) {
-                boolean isMedia = mediaDownloadRunner.isMediaDownload(download.id());
+                boolean isMedia = activeMediaIds.contains(download.id());
                 if (isMedia) {
                     io.smartdm.desktop.util.FxCompletion.observe(
                             mediaDownloadRunner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value())),
                             ignored -> {
                                 enginePool.submit(() -> {
+                                    activeMediaIds.remove(download.id());
                                     scheduleRepo.delete(download.id().value());
                                     repository.delete(download.id());
                                     Platform.runLater(() -> {
@@ -511,6 +525,14 @@ public class SmartDmApp extends Application {
             }
             queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
             
+            enginePool.submit(() -> {
+                for (Download dl : repository.findAll()) {
+                    if (mediaJobStore.exists(dl.id())) {
+                        activeMediaIds.add(dl.id());
+                    }
+                }
+            });
+
             for (io.smartdm.domain.Schedule s : scheduleRepo.findAll()) {
                 scheduleRunner.updateSchedule(s);
             }
@@ -539,7 +561,7 @@ public class SmartDmApp extends Application {
             } else {
                 enginePool.submit(() -> coordinator.execute(download));
             }
-        }, url -> openMediaOrStandardDialog(url, null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner),
+        }, url -> openMediaOrStandardDialog(url, null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner, activeMediaIds),
         workspace, currentQueueRef[0], mainQueueItems, status -> {
             if (currentQueueRef[0].getStatus() != status) {
                 currentQueueRef[0] = currentQueueRef[0].withStatus(status);
@@ -589,10 +611,10 @@ public class SmartDmApp extends Application {
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner);
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner, activeMediaIds);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner);
+                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner, activeMediaIds);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -621,7 +643,14 @@ public class SmartDmApp extends Application {
                                         coordinator.execute(dl);
                                     }
                                 } catch (Exception ex) {
-                                    System.err.println("Failed to process batch URL: " + url + " - " + ex.getMessage());
+                                    String safeHost;
+                                    try {
+                                        safeHost = new java.net.URI(url).getHost();
+                                        if (safeHost == null) safeHost = "unknown-host";
+                                    } catch (Exception e) {
+                                        safeHost = "invalid-url";
+                                    }
+                                    System.err.println("Batch item failed: host=" + safeHost + " - " + ex.getMessage());
                                 }
                             }
                             Platform.runLater(() -> {
@@ -696,7 +725,9 @@ public class SmartDmApp extends Application {
         if (mediaDownloadRunner != null) {
             try {
                 mediaDownloadRunner.close();
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                System.err.println("Warning: Media download runner shutdown diagnostic: " + e.getMessage());
+            }
         }
         if (coordinator != null) {
             coordinator.shutdown();
@@ -812,7 +843,8 @@ public class SmartDmApp extends Application {
         ExecutorService enginePool,
         SingleDownloadCoordinator coordinator,
         io.smartdm.organization.SmartFolderService smartFolderService,
-        io.smartdm.media.api.MediaDownloadRunner mediaDownloadRunner
+        io.smartdm.media.api.MediaDownloadRunner mediaDownloadRunner,
+        java.util.Set<io.smartdm.domain.DownloadId> activeMediaIds
     ) {
         boolean isMediaUrl = isMediaUrlPattern(url, preferredFormatId) || (videoUrl != null && !videoUrl.isBlank());
 
@@ -877,6 +909,7 @@ public class SmartDmApp extends Application {
                         finalMeta,
                         preferredFormatId,
                         dl -> {
+                            activeMediaIds.add(dl.id());
                             repository.save(dl);
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
                         },
