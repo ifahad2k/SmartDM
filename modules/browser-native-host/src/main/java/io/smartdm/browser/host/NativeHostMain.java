@@ -36,9 +36,12 @@ public class NativeHostMain {
                         ((lengthBytes[2] & 0xFF) << 16) |
                         ((lengthBytes[3] & 0xFF) << 24);
 
-                if (length < 0 || length > 10 * 1024 * 1024) {
+                int MAX_MESSAGE_SIZE = 1 * 1024 * 1024;
+                if (length < 0 || length > MAX_MESSAGE_SIZE) {
                     System.err.println("Invalid message length: " + length);
-                    break;
+                    String errResp = "{\"status\":\"error\", \"errorCode\":\"ERR_MESSAGE_TOO_LARGE\", \"message\": \"Message length exceeds limit of 1MB\"}";
+                    sendResponse(out, errResp);
+                    continue;
                 }
 
                 byte[] messageBytes = new byte[length];
@@ -54,33 +57,44 @@ public class NativeHostMain {
 
                 String responseJson;
                 try {
-                    // Parse message to validate it
-                    NativeMessage message = MAPPER.readValue(messageBytes, NativeMessage.class);
+                    // Parse message to validate schema and envelope
+                    try {
+                        io.smartdm.browser.protocol.NativeMessageEnvelope envelope = MAPPER.readValue(messageBytes, io.smartdm.browser.protocol.NativeMessageEnvelope.class);
+                        if (envelope != null && envelope.getProtocolVersion() > 1) {
+                            throw new IllegalArgumentException("Unsupported protocol version: " + envelope.getProtocolVersion());
+                        }
+                    } catch (Exception envEx) {
+                        // Fallback to direct NativeMessage parsing
+                        MAPPER.readValue(messageBytes, NativeMessage.class);
+                    }
 
                     // Forward to SmartDM IPC server
                     responseJson = forwardToSmartDM(messageBytes);
                     if (responseJson == null) {
-                        responseJson = "{\"status\":\"error\", \"message\": \"Could not connect to SmartDM. Ensure app is running.\"}";
+                        responseJson = "{\"status\":\"error\", \"errorCode\":\"ERR_SMARTDM_DISCONNECTED\", \"message\": \"Could not connect to SmartDM. Ensure app is running.\"}";
                     }
                 } catch (Exception ex) {
-                    ex.printStackTrace(System.err);
-                    responseJson = "{\"status\":\"error\", \"message\": \"" + ex.getMessage().replace("\"", "'") + "\"}";
+                    responseJson = "{\"status\":\"error\", \"errorCode\":\"ERR_INVALID_PAYLOAD\", \"message\": \"" + ex.getMessage().replace("\"", "'") + "\"}";
                 }
 
-                byte[] responseBytes = responseJson.getBytes(StandardCharsets.UTF_8);
-                byte[] outLengthBytes = new byte[4];
-                outLengthBytes[0] = (byte) (responseBytes.length & 0xFF);
-                outLengthBytes[1] = (byte) ((responseBytes.length >> 8) & 0xFF);
-                outLengthBytes[2] = (byte) ((responseBytes.length >> 16) & 0xFF);
-                outLengthBytes[3] = (byte) ((responseBytes.length >> 24) & 0xFF);
-
-                out.write(outLengthBytes);
-                out.write(responseBytes);
-                out.flush();
+                sendResponse(out, responseJson);
             }
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
+    }
+
+    private static void sendResponse(OutputStream out, String responseJson) throws Exception {
+        byte[] responseBytes = responseJson.getBytes(StandardCharsets.UTF_8);
+        byte[] outLengthBytes = new byte[4];
+        outLengthBytes[0] = (byte) (responseBytes.length & 0xFF);
+        outLengthBytes[1] = (byte) ((responseBytes.length >> 8) & 0xFF);
+        outLengthBytes[2] = (byte) ((responseBytes.length >> 16) & 0xFF);
+        outLengthBytes[3] = (byte) ((responseBytes.length >> 24) & 0xFF);
+
+        out.write(outLengthBytes);
+        out.write(responseBytes);
+        out.flush();
     }
 
     private static String forwardToSmartDM(byte[] payload) {

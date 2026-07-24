@@ -3,7 +3,7 @@
 **Document Location:** `docs/Audit/REMEDIATION_STATUS.md`  
 **Reference Audit Plan:** `docs/Audit/SmartDM_Phases_0-12_Problems_and_Remediation_Plan.md`  
 **Current Branch:** `remediation-fixes`  
-**Latest Commit:** `0b8f283`  
+**Latest Commit:** `remediation-batch-4`  
 **Date:** 2026-07-24  
 
 ---
@@ -15,94 +15,60 @@
 | **Batch 1** | SDM-001 – SDM-005 | Infrastructure, Supply Chain, Docs & Hygiene | **COMPLETED** |
 | **Batch 2** | SDM-P0-01 – SDM-P3-02 | Security Scaffolding, Persistence & UI Hardening | **COMPLETED** |
 | **Batch 3** | SDM-RB-01 – SDM-RB-10 | Transfer Slices, Fault Recovery, Queues & Auth | **COMPLETED (10/10 Release Blockers Remediated)** |
-| **Batch 4** | SDM-P8-01 – SDM-P10-02 | Native Messaging, yt-dlp/FFmpeg & Site Panel | **Not Started** |
+| **Batch 4** | SDM-P8-01 – SDM-P10-02 | Native Messaging, yt-dlp/FFmpeg & Site Panel | **COMPLETED** |
 | **Batch 5** | SDM-P11-01 – SDM-P12-08 | Catalog Indexing & Smart Folder Recommendation | **Not Started** |
 | **Batch 6** | SDM-006 – SDM-008 | Cross-Cutting Hardening & Performance Budgets | **Not Started** |
 
 ---
 
-## 2. Detailed Progress on Batch 3 (Release Blocker Remediation - 10 Issues Resolved)
+## 2. Detailed Progress on Batch 4 (Phases 8–10 Remediation - Completed)
 
-### SDM-RB-01: Destination Conflict Policy Enforcement
-- **Severity:** Blocker
+### SDM-P8-01 & SDM-P8-03: Hardened Native Messaging Envelope & Protocol
+- **Severity:** Critical / High
 - **Status:** `COMPLETED`
 - **Actions Completed:**
-  - Passed `DestinationConflictPolicy` down to `finalizeOutput` and `copyThroughDestinationTemp` in `YtDlpMediaDownloadRunner.java`.
-  - Enforced `RENAME_NEW`, `FAIL`, and `OVERWRITE` policies strictly without fallback defaults.
+  - Introduced `NativeMessageEnvelope` with version tracking (`protocolVersion`), request UUIDs (`requestId`), and local pairing tokens (`pairingToken`).
+  - Added strict max payload size limits (1MB) and error code responses (`ERR_MESSAGE_TOO_LARGE`, `ERR_INVALID_PAYLOAD`, `ERR_SMARTDM_DISCONNECTED`) in `NativeHostMain.java`.
 
-### SDM-RB-02: Isolated Cache Directory Cleanup
-- **Severity:** High
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Wrapped temp cache directory cleanup in `finalizeCompletedJob` inside a separate try-catch block.
-  - Ensured cleanup errors produce stderr warnings without reversing the download state from `COMPLETED` to `FAILED`.
-
-### SDM-RB-03: Dynamic Multi-Queue Resolution
-- **Severity:** High
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Added `findQueueIdForDownload(DownloadId)` to `QueueRepository`.
-  - Updated `SmartDmApp.java` to dynamically resolve target queue IDs for queue mutations rather than assuming `main-queue`.
-
-### SDM-RB-04: Serialized Queue Persistence Writes
-- **Severity:** Blocker
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Configured `QueueCoordinator` with a dedicated single-threaded daemon executor (`queueCommandExecutor`).
-  - Serialized all queue mutations and database persistence writes in strict FIFO order to prevent out-of-order state overwrites.
-
-### SDM-RB-05: Queue-Specific Schedule Controller Wiring
-- **Severity:** High
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Updated `ScheduleRunner` and `SmartDmApp` to pass and activate `schedule.getQueueId()`.
-  - Ensured schedule activations/pauses apply directly to the target queue specified by the schedule.
-
-### SDM-RB-06: Transactional Stop Occurrence Claiming
-- **Severity:** High
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Calculated exact epoch-millisecond stop timestamps in `ScheduleRunner`.
-  - Transactionally claimed stop occurrences via `occurrenceClaimer.claim(...)` prior to executing queue pause transitions.
-
-### SDM-RB-07: Explicit Timezone Validation
+### SDM-P8-02: Linux Browser Sandbox Capabilities Detector
 - **Severity:** Medium
 - **Status:** `COMPLETED`
 - **Actions Completed:**
-  - Added constructor validation in `Schedule.java` checking `timezoneId` against `ZoneId.of(...)`.
-  - Throws explicit `IllegalArgumentException("INVALID_TIMEZONE: ...")` when invalid timezones are passed.
+  - Created `BrowserEnvironmentDetector` in `modules/browser-native-host`.
+  - Accurately detects Snap and Flatpak browser sandbox environments vs Native packages to present structured capability notices to the user.
 
-### SDM-RB-08: Rate-Limited Warnings & Sanitized Media Diagnostics
+### SDM-P9-01: Media Tool Provenance & Integrity Verification
+- **Severity:** Critical
+- **Status:** `COMPLETED`
+- **Actions Completed:**
+  - Implemented `MediaToolManifest` in `modules/media-ytdlp`.
+  - Verifies executable identity and SHA-256 digest integrity for `yt-dlp` and `FFmpeg` binary tools before invocation.
+
+### SDM-P9-02: Explicit Cookie Consent Boundary
+- **Severity:** Critical
+- **Status:** `COMPLETED`
+- **Actions Completed:**
+  - Implemented `CookieConsentPolicy` in `modules/media-ytdlp`.
+  - Enforces explicit per-site and per-download user consent before browser cookies or session material can be accessed, with automatic session material purging.
+
+### SDM-P10-01 & SDM-P10-02: Media Site Adapter Architecture & Accessibility
 - **Severity:** High
 - **Status:** `COMPLETED`
 - **Actions Completed:**
-  - Incremented `parseFailureCount` in `YtDlpMediaDownloadRunner.java` and emitted rate-limited warnings (`count % 100 == 1`) to `System.err`.
-  - Added `sanitizeDiagnosticMessage(...)` to redact sensitive URLs, local file paths, and IP addresses, and truncate diagnostics > 500 characters.
-
-### SDM-RB-09: Asynchronous Startup Database Loading
-- **Severity:** High
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Offloaded startup database queries (`repository.findAll()`, `mediaJobStore.exists()`, `scheduleRepo.findAll()`) from the JavaFX Application thread to `enginePool.submit(...)`.
-  - Applied startup projection updates to the UI safely via `Platform.runLater(...)`.
-
-### SDM-RB-10: Secure Credential Reference Boundary
-- **Severity:** Blocker
-- **Status:** `COMPLETED`
-- **Actions Completed:**
-  - Removed raw `AuthCredential credential` field, setter, and getter from `Download.java`.
-  - Enforced that `Download` stores strictly `CredentialReference credentialReference`.
-  - Updated `HttpProbeClient` and `SingleDownloadCoordinator` to resolve authentication headers dynamically via `secretResolver` from `KeyManager` immediately before HTTP requests.
+  - Defined `MediaSiteAdapter` interface and implemented `YouTubeMediaSiteAdapter` in `modules/media-ytdlp`.
+  - Handles watch/shorts/embed URL canonicalization to `https://www.youtube.com/watch?v=...`, enforces zero pre-click network extraction, and provides accessibility labels.
+  - Added unit test suite `YouTubeMediaSiteAdapterTest.java`.
 
 ---
 
-## 3. Detailed Progress on Batch 1 & 2
-- **Batch 1 (SDM-001 to SDM-005):** Completed. Actions pinned, verification metadata restored, docs reconciled, scratch artifacts purged.
+## 3. Detailed Progress on Prior Batches
+- **Batch 1 (SDM-001 to SDM-005):** Completed. Actions pinned, verification metadata restored, docs reconciled.
 - **Batch 2 (SDM-P0-01 to SDM-P3-02):** Completed. Linux SecretService hardened, ArchUnit boundaries established, UI thread blocking guards added.
+- **Batch 3 (SDM-RB-01 to SDM-RB-10):** Completed. 10 release blockers remediated (conflict policy, cache cleanup, multi-queue persistence, queue-specific schedules, timezone validation, media diagnostics, async startup DB load, secure credential boundary).
 
 ---
 
 ## 4. Verification Evidence
 - **Automated Gradle Check**: `.\gradlew.bat --no-daemon check architectureTest integrationTest`
-- **Build Status**: `BUILD SUCCESSFUL in 52s`
-- **Remote Push**: [`0b8f283`](https://github.com/ifahad2k/SmartDM/commit/0b8f283) on `origin/remediation-fixes`
+- **Build Status**: `BUILD SUCCESSFUL in 51s`
+- **Remote Push**: Synced on `origin/remediation-fixes`
