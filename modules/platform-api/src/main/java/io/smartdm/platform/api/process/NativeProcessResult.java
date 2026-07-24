@@ -2,12 +2,15 @@ package io.smartdm.platform.api.process;
 
 import java.time.Duration;
 
+import java.util.List;
+
 public record NativeProcessResult(
         int exitCode,
         boolean timedOut,
         boolean cancelled,
         boolean stdoutLimitExceeded,
         boolean stderrLimitExceeded,
+        List<NativeProcessFailure> failures,
         Duration elapsed) {
 
     public boolean succeeded() {
@@ -15,6 +18,7 @@ public record NativeProcessResult(
                 && !timedOut
                 && !cancelled
                 && !stdoutLimitExceeded
-                && !stderrLimitExceeded;
+                && !stderrLimitExceeded
+                && (failures == null || failures.isEmpty());
     }
 }

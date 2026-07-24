@@ -2,7 +2,7 @@ package io.smartdm.domain;
 
 import java.util.Objects;
 
-public record Destination(String value) implements java.io.Serializable {
+public record Destination(String value) {
     public Destination {
         Objects.requireNonNull(value, "Destination cannot be null");
         // We cannot use Path or File here due to architecture rules, so we assume the caller validates it

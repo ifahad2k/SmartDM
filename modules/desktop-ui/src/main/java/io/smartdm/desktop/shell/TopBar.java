@@ -22,23 +22,23 @@ import java.nio.file.Paths;
 public final class TopBar extends HBox {
 
     private final io.smartdm.organization.SmartFolderService smartFolderService;
-    private final io.smartdm.media.api.MediaDownloadRunner runner;
     private final Supplier<List<Download>> existingDownloadsProvider;
     private final Consumer<Download> onDownloadAdded;
+    private final Consumer<String> onUrlEntered;
     private final Runnable onStartQueueRequested;
     private final Runnable onDeleteSelected;
 
-    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected, io.smartdm.media.api.MediaDownloadRunner runner) {
-        this(existingDownloadsProvider, onDownloadAdded, onStartQueueRequested, onDeleteSelected, null, runner);
+    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected, Consumer<String> onUrlEntered) {
+        this(existingDownloadsProvider, onDownloadAdded, onStartQueueRequested, onDeleteSelected, null, onUrlEntered);
     }
 
-    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.media.api.MediaDownloadRunner runner) {
+    public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected, io.smartdm.organization.SmartFolderService smartFolderService, Consumer<String> onUrlEntered) {
         this.existingDownloadsProvider = existingDownloadsProvider;
         this.onDownloadAdded = onDownloadAdded;
         this.onStartQueueRequested = onStartQueueRequested;
         this.onDeleteSelected = onDeleteSelected;
         this.smartFolderService = smartFolderService;
-        this.runner = runner;
+        this.onUrlEntered = onUrlEntered;
         getStyleClass().add("topbar");
 
         // Search Field
@@ -97,7 +97,7 @@ public final class TopBar extends HBox {
                     }
                 }
             } else {
-                EnterUrlDialog d = new EnterUrlDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get(), onDownloadAdded, smartFolderService, runner);
+                EnterUrlDialog d = new EnterUrlDialog((javafx.stage.Stage) getScene().getWindow(), onUrlEntered);
                 d.show();
             }
         });

@@ -23,6 +23,7 @@ public class MainShellTest {
         shell = new MainShell(
             stage,
             download -> { },
+            url -> { },
             new DownloadsWorkspace(),
             new io.smartdm.domain.DownloadQueue("test-q", "Test", 1, null, io.smartdm.domain.DownloadQueue.Status.ACTIVE),
             javafx.collections.FXCollections.observableArrayList(),

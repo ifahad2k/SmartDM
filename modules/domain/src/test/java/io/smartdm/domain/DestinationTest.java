@@ -1,11 +1,7 @@
 package io.smartdm.domain;
 
 import org.junit.jupiter.api.Test;
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ObjectInputStream;
-import java.io.Serializable;
+
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,19 +43,5 @@ class DestinationTest {
                 .hasMessageContaining("Path traversal is not allowed");
     }
     
-    @Test
-    void serializesAndDeserializes() throws Exception {
-        Destination dest = Destination.of("/valid/path");
-        
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream oos = new ObjectOutputStream(baos);
-        oos.writeObject(dest);
-        oos.close();
-        
-        ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-        ObjectInputStream ois = new ObjectInputStream(bais);
-        Destination deserialized = (Destination) ois.readObject();
-        
-        assertThat(deserialized.value()).isEqualTo("/valid/path");
-    }
+
 }

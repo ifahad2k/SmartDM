@@ -54,35 +54,44 @@ public class WindowsNativeProcessController implements NativeProcessController, 
         AtomicBoolean timedOut = new AtomicBoolean(false);
         AtomicBoolean stdoutLimitExceeded = new AtomicBoolean(false);
         AtomicBoolean stderrLimitExceeded = new AtomicBoolean(false);
+        java.util.List<io.smartdm.platform.api.process.NativeProcessFailure> failures = new java.util.concurrent.CopyOnWriteArrayList<>();
         CompletableFuture<NativeProcessResult> completion = new CompletableFuture<>();
 
         Runnable stdoutLimitAction = () -> {
             stdoutLimitExceeded.set(true);
+            failures.add(io.smartdm.platform.api.process.NativeProcessFailure.LINE_LIMIT_EXCEEDED);
             killTreeInternal(process);
         };
         Runnable stderrLimitAction = () -> {
             stderrLimitExceeded.set(true);
+            failures.add(io.smartdm.platform.api.process.NativeProcessFailure.LINE_LIMIT_EXCEEDED);
             killTreeInternal(process);
         };
 
         CompletableFuture<Void> stdoutDrainer = CompletableFuture.runAsync(() -> {
-            drain(process.getInputStream(), request.outputLimits().maxStdoutBytes(), request.outputLimits().maxLineCharacters(), line -> {
+            DrainResult res = drain(process.getInputStream(), request.outputLimits().maxStdoutBytes(), request.outputLimits().maxLineCharacters(), line -> {
                 try {
                     listener.onStdoutLine(line);
                 } catch (Exception e) {
-                    System.err.println("NATIVE_PROCESS_LISTENER_ERROR: " + e.getMessage());
+                    failures.add(io.smartdm.platform.api.process.NativeProcessFailure.OUTPUT_LISTENER_FAILED);
                 }
             }, stdoutLimitAction);
+            if (!res.completed() && !res.byteLimitExceeded() && !res.lineLimitExceeded()) {
+                failures.add(io.smartdm.platform.api.process.NativeProcessFailure.STDOUT_READ_FAILED);
+            }
         }, ioExecutor);
 
         CompletableFuture<Void> stderrDrainer = CompletableFuture.runAsync(() -> {
-            drain(process.getErrorStream(), request.outputLimits().maxStderrBytes(), request.outputLimits().maxLineCharacters(), line -> {
+            DrainResult res = drain(process.getErrorStream(), request.outputLimits().maxStderrBytes(), request.outputLimits().maxLineCharacters(), line -> {
                 try {
                     listener.onStderrLine(line);
                 } catch (Exception e) {
-                    System.err.println("NATIVE_PROCESS_LISTENER_ERROR: " + e.getMessage());
+                    failures.add(io.smartdm.platform.api.process.NativeProcessFailure.OUTPUT_LISTENER_FAILED);
                 }
             }, stderrLimitAction);
+            if (!res.completed() && !res.byteLimitExceeded() && !res.lineLimitExceeded()) {
+                failures.add(io.smartdm.platform.api.process.NativeProcessFailure.STDERR_READ_FAILED);
+            }
         }, ioExecutor);
 
         ScheduledFuture<?> timeoutTask = scheduler.schedule(() -> {
@@ -100,6 +109,7 @@ public class WindowsNativeProcessController implements NativeProcessController, 
                         cancelled.get(),
                         stdoutLimitExceeded.get(),
                         stderrLimitExceeded.get(),
+                        java.util.List.copyOf(failures),
                         elapsed);
                 completion.complete(result);
             });

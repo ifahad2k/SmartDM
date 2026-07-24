@@ -330,7 +330,14 @@ public class SmartDmApp extends Application {
             @Override
             public void onPause(Download download) {
                 if (mediaDownloadRunner.isMediaDownload(download.id())) {
-                    mediaDownloadRunner.pauseDownload(download);
+                    io.smartdm.desktop.util.FxCompletion.observe(
+                            mediaDownloadRunner.pauseDownload(download),
+                            ignored -> {
+                                if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                                if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                            },
+                            error -> showOperationFailure("Pause failed", error)
+                    );
                 } else {
                     if (download.state() == DownloadState.QUEUED) {
                         download.updateScheduledStartTime(null);
@@ -356,7 +363,14 @@ public class SmartDmApp extends Application {
             @Override
             public void onResume(Download download) {
                 if (mediaDownloadRunner.isMediaDownload(download.id())) {
-                    mediaDownloadRunner.resumeDownload(download);
+                    io.smartdm.desktop.util.FxCompletion.observe(
+                            mediaDownloadRunner.resumeDownload(download),
+                            ignored -> {
+                                if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                                if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                            },
+                            error -> showOperationFailure("Resume failed", error)
+                    );
                 } else {
                     if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED || download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
                         boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
@@ -381,7 +395,14 @@ public class SmartDmApp extends Application {
             @Override
             public void onCancel(Download download) {
                 if (mediaDownloadRunner.isMediaDownload(download.id())) {
-                    mediaDownloadRunner.cancelDownload(download);
+                    io.smartdm.desktop.util.FxCompletion.observe(
+                            mediaDownloadRunner.cancelDownload(download),
+                            ignored -> {
+                                if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                                if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                            },
+                            error -> showOperationFailure("Cancel failed", error)
+                    );
                 } else {
                     coordinator.cancel(download.id()).thenRun(() -> {
                         download.updateState(DownloadState.CANCELED);
@@ -400,7 +421,20 @@ public class SmartDmApp extends Application {
             public void onDelete(Download download, boolean permanent) {
                 boolean isMedia = mediaDownloadRunner.isMediaDownload(download.id());
                 if (isMedia) {
-                    mediaDownloadRunner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value()));
+                    io.smartdm.desktop.util.FxCompletion.observe(
+                            mediaDownloadRunner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value())),
+                            ignored -> {
+                                scheduleRepo.delete(download.id().value());
+                                repository.delete(download.id());
+                                Platform.runLater(() -> {
+                                    mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                                    queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                                    if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
+                                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                                });
+                            },
+                            error -> showOperationFailure("Delete failed", error)
+                    );
                 } else {
                     try {
                         coordinator.cancel(download.id(), false).get(2, java.util.concurrent.TimeUnit.SECONDS);
@@ -500,7 +534,8 @@ public class SmartDmApp extends Application {
             } else {
                 enginePool.submit(() -> coordinator.execute(download));
             }
-        }, workspace, currentQueueRef[0], mainQueueItems, status -> {
+        }, url -> openMediaOrStandardDialog(url, null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService, mediaDownloadRunner),
+        workspace, currentQueueRef[0], mainQueueItems, status -> {
             if (currentQueueRef[0].getStatus() != status) {
                 currentQueueRef[0] = currentQueueRef[0].withStatus(status);
                 if (queueCoordinatorRef.get() != null) {
@@ -858,6 +893,15 @@ public class SmartDmApp extends Application {
         }
     }
 
+
+    private void showOperationFailure(String header, Throwable error) {
+        javafx.application.Platform.runLater(() -> {
+            javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
+            alert.setHeaderText(header);
+            alert.setContentText(error != null ? error.getMessage() : "Unknown error");
+            alert.show();
+        });
+    }
 
     private static void bringStageToFrontAndFocus(Stage stage) {
         stage.centerOnScreen();
