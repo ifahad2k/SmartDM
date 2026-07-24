@@ -250,7 +250,23 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
                 destinationField.setText(path.toAbsolutePath().toString());
             }
         });
-        grid.add(suggestionPanel, 1, 5);
+        Label conflictHeader = new Label("If File Exists");
+        conflictHeader.getStyleClass().add("idm-label");
+
+        ComboBox<io.smartdm.media.api.DestinationConflictPolicy> conflictCombo = new ComboBox<>();
+        conflictCombo.getStyleClass().add("text-input");
+        conflictCombo.getItems().addAll(
+                io.smartdm.media.api.DestinationConflictPolicy.REPLACE,
+                io.smartdm.media.api.DestinationConflictPolicy.RENAME,
+                io.smartdm.media.api.DestinationConflictPolicy.FAIL
+        );
+        conflictCombo.getSelectionModel().select(io.smartdm.media.api.DestinationConflictPolicy.REPLACE);
+        conflictCombo.setPrefWidth(320);
+
+        grid.add(conflictHeader, 0, 5);
+        grid.add(conflictCombo, 1, 5);
+
+        grid.add(suggestionPanel, 1, 6);
         GridPane.setColumnSpan(suggestionPanel, 2);
 
         dialogBody.getChildren().add(grid);
@@ -267,7 +283,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
 
         startButton = new Button("Start Download");
         startButton.getStyleClass().addAll("btn", "btn-primary");
-        startButton.setOnAction(e -> startSelectedMediaDownload());
+        startButton.setOnAction(e -> startSelectedMediaDownload(conflictCombo.getValue()));
 
         Button cancelBtn = new Button("Cancel");
         cancelBtn.getStyleClass().addAll("btn", "btn-ghost");
@@ -281,7 +297,11 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         root.setBottom(footer);
     }
 
-    private void startSelectedMediaDownload() {
+    private void startSelectedMediaDownload(io.smartdm.media.api.DestinationConflictPolicy conflictPolicy) {
+        io.smartdm.media.api.DestinationConflictPolicy policy = conflictPolicy != null 
+                ? conflictPolicy 
+                : io.smartdm.media.api.DestinationConflictPolicy.REPLACE;
+
         MediaFormat selectedFormat = formatCombo.getValue();
         String filename = nameField.getText().trim();
         if (filename.isEmpty()) filename = "download." + (selectedFormat != null ? selectedFormat.ext() : "mp4");
@@ -303,17 +323,9 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         }
 
         boolean fileExists = Files.exists(targetPath);
-        if (fileExists) {
-            Stage owner = (Stage) getScene().getWindow();
-            FileCollisionDialog dialog = new FileCollisionDialog(owner, targetPath.getFileName().toString());
-            FileCollisionDialog.CollisionChoice choice = dialog.showAndGetChoice();
-
-            if (choice == FileCollisionDialog.CollisionChoice.CANCEL) {
-                return;
-            } else if (choice == FileCollisionDialog.CollisionChoice.RENAME) {
-                targetPath = generateUniquePath(targetPath);
-            }
-            // If OVERWRITE, we will delete below via runner
+        if (fileExists && policy == io.smartdm.media.api.DestinationConflictPolicy.RENAME) {
+            targetPath = generateUniquePath(targetPath);
+            fileExists = false;
         }
 
         startButton.setDisable(true);
@@ -325,7 +337,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         String formatArgument = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
 
         java.util.concurrent.CompletionStage<Void> preparation;
-        if (fileExists && Files.exists(targetPath)) {
+        if (fileExists && policy == io.smartdm.media.api.DestinationConflictPolicy.REPLACE && Files.exists(targetPath)) {
             // Need to overwrite
             preparation = runner.deleteMediaFiles(targetPath);
         } else {
@@ -340,7 +352,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
                                 finalTargetPath,
                                 metadata.webpageUrl(),
                                 formatArgument,
-                                io.smartdm.media.api.DestinationConflictPolicy.REPLACE));
+                                policy));
 
         io.smartdm.desktop.util.FxCompletion.observe(
                 operation,

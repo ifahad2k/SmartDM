@@ -38,7 +38,13 @@ public class QueueCoordinator {
     public QueueCoordinator(DownloadStarter starter, io.smartdm.domain.repository.QueueRepository queueRepo, java.util.concurrent.Executor persistenceExecutor) {
         this.starter = starter;
         this.queueRepo = queueRepo;
-        this.persistenceExecutor = persistenceExecutor;
+        this.persistenceExecutor = persistenceExecutor != null 
+                ? persistenceExecutor 
+                : java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "queue-persistence-worker");
+                    t.setDaemon(true);
+                    return t;
+                });
     }
 
     public void restoreQueue(DownloadQueue queue, List<QueueItem> items) {

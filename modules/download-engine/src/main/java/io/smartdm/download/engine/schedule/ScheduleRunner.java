@@ -5,12 +5,14 @@ import io.smartdm.domain.DownloadQueue;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public class ScheduleRunner {
@@ -21,22 +23,26 @@ public class ScheduleRunner {
     }
 
     private final Clock clock;
-    private final Consumer<DownloadQueue.Status> queueStatusUpdater;
+    private final BiConsumer<String, DownloadQueue.Status> queueStatusController;
     private final Runnable scheduledDownloadsStarter;
     private final Consumer<Schedule> scheduleUpdater;
     private final ScheduleOccurrenceClaimer occurrenceClaimer;
     private final Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater;
     private final Map<String, Schedule> schedules = new ConcurrentHashMap<>();
+    private final Map<String, DownloadQueue.Status> lastEmittedQueueStatus = new ConcurrentHashMap<>();
     private ScheduledExecutorService executor;
-    private DownloadQueue.Status lastEmittedQueueStatus = null;
 
     public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater, Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater) {
-        this(clock, queueStatusUpdater, scheduledDownloadsStarter, scheduleUpdater, null, scheduleExecutionUpdater);
+        this(clock, (queueId, status) -> { if (queueStatusUpdater != null) queueStatusUpdater.accept(status); }, scheduledDownloadsStarter, scheduleUpdater, null, scheduleExecutionUpdater);
     }
 
     public ScheduleRunner(Clock clock, Consumer<DownloadQueue.Status> queueStatusUpdater, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater, ScheduleOccurrenceClaimer occurrenceClaimer, Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater) {
+        this(clock, (queueId, status) -> { if (queueStatusUpdater != null) queueStatusUpdater.accept(status); }, scheduledDownloadsStarter, scheduleUpdater, occurrenceClaimer, scheduleExecutionUpdater);
+    }
+
+    public ScheduleRunner(Clock clock, BiConsumer<String, DownloadQueue.Status> queueStatusController, Runnable scheduledDownloadsStarter, Consumer<Schedule> scheduleUpdater, ScheduleOccurrenceClaimer occurrenceClaimer, Consumer<io.smartdm.domain.ScheduleExecution> scheduleExecutionUpdater) {
         this.clock = clock;
-        this.queueStatusUpdater = queueStatusUpdater;
+        this.queueStatusController = queueStatusController;
         this.scheduledDownloadsStarter = scheduledDownloadsStarter;
         this.scheduleUpdater = scheduleUpdater;
         this.occurrenceClaimer = occurrenceClaimer;
@@ -44,7 +50,11 @@ public class ScheduleRunner {
     }
     
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor();
+        executor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "schedule-runner-worker");
+            t.setDaemon(true);
+            return t;
+        });
         executor.scheduleAtFixedRate(this::evaluateSchedules, 0, 1, TimeUnit.SECONDS);
     }
     
@@ -87,16 +97,17 @@ public class ScheduleRunner {
     }
 
     private void evaluateSingleSchedule(Schedule schedule) {
-        java.time.ZoneId zoneId = java.time.ZoneId.systemDefault();
-        try {
-            if (schedule.getTimezoneId() != null) {
-                zoneId = java.time.ZoneId.of(schedule.getTimezoneId());
-            }
-        } catch (Exception ignored) { }
+        ZoneId zoneId = ZoneId.systemDefault();
+        if (schedule.getTimezoneId() != null && !schedule.getTimezoneId().isBlank()) {
+            try {
+                zoneId = ZoneId.of(schedule.getTimezoneId());
+            } catch (Exception ignored) { }
+        }
         
         LocalDateTime now = LocalDateTime.now(clock.withZone(zoneId));
         int currentDayOfWeek = now.getDayOfWeek().getValue();
         LocalTime currentTime = now.toLocalTime();
+        String targetQueueId = schedule.getQueueId() != null ? schedule.getQueueId() : "main-queue";
         
         // Check day of week
         List<Integer> days = schedule.getDaysOfWeek();
@@ -121,9 +132,11 @@ public class ScheduleRunner {
             }
             
             DownloadQueue.Status targetStatus = inWindow ? DownloadQueue.Status.ACTIVE : DownloadQueue.Status.PAUSED;
-            if (lastEmittedQueueStatus != targetStatus) {
-                lastEmittedQueueStatus = targetStatus;
-                queueStatusUpdater.accept(targetStatus);
+            if (lastEmittedQueueStatus.get(targetQueueId) != targetStatus) {
+                lastEmittedQueueStatus.put(targetQueueId, targetStatus);
+                if (queueStatusController != null) {
+                    queueStatusController.accept(targetQueueId, targetStatus);
+                }
             }
         } else if (schedule.getStartTime().isPresent()) {
             // One-time start
@@ -163,7 +176,9 @@ public class ScheduleRunner {
                 }
 
                 try {
-                    queueStatusUpdater.accept(DownloadQueue.Status.ACTIVE);
+                    if (queueStatusController != null) {
+                        queueStatusController.accept(targetQueueId, DownloadQueue.Status.ACTIVE);
+                    }
                     schedule.setLastRunTime(scheduledInstant);
                     if (scheduleUpdater != null) {
                         scheduleUpdater.accept(schedule);
@@ -199,14 +214,38 @@ public class ScheduleRunner {
             }
             
             if (shouldTriggerNow) {
-                queueStatusUpdater.accept(DownloadQueue.Status.PAUSED);
-                schedule.setLastRunTime(System.currentTimeMillis());
-                if (scheduleUpdater != null) {
-                    scheduleUpdater.accept(schedule);
+                LocalDateTime scheduledDateTime = now.toLocalDate().atTime(end);
+                long scheduledInstant = scheduledDateTime.atZone(zoneId).toInstant().toEpochMilli();
+                io.smartdm.domain.ScheduleExecution claim = new io.smartdm.domain.ScheduleExecution(
+                        java.util.UUID.randomUUID().toString(),
+                        schedule.getId(),
+                        scheduledInstant,
+                        io.smartdm.domain.ScheduleExecution.Status.CLAIMED
+                );
+
+                if (occurrenceClaimer != null) {
+                    boolean claimed = occurrenceClaimer.claim(claim);
+                    if (!claimed) {
+                        return;
+                    }
                 }
-                if (scheduleExecutionUpdater != null) {
-                    scheduleExecutionUpdater.accept(io.smartdm.domain.ScheduleExecution.createNew(
-                        schedule.getId(), System.currentTimeMillis(), io.smartdm.domain.ScheduleExecution.Status.SUCCESS));
+
+                try {
+                    if (queueStatusController != null) {
+                        queueStatusController.accept(targetQueueId, DownloadQueue.Status.PAUSED);
+                    }
+                    schedule.setLastRunTime(scheduledInstant);
+                    if (scheduleUpdater != null) {
+                        scheduleUpdater.accept(schedule);
+                    }
+                    if (scheduleExecutionUpdater != null) {
+                        scheduleExecutionUpdater.accept(claim.withStatus(io.smartdm.domain.ScheduleExecution.Status.SUCCESS));
+                    }
+                } catch (RuntimeException failure) {
+                    if (scheduleExecutionUpdater != null) {
+                        scheduleExecutionUpdater.accept(claim.withStatus(io.smartdm.domain.ScheduleExecution.Status.FAILED));
+                    }
+                    throw failure;
                 }
             }
         }

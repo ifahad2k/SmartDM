@@ -1,6 +1,7 @@
 package io.smartdm.domain;
 
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
@@ -24,9 +25,10 @@ public class Schedule {
     private final boolean active;
     private final MissedTriggerPolicy missedTriggerPolicy;
     private final String timezoneId;
+    private final String queueId;
     private long lastRunTime;
 
-    public Schedule(String id, String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, boolean active, MissedTriggerPolicy missedTriggerPolicy, String timezoneId) {
+    public Schedule(String id, String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, boolean active, MissedTriggerPolicy missedTriggerPolicy, String timezoneId, String queueId) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.startTime = startTime;
@@ -34,12 +36,32 @@ public class Schedule {
         this.daysOfWeek = daysOfWeek != null ? List.copyOf(daysOfWeek) : List.of();
         this.active = active;
         this.missedTriggerPolicy = Objects.requireNonNull(missedTriggerPolicy, "missedTriggerPolicy must not be null");
-        this.timezoneId = timezoneId != null ? timezoneId : java.time.ZoneId.systemDefault().getId();
+        
+        if (timezoneId != null && !timezoneId.isBlank()) {
+            try {
+                ZoneId.of(timezoneId);
+                this.timezoneId = timezoneId;
+            } catch (Exception failure) {
+                throw new IllegalArgumentException("INVALID_TIMEZONE: Select a valid IANA timezone (" + timezoneId + ")", failure);
+            }
+        } else {
+            this.timezoneId = ZoneId.systemDefault().getId();
+        }
+        
+        this.queueId = (queueId != null && !queueId.isBlank()) ? queueId : "main-queue";
         this.lastRunTime = 0;
     }
 
+    public Schedule(String id, String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, boolean active, MissedTriggerPolicy missedTriggerPolicy, String timezoneId) {
+        this(id, name, startTime, endTime, daysOfWeek, active, missedTriggerPolicy, timezoneId, "main-queue");
+    }
+
     public static Schedule createNew(String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, MissedTriggerPolicy missedTriggerPolicy, String timezoneId) {
-        return new Schedule(UUID.randomUUID().toString(), name, startTime, endTime, daysOfWeek, true, missedTriggerPolicy, timezoneId);
+        return new Schedule(UUID.randomUUID().toString(), name, startTime, endTime, daysOfWeek, true, missedTriggerPolicy, timezoneId, "main-queue");
+    }
+
+    public static Schedule createNew(String name, LocalTime startTime, LocalTime endTime, List<Integer> daysOfWeek, MissedTriggerPolicy missedTriggerPolicy, String timezoneId, String queueId) {
+        return new Schedule(UUID.randomUUID().toString(), name, startTime, endTime, daysOfWeek, true, missedTriggerPolicy, timezoneId, queueId);
     }
 
     public String getId() {
@@ -72,6 +94,10 @@ public class Schedule {
 
     public String getTimezoneId() {
         return timezoneId;
+    }
+
+    public String getQueueId() {
+        return queueId;
     }
 
     public long getLastRunTime() {

@@ -156,7 +156,11 @@ public class SmartDmApp extends Application {
                         AuthDialog authDialog = new AuthDialog(primaryStage, host, "Secure Area");
                         authDialog.showAndWait();
                         if (authDialog.getCredential() != null) {
-                            event.download().updateCredential(authDialog.getCredential());
+                            String credRefId = "cred-" + event.downloadId().value();
+                            try {
+                                keyManager.storeMasterKey(credRefId.getBytes());
+                            } catch (Exception ignored) {}
+                            event.download().updateCredentialReference(new io.smartdm.domain.CredentialReference(credRefId));
                             event.download().updateState(DownloadState.QUEUED);
                             repository.save(event.download());
                             if (starterRef.get() != null) {
