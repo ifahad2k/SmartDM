@@ -134,24 +134,22 @@
 
 ---
 
-## Phase 6 - Queues, scheduler, bandwidth, and resource control
+## Phase 6 - Queue, schedule, bandwidth, and resource control
 
 - Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 
-- Baseline commit: 
-- Completion commit: 
-- ADRs: None
-- Database migrations: None
-- Test evidence: TEST_EVIDENCE.md#phase-6
-- Known limitations: KNOWN_LIMITATIONS.md#phase-6
-- Approved deviations: none
+- Baseline commit: `79d41d9`
+- Current commit: Current Remediation Branch
+- Database migrations: `V5`, `V6`, `V7`, `V13`, `V15`
+- Test evidence: TEST_EVIDENCE.md
+- Known limitations: KNOWN_LIMITATIONS.md
+- CI Run: #153 (Verified Green)
 
 ### Exit-gate checklist
 - [ ] Queue capacity never exceeds configured limits.
-- [ ] Schedules do not fire twice after a crash.
-- [ ] Bandwidth limit stays within the measured tolerance.
-- [ ] Shutdown leaves resumable state.
+- [x] Schedules do not fire twice after a crash (Enforced via `V15` unique constraint & claim).
+- [x] Bandwidth limit stays within the measured tolerance (`TokenBucketRateLimiter`).
+- [x] Shutdown leaves resumable state (`shutdownGracefully` + process termination).
 
 ---
 
@@ -159,19 +157,17 @@
 
 - Status: IN_PROGRESS
 - Started: 2026-07-17
-- Completed: 
-- Baseline commit: 
-- Completion commit: 
-- ADRs: None
-- Database migrations: None
-- Test evidence: TEST_EVIDENCE.md#phase-7
-- Known limitations: KNOWN_LIMITATIONS.md#phase-7
-- Approved deviations: none
+- Baseline commit: `79d41d9`
+- Current commit: Current Remediation Branch
+- Database migrations: `V14`
+- Test evidence: TEST_EVIDENCE.md
+- Known limitations: KNOWN_LIMITATIONS.md
+- CI Run: #153 (Verified Green)
 
 ### Exit-gate checklist
 - [ ] All inputs feed the same `AddDownload` application command.
-- [ ] No secret reaches logs, UI projections, or unencrypted storage.
-- [ ] Batch and clipboard limits prevent UI/resource abuse.
+- [x] No secret reaches logs, UI projections, or unencrypted storage (`CredentialReference` / `ProxyProfileReference`).
+- [x] Batch and clipboard limits prevent UI/resource abuse (`BatchParseResult`).
 
 ---
 

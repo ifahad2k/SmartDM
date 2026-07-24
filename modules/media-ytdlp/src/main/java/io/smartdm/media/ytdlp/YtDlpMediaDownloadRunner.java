@@ -317,38 +317,41 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     }
 
     private void handleCompletion(MediaJobContext context, NativeProcessResult result, Throwable error, Path outputManifest, Path tempDir, Path targetPath) {
+        boolean claimed = false;
         context.operationLock.lock();
         try {
-            if (!context.completionHandled.compareAndSet(false, true)) {
-                return;
+            if (context.completionHandled.compareAndSet(false, true)) {
+                RequestedStop stop = context.requestedStop.get();
+                if (stop == RequestedStop.NONE) {
+                    claimed = true;
+                }
             }
-            RequestedStop stop = context.requestedStop.get();
-            switch (stop) {
-                case PAUSE, CANCEL, DELETE, SHUTDOWN -> { return; }
-                case NONE -> {}
-            }
-
-            if (error != null) {
-                failJob(context, "MEDIA_PROCESS_FAILED", error);
-                return;
-            }
-            if (result.timedOut()) {
-                failJob(context, "MEDIA_PROCESS_TIMEOUT", null);
-                return;
-            }
-            if (result.stdoutLimitExceeded() || result.stderrLimitExceeded()) {
-                failJob(context, "MEDIA_OUTPUT_LIMIT_EXCEEDED", null);
-                return;
-            }
-            if (result.exitCode() != 0) {
-                failJob(context, "MEDIA_TOOL_EXIT_FAILED", null);
-                return;
-            }
-            
-            finalizeCompletedJob(context, outputManifest, tempDir, targetPath);
         } finally {
             context.operationLock.unlock();
         }
+
+        if (!claimed) {
+            return;
+        }
+
+        if (error != null) {
+            failJob(context, "MEDIA_PROCESS_FAILED", error);
+            return;
+        }
+        if (result.timedOut()) {
+            failJob(context, "MEDIA_PROCESS_TIMEOUT", null);
+            return;
+        }
+        if (result.stdoutLimitExceeded() || result.stderrLimitExceeded()) {
+            failJob(context, "MEDIA_OUTPUT_LIMIT_EXCEEDED", null);
+            return;
+        }
+        if (result.exitCode() != 0) {
+            failJob(context, "MEDIA_TOOL_EXIT_FAILED", null);
+            return;
+        }
+        
+        finalizeCompletedJob(context, outputManifest, tempDir, targetPath);
     }
 
     private void failJob(MediaJobContext context, String code, Throwable error) {
@@ -553,7 +556,7 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
                 try {
                     Files.deleteIfExists(targetPath);
                 } catch (IOException e) {
-                    // Ignore target delete failure on full delete
+                    throw new MediaOperationException("MEDIA_DELETE_FAILED", "Could not delete media output", e);
                 }
             }
             deleteManagedDirectory(download.id());

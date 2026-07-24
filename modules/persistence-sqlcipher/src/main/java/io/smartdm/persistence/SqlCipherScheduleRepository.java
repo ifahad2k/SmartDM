@@ -143,6 +143,26 @@ public class SqlCipherScheduleRepository implements ScheduleRepository {
     }
 
     @Override
+    public boolean saveExecutionClaim(io.smartdm.domain.ScheduleExecution execution) {
+        String sql = "INSERT INTO schedule_execution (id, schedule_id, execution_time_millis, status) " +
+                     "VALUES (?, ?, ?, ?) " +
+                     "ON CONFLICT(schedule_id, execution_time_millis) DO NOTHING";
+
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+             
+            stmt.setString(1, execution.getId());
+            stmt.setString(2, execution.getScheduleId());
+            stmt.setLong(3, execution.getExecutionTimeMillis());
+            stmt.setString(4, execution.getStatus().name());
+            
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to save schedule execution claim", e);
+        }
+    }
+
+    @Override
     public List<io.smartdm.domain.ScheduleExecution> findExecutionsByScheduleId(String scheduleId) {
         List<io.smartdm.domain.ScheduleExecution> executions = new ArrayList<>();
         String sql = "SELECT * FROM schedule_execution WHERE schedule_id = ? ORDER BY execution_time_millis DESC";

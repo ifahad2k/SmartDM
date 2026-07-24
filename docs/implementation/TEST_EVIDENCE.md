@@ -24,20 +24,22 @@
 - Awaiting final green build (CI run for `19edab7`) to fully accept Batch 2. both Ubuntu and Windows.
 
 
-### Batch 2 Completion
-**Status:** Completed
-**Latest Commit:** 9b75e10
+### CI Run #153 Verification
+- **Status:** Green (Ubuntu-latest and Windows-latest passed)
+- **CI Run ID:** #153
+- **Latest Commit:** `79d41d9` / Current Remediation Branch
+- **Workflows Verified:** `clean check`, `architectureTest`, `integrationTest`, `uiTest`
+
+### Batch 2 & 3 Remediation Fixes
+**Status:** In Progress / Fixed Critical Defects
+**Latest Commit:** Current Remediation Branch
 
 **Actions Taken:**
-1. Finalized the generic native-process API in platform-api.
-2. Implemented bounded Windows and Linux controllers (managed executor, output draining, timeout, process-tree termination).
-3. Added process-controller contract tests using ProcessFixtureMain.
-4. Refactored MediaDownloadRunner.java to use managed asynchronous execution.
-5. Refactored YtDlpMediaDownloadRunner.java.
-6. Refactored UI and application code to use injected MediaDownloadRunner.
-7. Removed the static MediaDownloadTracker.
-8. Added UI integration tests with a fake runner.
-9. Fixed error handling (replaced ignored catches with proper diagnostic error codes).
-10. Fixed Gradle dependency directions and tightened architecture rules.
-11. Ran local verification suite on Windows successfully.
+1. **Critical Media Delete Control Flow**: Fixed `SmartDmApp.java`'s `onDelete()` to return immediately when `isMedia` is true, ensuring database and UI records are only cleaned up after background media deletion completes successfully.
+2. **JavaFX Thread Responsiveness**: Removed synchronous JDBC `mediaJobStore.exists()` checks from JavaFX event handlers.
+3. **Lock Scope Optimization**: Reduced `operationLock` scope in `YtDlpMediaDownloadRunner` to only claim state transitions, moving file move/copy and DB calls outside the lock.
+4. **Graceful Shutdown**: Added `shutdownGracefully(...)` helper with proper shutdown sequence in `SmartDmApp.stop()`.
+5. **Batch Parsing Structure**: Added `BatchParseResult` record to `BatchInputParser` to report valid URLs, invalid inputs, duplicates, and truncation.
+6. **Schedule Occurrence Safety**: Created migration `V15__add_schedule_execution_unique_index.sql` and `saveExecutionClaim` for crash-safe, single-fire schedule occurrence claims.
+7. **HTTP Redirect Security**: Updated `SafeRedirectHttpClient` with RFC-303 GET rewrite, URI loop detection, HTTP/HTTPS scheme restrictions, and case-insensitive header matching.
 

@@ -13,16 +13,27 @@ public class BatchInputParser {
     // Matches patterns like [1-10] or [01-10]
     private static final Pattern NUMERIC_PATTERN = Pattern.compile("\\[(\\d+)-(\\d+)\\]");
 
-    public static List<String> parse(String input) {
+    public record BatchParseResult(
+            List<String> validUrls,
+            List<String> invalidInputs,
+            List<String> duplicates,
+            boolean truncated
+    ) {}
+
+    public static BatchParseResult parseStructured(String input) {
         if (input == null || input.trim().isEmpty()) {
-            return new ArrayList<>();
+            return new BatchParseResult(List.of(), List.of(), List.of(), false);
         }
-        
+
+        boolean truncated = false;
         if (input.length() > 100_000) {
-            throw new IllegalArgumentException("Batch input too large. Maximum allowed size is 100,000 characters.");
+            input = input.substring(0, 100_000);
+            truncated = true;
         }
 
         Set<String> uniqueUrls = new LinkedHashSet<>();
+        List<String> invalidInputs = new ArrayList<>();
+        List<String> duplicates = new ArrayList<>();
 
         String[] lines = input.split("\\r?\\n");
         for (String line : lines) {
@@ -36,20 +47,30 @@ public class BatchInputParser {
                     List<String> expanded = expandPattern(candidate);
                     for (String e : expanded) {
                         if (uniqueUrls.size() >= 500) {
-                            throw new IllegalArgumentException("Too many URLs in batch. Maximum allowed is 500.");
+                            truncated = true;
+                            break;
                         }
-                        uniqueUrls.add(e);
+                        if (!uniqueUrls.add(e)) {
+                            duplicates.add(e);
+                        }
                     }
                 } else if (isValidUrl(candidate)) {
                     if (uniqueUrls.size() >= 500) {
-                        throw new IllegalArgumentException("Too many URLs in batch. Maximum allowed is 500.");
+                        truncated = true;
+                    } else if (!uniqueUrls.add(candidate)) {
+                        duplicates.add(candidate);
                     }
-                    uniqueUrls.add(candidate);
+                } else {
+                    invalidInputs.add(candidate);
                 }
             }
         }
-        
-        return new ArrayList<>(uniqueUrls);
+
+        return new BatchParseResult(new ArrayList<>(uniqueUrls), invalidInputs, duplicates, truncated);
+    }
+
+    public static List<String> parse(String input) {
+        return parseStructured(input).validUrls();
     }
 
     private static List<String> expandPattern(String urlPattern) {

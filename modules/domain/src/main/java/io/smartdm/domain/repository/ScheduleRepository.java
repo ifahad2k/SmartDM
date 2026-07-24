@@ -12,5 +12,6 @@ public interface ScheduleRepository {
     void delete(String id);
     
     void saveExecution(io.smartdm.domain.ScheduleExecution execution);
+    boolean saveExecutionClaim(io.smartdm.domain.ScheduleExecution execution);
     List<io.smartdm.domain.ScheduleExecution> findExecutionsByScheduleId(String scheduleId);
 }

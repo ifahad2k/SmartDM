@@ -424,45 +424,50 @@ public class SmartDmApp extends Application {
                     io.smartdm.desktop.util.FxCompletion.observe(
                             mediaDownloadRunner.deleteDownload(download, permanent, java.nio.file.Path.of(download.destination().value())),
                             ignored -> {
-                                scheduleRepo.delete(download.id().value());
-                                repository.delete(download.id());
-                                Platform.runLater(() -> {
-                                    mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                                    queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
-                                    if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
-                                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                                enginePool.submit(() -> {
+                                    scheduleRepo.delete(download.id().value());
+                                    repository.delete(download.id());
+                                    Platform.runLater(() -> {
+                                        mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                                        queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                                        if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
+                                        if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                                    });
                                 });
                             },
-                            error -> showOperationFailure("Delete failed", error)
+                            error -> showOperationFailure("Media deletion failed", error)
                     );
-                } else {
-                    try {
-                        coordinator.cancel(download.id(), false).get(2, java.util.concurrent.TimeUnit.SECONDS);
-                    } catch (Exception ignored) {}
+                    return;
                 }
                 
-                scheduleRepo.delete(download.id().value());
-                repository.delete(download.id());
+                try {
+                    coordinator.cancel(download.id(), false).get(2, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (Exception ignored) {}
 
-                Platform.runLater(() -> {
-                    mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                    queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
-                    if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
-                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                });
+                enginePool.submit(() -> {
+                    scheduleRepo.delete(download.id().value());
+                    repository.delete(download.id());
 
-                if (permanent) {
-                    enginePool.submit(() -> {
+                    Platform.runLater(() -> {
+                        mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                        queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                        if (workspaceRef[0] != null) workspaceRef[0].removeDownload(download.id());
+                        if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                    });
+
+                    if (permanent) {
                         if (download.destination() != null && download.destination().value() != null) {
-                            mediaDownloadRunner.deleteMediaFiles(java.nio.file.Path.of(download.destination().value()));
+                            try {
+                                Files.deleteIfExists(Path.of(download.destination().value()));
+                            } catch (Exception ignored) {}
                         }
                         try {
                             Path partFile = directories.getCacheDirectory().resolve("temp")
                                     .resolve(download.id().value() + ".part");
                             Files.deleteIfExists(partFile);
                         } catch (Exception ignored) {}
-                    });
-                }
+                    }
+                });
             }
 
             @Override
@@ -672,46 +677,40 @@ public class SmartDmApp extends Application {
         if (resourceMonitor != null) {
             resourceMonitor.stop();
         }
+        if (mediaDownloadRunner != null) {
+            try {
+                mediaDownloadRunner.close();
+            } catch (Exception ignored) {}
+        }
         if (coordinator != null) {
             coordinator.shutdown();
         }
-        if (mediaDownloadRunner != null) {
-            mediaDownloadRunner.close();
-        }
-        if (enginePool != null) {
-            enginePool.shutdownNow();
-            try {
-                enginePool.awaitTermination(2, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        if (mediaExecutor != null) {
-            mediaExecutor.shutdownNow();
-            try {
-                mediaExecutor.awaitTermination(2, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        if (processIoExecutor != null) {
-            processIoExecutor.shutdownNow();
-            try {
-                processIoExecutor.awaitTermination(2, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        if (processScheduler != null) {
-            processScheduler.shutdownNow();
-            try {
-                processScheduler.awaitTermination(2, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        
+        shutdownGracefully(mediaExecutor, java.time.Duration.ofSeconds(3));
+        shutdownGracefully(enginePool, java.time.Duration.ofSeconds(3));
+        shutdownGracefully(processIoExecutor, java.time.Duration.ofSeconds(3));
+        shutdownGracefully(processScheduler, java.time.Duration.ofSeconds(3));
+
         if (profileLock != null) {
-            profileLock.close();
+            try {
+                profileLock.close();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static void shutdownGracefully(ExecutorService executor, java.time.Duration timeout) {
+        if (executor == null) {
+            return;
+        }
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                executor.shutdownNow();
+                executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            }
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            executor.shutdownNow();
         }
     }
 
