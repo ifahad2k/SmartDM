@@ -1,6 +1,5 @@
 package io.smartdm.download.http;
 
-import io.smartdm.domain.AuthCredential;
 import io.smartdm.domain.ByteCount;
 import io.smartdm.domain.SourceUri;
 
@@ -30,19 +29,18 @@ public class HttpProbeClient {
     public record ProbeResult(ByteCount size, String mimeType, String etag, String lastModified, boolean acceptsRanges) {}
 
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri) {
-        return probeAsync(uri, null);
+        return probeAsync(uri, (String) null);
     }
 
-    public CompletableFuture<ProbeResult> probeAsync(SourceUri uri, AuthCredential credential) {
+    public CompletableFuture<ProbeResult> probeAsync(SourceUri uri, String authorizationHeader) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
                 .timeout(Duration.ofSeconds(10));
                 
-        if (credential != null) {
-            String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
-            builder.header("Authorization", "Basic " + basicAuth);
+        if (authorizationHeader != null && !authorizationHeader.isBlank()) {
+            builder.header("Authorization", authorizationHeader);
         }
 
         HttpRequest request = builder.build();
@@ -73,12 +71,12 @@ public class HttpProbeClient {
                     if (ex.getCause() instanceof UnauthorizedException) {
                         return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
                     }
-                    return probeViaGetRange(uri, credential);
+                    return probeViaGetRange(uri, authorizationHeader);
                 })
                 .thenCompose(future -> future);
     }
 
-    private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri, AuthCredential credential) {
+    private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri, String authorizationHeader) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
@@ -86,9 +84,8 @@ public class HttpProbeClient {
                 .GET()
                 .timeout(Duration.ofSeconds(10));
                 
-        if (credential != null) {
-            String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
-            builder.header("Authorization", "Basic " + basicAuth);
+        if (authorizationHeader != null && !authorizationHeader.isBlank()) {
+            builder.header("Authorization", authorizationHeader);
         }
 
         HttpRequest request = builder.build();

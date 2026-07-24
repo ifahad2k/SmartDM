@@ -73,7 +73,7 @@ class CrashRecoveryIntegrationTest {
             copy.updateScheduledStartTime(source.scheduledStartTime());
             copy.updateExpectedHash(source.expectedHash());
             copy.updateCategoryId(source.categoryId());
-            copy.updateCredential(source.credential());
+            copy.updateCredentialReference(source.credentialReference());
             List<io.smartdm.domain.DownloadSegment> segments = new ArrayList<>();
             for (io.smartdm.domain.DownloadSegment s : source.segments()) {
                 segments.add(new io.smartdm.domain.DownloadSegment(s.index(), s.startOffset(), s.currentOffset(), s.endOffset()));

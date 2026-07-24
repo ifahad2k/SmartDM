@@ -74,6 +74,7 @@ public class SingleDownloadCoordinator {
     }
 
     private final io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter;
+    private final java.util.function.Function<io.smartdm.domain.CredentialReference, String> secretResolver;
 
     public SingleDownloadCoordinator(
             DownloadRepository repository,
@@ -83,6 +84,18 @@ public class SingleDownloadCoordinator {
             DownloadEvent.Publisher eventPublisher,
             Path tempDir,
             io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter) {
+        this(repository, categoryRepository, probeClient, httpClient, eventPublisher, tempDir, rateLimiter, null);
+    }
+
+    public SingleDownloadCoordinator(
+            DownloadRepository repository,
+            CategoryRepository categoryRepository,
+            HttpProbeClient probeClient,
+            HttpClient httpClient,
+            DownloadEvent.Publisher eventPublisher,
+            Path tempDir,
+            io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter rateLimiter,
+            java.util.function.Function<io.smartdm.domain.CredentialReference, String> secretResolver) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.probeClient = probeClient;
@@ -90,6 +103,7 @@ public class SingleDownloadCoordinator {
         this.eventPublisher = eventPublisher;
         this.tempDir = tempDir;
         this.rateLimiter = rateLimiter;
+        this.secretResolver = secretResolver;
         this.segmentExecutor = Executors.newCachedThreadPool();
     }
 
@@ -132,9 +146,14 @@ public class SingleDownloadCoordinator {
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
 
+            String authHeader = null;
+            if (download.credentialReference() != null && secretResolver != null) {
+                authHeader = secretResolver.apply(download.credentialReference());
+            }
+
             HttpProbeClient.ProbeResult probeResult;
             try {
-                probeResult = probeClient.probeAsync(download.source(), download.credential()).join();
+                probeResult = probeClient.probeAsync(download.source(), authHeader).join();
             } catch (java.util.concurrent.CompletionException ce) {
                 if (ce.getCause() instanceof UnauthorizedException) {
                     download.updateState(DownloadState.REQUIRES_AUTH);
@@ -145,11 +164,6 @@ public class SingleDownloadCoordinator {
                 throw ce;
             }
 
-            // Re-check database state in case the user paused/cancelled during the blocking probe
-            Download latest = repository.findById(download.id()).orElse(download);
-            if (latest.state() == DownloadState.PAUSED || latest.state() == DownloadState.CANCELED) {
-                return; // Abort execution silently; pause/cancel already handled the DB and Events
-            }
 
             // Check identity for resume
             if (download.etag() != null || download.lastModified() != null) {
@@ -237,9 +251,8 @@ public class SingleDownloadCoordinator {
                     .uri(download.source().value())
                     .GET();
             
-            if (download.credential() != null) {
-                String basicAuth = Base64.getEncoder().encodeToString((download.credential().username() + ":" + download.credential().password()).getBytes());
-                reqBuilder.header("Authorization", "Basic " + basicAuth);
+            if (authHeader != null && !authHeader.isBlank()) {
+                reqBuilder.header("Authorization", authHeader);
             }
             HttpRequest baseRequest = reqBuilder.build();
 

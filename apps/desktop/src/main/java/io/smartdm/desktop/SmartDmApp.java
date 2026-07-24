@@ -234,10 +234,21 @@ public class SmartDmApp extends Application {
         io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter globalLimiter = 
             new io.smartdm.download.engine.bandwidth.TokenBucketRateLimiter(null, null);
 
+        java.util.function.Function<io.smartdm.domain.CredentialReference, String> secretResolver = ref -> {
+            if (ref == null || ref.id() == null) return null;
+            Optional<byte[]> secretBytes = keyManager.retrieveMasterKey();
+            if (secretBytes.isPresent()) {
+                String raw = new String(secretBytes.get(), java.nio.charset.StandardCharsets.UTF_8);
+                return "Basic " + java.util.Base64.getEncoder().encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            return null;
+        };
+
         coordinator = new SingleDownloadCoordinator(
                 repository, categoryRepository, probeClient, httpClient, publisher,
                 directories.getCacheDirectory().resolve("temp"),
-                globalLimiter
+                globalLimiter,
+                secretResolver
         );
 
         // Phase 6 Engine wiring
@@ -565,49 +576,61 @@ public class SmartDmApp extends Application {
         });
         workspaceRef[0] = workspace;
 
-        // ── 4. Populate Workspace from database at startup ─────────────
-        try {
-            java.util.List<Download> allDownloads = repository.findAll();
-            for (Download dl : allDownloads) {
-                if (mediaJobStore.exists(dl.id())) {
-                    activeMediaIds.add(dl.id());
-                }
-                workspace.addDownload(dl);
-            }
-
-            if (restoredQueues.isEmpty()) {
+        // ── 4. Populate Workspace from database asynchronously at startup ─────
+        enginePool.submit(() -> {
+            try {
+                java.util.List<Download> allDownloads = repository.findAll();
+                java.util.Set<io.smartdm.domain.DownloadId> mediaIds = new java.util.HashSet<>();
                 for (Download dl : allDownloads) {
-                    if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
-                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
-                        mainQueueItems.add(item);
+                    if (mediaJobStore.exists(dl.id())) {
+                        mediaIds.add(dl.id());
                     }
                 }
-                queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
-            } else {
-                java.util.List<io.smartdm.domain.QueueItem> restoredMainItems = queueRepository.findItemsByQueueId("main-queue");
-                if (restoredMainItems != null) {
-                    mainQueueItems.addAll(restoredMainItems);
-                }
-                java.util.Set<io.smartdm.domain.DownloadId> existingQueuedIds = new java.util.HashSet<>();
-                for (io.smartdm.domain.DownloadQueue q : restoredQueues) {
-                    for (io.smartdm.domain.QueueItem qi : queueRepository.findItemsByQueueId(q.getId())) {
-                        existingQueuedIds.add(qi.getDownloadId());
-                    }
-                }
-                for (Download dl : allDownloads) {
-                    if (dl.state() == io.smartdm.domain.DownloadState.QUEUED && !existingQueuedIds.contains(dl.id())) {
-                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
-                        mainQueueItems.add(item);
-                    }
-                }
-            }
 
-            for (io.smartdm.domain.Schedule s : scheduleRepo.findAll()) {
-                scheduleRunner.updateSchedule(s);
+                java.util.List<io.smartdm.domain.QueueItem> mainItems = new java.util.ArrayList<>();
+                if (restoredQueues.isEmpty()) {
+                    for (Download dl : allDownloads) {
+                        if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                            mainItems.add(new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainItems.size()));
+                        }
+                    }
+                } else {
+                    java.util.List<io.smartdm.domain.QueueItem> restoredMainItems = queueRepository.findItemsByQueueId("main-queue");
+                    if (restoredMainItems != null) {
+                        mainItems.addAll(restoredMainItems);
+                    }
+                    java.util.Set<io.smartdm.domain.DownloadId> existingQueuedIds = new java.util.HashSet<>();
+                    for (io.smartdm.domain.DownloadQueue q : restoredQueues) {
+                        for (io.smartdm.domain.QueueItem qi : queueRepository.findItemsByQueueId(q.getId())) {
+                            existingQueuedIds.add(qi.getDownloadId());
+                        }
+                    }
+                    for (Download dl : allDownloads) {
+                        if (dl.state() == io.smartdm.domain.DownloadState.QUEUED && !existingQueuedIds.contains(dl.id())) {
+                            mainItems.add(new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainItems.size()));
+                        }
+                    }
+                }
+
+                java.util.List<io.smartdm.domain.Schedule> schedules = scheduleRepo.findAll();
+
+                Platform.runLater(() -> {
+                    activeMediaIds.addAll(mediaIds);
+                    for (Download dl : allDownloads) {
+                        workspace.addDownload(dl);
+                    }
+                    mainQueueItems.addAll(mainItems);
+                    if (restoredQueues.isEmpty()) {
+                        queueCoordinator.updateQueueItems("main-queue", mainQueueItems);
+                    }
+                    for (io.smartdm.domain.Schedule s : schedules) {
+                        scheduleRunner.updateSchedule(s);
+                    }
+                });
+            } catch (Exception e) {
+                System.err.println("Warning: Async startup database projection load failed: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.err.println("Warning: Failed to load downloads from database: " + e.getMessage());
-        }
+        });
 
         // ── 5. Catalog Service Setup ─────────────────────────────────────
         SqlCipherCatalogRepository catalogRepo = new SqlCipherCatalogRepository(database);
