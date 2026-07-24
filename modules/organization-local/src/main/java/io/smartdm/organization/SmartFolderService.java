@@ -29,6 +29,15 @@ public class SmartFolderService {
         return localFolderScorer.scoreCandidates(candidates, fileName, mimeType, sourceHost, expectedBytes);
     }
 
+    public java.util.concurrent.CompletableFuture<List<FolderSuggestion>> suggestFoldersAsync(
+            String url, String fileName, String mimeType, long expectedBytes, java.util.concurrent.Executor executor) {
+        java.util.concurrent.Executor exec = executor != null ? executor : java.util.concurrent.ForkJoinPool.commonPool();
+        return java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> suggestFolders(url, fileName, mimeType, expectedBytes),
+                exec
+        );
+    }
+
     public void recordUserChoice(String url, String fileName, String mimeType, Path chosenFolder, Path suggestedFolder) {
         if (affinityRepository == null || chosenFolder == null) return;
 

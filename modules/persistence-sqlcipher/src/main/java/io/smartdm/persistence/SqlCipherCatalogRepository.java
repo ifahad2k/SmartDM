@@ -102,9 +102,10 @@ public class SqlCipherCatalogRepository implements CatalogRepository {
         String sql = "INSERT INTO catalog_file (id, root_id, relative_path, file_name, file_extension, mime_type, " +
                      "file_size, created_at, modified_at, quick_hash, full_hash, metadata_json) " +
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-                     "ON CONFLICT(id) DO UPDATE SET relative_path=excluded.relative_path, file_name=excluded.file_name, " +
+                     "ON CONFLICT(root_id, relative_path) DO UPDATE SET file_name=excluded.file_name, " +
                      "file_extension=excluded.file_extension, mime_type=excluded.mime_type, file_size=excluded.file_size, " +
-                     "modified_at=excluded.modified_at, quick_hash=excluded.quick_hash, full_hash=excluded.full_hash, " +
+                     "modified_at=excluded.modified_at, quick_hash=COALESCE(excluded.quick_hash, catalog_file.quick_hash), " +
+                     "full_hash=COALESCE(excluded.full_hash, catalog_file.full_hash), " +
                      "metadata_json=excluded.metadata_json";
         try (Connection conn = database.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -124,6 +125,49 @@ public class SqlCipherCatalogRepository implements CatalogRepository {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to save catalog file", e);
         }
+    }
+
+    @Override
+    public void recordScanError(io.smartdm.domain.catalog.CatalogScanError error) {
+        String sql = "INSERT INTO catalog_scan_error (id, root_id, relative_path, error_code, occurred_at, retryable) " +
+                     "VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = database.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, error.id());
+            stmt.setString(2, error.rootId());
+            stmt.setString(3, error.relativePath());
+            stmt.setString(4, error.errorCode());
+            stmt.setString(5, error.occurredAt().toString());
+            stmt.setInt(6, error.retryable() ? 1 : 0);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Warning: Failed to record scan error: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public List<io.smartdm.domain.catalog.CatalogScanError> getErrorsForRoot(String rootId) {
+        String sql = "SELECT id, root_id, relative_path, error_code, occurred_at, retryable FROM catalog_scan_error WHERE root_id = ?";
+        List<io.smartdm.domain.catalog.CatalogScanError> errors = new java.util.ArrayList<>();
+        try (Connection conn = database.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, rootId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    errors.add(new io.smartdm.domain.catalog.CatalogScanError(
+                            rs.getString("id"),
+                            rs.getString("root_id"),
+                            rs.getString("relative_path"),
+                            rs.getString("error_code"),
+                            Instant.parse(rs.getString("occurred_at")),
+                            rs.getInt("retryable") == 1
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Warning: Failed to query scan errors: " + e.getMessage());
+        }
+        return errors;
     }
 
     @Override

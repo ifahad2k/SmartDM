@@ -25,4 +25,7 @@ public interface CatalogRepository {
     List<CatalogFile> searchFilesFts(String query);
 
     void clearFilesForRoot(String rootId);
+
+    default void recordScanError(io.smartdm.domain.catalog.CatalogScanError error) {}
+    default List<io.smartdm.domain.catalog.CatalogScanError> getErrorsForRoot(String rootId) { return List.of(); }
 }

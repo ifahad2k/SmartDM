@@ -36,6 +36,7 @@ class DuplicateDetectorTest {
         Path testFile = tempDir.resolve("test.bin");
         Files.writeString(testFile, "Duplicate Content Data");
 
+        String quickHash = QuickFingerprintCalculator.calculateQuickHash(testFile);
         String fullHash = QuickFingerprintCalculator.calculateFullHash(testFile);
         CatalogFile existing = new CatalogFile(
             UUID.randomUUID().toString(),
@@ -47,15 +48,29 @@ class DuplicateDetectorTest {
             Files.size(testFile),
             Instant.now(),
             Instant.now(),
-            "quickhash",
+            quickHash,
             fullHash,
             "{}"
         );
 
+        when(catalogRepository.findFilesByNameAndSize(anyString(), anyLong())).thenReturn(List.of(existing));
         when(catalogRepository.findFilesByFullHash(fullHash)).thenReturn(List.of(existing));
 
         List<CatalogDuplicateMatch> matches = duplicateDetector.findDuplicates("test.bin", testFile);
         assertThat(matches).hasSize(1);
         assertThat(matches.get(0).getTier()).isEqualTo(DuplicateTier.EXACT_MATCH);
+    }
+
+    @Test
+    void shouldReturnEmptyWhenNoCandidatesMatchNameAndSize(@TempDir Path tempDir) throws Exception {
+        Path testFile = tempDir.resolve("unique.bin");
+        Files.writeString(testFile, "Unique Content Data");
+
+        when(catalogRepository.findFilesByNameAndSize(anyString(), anyLong())).thenReturn(List.of());
+        when(catalogRepository.findFilesBySize(anyLong())).thenReturn(List.of());
+
+        List<CatalogDuplicateMatch> matches = duplicateDetector.findDuplicates("unique.bin", testFile);
+        assertThat(matches).isEmpty();
+        Mockito.verify(catalogRepository, Mockito.never()).findFilesByFullHash(anyString());
     }
 }

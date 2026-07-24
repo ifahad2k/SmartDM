@@ -43,13 +43,13 @@ public class FileCatalogScanner {
                         try {
                             String fileName = file.getFileName().toString();
                             String ext = getExtension(fileName);
-                            String mimeType = guessMimeType(fileName);
+                            String mimeType = guessMimeType(file, fileName);
                             long size = attrs.size();
                             Instant created = attrs.creationTime().toInstant();
                             Instant modified = attrs.lastModifiedTime().toInstant();
 
                             Path relativePath = rootPath.relativize(file);
-                            String quickHash = QuickFingerprintCalculator.calculateQuickHash(file);
+                            String quickHash = null; // Staged hashing: do not hash during initial traversal
 
                             CatalogFile catalogFile = new CatalogFile(
                                 UUID.randomUUID().toString(),
@@ -67,8 +67,11 @@ public class FileCatalogScanner {
                             );
 
                             catalogRepository.saveFile(catalogFile);
-                        } catch (Exception ignored) {
-                            // Skip individual file on permission/access error
+                        } catch (Exception ex) {
+                            String rel = rootPath.relativize(file).toString();
+                            String code = (ex instanceof SecurityException) ? "ACCESS_DENIED" : "METADATA_FAILED";
+                            catalogRepository.recordScanError(new io.smartdm.domain.catalog.CatalogScanError(
+                                    UUID.randomUUID().toString(), root.getId(), rel, code, Instant.now(), true));
                         }
                     }
                     return FileVisitResult.CONTINUE;
@@ -76,6 +79,14 @@ public class FileCatalogScanner {
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    if (file != null) {
+                        try {
+                            String rel = rootPath.relativize(file).toString();
+                            String code = (exc instanceof java.nio.file.NoSuchFileException) ? "FILE_DISAPPEARED" : "ACCESS_DENIED";
+                            catalogRepository.recordScanError(new io.smartdm.domain.catalog.CatalogScanError(
+                                    UUID.randomUUID().toString(), root.getId(), rel, code, Instant.now(), true));
+                        } catch (Exception ignored) {}
+                    }
                     return FileVisitResult.CONTINUE;
                 }
             });
@@ -92,9 +103,9 @@ public class FileCatalogScanner {
         return (dot > 0 && dot < fileName.length() - 1) ? fileName.substring(dot + 1).toLowerCase() : "";
     }
 
-    private String guessMimeType(String fileName) {
+    private String guessMimeType(Path file, String fileName) {
         try {
-            String contentType = Files.probeContentType(Paths.get(fileName));
+            String contentType = Files.probeContentType(file);
             if (contentType != null) return contentType;
         } catch (Exception ignored) {}
 

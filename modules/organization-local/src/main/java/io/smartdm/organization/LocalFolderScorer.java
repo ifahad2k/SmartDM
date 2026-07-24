@@ -68,9 +68,23 @@ public class LocalFolderScorer {
                         reasons.add("Pinned favorite folder");
                     }
                     if (aff.getChoiceCount() > 0) {
-                        double choiceBonus = Math.min(25.0, aff.getChoiceCount() * 5.0);
+                        double baseBonus = Math.min(25.0, aff.getChoiceCount() * 5.0);
+                        double recencyFactor = 1.0;
+                        if (aff.getLastUsedAt() > 0) {
+                            long daysAgo = (System.currentTimeMillis() - aff.getLastUsedAt()) / (1000L * 60 * 60 * 24);
+                            if (daysAgo > 30) {
+                                recencyFactor = 0.25;
+                            } else if (daysAgo > 7) {
+                                recencyFactor = 0.5;
+                            }
+                        }
+                        double choiceBonus = baseBonus * recencyFactor;
                         score += choiceBonus;
-                        reasons.add("Chosen " + aff.getChoiceCount() + " times recently");
+                        if (recencyFactor >= 0.5) {
+                            reasons.add("Chosen " + aff.getChoiceCount() + " times recently");
+                        } else {
+                            reasons.add("Chosen " + aff.getChoiceCount() + " times in the past");
+                        }
                     }
                     if (aff.getExtensionAffinity() != null && aff.getExtensionAffinity().contains(extension.toLowerCase())) {
                         score += 20.0;
@@ -86,12 +100,19 @@ public class LocalFolderScorer {
             // 3. Existing duplicate / matching catalog files
             if (catalogRepository != null && fileName != null && !fileName.isBlank()) {
                 List<CatalogFile> matchingFiles = catalogRepository.findFilesByNameAndSize(fileName, expectedBytes > 0 ? expectedBytes : 0L);
+                Path candidateNormalized = path.toAbsolutePath().normalize();
                 for (CatalogFile cf : matchingFiles) {
-                    if (cf.getRelativePath() != null && Path.of(cf.getRelativePath()).startsWith(path)) {
-                        score += 35.0;
-                        hasDuplicate = true;
-                        reasons.add("An existing matching file is in this folder");
-                        break;
+                    if (cf.getRelativePath() != null) {
+                        Optional<io.smartdm.domain.catalog.CatalogRoot> rootOpt = catalogRepository.getRootById(cf.getRootId());
+                        if (rootOpt.isPresent()) {
+                            Path absoluteCatalogPath = Path.of(rootOpt.get().getPath()).resolve(cf.getRelativePath()).normalize();
+                            if (absoluteCatalogPath.getParent() != null && (absoluteCatalogPath.getParent().equals(candidateNormalized) || absoluteCatalogPath.startsWith(candidateNormalized))) {
+                                score += 35.0;
+                                hasDuplicate = true;
+                                reasons.add("An existing matching file is in this folder");
+                                break;
+                            }
+                        }
                     }
                 }
             }

@@ -27,30 +27,63 @@ public class DuplicateDetector {
 
         try {
             long size = Files.size(localFilePath);
-            String quickHash = QuickFingerprintCalculator.calculateQuickHash(localFilePath);
+            String nameToSearch = (fileName != null && !fileName.isBlank()) ? fileName : localFilePath.getFileName().toString();
 
-            // Tier 3 Check: Exact Match (Full Hash)
+            // Tier 1 Check (Lowest Cost): Query candidates by Name + Size or Size
+            List<CatalogFile> candidates = catalogRepository.findFilesByNameAndSize(nameToSearch, size);
+            if (candidates.isEmpty()) {
+                candidates = catalogRepository.findFilesBySize(size);
+            }
+            if (candidates.isEmpty()) {
+                // Zero candidate matches -> Return immediately without calculating expensive hashes
+                return matches;
+            }
+
+            // Tier 2 Check (Medium Cost): Compute Quick Fingerprint only when candidates exist
+            String quickHash = QuickFingerprintCalculator.calculateQuickHash(localFilePath);
+            List<CatalogFile> strongCandidates = new ArrayList<>();
+            if (quickHash != null) {
+                for (CatalogFile candidate : candidates) {
+                    if (quickHash.equals(candidate.getQuickHash())) {
+                        strongCandidates.add(candidate);
+                    }
+                }
+                if (strongCandidates.isEmpty()) {
+                    List<CatalogFile> quickHashMatches = catalogRepository.findFilesByQuickHash(quickHash);
+                    if (quickHashMatches != null) strongCandidates.addAll(quickHashMatches);
+                }
+            }
+
+            if (strongCandidates.isEmpty()) {
+                // Return Tier 1 possible matches if quick hash didn't match
+                for (CatalogFile f : candidates) {
+                    matches.add(new CatalogDuplicateMatch(f, DuplicateTier.POSSIBLE_MATCH, "FileName & Size (" + size + " bytes)"));
+                }
+                return matches;
+            }
+
+            // Tier 3 Check (Highest Cost): Compute full SHA-256 hash only for strong candidates
             String fullHash = QuickFingerprintCalculator.calculateFullHash(localFilePath);
             if (fullHash != null) {
-                List<CatalogFile> exactFiles = catalogRepository.findFilesByFullHash(fullHash);
-                for (CatalogFile f : exactFiles) {
-                    matches.add(new CatalogDuplicateMatch(f, DuplicateTier.EXACT_MATCH, "SHA-256: " + fullHash));
+                for (CatalogFile f : strongCandidates) {
+                    if (fullHash.equals(f.getFullHash())) {
+                        matches.add(new CatalogDuplicateMatch(f, DuplicateTier.EXACT_MATCH, "SHA-256: " + fullHash));
+                    }
+                }
+                if (matches.isEmpty()) {
+                    List<CatalogFile> fullHashMatches = catalogRepository.findFilesByFullHash(fullHash);
+                    if (fullHashMatches != null) {
+                        for (CatalogFile f : fullHashMatches) {
+                            matches.add(new CatalogDuplicateMatch(f, DuplicateTier.EXACT_MATCH, "SHA-256: " + fullHash));
+                        }
+                    }
                 }
             }
 
-            // Tier 2 Check: Strong Match (Quick Fingerprint + Size)
-            if (matches.isEmpty() && quickHash != null) {
-                List<CatalogFile> strongFiles = catalogRepository.findFilesByQuickHash(quickHash);
-                for (CatalogFile f : strongFiles) {
+            if (matches.isEmpty()) {
+                // If full hash didn't match, return Tier 2 strong matches
+                for (CatalogFile f : strongCandidates) {
                     matches.add(new CatalogDuplicateMatch(f, DuplicateTier.STRONG_MATCH, "QuickFingerprint: " + quickHash));
-                }
-            }
-
-            // Tier 1 Check: Possible Match (FileName + Size)
-            if (matches.isEmpty() && fileName != null && !fileName.isBlank()) {
-                List<CatalogFile> possibleFiles = catalogRepository.findFilesByNameAndSize(fileName, size);
-                for (CatalogFile f : possibleFiles) {
-                    matches.add(new CatalogDuplicateMatch(f, DuplicateTier.POSSIBLE_MATCH, "FileName & Size (" + size + " bytes)"));
                 }
             }
 

@@ -33,3 +33,9 @@
 - **SDM-P9-01 (Media Tool Provenance & SHA-256 Integrity)**: Created `MediaToolManifest` for verifying executable identity and SHA-256 digest integrity for yt-dlp/FFmpeg tools.
 - **SDM-P9-02 (Explicit Cookie Consent Boundary)**: Created `CookieConsentPolicy` to enforce explicit per-site consent before reading or attaching browser cookies, with automatic session material purging.
 - **SDM-P10-01 & SDM-P10-02 (Media Site Adapter & YouTube Overlay Accessibility)**: Defined `MediaSiteAdapter` and `YouTubeMediaSiteAdapter` for URL canonicalization, zero pre-click network extraction, and accessibility label compliance.
+
+## Batch 5 (Phases 11–12 Remediation - File Catalog Indexing & Smart Folder Recommendation)
+- **SDM-P11-01 & SDM-P11-02 (Staged Hashing & Cost-Ordered Duplicate Tiers)**: `FileCatalogScanner` stores metadata without hashing during initial walk; `DuplicateDetector` evaluates Tier 1 (Name+Size) first, computing quick hashes only for candidates and full SHA-256 only for strong matches.
+- **SDM-P11-03, SDM-P11-06 & SDM-P11-07 (Scan Error Log, Path MIME Probe & Unique Upserts)**: Created `CatalogScanError` table/model for tracking access and metadata failures; passed actual `Path file` to `Files.probeContentType`; added `ON CONFLICT(root_id, relative_path)` unique index migration `V18`.
+- **SDM-P12-01 & SDM-P12-03 (Folder Scorer Path Resolution & Recency Decay)**: `LocalFolderScorer` resolves catalog relative paths against catalog root when scoring candidate folders, and applies timestamp recency decay on choice counts.
+- **SDM-P12-02 & SDM-P11-08 (Async Smart Folder Service & Catalog Verification)**: Added `suggestFoldersAsync` returning `CompletableFuture<List<FolderSuggestion>>` to run folder scoring on background threads without blocking JavaFX.
