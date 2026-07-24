@@ -24,11 +24,16 @@
 - Awaiting final green build (CI run for `19edab7`) to fully accept Batch 2. both Ubuntu and Windows.
 
 
-### CI Run #153 Verification
-- **Status:** Green (Ubuntu-latest and Windows-latest passed)
-- **CI Run ID:** #153
-- **Latest Commit:** `79d41d9` / Current Remediation Branch
-- **Workflows Verified:** `clean check`, `architectureTest`, `integrationTest`, `uiTest`
+### CI Verification Evidence
+- Branch: remediation-fixes
+- Commit: 476f1a7d2ef0929ea485a02dbf238e1a8d39cbb6
+- CI run: #153
+- Result: SUCCESS
+- Ubuntu: PASS
+- Windows: PASS
+- Artifacts:
+  - verification-reports-ubuntu-latest
+  - verification-reports-windows-latest
 
 ### Batch 2 & 3 Remediation Fixes
 **Status:** In Progress / Fixed Critical Defects

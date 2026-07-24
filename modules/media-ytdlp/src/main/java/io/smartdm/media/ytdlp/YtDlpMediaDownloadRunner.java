@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.CopyOption;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,6 +59,9 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         private final AtomicReference<RequestedStop> requestedStop = new AtomicReference<>(RequestedStop.NONE);
         private final AtomicBoolean completionHandled = new AtomicBoolean(false);
         private final ReentrantLock operationLock = new ReentrantLock();
+        
+        private final AtomicReference<String> lastDiagnostic = new AtomicReference<>();
+        private final AtomicReference<String> detectedFailure = new AtomicReference<>();
         
         private volatile NativeProcessSession processSession;
         private volatile long lastPersistNanos;
@@ -313,7 +317,24 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     }
 
     private void handleYtDlpErrorOutput(MediaJobContext context, String line) {
-        // Ignored for now
+        if (line == null || line.isBlank()) return;
+        String sanitized = sanitizeUrl(line.trim());
+        context.lastDiagnostic.set(sanitized);
+
+        if (line.contains("No space left")) {
+            context.detectedFailure.set("DISK_FULL");
+        } else if (line.contains("Requested format is not available")) {
+            context.detectedFailure.set("FORMAT_UNAVAILABLE");
+        } else if (line.contains("Permission denied")) {
+            context.detectedFailure.set("PERMISSION_DENIED");
+        } else if (line.contains("HTTP Error 403")) {
+            context.detectedFailure.set("HTTP_FORBIDDEN");
+        }
+    }
+
+    private static String sanitizeUrl(String text) {
+        if (text == null) return null;
+        return text.replaceAll("(https?://[^?\\s]+)\\?[^\\s]*", "$1?[REDACTED]");
     }
 
     private void handleCompletion(MediaJobContext context, NativeProcessResult result, Throwable error, Path outputManifest, Path tempDir, Path targetPath) {
@@ -362,7 +383,7 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
     private void finalizeCompletedJob(MediaJobContext context, Path outputManifest, Path tempDir, Path targetPath) {
         try {
             Path finalOutput = readFinalOutputPath(outputManifest, tempDir);
-            finalizeOutput(finalOutput, targetPath);
+            finalizeOutput(finalOutput, targetPath, DestinationConflictPolicy.REPLACE);
             updateDownloadState(context, DownloadState.COMPLETED, MediaJobStatus.COMPLETED);
             deleteManagedDirectory(context.taskInfo.download().id());
             jobs.remove(context.taskInfo.download().id(), context);
@@ -398,14 +419,32 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         return output;
     }
 
-    private void finalizeOutput(Path source, Path target) {
+    public enum DestinationConflictPolicy {
+        FAIL,
+        RENAME,
+        REPLACE
+    }
+
+    private void finalizeOutput(Path source, Path target, DestinationConflictPolicy policy) {
         Path normalizedSource = source.toAbsolutePath().normalize();
         Path normalizedTarget = target.toAbsolutePath().normalize();
+        
+        if (Files.exists(normalizedTarget)) {
+            if (policy == DestinationConflictPolicy.FAIL) {
+                throw new MediaOperationException("DESTINATION_EXISTS", "Target file already exists: " + normalizedTarget);
+            } else if (policy == DestinationConflictPolicy.RENAME) {
+                normalizedTarget = resolveUniqueTargetName(normalizedTarget);
+            }
+        }
+
         Path targetParent = Objects.requireNonNull(normalizedTarget.getParent(), "Target parent is required");
         try {
             Files.createDirectories(targetParent);
+            CopyOption[] moveOptions = (policy == DestinationConflictPolicy.REPLACE)
+                    ? new CopyOption[] { StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING }
+                    : new CopyOption[] { StandardCopyOption.ATOMIC_MOVE };
             try {
-                Files.move(normalizedSource, normalizedTarget, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(normalizedSource, normalizedTarget, moveOptions);
                 return;
             } catch (FileSystemException atomicFailure) {
                 copyThroughDestinationTemp(normalizedSource, normalizedTarget);
@@ -413,6 +452,25 @@ public class YtDlpMediaDownloadRunner implements MediaDownloadRunner {
         } catch (IOException exception) {
             throw new MediaOperationException("MEDIA_FINALIZATION_FAILED", "Could not finalize the media output", exception);
         }
+    }
+
+    private static Path resolveUniqueTargetName(Path target) {
+        Path parent = target.getParent();
+        String filename = target.getFileName().toString();
+        String name = filename;
+        String ext = "";
+        int dot = filename.lastIndexOf('.');
+        if (dot > 0) {
+            name = filename.substring(0, dot);
+            ext = filename.substring(dot);
+        }
+        int count = 1;
+        Path candidate = target;
+        while (Files.exists(candidate)) {
+            candidate = parent.resolve(name + " (" + count + ")" + ext);
+            count++;
+        }
+        return candidate;
     }
 
     private void copyThroughDestinationTemp(Path source, Path target) throws IOException {

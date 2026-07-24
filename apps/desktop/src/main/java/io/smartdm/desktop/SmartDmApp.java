@@ -600,31 +600,47 @@ public class SmartDmApp extends Application {
                     d.setInputText(String.join("\n", req.urls()));
                     d.showAndWait();
                     if (d.isResultConfirmed() && d.getBatchUrls() != null) {
-                        for (String url : d.getBatchUrls()) {
-                            try {
-                                String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
-                                if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
-                                String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                                io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename).toAbsolutePath().toString());
-                                io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
-                                repository.save(dl);
-                                if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
-                                    io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
-                                    mainQueueItems.add(item);
-                                } else {
-                                    enginePool.submit(() -> coordinator.execute(dl));
+                        java.util.List<String> urlsToProcess = new java.util.ArrayList<>(d.getBatchUrls());
+                        boolean downloadNow = d.isDownloadNowRequested();
+                        enginePool.submit(() -> {
+                            java.util.List<io.smartdm.domain.Download> createdDownloads = new java.util.ArrayList<>();
+                            java.util.List<io.smartdm.domain.QueueItem> newQueueItems = new java.util.ArrayList<>();
+                            for (String url : urlsToProcess) {
+                                try {
+                                    String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
+                                    if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
+                                    String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
+                                    io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename).toAbsolutePath().toString());
+                                    io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
+                                    repository.save(dl);
+                                    createdDownloads.add(dl);
+                                    if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                                        io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size() + newQueueItems.size());
+                                        newQueueItems.add(item);
+                                    } else {
+                                        coordinator.execute(dl);
+                                    }
+                                } catch (Exception ex) {
+                                    System.err.println("Failed to process batch URL: " + url + " - " + ex.getMessage());
                                 }
-                            } catch (Exception ex) {}
-                        }
-                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
-                        if (d.isDownloadNowRequested()) {
-                            // Run the queue
-                            if (currentQueueRef[0].getStatus() != io.smartdm.domain.DownloadQueue.Status.ACTIVE) {
-                                currentQueueRef[0] = currentQueueRef[0].withStatus(io.smartdm.domain.DownloadQueue.Status.ACTIVE);
-                                if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueue(currentQueueRef[0]);
-                                if (workspaceRef[0] != null) workspaceRef[0].refresh();
                             }
-                        }
+                            Platform.runLater(() -> {
+                                mainQueueItems.addAll(newQueueItems);
+                                if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                                if (workspaceRef[0] != null) {
+                                    for (io.smartdm.domain.Download dl : createdDownloads) {
+                                        workspaceRef[0].addDownload(dl);
+                                    }
+                                }
+                                if (downloadNow) {
+                                    if (currentQueueRef[0].getStatus() != io.smartdm.domain.DownloadQueue.Status.ACTIVE) {
+                                        currentQueueRef[0] = currentQueueRef[0].withStatus(io.smartdm.domain.DownloadQueue.Status.ACTIVE);
+                                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueue(currentQueueRef[0]);
+                                        if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                                    }
+                                }
+                            });
+                        });
                     }
                 });
             } else if (message instanceof io.smartdm.browser.protocol.AddMediaBatchRequest req) {
