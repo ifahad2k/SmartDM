@@ -44,6 +44,17 @@ public class LocalMediaToolManager implements MediaToolManager {
         String isWindows = System.getProperty("os.name").toLowerCase().contains("win") ? ".exe" : "";
         String execName = name + isWindows;
 
+        // Check ~/.local/share/smartdm/tools/ directory first for updated binaries
+        Path userTools = Paths.get(System.getProperty("user.home"), ".local", "share", "smartdm", "tools", execName);
+        if (Files.isExecutable(userTools) && !Files.isDirectory(userTools)) {
+            return userTools.toAbsolutePath();
+        }
+
+        Path localTools = Paths.get("tools", execName);
+        if (Files.isExecutable(localTools) && !Files.isDirectory(localTools)) {
+            return localTools.toAbsolutePath();
+        }
+
         // Check PATH env variable
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {
