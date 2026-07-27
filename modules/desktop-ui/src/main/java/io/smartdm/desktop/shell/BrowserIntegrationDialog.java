@@ -46,7 +46,19 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     extDir = new File("extensions");
                 }
                 if (extDir.exists()) {
-                    java.awt.Desktop.getDesktop().open(extDir.getAbsoluteFile());
+                    File target = extDir.getAbsoluteFile();
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        try {
+                            String os = System.getProperty("os.name", "").toLowerCase();
+                            if (os.contains("win")) {
+                                new ProcessBuilder("explorer.exe", target.getAbsolutePath()).start();
+                            } else {
+                                new ProcessBuilder("xdg-open", target.getAbsolutePath()).start();
+                            }
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    });
                 } else {
                     System.err.println("Could not find extensions directory: " + new File(".").getAbsolutePath());
                 }

@@ -20,6 +20,7 @@ import io.smartdm.domain.Download;
 import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -308,14 +309,28 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         openItem.setOnAction(e -> {
             Download d = getItem() != null ? provider.getDownload(getItem()) : null;
             if (d != null && d.destination() != null && d.destination().value() != null) {
-                try { java.awt.Desktop.getDesktop().open(d.destination().value().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
+                File file = d.destination().value().toFile();
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        String os = System.getProperty("os.name", "").toLowerCase();
+                        if (os.contains("win")) new ProcessBuilder("explorer.exe", file.getAbsolutePath()).start();
+                        else new ProcessBuilder("xdg-open", file.getAbsolutePath()).start();
+                    } catch (Exception ex) { ex.printStackTrace(); }
+                });
             }
         });
         
         openFolderItem.setOnAction(e -> {
             Download d = getItem() != null ? provider.getDownload(getItem()) : null;
             if (d != null && d.destination() != null && d.destination().value() != null) {
-                try { java.awt.Desktop.getDesktop().open(d.destination().value().getParent().toFile()); } catch (Exception ex) { ex.printStackTrace(); }
+                File folder = d.destination().value().getParent().toFile();
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        String os = System.getProperty("os.name", "").toLowerCase();
+                        if (os.contains("win")) new ProcessBuilder("explorer.exe", folder.getAbsolutePath()).start();
+                        else new ProcessBuilder("xdg-open", folder.getAbsolutePath()).start();
+                    } catch (Exception ex) { ex.printStackTrace(); }
+                });
             }
         });
         

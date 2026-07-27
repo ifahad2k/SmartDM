@@ -14,8 +14,13 @@ import java.util.concurrent.CompletableFuture;
 public class SystemIconExtractor {
 
     private static final Map<String, Image> iconCache = new HashMap<>();
+    private static final boolean IS_LINUX = System.getProperty("os.name", "").toLowerCase().contains("linux");
 
     public static Image getFileIcon(String filename) {
+        if (IS_LINUX) {
+            return null;
+        }
+
         String ext = getExtension(filename);
         if (iconCache.containsKey(ext)) {
             return iconCache.get(ext);
@@ -35,8 +40,7 @@ public class SystemIconExtractor {
                 return fxImage;
             }
             tempFile.delete();
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (Exception ignored) {
         }
         return null;
     }
