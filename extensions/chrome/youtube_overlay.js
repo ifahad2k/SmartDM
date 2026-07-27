@@ -283,8 +283,10 @@
         if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
         } else if (res && res.success === false) {
-          const errMsg = (res.error && res.error.includes("not running")) 
-            ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
+          const errMsg = res.error 
+            ? (res.error.includes("not running") 
+                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
+                : res.error + "<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>")
             : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>";
           content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {

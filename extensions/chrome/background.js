@@ -309,19 +309,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
-    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendNativeMessage) {
-      browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, request)
-        .then((response) => sendResponse(response || { success: true }))
-        .catch((err) => sendResponse({ success: false, error: err ? (err.message || String(err)) : 'Native host error' }));
-    } else {
-      chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse(response || { success: true });
-        }
-      });
-    }
+    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('SmartDM Native Message Error:', chrome.runtime.lastError.message);
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse(response || { success: true });
+      }
+    });
     return true; // Async response
   }
 });
@@ -336,17 +331,11 @@ function sendToSmartDM(url, referer) {
   };
 
   console.log('Sending message to native host:', message);
-  if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendNativeMessage) {
-    browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, message)
-      .then((response) => console.log('Received response from native host:', response))
-      .catch((error) => console.error('Error sending native message:', error));
-  } else {
-    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error sending native message:', chrome.runtime.lastError.message);
-      } else {
-        console.log('Received response from native host:', response);
-      }
-    });
-  }
+  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error sending native message:', chrome.runtime.lastError.message);
+    } else {
+      console.log('Received response from native host:', response);
+    }
+  });
 }
