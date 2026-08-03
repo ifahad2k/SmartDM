@@ -528,7 +528,11 @@
       }, 30000);
     });
 
-    container.appendChild(host);
+    if (container === document.body) {
+      document.documentElement.appendChild(host);
+    } else {
+      container.appendChild(host);
+    }
   }
 
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
