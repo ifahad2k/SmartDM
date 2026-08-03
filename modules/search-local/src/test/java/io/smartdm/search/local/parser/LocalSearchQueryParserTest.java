@@ -60,4 +60,13 @@ class LocalSearchQueryParserTest {
         assertThat(plan.dateRange()).isPresent();
         assertThat(plan.text()).isEmpty();
     }
+
+    @Test
+    void shouldParseDynamicSizeQuery() {
+        LocalSearchPlan plan = parser.parse("over 100MB");
+        
+        assertThat(plan.sizeBytes()).isPresent();
+        assertThat(plan.sizeBytes().get().min()).isEqualTo(100L * 1024 * 1024);
+        assertThat(plan.text()).isEmpty();
+    }
 }

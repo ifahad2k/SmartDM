@@ -16,11 +16,15 @@ import java.util.regex.Pattern;
 
 public class LocalSearchQueryParser {
     
-    private static final Pattern SIZE_LARGE = Pattern.compile("(?i)(large|big|huge|larger than \\d+\\s*[mgt]b)");
-    private static final Pattern SIZE_SMALL = Pattern.compile("(?i)(small|tiny|under \\d+\\s*[mgt]b)");
+    private static final Pattern DYNAMIC_SIZE_GREATER = Pattern.compile("(?i)\\b(over|above|larger than|greater than|more than|>|>=)\\s*([\\d\\.]+)\\s*([a-zA-Z]+)?\\b");
+    private static final Pattern DYNAMIC_SIZE_LESS = Pattern.compile("(?i)\\b(under|below|smaller than|less than|<|<=)\\s*([\\d\\.]+)\\s*([a-zA-Z]+)?\\b");
+    private static final Pattern DYNAMIC_SIZE_GENERIC = Pattern.compile("(?i)\\b(large|big|huge)\\b");
+    private static final Pattern DYNAMIC_SIZE_SMALL_GENERIC = Pattern.compile("(?i)\\b(small|tiny|mini)\\b");
     
-    private static final Pattern DURATION_SHORT = Pattern.compile("(?i)(short|not too long|under \\d+\\s*min(?:utes?)?)");
-    private static final Pattern DURATION_LONG = Pattern.compile("(?i)(long|over \\d+\\s*min(?:utes?)?|around an hour)");
+    private static final Pattern DYNAMIC_DURATION_GREATER = Pattern.compile("(?i)\\b(over|above|longer than|more than|>|>=)\\s*(\\d+)\\s*(min|mins|minutes?|hours?|hrs?)\\b");
+    private static final Pattern DYNAMIC_DURATION_LESS = Pattern.compile("(?i)\\b(under|below|shorter than|less than|<|<=)\\s*(\\d+)\\s*(min|mins|minutes?|hours?|hrs?)\\b");
+    private static final Pattern DURATION_SHORT = Pattern.compile("(?i)\\b(short|not too long)\\b");
+    private static final Pattern DURATION_LONG = Pattern.compile("(?i)\\b(long|around an hour)\\b");
     
     private static final Pattern DATE_TODAY = Pattern.compile("(?i)(today)");
     private static final Pattern DATE_YESTERDAY = Pattern.compile("(?i)(yesterday)");
@@ -28,6 +32,17 @@ public class LocalSearchQueryParser {
     private static final Pattern DATE_LAST_WEEK = Pattern.compile("(?i)(last\\s+week)");
     private static final Pattern DATE_MINUTES_AGO = Pattern.compile("(?i)((?:few|around|about|\\d+)?\\s*(?:min|mins|minutes?|minitues?|minuts?|minets?)\\s*ago|just\\s+now|recently|recent)");
     private static final Pattern DATE_HOURS_AGO = Pattern.compile("(?i)((?:few|around|about|\\d+)?\\s*(?:hour|hours|hr|hrs)\\s*ago)");
+
+    private static long parseBytes(double val, String unit) {
+        if (unit == null || unit.isBlank()) return (long) val;
+        String u = unit.toLowerCase();
+        long mult = 1L;
+        if (u.startsWith("k")) mult = 1024L;
+        else if (u.startsWith("m")) mult = 1024L * 1024L;
+        else if (u.startsWith("g")) mult = 1024L * 1024L * 1024L;
+        else if (u.startsWith("t")) mult = 1024L * 1024L * 1024L * 1024L;
+        return (long) (val * mult);
+    }
 
     public LocalSearchPlan parse(String rawQuery) {
         if (rawQuery == null || rawQuery.isBlank()) {
@@ -60,12 +75,24 @@ public class LocalSearchQueryParser {
         q = q.replaceAll("(?i)\\b(completed|done|failed|error|paused|stopped)\\b", "").trim();
 
         // Extract Sizes
-        if (SIZE_LARGE.matcher(q).find()) {
-            sizeRange = Optional.of(new LongRange(100L * 1024 * 1024, null)); // e.g. > 100MB
-            q = SIZE_LARGE.matcher(q).replaceAll("").trim();
-        } else if (SIZE_SMALL.matcher(q).find()) {
-            sizeRange = Optional.of(new LongRange(0L, 50L * 1024 * 1024)); // e.g. < 50MB
-            q = SIZE_SMALL.matcher(q).replaceAll("").trim();
+        Matcher mSG = DYNAMIC_SIZE_GREATER.matcher(q);
+        Matcher mSL = DYNAMIC_SIZE_LESS.matcher(q);
+        if (mSG.find()) {
+            double val = Double.parseDouble(mSG.group(2));
+            String unit = mSG.group(3);
+            sizeRange = Optional.of(new LongRange(parseBytes(val, unit), null));
+            q = mSG.replaceAll("").trim();
+        } else if (mSL.find()) {
+            double val = Double.parseDouble(mSL.group(2));
+            String unit = mSL.group(3);
+            sizeRange = Optional.of(new LongRange(0L, parseBytes(val, unit)));
+            q = mSL.replaceAll("").trim();
+        } else if (DYNAMIC_SIZE_GENERIC.matcher(q).find()) {
+            sizeRange = Optional.of(new LongRange(100L * 1024 * 1024, null));
+            q = DYNAMIC_SIZE_GENERIC.matcher(q).replaceAll("").trim();
+        } else if (DYNAMIC_SIZE_SMALL_GENERIC.matcher(q).find()) {
+            sizeRange = Optional.of(new LongRange(0L, 50L * 1024 * 1024));
+            q = DYNAMIC_SIZE_SMALL_GENERIC.matcher(q).replaceAll("").trim();
         }
 
         // Extract Dates
@@ -96,7 +123,21 @@ public class LocalSearchQueryParser {
         }
         
         // Extract Duration
-        if (DURATION_SHORT.matcher(q).find()) {
+        Matcher mDG = DYNAMIC_DURATION_GREATER.matcher(q);
+        Matcher mDL = DYNAMIC_DURATION_LESS.matcher(q);
+        if (mDG.find()) {
+            int val = Integer.parseInt(mDG.group(2));
+            String unit = mDG.group(3).toLowerCase();
+            Duration d = unit.startsWith("h") ? Duration.ofHours(val) : Duration.ofMinutes(val);
+            durationRange = Optional.of(new DurationRange(d, null));
+            q = mDG.replaceAll("").trim();
+        } else if (mDL.find()) {
+            int val = Integer.parseInt(mDL.group(2));
+            String unit = mDL.group(3).toLowerCase();
+            Duration d = unit.startsWith("h") ? Duration.ofHours(val) : Duration.ofMinutes(val);
+            durationRange = Optional.of(new DurationRange(Duration.ZERO, d));
+            q = mDL.replaceAll("").trim();
+        } else if (DURATION_SHORT.matcher(q).find()) {
             durationRange = Optional.of(new DurationRange(Duration.ZERO, Duration.ofMinutes(20)));
             q = DURATION_SHORT.matcher(q).replaceAll("").trim();
         } else if (DURATION_LONG.matcher(q).find()) {
@@ -105,7 +146,7 @@ public class LocalSearchQueryParser {
         }
         
         // Clean up unparsed words
-        q = q.replaceAll("(?i)\\b(from|on|the|a|an|few|some|downloaded|already|exists|same|file|files|ago)\\b", "").trim();
+        q = q.replaceAll("(?i)\\b(over|under|above|below|larger|smaller|greater|less|than|from|on|the|a|an|few|some|downloaded|already|exists|same|file|files|ago|mb|gb|kb|tb|mib|gib|kib|tib|min|mins|minutes|hours|hrs|hr)\\b", "").trim();
         q = q.replaceAll("\\s+", " ");
         
         List<String> unparsed = new ArrayList<>();
