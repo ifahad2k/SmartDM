@@ -17,6 +17,7 @@ public class Download {
     private volatile String expectedHash;
     private volatile CategoryId categoryId;
     private volatile AuthCredential credential;
+    private volatile java.time.Instant createdAt;
     private final List<DownloadSegment> segments = new ArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
@@ -26,6 +27,7 @@ public class Download {
         this.state = DownloadState.QUEUED;
         this.totalBytes = ByteCount.UNKNOWN;
         this.downloadedBytes = ByteCount.ZERO;
+        this.createdAt = java.time.Instant.now();
     }
 
     public static Download create(SourceUri source, Destination destination) {
@@ -73,6 +75,10 @@ public class Download {
     public String expectedHash() { return expectedHash; }
     public CategoryId categoryId() { return categoryId; }
     public AuthCredential credential() { return credential; }
+
+    public java.time.Instant createdAt() { return createdAt; }
+
+    public void setCreatedAt(java.time.Instant createdAt) { this.createdAt = createdAt; }
     
     public ByteCount downloadedBytes() {
         if (!segments.isEmpty()) {

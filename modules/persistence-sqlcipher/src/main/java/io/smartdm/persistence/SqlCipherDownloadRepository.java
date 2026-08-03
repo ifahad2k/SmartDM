@@ -28,8 +28,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public void save(Download download) {
-        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash, category_id) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insertDownloadSql = "INSERT INTO download (id, source_uri, destination_path, state, total_bytes, downloaded_bytes, etag, last_modified, scheduled_start_time, expected_hash, category_id, created_at) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(id) DO UPDATE SET " +
                      "state=excluded.state, " +
                      "total_bytes=excluded.total_bytes, " +
@@ -38,7 +38,8 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                      "last_modified=excluded.last_modified, " +
                      "scheduled_start_time=excluded.scheduled_start_time, " +
                      "expected_hash=excluded.expected_hash, " +
-                     "category_id=excluded.category_id";
+                     "category_id=excluded.category_id, " +
+                     "created_at=COALESCE(download.created_at, excluded.created_at)";
 
         String deleteSegmentsSql = "DELETE FROM download_segment WHERE download_id = ?";
         
@@ -74,6 +75,11 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
                         stmt.setString(11, download.categoryId().value());
                     } else {
                         stmt.setNull(11, java.sql.Types.VARCHAR);
+                    }
+                    if (download.createdAt() != null) {
+                        stmt.setString(12, download.createdAt().toString());
+                    } else {
+                        stmt.setNull(12, java.sql.Types.VARCHAR);
                     }
                     stmt.executeUpdate();
                 }
@@ -229,6 +235,7 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         }
         String expectedHash = rs.getString("expected_hash");
         String categoryIdStr = rs.getString("category_id");
+        String createdAtStr = rs.getString("created_at");
         
         Download d = new Download(id, source, dest);
         d.updateState(state);
@@ -238,6 +245,13 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         d.updateExpectedHash(expectedHash);
         if (categoryIdStr != null) {
             d.updateCategoryId(CategoryId.of(categoryIdStr));
+        }
+        if (createdAtStr != null) {
+            try {
+                d.setCreatedAt(java.time.Instant.parse(createdAtStr));
+            } catch (Exception e) {
+                // Ignore parse errors, fallback to default
+            }
         }
         
         // Load segments

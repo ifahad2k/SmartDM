@@ -24,8 +24,8 @@
 | **Phase 8** | Browser capture and native messaging | ✅ Completed | None | 2026-07-28 |
 | **Phase 9** | Video/audio metadata and format extraction | ✅ Completed | None | 2026-08-01 |
 | **Phase 10** | YouTube specific browser panel | ✅ Completed | None | 2026-08-02 |
-| **Phase 11** | Local file catalog and duplicate detection | ✅ Completed | None | 2026-07-23 |
 | **Phase 12** | Smart folder organization and learned preferences | ✅ Completed | None | 2026-08-03 |
+| **Phase 13** | Local natural-language search (FTS5) | ✅ Completed | None | 2026-08-03 |
 
 ### Checklist
 - [x] Product specification
@@ -252,3 +252,9 @@
 - [x] FolderAffinity tracking and repository
 - [x] Candidate generation
 - [x] Local folder scorer and recommendations
+
+## Phase 13 — Local natural-language search
+
+- Status: COMPLETE
+- Location: `modules/search-local`, `modules/persistence-sqlcipher`, `modules/domain`
+- Core output: SQLite UNION FTS backend matching natural language query plans safely mapped by Java regex.

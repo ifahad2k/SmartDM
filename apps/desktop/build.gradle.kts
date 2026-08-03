@@ -21,7 +21,7 @@ dependencies {
     implementation(project(":modules:persistence-sqlcipher"))
     implementation(project(":modules:secure-storage"))
     implementation(project(":modules:file-catalog"))
-    runtimeOnly(project(":modules:search-local"))
+    implementation(project(":modules:search-local"))
     implementation(project(":modules:organization-local"))
     runtimeOnly(project(":modules:ai-gemini"))
     runtimeOnly(project(":modules:safety-rules"))

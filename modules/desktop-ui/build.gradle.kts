@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":modules:media-ytdlp"))
     implementation(project(":modules:media-ffmpeg"))
     implementation(project(":modules:file-catalog"))
+    implementation(project(":modules:search-local"))
     implementation(project(":modules:organization-local"))
     implementation(project(":modules:persistence-sqlcipher"))
     

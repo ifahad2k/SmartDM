@@ -29,7 +29,11 @@ import io.smartdm.persistence.SqlCipherDatabase;
 import io.smartdm.persistence.SqlCipherDownloadRepository;
 import io.smartdm.persistence.SqlCipherCategoryRepository;
 import io.smartdm.persistence.SqlCipherCatalogRepository;
+import io.smartdm.persistence.search.SqlCipherLocalSearchRepository;
 import io.smartdm.domain.repository.CategoryRepository;
+import io.smartdm.domain.repository.LocalSearchRepository;
+import io.smartdm.search.local.LocalSearchService;
+import io.smartdm.domain.search.LocalSearchResult;
 import io.smartdm.application.ProfileLock;
 
 import java.net.http.HttpClient;
@@ -105,6 +109,22 @@ public class SmartDmApp extends Application {
         DownloadRepository repository = new SqlCipherDownloadRepository(database);
         CategoryRepository categoryRepository = new SqlCipherCategoryRepository(database);
         io.smartdm.domain.repository.ScheduleRepository scheduleRepo = new io.smartdm.persistence.SqlCipherScheduleRepository(database);
+        
+        LocalSearchRepository localSearchRepository = new SqlCipherLocalSearchRepository(database);
+        LocalSearchService localSearchService = new LocalSearchService(localSearchRepository);
+        
+        // Test search at startup
+        System.out.println("--- Testing LocalSearchService ---");
+        try {
+            java.util.List<LocalSearchResult> searchResults = localSearchService.search("video under 50 MB", 10, 0);
+            System.out.println("Found " + searchResults.size() + " search results:");
+            for (LocalSearchResult res : searchResults) {
+                System.out.println(" - " + res.name() + " (" + res.sizeBytes() + " bytes)");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        System.out.println("----------------------------------");
 
         // ── 3. Initialize Thread Pool & HTTP Clients ────────────────────
         enginePool = Executors.newCachedThreadPool(r -> {
