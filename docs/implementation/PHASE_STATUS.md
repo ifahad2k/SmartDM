@@ -19,6 +19,13 @@
 | **Phase 3** | Minimal JavaFX shell and theme system | ✅ Completed | None | 2026-07-19 |
 | **Phase 4** | Single-download vertical slice | ✅ Completed | None | 2026-07-19 |
 | **Phase 5** | Segmentation, pause/resume, verification, recovery | ✅ Completed | None | 2026-07-19 |
+| **Phase 6** | Queue, scheduler, and speed control | ✅ Completed | None | 2026-07-23 |
+| **Phase 7** | Categories, clipboard, and batch | ✅ Completed | None | 2026-07-25 |
+| **Phase 8** | Browser capture and native messaging | ✅ Completed | None | 2026-07-28 |
+| **Phase 9** | Video/audio metadata and format extraction | ✅ Completed | None | 2026-08-01 |
+| **Phase 10** | YouTube specific browser panel | ✅ Completed | None | 2026-08-02 |
+| **Phase 11** | Local file catalog and duplicate detection | ✅ Completed | None | 2026-07-23 |
+| **Phase 12** | Smart folder organization and learned preferences | ✅ Completed | None | 2026-08-03 |
 
 ### Checklist
 - [x] Product specification
@@ -140,6 +147,76 @@
 
 ---
 
+## Phase 6 — Queue, scheduler, and speed control
+
+- Status: COMPLETE
+- Started: 2026-07-20
+- Completed: 2026-07-23
+- Migrations: `V5`, `V6`, `V7`
+- Test evidence: `QueueCoordinatorTest`, `ScheduleRunnerTest`, `TokenBucketRateLimiterTest` passing.
+
+### Checklist
+- [x] Priorities and concurrent limits
+- [x] Schedule runner and triggers
+- [x] Token bucket rate limiters
+
+---
+
+## Phase 7 — Categories, clipboard, and batch
+
+- Status: COMPLETE
+- Started: 2026-07-24
+- Completed: 2026-07-25
+- Migrations: `V9__create_category_tables.sql`
+- Test evidence: Integrated in domain and database.
+
+### Checklist
+- [x] Category rules based on extensions/MIME
+- [x] Batch download logic setup
+
+---
+
+## Phase 8 — Browser capture and native messaging
+
+- Status: COMPLETE
+- Started: 2026-07-26
+- Completed: 2026-07-28
+- Test evidence: Native messaging host, IPC protocol, and browser extension fully functional.
+
+### Checklist
+- [x] Chrome and Firefox extension manifests
+- [x] Background page IPC native host
+- [x] Universal overlay for media detection
+
+---
+
+## Phase 9 — Video/audio metadata and format extraction
+
+- Status: COMPLETE
+- Started: 2026-07-29
+- Completed: 2026-08-01
+- Test evidence: FFmpeg integration and yt-dlp extracting formats correctly.
+
+### Checklist
+- [x] yt-dlp binary management and metadata parsing
+- [x] FFmpeg integration
+- [x] HLS m3u8 filtering logic
+
+---
+
+## Phase 10 — YouTube specific browser panel
+
+- Status: COMPLETE
+- Started: 2026-08-02
+- Completed: 2026-08-02
+- Test evidence: YouTube Music thumbnails parsing and bot bypass via player_client.
+
+### Checklist
+- [x] YouTube specific overlays
+- [x] Bot protection bypass arguments
+
+---
+
 ## Phase 11 — Local file catalog and duplicate detection
 
 - Status: COMPLETE
@@ -161,4 +238,17 @@
 - [x] 3-tier duplicate detection (Possible Match, Strong Match, Exact Match)
 - [x] Non-blocking filesystem scanner with permission failure tolerance
 
+---
 
+## Phase 12 — Smart folder organization and learned preferences
+
+- Status: COMPLETE
+- Started: 2026-08-02
+- Completed: 2026-08-03
+- Migrations: `V11__create_smart_folder_tables.sql`
+- Test evidence: SmartFolderService implemented in Java.
+
+### Checklist
+- [x] FolderAffinity tracking and repository
+- [x] Candidate generation
+- [x] Local folder scorer and recommendations
