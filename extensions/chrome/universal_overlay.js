@@ -438,6 +438,8 @@
       if (pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com')) {
         let el = mediaEl;
         let found = false;
+        
+        // Strategy 1: Check if any ancestor is an <a> tag
         while (el && el !== document.body) {
           if (el.tagName === 'A' && el.href) {
             const href = el.href;
@@ -450,20 +452,29 @@
           el = el.parentElement;
         }
         
+        // Strategy 2: Check for a sibling or uncle <a> tag by going up the DOM tree carefully
         if (!found) {
-          let container = mediaEl.closest('article, [role="article"], [data-pagelet*="FeedUnit"], .x1yztbdb');
-          if (!container) container = findTopPlayerContainer(mediaEl);
-          
-          if (container) {
-            const links = container.querySelectorAll('a[href]');
+          let currentParent = mediaEl.parentElement;
+          let searchDepth = 0;
+          while (currentParent && currentParent !== document.body && searchDepth < 6) {
+            const links = currentParent.querySelectorAll('a[href]');
+            let reelLinks = [];
             for (let i = 0; i < links.length; i++) {
               let href = links[i].href;
               if ((href.includes('/reel/') && /\d/.test(href)) || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
-                pageUrl = href;
-                found = true;
-                break;
+                reelLinks.push(href);
               }
             }
+            // If we found links, we assume the first one is the correct one for this card.
+            // If we found more than 2, we might have gone too high (e.g., hit the carousel wrapper), 
+            // but we still take the first one since we are searching from inside out.
+            if (reelLinks.length > 0) {
+              pageUrl = reelLinks[0];
+              found = true;
+              break;
+            }
+            currentParent = currentParent.parentElement;
+            searchDepth++;
           }
         }
       }
