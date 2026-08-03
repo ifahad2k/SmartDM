@@ -143,12 +143,12 @@ public class SqlCipherLocalSearchRepository implements LocalSearchRepository {
         if (plan.dateRange().isPresent()) {
             InstantRange dr = plan.dateRange().get();
             if (dr.start() != null) {
-                sql.append(" AND ").append(dateCol).append(" >= ?");
-                params.add(dr.start().toString());
+                sql.append(" AND (").append(dateCol).append(" IS NULL OR strftime('%s', ").append(dateCol).append(") >= ?)");
+                params.add(dr.start().getEpochSecond());
             }
             if (dr.end() != null) {
-                sql.append(" AND ").append(dateCol).append(" <= ?");
-                params.add(dr.end().toString());
+                sql.append(" AND (").append(dateCol).append(" IS NULL OR strftime('%s', ").append(dateCol).append(") <= ?)");
+                params.add(dr.end().getEpochSecond());
             }
         }
         if (isCatalog && plan.kinds() != null && !plan.kinds().isEmpty()) {
