@@ -22,6 +22,7 @@ import java.nio.file.Paths;
 public final class TopBar extends HBox {
 
     private final io.smartdm.organization.SmartFolderService smartFolderService;
+    private Consumer<String> onSearchQueryListener;
 
     public TopBar(Supplier<java.util.List<Download>> existingDownloadsProvider, Consumer<Download> onDownloadAdded, Runnable onStartQueueRequested, Runnable onDeleteSelected) {
         this(existingDownloadsProvider, onDownloadAdded, onStartQueueRequested, onDeleteSelected, null);
@@ -48,6 +49,12 @@ public final class TopBar extends HBox {
         
         Label searchHint = new Label("Ctrl K");
         searchHint.getStyleClass().add("search-hint");
+        
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (onSearchQueryListener != null) {
+                onSearchQueryListener.accept(newVal);
+            }
+        });
         
         searchWrap.getChildren().addAll(searchIcon, searchField, searchHint);
         
@@ -152,5 +159,9 @@ public final class TopBar extends HBox {
         });
 
         getChildren().addAll(searchWrap, spacer, addBtn, importBtn, deleteBtn, themeBtn, browserBtn);
+    }
+
+    public void setOnSearchQueryListener(Consumer<String> listener) {
+        this.onSearchQueryListener = listener;
     }
 }

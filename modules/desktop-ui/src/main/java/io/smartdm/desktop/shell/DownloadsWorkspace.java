@@ -24,6 +24,9 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     private final DetailsPane detailsPane;
     private final javafx.beans.property.ObjectProperty<Download> latestUpdate = new javafx.beans.property.SimpleObjectProperty<>();
     private javafx.collections.transformation.FilteredList<DownloadId> filteredItems;
+    private io.smartdm.search.local.LocalSearchService searchService;
+    private String currentSearchQuery = "";
+    private Runnable updateFilterAction;
 
     public DownloadsWorkspace() {
         this(new DownloadActionListener() {
@@ -81,10 +84,19 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                 }
             }
             final String f = filter;
+            final String q = currentSearchQuery;
+            
+            final java.util.Set<String> searchResultIds = (searchService != null && q != null && !q.isBlank()) 
+                ? searchService.search(q, 100, 0).stream()
+                    .map(res -> res.id())
+                    .collect(java.util.stream.Collectors.toSet())
+                : null;
+
             filteredItems.setPredicate(id -> {
                 Download d = downloadMap.get(id);
                 if (d == null) return false;
-                return switch (f) {
+                
+                boolean matchesChip = switch (f) {
                     case "Active" -> d.state() == io.smartdm.domain.DownloadState.DOWNLOADING 
                                   || d.state() == io.smartdm.domain.DownloadState.PROBING 
                                   || d.state() == io.smartdm.domain.DownloadState.QUEUED;
@@ -95,8 +107,28 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                                    || d.state() == io.smartdm.domain.DownloadState.CANCELED;
                     default -> true; // "All"
                 };
+
+                if (!matchesChip) return false;
+
+                if (q != null && !q.isBlank()) {
+                    if (searchResultIds != null && (searchResultIds.contains(id.value()) || searchResultIds.contains(d.destination().value().toString()))) {
+                        return true;
+                    }
+                    String lowerQ = q.toLowerCase();
+                    return d.destination().value().getFileName().toString().toLowerCase().contains(lowerQ)
+                        || d.source().value().toString().toLowerCase().contains(lowerQ);
+                }
+
+                return true;
             });
+
+            if (q != null && !q.isBlank()) {
+                wsSub.setText("Search: \"" + q + "\" (" + filteredItems.size() + " matches)");
+            } else {
+                wsSub.setText(filteredItems.size() + " items");
+            }
         };
+        this.updateFilterAction = updateFilter;
         for (javafx.scene.Node chip : chipRow.getChildren()) {
             chip.setOnMouseClicked(ev -> {
                 chipRow.getChildren().forEach(c -> c.getStyleClass().remove("active"));
@@ -257,6 +289,17 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         updateSubTitle();
     }
     
+    public void setSearchService(io.smartdm.search.local.LocalSearchService searchService) {
+        this.searchService = searchService;
+    }
+
+    public void applySearchQuery(String query) {
+        this.currentSearchQuery = query;
+        if (updateFilterAction != null) {
+            updateFilterAction.run();
+        }
+    }
+
     public void refresh() {
         // Re-evaluate the filtered list predicate to reflect state changes
         if (filteredItems != null) {

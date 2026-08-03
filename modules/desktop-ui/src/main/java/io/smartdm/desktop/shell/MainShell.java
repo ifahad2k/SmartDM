@@ -122,6 +122,12 @@ public final class MainShell extends VBox {
             }
         }, smartFolderService);
         
+        topBar.setOnSearchQueryListener(query -> {
+            if (workspace != null) {
+                workspace.applySearchQuery(query);
+            }
+        });
+        
         queueWorkspace = new QueueWorkspace(mainQueue, mainQueueItems, workspace, onQueueStatusChange, scheduledDownloadsSupplier, onDownloadUpdate);
         VBox.setVgrow(queueWorkspace, Priority.ALWAYS);
         

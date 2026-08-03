@@ -479,6 +479,8 @@ public class SmartDmApp extends Application {
 
         // ── 6. UI Wire Up ────────────────────────────────────────────────
 
+        workspace.setSearchService(localSearchService);
+
         MainShell shell = new MainShell(primaryStage, download -> {
             repository.save(download);
             if (download.state() == io.smartdm.domain.DownloadState.QUEUED) {
