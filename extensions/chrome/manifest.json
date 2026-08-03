@@ -35,7 +35,6 @@
       "matches": ["<all_urls>"],
       "exclude_matches": ["*://*.youtube.com/*"],
       "js": ["universal_overlay.js"],
-      "all_frames": true,
       "run_at": "document_idle"
     }
   ]

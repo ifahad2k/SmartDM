@@ -163,30 +163,37 @@
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
     
-    // Always use fixed positioning appended to documentElement to evade player mutation observers
-    host.style.position = 'fixed';
-    host.style.zIndex = '2147483647';
-    host.style.pointerEvents = 'auto';
-    
-    const syncPos = () => {
-      const rect = mediaEl.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
-        host.style.opacity = '0';
-        host.style.pointerEvents = 'none';
-      } else {
-        host.style.opacity = '1';
-        host.style.pointerEvents = 'auto';
-        host.style.top = (rect.top + 16) + 'px';
-        host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
-      }
-    };
-    
-    window.addEventListener('scroll', syncPos, true);
-    window.addEventListener('resize', syncPos);
-    setInterval(syncPos, 100);
-    
-    // Delay first sync slightly to ensure host has width
-    setTimeout(syncPos, 50);
+    if (container === document.body) {
+      host.style.position = 'fixed';
+      host.style.zIndex = '2147483647';
+      host.style.pointerEvents = 'auto';
+      
+      const syncPos = () => {
+        const rect = mediaEl.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
+          host.style.opacity = '0';
+          host.style.pointerEvents = 'none';
+        } else {
+          host.style.opacity = '1';
+          host.style.pointerEvents = 'auto';
+          host.style.top = (rect.top + 16) + 'px';
+          host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
+        }
+      };
+      
+      window.addEventListener('scroll', syncPos, true);
+      window.addEventListener('resize', syncPos);
+      setInterval(syncPos, 100);
+      
+      // Delay first sync slightly to ensure host has width
+      setTimeout(syncPos, 50);
+    } else {
+      host.style.position = 'absolute';
+      host.style.top = '16px';
+      host.style.right = '16px';
+      host.style.zIndex = '2147483647'; // Maximum z-index
+      host.style.pointerEvents = 'auto';
+    }
 
     const shadow = host.attachShadow({ mode: 'open' });
 
@@ -521,8 +528,7 @@
       }, 30000);
     });
 
-    // Always append to documentElement (<html>) to avoid mutating the video player container
-    document.documentElement.appendChild(host);
+    container.appendChild(host);
   }
 
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
