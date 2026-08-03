@@ -471,9 +471,23 @@
         }
 
         if (!found) {
+          const card = mediaEl.closest('[data-pagelet*="FeedUnit"], [role="feed"] > div, [role="article"], article, section, [data-video-id], div[class*="x1yztall"]');
+          if (card) {
+            const links = card.querySelectorAll('a[href]');
+            for (let i = 0; i < links.length; i++) {
+              if (isVideoLink(links[i].href)) {
+                pageUrl = links[i].href;
+                found = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!found) {
           let currentParent = mediaEl.parentElement;
           let searchDepth = 0;
-          while (currentParent && currentParent !== document.body && searchDepth < 10) {
+          while (currentParent && currentParent !== document.body && searchDepth < 25) {
             const links = currentParent.querySelectorAll('a[href]');
             for (let i = 0; i < links.length; i++) {
               if (isVideoLink(links[i].href)) {
@@ -509,7 +523,7 @@
             return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
           });
 
-          if (netMedia.length > 0 && !isYtDlpPending) {
+          if (netMedia.length > 0) {
             hasFound = true;
             if (formatSearchInterval) clearInterval(formatSearchInterval);
             if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
