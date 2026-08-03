@@ -228,11 +228,19 @@ public final class MediaDownloadTracker {
                             break;
                         }
                         line = line.trim();
+                        if (line.contains("[download] Destination:") || line.contains("[download] Downloading item")) {
+                            maxProgressMap.put(info.download().id(), 0.0);
+                        }
+
                         Matcher matcher = progressPattern.matcher(line);
                         if (matcher.find()) {
                             try {
                                 double pct = Double.parseDouble(matcher.group(1));
                                 double currentMax = maxProgressMap.getOrDefault(info.download().id(), 0.0);
+
+                                if (pct < currentMax - 10.0) {
+                                    currentMax = 0.0;
+                                }
 
                                 if (pct >= currentMax) {
                                     maxProgressMap.put(info.download().id(), pct);
@@ -252,42 +260,38 @@ public final class MediaDownloadTracker {
                                         totalBytes = (long) (sizeVal * mult);
                                     }
 
-                                    long downloadedBytes = (long) (totalBytes * (pct / 100.0));
+                                    final long finalTotal = (totalBytes > 0) ? totalBytes : 100_000_000L;
+                                    final long finalDownloaded = (long) (finalTotal * (pct / 100.0));
 
-                                    final long finalTotal = totalBytes;
-                                    final long finalDownloaded = downloadedBytes;
+                                    long segSize = finalTotal / 4;
+                                    List<DownloadSegment> segs = new ArrayList<>();
+                                    for (int i = 0; i < 4; i++) {
+                                        long sStart = i * segSize;
+                                        long sEnd = (i == 3) ? finalTotal - 1 : (i + 1) * segSize - 1;
+                                        long sDownloaded = (long) (finalDownloaded * 0.25);
+                                        long sCurrent = sStart + Math.min(sDownloaded, sEnd - sStart + 1);
+                                        segs.add(new DownloadSegment(i, sStart, sCurrent, sEnd));
+                                    }
 
-                                    if (finalTotal > 0) {
-                                        long segSize = finalTotal / 4;
-                                        List<DownloadSegment> segs = new ArrayList<>();
-                                        for (int i = 0; i < 4; i++) {
-                                            long sStart = i * segSize;
-                                            long sEnd = (i == 3) ? finalTotal - 1 : (i + 1) * segSize - 1;
-                                            long sDownloaded = (long) (finalDownloaded * 0.25);
-                                            long sCurrent = sStart + Math.min(sDownloaded, sEnd - sStart + 1);
-                                            segs.add(new DownloadSegment(i, sStart, sCurrent, sEnd));
-                                        }
-
-                                        long now = System.currentTimeMillis();
-                                        Long lastUpd = lastProgressUpdateMap.get(info.download().id());
-                                        if (lastUpd == null || (now - lastUpd) >= 100 || pct >= 100.0) {
-                                            lastProgressUpdateMap.put(info.download().id(), now);
-                                            Platform.runLater(() -> {
-                                                if (info.download().state() == DownloadState.DOWNLOADING) {
-                                                    info.download().updateSegments(segs);
-                                                    info.download().updateProgress(
-                                                        ByteCount.of(finalDownloaded),
-                                                        ByteCount.of(finalTotal)
-                                                    );
-                                                    if (repository != null && System.currentTimeMillis() % 1000 < 200) {
-                                                        repository.save(info.download());
-                                                    }
-                                                    if (eventPublisher != null) {
-                                                        eventPublisher.publish(new DownloadEvent.ProgressUpdated(info.download().id(), ByteCount.of(finalDownloaded), ByteCount.of(finalTotal), info.download()));
-                                                    }
+                                    long now = System.currentTimeMillis();
+                                    Long lastUpd = lastProgressUpdateMap.get(info.download().id());
+                                    if (lastUpd == null || (now - lastUpd) >= 100 || pct >= 100.0) {
+                                        lastProgressUpdateMap.put(info.download().id(), now);
+                                        Platform.runLater(() -> {
+                                            if (info.download().state() == DownloadState.DOWNLOADING) {
+                                                info.download().updateSegments(segs);
+                                                info.download().updateProgress(
+                                                    ByteCount.of(finalDownloaded),
+                                                    ByteCount.of(finalTotal)
+                                                );
+                                                if (repository != null && System.currentTimeMillis() % 1000 < 200) {
+                                                    repository.save(info.download());
                                                 }
-                                            });
-                                        }
+                                                if (eventPublisher != null) {
+                                                    eventPublisher.publish(new DownloadEvent.ProgressUpdated(info.download().id(), ByteCount.of(finalDownloaded), ByteCount.of(finalTotal), info.download()));
+                                                }
+                                            }
+                                        });
                                     }
                                 }
                             } catch (Exception ignored) {}

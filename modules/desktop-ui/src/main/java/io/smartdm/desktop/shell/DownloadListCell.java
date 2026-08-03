@@ -584,7 +584,22 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
             String segmentsText = segments.isEmpty() ? "1 parallel segment" : segments.size() + " parallel segments";
             if (!segmentsText.equals(progressTxt.getText())) progressTxt.setText(segmentsText);
             
-            double overallProgress = totalBytes > 0 ? (double) downloadedBytes / totalBytes : 0.0;
+            double overallProgress = 0.0;
+            if (totalBytes > 0) {
+                overallProgress = (double) downloadedBytes / totalBytes;
+            } else if (!segments.isEmpty()) {
+                long totalSegBytes = 0;
+                long totalSegDownloaded = 0;
+                for (DownloadSegment s : segments) {
+                    if (s.endOffset() > s.startOffset()) {
+                        totalSegBytes += (s.endOffset() - s.startOffset() + 1);
+                        totalSegDownloaded += (s.currentOffset() - s.startOffset());
+                    }
+                }
+                if (totalSegBytes > 0) {
+                    overallProgress = (double) totalSegDownloaded / totalSegBytes;
+                }
+            }
             if (overallProgress < 0.0) overallProgress = 0.0;
             if (overallProgress > 1.0) overallProgress = 1.0;
             
