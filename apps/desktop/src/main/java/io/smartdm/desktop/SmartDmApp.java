@@ -111,7 +111,8 @@ public class SmartDmApp extends Application {
         io.smartdm.domain.repository.ScheduleRepository scheduleRepo = new io.smartdm.persistence.SqlCipherScheduleRepository(database);
         
         LocalSearchRepository localSearchRepository = new SqlCipherLocalSearchRepository(database);
-        LocalSearchService localSearchService = new LocalSearchService(localSearchRepository);
+        io.smartdm.ai.api.OptionalAiAdvisor aiAdvisor = new io.smartdm.ai.gemini.GeminiAiAdvisor(io.smartdm.ai.gemini.AiProviderConfig.disabled());
+        LocalSearchService localSearchService = new LocalSearchService(localSearchRepository, aiAdvisor);
         
         // Test search at startup
         System.out.println("--- Testing LocalSearchService ---");

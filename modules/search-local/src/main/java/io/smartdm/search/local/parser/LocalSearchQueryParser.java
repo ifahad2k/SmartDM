@@ -145,8 +145,8 @@ public class LocalSearchQueryParser {
             q = DURATION_LONG.matcher(q).replaceAll("").trim();
         }
         
-        // Clean up unparsed words
-        q = q.replaceAll("(?i)\\b(over|under|above|below|larger|smaller|greater|less|than|from|on|the|a|an|few|some|downloaded|already|exists|same|file|files|ago|mb|gb|kb|tb|mib|gib|kib|tib|min|mins|minutes|hours|hrs|hr)\\b", "").trim();
+        // Clean up unparsed words and conversational filler phrases
+        q = q.replaceAll("(?i)\\b(show\\s+me|find\\s+me|get\\s+me|list\\s+all|search\\b|show\\b|find\\b|get\\b|list\\b|display\\b|i\\s+want|can\\s+you|over|under|above|below|larger|smaller|greater|less|than|from|on|the|a|an|few|some|downloaded|already|exists|same|file|files|ago|mb|gb|kb|tb|mib|gib|kib|tib|min|mins|minutes|hours|hrs|hr)\\b", "").trim();
         q = q.replaceAll("\\s+", " ");
         
         List<String> unparsed = new ArrayList<>();
