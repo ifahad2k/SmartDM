@@ -47,9 +47,14 @@ public class YtDlpExtractor implements MediaExtractor {
                         "--no-playlist",
                         "--no-warnings",
                         "--ignore-config",
-                        "--no-check-certificates",
-                        "--extractor-args", "youtube:player_client=web,default"
+                        "--no-check-certificates"
                     ));
+                    
+                    if (url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
+                        cmd.add("--extractor-args");
+                        cmd.add("youtube:player_client=web,default");
+                    }
+                    
                     if (cookieFile != null) {
                         cmd.add("--cookies");
                         cmd.add(cookieFile.toAbsolutePath().toString());
@@ -76,9 +81,13 @@ public class YtDlpExtractor implements MediaExtractor {
                             "--no-playlist",
                             "--no-warnings",
                             "--ignore-config",
-                            "--no-check-certificates",
-                            "--extractor-args", "youtube:player_client=mweb,default"
+                            "--no-check-certificates"
                         ));
+                        
+                        if (url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
+                            fallbackCmd.add("--extractor-args");
+                            fallbackCmd.add("youtube:player_client=mweb,default");
+                        }
                         if (cookieFile != null) {
                             fallbackCmd.add("--cookies");
                             fallbackCmd.add(cookieFile.toAbsolutePath().toString());
