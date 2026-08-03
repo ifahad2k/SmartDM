@@ -58,7 +58,8 @@ public class SqlCipherLocalSearchRepository implements LocalSearchRepository {
         
         sql.append("WHERE 1=1 ");
         if (hasText) {
-            sql.append("AND d.destination_path LIKE ? ");
+            sql.append("AND (d.destination_path LIKE ? OR d.source_uri LIKE ?) ");
+            params.add("%" + plan.text().get() + "%");
             params.add("%" + plan.text().get() + "%");
         }
 
