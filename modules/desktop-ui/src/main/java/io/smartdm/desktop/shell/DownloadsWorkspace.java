@@ -111,6 +111,12 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                 if (!matchesChip) return false;
 
                 if (q != null && !q.isBlank()) {
+                    if (searchService != null) {
+                        io.smartdm.domain.search.LocalSearchPlan plan = searchService.getParser().parse(q);
+                        if (plan != null && !plan.states().isEmpty() && !plan.states().contains(d.state())) {
+                            return false;
+                        }
+                    }
                     if (searchResultIds != null && (searchResultIds.contains(id.value()) || searchResultIds.contains(d.destination().value().toString()))) {
                         return true;
                     }

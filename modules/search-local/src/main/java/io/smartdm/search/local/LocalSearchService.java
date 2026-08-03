@@ -21,4 +21,8 @@ public class LocalSearchService {
         LocalSearchPlan plan = parser.parse(query);
         return repository.executeSearch(plan, limit, offset);
     }
+
+    public LocalSearchQueryParser getParser() {
+        return parser;
+    }
 }

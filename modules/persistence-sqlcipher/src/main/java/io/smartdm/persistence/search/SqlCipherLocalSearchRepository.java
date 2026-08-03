@@ -152,7 +152,7 @@ public class SqlCipherLocalSearchRepository implements LocalSearchRepository {
             }
         }
         if (isCatalog && plan.kinds() != null && !plan.kinds().isEmpty()) {
-            // Very simplified FileKind mapping for SQLite
+            // Very simplified FileKind mapping for SQLite catalog
             sql.append(" AND (");
             boolean first = true;
             for (FileKind kind : plan.kinds()) {
@@ -166,6 +166,35 @@ public class SqlCipherLocalSearchRepository implements LocalSearchRepository {
                     case EXECUTABLE -> sql.append("mime_type LIKE 'application/x-msdownload'");
                     default -> sql.append("1=1");
                 }
+                first = false;
+            }
+            sql.append(") ");
+        } else if (!isCatalog && plan.kinds() != null && !plan.kinds().isEmpty()) {
+            sql.append(" AND (");
+            boolean first = true;
+            for (FileKind kind : plan.kinds()) {
+                if (!first) sql.append(" OR ");
+                switch (kind) {
+                    case VIDEO -> sql.append("(d.destination_path LIKE '%.mp4' OR d.destination_path LIKE '%.webm' OR d.destination_path LIKE '%.mkv' OR d.destination_path LIKE '%.avi' OR d.destination_path LIKE '%.mov')");
+                    case AUDIO -> sql.append("(d.destination_path LIKE '%.mp3' OR d.destination_path LIKE '%.m4a' OR d.destination_path LIKE '%.flac' OR d.destination_path LIKE '%.wav' OR d.destination_path LIKE '%.aac')");
+                    case DOCUMENT -> sql.append("(d.destination_path LIKE '%.pdf' OR d.destination_path LIKE '%.doc%' OR d.destination_path LIKE '%.txt')");
+                    case IMAGE -> sql.append("(d.destination_path LIKE '%.png' OR d.destination_path LIKE '%.jpg' OR d.destination_path LIKE '%.jpeg' OR d.destination_path LIKE '%.gif' OR d.destination_path LIKE '%.webp')");
+                    case ARCHIVE -> sql.append("(d.destination_path LIKE '%.zip' OR d.destination_path LIKE '%.tar%' OR d.destination_path LIKE '%.7z' OR d.destination_path LIKE '%.rar')");
+                    case EXECUTABLE -> sql.append("(d.destination_path LIKE '%.exe' OR d.destination_path LIKE '%.msi' OR d.destination_path LIKE '%.deb' OR d.destination_path LIKE '%.appimage' OR d.destination_path LIKE '%.bin')");
+                    default -> sql.append("1=1");
+                }
+                first = false;
+            }
+            sql.append(") ");
+        }
+
+        if (!isCatalog && plan.states() != null && !plan.states().isEmpty()) {
+            sql.append(" AND d.state IN (");
+            boolean first = true;
+            for (io.smartdm.domain.DownloadState st : plan.states()) {
+                if (!first) sql.append(", ");
+                sql.append("?");
+                params.add(st.name());
                 first = false;
             }
             sql.append(") ");
