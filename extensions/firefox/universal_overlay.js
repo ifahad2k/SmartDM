@@ -519,13 +519,13 @@
         }
       });
 
-      // 40-second timeout: if no formats found after 40 seconds, display "No media formats detected."
+      // 30-second timeout: if no formats found after 30 seconds, display "No media formats detected."
       formatSearchTimeout = setTimeout(() => {
         if (formatSearchInterval) clearInterval(formatSearchInterval);
         if (!hasFound) {
           content.innerHTML = '<div class="status-text">No media formats detected.</div>';
         }
-      }, 40000);
+      }, 30000);
     });
 
     container.appendChild(host);
