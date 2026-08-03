@@ -117,8 +117,8 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
                             return false;
                         }
                     }
-                    if (searchResultIds != null && (searchResultIds.contains(id.value()) || searchResultIds.contains(d.destination().value().toString()))) {
-                        return true;
+                    if (searchResultIds != null) {
+                        return searchResultIds.contains(id.value()) || searchResultIds.contains(d.destination().value().toString());
                     }
                     String lowerQ = q.toLowerCase();
                     return d.destination().value().getFileName().toString().toLowerCase().contains(lowerQ)

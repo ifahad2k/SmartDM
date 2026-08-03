@@ -52,7 +52,8 @@ public class LocalSearchService {
             }
         }
 
-        return repository.executeSearch(plan, limit, offset);
+        int effectiveLimit = plan.maxResults().isPresent() ? plan.maxResults().get() : limit;
+        return repository.executeSearch(plan, effectiveLimit, offset);
     }
 
     public LocalSearchQueryParser getParser() {

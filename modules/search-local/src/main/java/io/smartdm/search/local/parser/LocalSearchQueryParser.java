@@ -95,9 +95,11 @@ public class LocalSearchQueryParser {
             q = DYNAMIC_SIZE_SMALL_GENERIC.matcher(q).replaceAll("").trim();
         }
 
+        Optional<Integer> maxResults = Optional.empty();
         // Extract Ordering / Recency (e.g. "last download", "latest file", "most recent")
         if (q.toLowerCase().matches(".*\\b(last download|last file|latest|most recent|newest)\\b.*") || (q.toLowerCase().matches(".*\\blast\\b.*") && !q.toLowerCase().matches(".*\\blast\\s+(week|month|year|day)s?\\b.*"))) {
             sortOrder = SortOrder.DATE_DESC;
+            maxResults = Optional.of(1);
             q = q.replaceAll("(?i)\\b(last download|last file|latest|most recent|newest)\\b", "").trim();
             if (!q.toLowerCase().contains("last week") && !q.toLowerCase().contains("last month")) {
                 q = q.replaceAll("(?i)\\blast\\b", "").trim();
@@ -174,7 +176,8 @@ public class LocalSearchQueryParser {
             states,
             Optional.empty(), // Path scope parsing omitted for simplicity in potato-mode parser
             sortOrder,
-            unparsed
+            unparsed,
+            maxResults
         );
     }
 }
