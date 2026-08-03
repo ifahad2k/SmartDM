@@ -146,6 +146,12 @@ public final class MainShell extends VBox {
         StatusBar statusBar = new StatusBar();
 
         settingsWorkspace.setOnConfigChanged(cfg -> {
+            io.smartdm.ai.api.OptionalAiAdvisor newAdvisor = cfg.providerType() == io.smartdm.ai.api.AiProviderType.OPENAI_COMPATIBLE
+                ? new io.smartdm.ai.gemini.OpenAiCompatibleAdvisor(cfg)
+                : new io.smartdm.ai.gemini.GeminiAiAdvisor(cfg);
+            if (workspace != null && workspace.getSearchService() != null) {
+                workspace.getSearchService().setAiAdvisor(newAdvisor);
+            }
             if (cfg.enabled()) {
                 String name = cfg.providerType() == io.smartdm.ai.api.AiProviderType.GEMINI ? "Gemini: active" : "Local AI: active";
                 statusBar.setAiStatus(name);

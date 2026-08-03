@@ -111,7 +111,10 @@ public class SmartDmApp extends Application {
         io.smartdm.domain.repository.ScheduleRepository scheduleRepo = new io.smartdm.persistence.SqlCipherScheduleRepository(database);
         
         LocalSearchRepository localSearchRepository = new SqlCipherLocalSearchRepository(database);
-        io.smartdm.ai.api.OptionalAiAdvisor aiAdvisor = new io.smartdm.ai.gemini.GeminiAiAdvisor(io.smartdm.ai.gemini.AiProviderConfig.disabled());
+        io.smartdm.ai.gemini.AiProviderConfig initialAiConfig = io.smartdm.ai.gemini.AiProviderConfig.loadFromDisk();
+        io.smartdm.ai.api.OptionalAiAdvisor aiAdvisor = initialAiConfig.providerType() == io.smartdm.ai.api.AiProviderType.OPENAI_COMPATIBLE
+            ? new io.smartdm.ai.gemini.OpenAiCompatibleAdvisor(initialAiConfig)
+            : new io.smartdm.ai.gemini.GeminiAiAdvisor(initialAiConfig);
         LocalSearchService localSearchService = new LocalSearchService(localSearchRepository, aiAdvisor);
         
         // Test search at startup

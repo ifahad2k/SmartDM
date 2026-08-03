@@ -33,19 +33,34 @@ public class LocalSearchService {
     public List<LocalSearchResult> search(String query, int limit, int offset) {
         LocalSearchPlan plan = parser.parse(query);
 
-        // Optional AI fallback integration for ambiguous terms
+        // Optional AI fallback integration for natural language queries
         if (aiAdvisor != null && aiAdvisor.capability() != null && aiAdvisor.capability().supportsQueryParsing()) {
             try {
                 ApprovedPayload payload = consentFirewall.sanitizeAndApprove(
                     AiTask.QUERY_PARSING,
                     query,
                     List.of(),
-                    "Interpret ambiguous query terms"
+                    "Interpret natural language query intent"
                 );
                 AiSuggestion suggestion = aiAdvisor.request(AiTask.QUERY_PARSING, payload, null)
-                    .toCompletableFuture().get(3, java.util.concurrent.TimeUnit.SECONDS);
-                if (suggestion != null && suggestion.success()) {
-                    System.out.println("[AI Search Advisor] Received AI suggestion: " + suggestion.suggestionText());
+                    .toCompletableFuture().get(4, java.util.concurrent.TimeUnit.SECONDS);
+                if (suggestion != null && suggestion.success() && suggestion.suggestionText() != null) {
+                    System.out.println("[AI Search Advisor] LLM parsed intent: " + suggestion.suggestionText());
+                    String text = suggestion.suggestionText().toLowerCase();
+                    if (text.contains("limit\": 1") || text.contains("single") || text.contains("last") || text.contains("latest")) {
+                        plan = new io.smartdm.domain.search.LocalSearchPlan(
+                            plan.text(),
+                            plan.kinds(),
+                            plan.dateRange(),
+                            plan.sizeBytes(),
+                            plan.mediaDuration(),
+                            plan.states(),
+                            plan.scope(),
+                            io.smartdm.domain.search.SortOrder.DATE_DESC,
+                            plan.unparsedTerms(),
+                            java.util.Optional.of(1)
+                        );
+                    }
                 }
             } catch (Exception ignored) {
                 // Silent local fallback on AI failure, timeout, or refusal

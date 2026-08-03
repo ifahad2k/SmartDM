@@ -37,6 +37,9 @@ public class SettingsWorkspace extends VBox {
         providerBox.setStyle("-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 8; -fx-padding: 15;");
 
         Label providerTitle = new Label("AI Assistant Provider");
+        // Load initial saved config from disk
+        AiProviderConfig savedCfg = AiProviderConfig.loadFromDisk();
+
         providerTitle.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #89B4FA;");
 
         providerCombo = new ComboBox<>();
@@ -45,7 +48,7 @@ public class SettingsWorkspace extends VBox {
             AiProviderType.GEMINI.displayName(),
             AiProviderType.OPENAI_COMPATIBLE.displayName()
         );
-        providerCombo.setValue(AiProviderType.DISABLED.displayName());
+        providerCombo.setValue(savedCfg.providerType().displayName());
 
         providerBox.getChildren().addAll(providerTitle, providerCombo);
 
@@ -79,7 +82,7 @@ public class SettingsWorkspace extends VBox {
         modelCombo.setEditable(true);
         modelCombo.setPromptText("Select or type model (e.g. qwen2.5:3b)");
         modelCombo.getItems().addAll("qwen2.5:3b", "llama3.2:3b", "phi3:mini", "mistral:7b");
-        modelCombo.setValue("qwen2.5:3b");
+        modelCombo.setValue((savedCfg.modelName() != null && !savedCfg.modelName().isBlank()) ? savedCfg.modelName() : "qwen2.5:3b");
 
         Button detectOllamaBtn = new Button("Detect Installed Ollama Models");
         detectOllamaBtn.getStyleClass().addAll("btn", "btn-primary");
@@ -107,9 +110,10 @@ public class SettingsWorkspace extends VBox {
         keyTitle.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #FAB387;");
 
         apiKeyField = new PasswordField();
+        apiKeyField.setText(savedCfg.apiKey() != null ? savedCfg.apiKey() : "");
         apiKeyField.setPromptText("Enter your private API key...");
 
-        baseUrlField = new TextField("https://generativelanguage.googleapis.com");
+        baseUrlField = new TextField((savedCfg.baseUrl() != null && !savedCfg.baseUrl().isBlank()) ? savedCfg.baseUrl() : "https://generativelanguage.googleapis.com");
         baseUrlField.setPromptText("API Base URL (e.g. https://api.openai.com/v1)");
 
         HBox keyBtnBox = new HBox(12);
@@ -126,13 +130,18 @@ public class SettingsWorkspace extends VBox {
         clearBtn.setOnAction(e -> {
             apiKeyField.clear();
             statusLabel.setText("API key removed.");
+            notifyConfigChange();
         });
 
         keyBtnBox.getChildren().addAll(testBtn, clearBtn);
         apiKeySection.getChildren().addAll(keyTitle, new Label("API Key:"), apiKeyField, new Label("Base URL:"), baseUrlField, keyBtnBox);
 
-        // Visibility Toggles
+        // Visibility & Change Toggles
         providerCombo.setOnAction(e -> updateSectionVisibilities());
+        apiKeyField.textProperty().addListener((o, oldV, newV) -> notifyConfigChange());
+        baseUrlField.textProperty().addListener((o, oldV, newV) -> notifyConfigChange());
+        modelCombo.valueProperty().addListener((o, oldV, newV) -> notifyConfigChange());
+
         updateSectionVisibilities();
 
         getChildren().addAll(titleLabel, providerBox, hardwareBox, ollamaSection, apiKeySection, statusLabel);
@@ -145,16 +154,17 @@ public class SettingsWorkspace extends VBox {
     }
 
     private void notifyConfigChange() {
+        String val = providerCombo.getValue();
+        AiProviderConfig cfg;
+        if (AiProviderType.OPENAI_COMPATIBLE.displayName().equals(val)) {
+            cfg = AiProviderConfig.openAiCompatible(apiKeyField.getText(), baseUrlField.getText(), modelCombo.getValue());
+        } else if (AiProviderType.GEMINI.displayName().equals(val)) {
+            cfg = AiProviderConfig.gemini(apiKeyField.getText());
+        } else {
+            cfg = AiProviderConfig.disabled();
+        }
+        cfg.saveToDisk();
         if (configChangeListener != null) {
-            String val = providerCombo.getValue();
-            AiProviderConfig cfg;
-            if (AiProviderType.OPENAI_COMPATIBLE.displayName().equals(val)) {
-                cfg = AiProviderConfig.openAiCompatible(apiKeyField.getText(), baseUrlField.getText(), modelCombo.getValue());
-            } else if (AiProviderType.GEMINI.displayName().equals(val)) {
-                cfg = AiProviderConfig.gemini(apiKeyField.getText());
-            } else {
-                cfg = AiProviderConfig.disabled();
-            }
             configChangeListener.accept(cfg);
         }
     }

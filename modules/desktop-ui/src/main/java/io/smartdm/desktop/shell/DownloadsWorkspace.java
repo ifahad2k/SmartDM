@@ -305,6 +305,10 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         this.searchService = searchService;
     }
 
+    public io.smartdm.search.local.LocalSearchService getSearchService() {
+        return searchService;
+    }
+
     public void applySearchQuery(String query) {
         this.currentSearchQuery = query;
         if (updateFilterAction != null) {
