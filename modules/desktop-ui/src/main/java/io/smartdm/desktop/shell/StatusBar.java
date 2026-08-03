@@ -9,6 +9,13 @@ public class StatusBar extends HBox {
     
     private final Region dot;
     private final Label onlineLbl;
+    private final Label geminiLbl;
+
+    public void setAiStatus(String status) {
+        if (geminiLbl != null) {
+            javafx.application.Platform.runLater(() -> geminiLbl.setText(status));
+        }
+    }
 
     @SuppressWarnings("this-escape")
     public StatusBar() {
@@ -67,8 +74,8 @@ public class StatusBar extends HBox {
         Label potatoLbl = new Label("Potato mode: off");
         potatoLbl.getStyleClass().add("sb-item");
         
-        // Gemini
-        Label geminiLbl = new Label("Gemini: disabled");
+        // Gemini / AI
+        geminiLbl = new Label("AI: disabled");
         geminiLbl.getStyleClass().add("sb-item");
         
         getChildren().addAll(onlineBox, dlBox, ulBox, activeBox, totalTodayBox, spacer, potatoLbl, geminiLbl);

@@ -95,6 +95,15 @@ public class LocalSearchQueryParser {
             q = DYNAMIC_SIZE_SMALL_GENERIC.matcher(q).replaceAll("").trim();
         }
 
+        // Extract Ordering / Recency (e.g. "last download", "latest file", "most recent")
+        if (q.toLowerCase().matches(".*\\b(last download|last file|latest|most recent|newest)\\b.*") || (q.toLowerCase().matches(".*\\blast\\b.*") && !q.toLowerCase().matches(".*\\blast\\s+(week|month|year|day)s?\\b.*"))) {
+            sortOrder = SortOrder.DATE_DESC;
+            q = q.replaceAll("(?i)\\b(last download|last file|latest|most recent|newest)\\b", "").trim();
+            if (!q.toLowerCase().contains("last week") && !q.toLowerCase().contains("last month")) {
+                q = q.replaceAll("(?i)\\blast\\b", "").trim();
+            }
+        }
+
         // Extract Dates
         Instant now = Instant.now();
         Matcher mMin = DATE_MINUTES_AGO.matcher(q);

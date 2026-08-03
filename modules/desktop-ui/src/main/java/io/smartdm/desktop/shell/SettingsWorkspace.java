@@ -138,6 +138,27 @@ public class SettingsWorkspace extends VBox {
         getChildren().addAll(titleLabel, providerBox, hardwareBox, ollamaSection, apiKeySection, statusLabel);
     }
 
+    private java.util.function.Consumer<AiProviderConfig> configChangeListener;
+
+    public void setOnConfigChanged(java.util.function.Consumer<AiProviderConfig> listener) {
+        this.configChangeListener = listener;
+    }
+
+    private void notifyConfigChange() {
+        if (configChangeListener != null) {
+            String val = providerCombo.getValue();
+            AiProviderConfig cfg;
+            if (AiProviderType.OPENAI_COMPATIBLE.displayName().equals(val)) {
+                cfg = AiProviderConfig.openAiCompatible(apiKeyField.getText(), baseUrlField.getText(), modelCombo.getValue());
+            } else if (AiProviderType.GEMINI.displayName().equals(val)) {
+                cfg = AiProviderConfig.gemini(apiKeyField.getText());
+            } else {
+                cfg = AiProviderConfig.disabled();
+            }
+            configChangeListener.accept(cfg);
+        }
+    }
+
     private void updateSectionVisibilities() {
         String val = providerCombo.getValue();
         if (AiProviderType.DISABLED.displayName().equals(val)) {
@@ -161,6 +182,7 @@ public class SettingsWorkspace extends VBox {
             baseUrlField.setText("https://generativelanguage.googleapis.com");
             statusLabel.setText("Google Gemini free API mode active.");
         }
+        notifyConfigChange();
     }
 
     private void detectOllamaModels() {

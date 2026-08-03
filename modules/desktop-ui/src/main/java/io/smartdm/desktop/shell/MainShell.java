@@ -144,6 +144,16 @@ public final class MainShell extends VBox {
         VBox.setVgrow(settingsWorkspace, Priority.ALWAYS);
         
         StatusBar statusBar = new StatusBar();
+
+        settingsWorkspace.setOnConfigChanged(cfg -> {
+            if (cfg.enabled()) {
+                String name = cfg.providerType() == io.smartdm.ai.api.AiProviderType.GEMINI ? "Gemini: active" : "Local AI: active";
+                statusBar.setAiStatus(name);
+            } else {
+                statusBar.setAiStatus("AI: disabled");
+            }
+        });
+
         mainContent.getChildren().addAll(topBar, workspace, statusBar);
         
         navigationRail.setOnNavigated(nav -> {
