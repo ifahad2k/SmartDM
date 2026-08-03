@@ -49,6 +49,15 @@ class LocalSearchQueryParserTest {
         
         assertThat(plan.sizeBytes()).isPresent();
         assertThat(plan.sizeBytes().get().min()).isEqualTo(100L * 1024 * 1024);
-        assertThat(plan.text()).isPresent().contains("files D drive");
+        assertThat(plan.text()).isPresent().contains("D drive");
+    }
+
+    @Test
+    void shouldParseRecentVideoQueryWithTypo() {
+        LocalSearchPlan plan = parser.parse("video from few 3 minitues ago");
+        
+        assertThat(plan.kinds()).containsExactly(FileKind.VIDEO);
+        assertThat(plan.dateRange()).isPresent();
+        assertThat(plan.text()).isEmpty();
     }
 }

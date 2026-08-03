@@ -24,8 +24,10 @@ public class LocalSearchQueryParser {
     
     private static final Pattern DATE_TODAY = Pattern.compile("(?i)(today)");
     private static final Pattern DATE_YESTERDAY = Pattern.compile("(?i)(yesterday)");
-    private static final Pattern DATE_DAYS_AGO = Pattern.compile("(?i)(around (\\d+) days ago)");
-    private static final Pattern DATE_LAST_WEEK = Pattern.compile("(?i)(last week)");
+    private static final Pattern DATE_DAYS_AGO = Pattern.compile("(?i)(around\\s+(\\d+)\\s+days?\\s+ago)");
+    private static final Pattern DATE_LAST_WEEK = Pattern.compile("(?i)(last\\s+week)");
+    private static final Pattern DATE_MINUTES_AGO = Pattern.compile("(?i)((?:few|around|about|\\d+)?\\s*(?:min|mins|minutes?|minitues?|minuts?|minets?)\\s*ago|just\\s+now|recently|recent)");
+    private static final Pattern DATE_HOURS_AGO = Pattern.compile("(?i)((?:few|around|about|\\d+)?\\s*(?:hour|hours|hr|hrs)\\s*ago)");
 
     public LocalSearchPlan parse(String rawQuery) {
         if (rawQuery == null || rawQuery.isBlank()) {
@@ -68,7 +70,17 @@ public class LocalSearchQueryParser {
 
         // Extract Dates
         Instant now = Instant.now();
-        if (DATE_TODAY.matcher(q).find()) {
+        Matcher mMin = DATE_MINUTES_AGO.matcher(q);
+        Matcher mHr = DATE_HOURS_AGO.matcher(q);
+        Matcher mDay = DATE_DAYS_AGO.matcher(q);
+
+        if (mMin.find()) {
+            dateRange = Optional.of(new InstantRange(now.minus(2, ChronoUnit.HOURS), now));
+            q = mMin.replaceAll("").trim();
+        } else if (mHr.find()) {
+            dateRange = Optional.of(new InstantRange(now.minus(12, ChronoUnit.HOURS), now));
+            q = mHr.replaceAll("").trim();
+        } else if (DATE_TODAY.matcher(q).find()) {
             dateRange = Optional.of(new InstantRange(now.minus(1, ChronoUnit.DAYS), now));
             q = DATE_TODAY.matcher(q).replaceAll("").trim();
         } else if (DATE_YESTERDAY.matcher(q).find()) {
@@ -77,13 +89,10 @@ public class LocalSearchQueryParser {
         } else if (DATE_LAST_WEEK.matcher(q).find()) {
             dateRange = Optional.of(new InstantRange(now.minus(14, ChronoUnit.DAYS), now.minus(7, ChronoUnit.DAYS)));
             q = DATE_LAST_WEEK.matcher(q).replaceAll("").trim();
-        } else {
-            Matcher m = DATE_DAYS_AGO.matcher(q);
-            if (m.find()) {
-                int days = Integer.parseInt(m.group(2));
-                dateRange = Optional.of(new InstantRange(now.minus(days + 1, ChronoUnit.DAYS), now.minus(Math.max(0, days - 1), ChronoUnit.DAYS)));
-                q = m.replaceAll("").trim();
-            }
+        } else if (mDay.find()) {
+            int days = Integer.parseInt(mDay.group(2));
+            dateRange = Optional.of(new InstantRange(now.minus(days + 1, ChronoUnit.DAYS), now.minus(Math.max(0, days - 1), ChronoUnit.DAYS)));
+            q = mDay.replaceAll("").trim();
         }
         
         // Extract Duration
@@ -96,7 +105,7 @@ public class LocalSearchQueryParser {
         }
         
         // Clean up unparsed words
-        q = q.replaceAll("(?i)\\b(from|on|the|a|an|downloaded|already|exists|same|file)\\b", "").trim();
+        q = q.replaceAll("(?i)\\b(from|on|the|a|an|few|some|downloaded|already|exists|same|file|files|ago)\\b", "").trim();
         q = q.replaceAll("\\s+", " ");
         
         List<String> unparsed = new ArrayList<>();
