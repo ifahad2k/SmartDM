@@ -717,8 +717,8 @@ public class SmartDmApp extends Application {
                 io.smartdm.media.api.MediaMetadata meta = metadataCache.get(url);
                 String extractionError = null;
                 
-                // Only invoke yt-dlp metadata dump if direct stream URL was not provided and not in cache
-                if (meta == null && (videoUrl == null || videoUrl.isBlank()) && toolMgr.isAvailable()) {
+                // Only invoke yt-dlp metadata dump if direct stream URL was not provided, not direct format, and not in cache
+                if (meta == null && (videoUrl == null || videoUrl.isBlank()) && !"direct".equals(preferredFormatId) && toolMgr.isAvailable()) {
                     try {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
                         meta = extractor.extractMetadataAsync(url, cookies).get(20, java.util.concurrent.TimeUnit.SECONDS);

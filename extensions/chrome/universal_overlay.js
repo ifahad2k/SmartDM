@@ -498,7 +498,7 @@
                 url: singleItem.url,
                 videoUrl: singleItem.videoUrl || null,
                 audioUrl: singleItem.audioUrl || null,
-                formatId: singleItem.formatId || 'best',
+                formatId: singleItem.formatId || 'direct',
                 fileName: singleItem.filename || null
               });
               popover.classList.remove('active');
@@ -510,11 +510,8 @@
         });
       };
 
-      const isSocial = pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com') || pageUrl.includes('twitter.com') || pageUrl.includes('tiktok.com');
-      if (isSocial) {
-        checkFormats();
-        formatSearchInterval = setInterval(checkFormats, 1000);
-      }
+      checkFormats();
+      formatSearchInterval = setInterval(checkFormats, 1000);
 
       // Async query yt-dlp formats (uses cache for instant response)
       getCachedYtDlpFormats(pageUrl, (res) => {
