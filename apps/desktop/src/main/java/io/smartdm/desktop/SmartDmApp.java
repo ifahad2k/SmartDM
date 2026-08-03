@@ -319,30 +319,28 @@ public class SmartDmApp extends Application {
         DownloadsWorkspace workspace = new DownloadsWorkspace(new DownloadActionListener() {
             @Override
             public void onPause(Download download) {
-                if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
-                    io.smartdm.desktop.shell.MediaDownloadTracker.pauseDownload(download);
-                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
-                    if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                    return;
-                }
-                if (download.state() == DownloadState.QUEUED) {
-                    download.updateScheduledStartTime(null);
-                    download.updateState(DownloadState.PAUSED);
-                    scheduleRepo.delete(download.id().value());
-                    repository.save(download);
-                    
-                    boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
-                    if (removed) {
-                        if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
-                    }
-                    
-                    if (workspaceRef[0] != null) workspaceRef[0].updateDownload(download);
-                } else {
-                    coordinator.pause(download.id());
-                    download.updateState(DownloadState.PAUSED);
-                }
+                download.updateState(DownloadState.PAUSED);
                 if (workspaceRef[0] != null) workspaceRef[0].refresh();
                 if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+
+                enginePool.submit(() -> {
+                    if (io.smartdm.desktop.shell.MediaDownloadTracker.isMediaDownload(download.id())) {
+                        io.smartdm.desktop.shell.MediaDownloadTracker.pauseDownload(download);
+                        return;
+                    }
+                    if (download.scheduledStartTime() != null) {
+                        download.updateScheduledStartTime(null);
+                        scheduleRepo.delete(download.id().value());
+                        repository.save(download);
+                        
+                        boolean removed = mainQueueItems.removeIf(item -> item.getDownloadId().equals(download.id()));
+                        if (removed) {
+                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        }
+                    } else {
+                        coordinator.pause(download.id());
+                    }
+                });
             }
 
             @Override

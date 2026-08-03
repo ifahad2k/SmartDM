@@ -164,8 +164,12 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
                 Download download = provider.getDownload(id);
                 if (download != null) {
                     if (download.state() == DownloadState.DOWNLOADING || download.state() == DownloadState.PROBING) {
+                        download.updateState(DownloadState.PAUSED);
+                        refreshUI(download);
                         listener.onPause(download);
                     } else {
+                        download.updateState(DownloadState.DOWNLOADING);
+                        refreshUI(download);
                         listener.onResume(download);
                     }
                 }
@@ -387,8 +391,16 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
             setText(null);
         } else {
             Download download = provider.getDownload(id);
-            if (download != null) refreshUI(download);
-            pollingTimer.start();
+            if (download != null) {
+                refreshUI(download);
+                if (download.state() == DownloadState.DOWNLOADING || download.state() == DownloadState.PROBING) {
+                    pollingTimer.start();
+                } else {
+                    pollingTimer.stop();
+                }
+            } else {
+                pollingTimer.stop();
+            }
             if (getGraphic() != root) {
                 setGraphic(root);
             }
@@ -399,11 +411,18 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         private long lastUpdate = 0;
         @Override
         public void handle(long now) {
-            if (now - lastUpdate >= 100_000_000L) { // 100ms
+            if (now - lastUpdate >= 200_000_000L) { // 200ms
                 io.smartdm.domain.DownloadId id = getItem();
                 if (id != null) {
                     Download d = provider.getDownload(id);
-                    if (d != null) refreshUI(d);
+                    if (d != null) {
+                        refreshUI(d);
+                        if (d.state() != DownloadState.DOWNLOADING && d.state() != DownloadState.PROBING) {
+                            pollingTimer.stop();
+                        }
+                    } else {
+                        pollingTimer.stop();
+                    }
                 }
                 lastUpdate = now;
             }
