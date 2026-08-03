@@ -485,6 +485,12 @@
       const checkFormats = () => {
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
+          
+          // Filter out HLS/DASH playlists because SmartDM downloads them as dummy text files
+          netMedia = netMedia.filter(m => {
+            const urlLower = m.url.toLowerCase();
+            return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
+          });
 
           if (netMedia.length > 0) {
             hasFound = true;
