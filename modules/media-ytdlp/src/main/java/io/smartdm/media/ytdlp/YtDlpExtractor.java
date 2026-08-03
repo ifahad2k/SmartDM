@@ -47,7 +47,8 @@ public class YtDlpExtractor implements MediaExtractor {
                         "--no-playlist",
                         "--no-warnings",
                         "--ignore-config",
-                        "--no-check-certificates"
+                        "--no-check-certificates",
+                        "--extractor-args", "youtube:player_client=web,default"
                     ));
                     if (cookieFile != null) {
                         cmd.add("--cookies");
@@ -76,7 +77,7 @@ public class YtDlpExtractor implements MediaExtractor {
                             "--no-warnings",
                             "--ignore-config",
                             "--no-check-certificates",
-                            "--extractor-args", "youtube:player_client=ios,web_safari"
+                            "--extractor-args", "youtube:player_client=mweb,default"
                         ));
                         if (cookieFile != null) {
                             fallbackCmd.add("--cookies");
