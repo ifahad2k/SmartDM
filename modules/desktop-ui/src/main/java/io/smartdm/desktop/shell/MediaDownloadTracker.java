@@ -25,7 +25,8 @@ public final class MediaDownloadTracker {
         Download download,
         Path targetPath,
         String webpageUrl,
-        String formatArg
+        String formatArg,
+        String cookies
     ) {}
 
     private static final Map<DownloadId, Process> activeProcesses = new ConcurrentHashMap<>();
@@ -45,7 +46,11 @@ public final class MediaDownloadTracker {
     }
 
     public static void startDownload(Download download, Path targetPath, String webpageUrl, String formatArg) {
-        TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg);
+        startDownload(download, targetPath, webpageUrl, formatArg, null);
+    }
+
+    public static void startDownload(Download download, Path targetPath, String webpageUrl, String formatArg, String cookies) {
+        TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg, cookies);
         taskRegistry.put(download.id(), info);
         runYtDlp(info);
     }
@@ -166,17 +171,41 @@ public final class MediaDownloadTracker {
 
                 Path tempOutputFile = appTempDir.resolve(info.targetPath().getFileName());
 
-                ProcessBuilder pb = new ProcessBuilder(
-                    ytDlp.toString(),
-                    "--newline",
-                    "--continue",
-                    "-N", "4",
-                    "--paths", "temp:" + appTempDir.toString(),
-                    "--paths", "home:" + appTempDir.toString(),
-                    "-f", formatArg,
-                    "-o", tempOutputFile.toString(),
-                    info.webpageUrl()
-                );
+                List<String> commandList = new ArrayList<>();
+                commandList.add(ytDlp.toString());
+                commandList.add("--newline");
+                commandList.add("--continue");
+                commandList.add("--no-check-certificates");
+                commandList.add("--no-warnings");
+                commandList.add("--ignore-config");
+                commandList.add("-N");
+                commandList.add("4");
+                commandList.add("--paths");
+                commandList.add("temp:" + appTempDir.toString());
+                commandList.add("--paths");
+                commandList.add("home:" + appTempDir.toString());
+
+                if (info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"))) {
+                    commandList.add("--extractor-args");
+                    commandList.add("youtube:player_client=web,default");
+                }
+
+                if (info.cookies() != null && !info.cookies().isBlank()) {
+                    try {
+                        Path cookieFile = appTempDir.resolve("cookies.txt");
+                        java.nio.file.Files.writeString(cookieFile, info.cookies());
+                        commandList.add("--cookies");
+                        commandList.add(cookieFile.toAbsolutePath().toString());
+                    } catch (Exception ignored) {}
+                }
+
+                commandList.add("-f");
+                commandList.add(formatArg);
+                commandList.add("-o");
+                commandList.add(tempOutputFile.toString());
+                commandList.add(info.webpageUrl());
+
+                ProcessBuilder pb = new ProcessBuilder(commandList);
                 pb.redirectErrorStream(true);
 
                 Process p = pb.start();

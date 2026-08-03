@@ -793,6 +793,7 @@ public class SmartDmApp extends Application {
                         null,
                         finalMeta,
                         preferredFormatId,
+                        cookies,
                         dl -> {
                             repository.save(dl);
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);

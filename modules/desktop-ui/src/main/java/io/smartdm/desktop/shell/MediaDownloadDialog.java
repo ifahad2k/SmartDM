@@ -44,6 +44,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     private Consumer<Download> onDownloadAdded;
     private final io.smartdm.organization.SmartFolderService smartFolderService;
     private final io.smartdm.domain.repository.DownloadRepository repository;
+    private final String cookies;
     private FolderSuggestionPanel suggestionPanel;
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, Consumer<Download> onDownloadAdded) {
@@ -59,8 +60,13 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     }
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.domain.repository.DownloadRepository repository) {
+        this(owner, metadata, preferredFormatId, null, onDownloadAdded, smartFolderService, repository);
+    }
+
+    public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, String cookies, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.domain.repository.DownloadRepository repository) {
         super(owner, "Media Download - " + metadata.title(), Modality.NONE);
         this.metadata = metadata;
+        this.cookies = cookies;
         this.onDownloadAdded = onDownloadAdded;
         this.smartFolderService = smartFolderService;
         this.repository = repository;
@@ -306,7 +312,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
             }
 
             String formatArg = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
-            MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), formatArg);
+            MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), formatArg, cookies);
             close();
         } catch (Exception ex) {
             System.err.println("Failed to start media download: " + ex.getMessage());
