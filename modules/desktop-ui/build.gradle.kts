@@ -14,6 +14,8 @@ dependencies {
     implementation(project(":modules:search-local"))
     implementation(project(":modules:organization-local"))
     implementation(project(":modules:persistence-sqlcipher"))
+    implementation(project(":modules:ai-api"))
+    implementation(project(":modules:ai-gemini"))
     
     testImplementation(libs.bundles.testing)
     uiTestImplementation(libs.bundles.testing)

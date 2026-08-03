@@ -26,6 +26,7 @@
 | **Phase 10** | YouTube specific browser panel | ✅ Completed | None | 2026-08-02 |
 | **Phase 12** | Smart folder organization and learned preferences | ✅ Completed | None | 2026-08-03 |
 | **Phase 13** | Local natural-language search (FTS5) | ✅ Completed | None | 2026-08-03 |
+| **Phase 14** | Optional Gemini / Local AI consented fallback | ✅ Completed | None | 2026-08-04 |
 
 ### Checklist
 - [x] Product specification
