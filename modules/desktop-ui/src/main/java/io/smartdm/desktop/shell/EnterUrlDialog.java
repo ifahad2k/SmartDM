@@ -85,7 +85,7 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
             io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
             if (!isDirectFile && toolMgr.isAvailable()) {
                 io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                extractor.extractMetadataAsync(resultUrl)
+                extractor.extractMetadataAsync(resultUrl, null)
                     .thenAccept(meta -> javafx.application.Platform.runLater(() -> {
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                             MediaDownloadDialog dlg = new MediaDownloadDialog(null, meta, onDownloadAdded);

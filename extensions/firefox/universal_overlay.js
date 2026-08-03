@@ -4,6 +4,8 @@
   // Do not run on YouTube (YouTube has its dedicated overlay script)
   if (window.location.hostname.includes('youtube.com')) return;
 
+
+
   function formatSize(bytes) {
     if (!bytes || bytes <= 0) return null;
     const mb = bytes / (1024 * 1024);
@@ -437,10 +439,13 @@
         let el = mediaEl;
         let found = false;
         while (el && el !== document.body) {
-          if (el.tagName === 'A' && el.href && (el.href.includes('/reel/') || el.href.includes('/watch') || el.href.includes('/videos/') || el.href.includes('/status/') || el.href.includes('/p/'))) {
-            pageUrl = el.href;
-            found = true;
-            break;
+          if (el.tagName === 'A' && el.href) {
+            const href = el.href;
+            if ((href.includes('/reel/') && /\d/.test(href)) || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
+              pageUrl = href;
+              found = true;
+              break;
+            }
           }
           el = el.parentElement;
         }
@@ -453,7 +458,7 @@
             const links = container.querySelectorAll('a[href]');
             for (let i = 0; i < links.length; i++) {
               let href = links[i].href;
-              if (href.includes('/reel/') || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
+              if ((href.includes('/reel/') && /\d/.test(href)) || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
                 pageUrl = href;
                 found = true;
                 break;
@@ -468,7 +473,7 @@
 
       const checkFormats = () => {
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-          const netMedia = (netRes && netRes.media) ? netRes.media : [];
+          let netMedia = (netRes && netRes.media) ? netRes.media : [];
 
           if (netMedia.length > 0) {
             hasFound = true;
@@ -482,7 +487,7 @@
                 url: singleItem.url,
                 videoUrl: singleItem.videoUrl || null,
                 audioUrl: singleItem.audioUrl || null,
-                formatId: 'best',
+                formatId: singleItem.formatId || 'best',
                 fileName: singleItem.filename || null
               });
               popover.classList.remove('active');
@@ -572,7 +577,7 @@
           url: m.url,
           videoUrl: m.videoUrl || null,
           audioUrl: m.audioUrl || null,
-          formatId: 'best',
+          formatId: m.formatId || (m.customTitle ? m.customTitle.replace(/[^0-9p]/g, '') : 'best'),
           fileName: m.filename
         });
       });

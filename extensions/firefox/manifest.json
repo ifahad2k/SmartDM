@@ -8,6 +8,7 @@
     "nativeMessaging",
     "activeTab",
     "webRequest",
+    "cookies",
     "<all_urls>"
   ],
   "background": {

@@ -300,6 +300,46 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+async function appendCookiesAndSend(request, sendResponse) {
+  try {
+    let targetUrl = request.url;
+    if (!targetUrl && request.urls && request.urls.length > 0) {
+      targetUrl = request.urls[0];
+    }
+    
+    if (targetUrl && chrome.cookies) {
+      const cookies = await new Promise(resolve => {
+        chrome.cookies.getAll({ url: targetUrl }, (c) => resolve(c || []));
+      });
+      
+      if (cookies && cookies.length > 0) {
+        let cookieStr = '# Netscape HTTP Cookie File\\n';
+        cookieStr += cookies.map(c => {
+          const domain = c.domain;
+          const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+          const path = c.path;
+          const secure = c.secure ? 'TRUE' : 'FALSE';
+          const expiry = c.expirationDate ? Math.floor(c.expirationDate) : 0;
+          return `${domain}\\t${includeSubdomains}\\t${path}\\t${secure}\\t${expiry}\\t${c.name}\\t${c.value}`;
+        }).join('\\n') + '\\n';
+        request.cookies = cookieStr;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to extract cookies:', e);
+  }
+
+  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+    if (chrome.runtime.lastError) {
+      if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      else console.error('Error sending native message:', chrome.runtime.lastError.message);
+    } else {
+      if (sendResponse) sendResponse(response || { success: true });
+      else console.log('Received response from native host:', response);
+    }
+  });
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
@@ -309,19 +349,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
-    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendNativeMessage) {
-      browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, request)
-        .then((response) => sendResponse(response || { success: true }))
-        .catch((err) => sendResponse({ success: false, error: err ? (err.message || String(err)) : 'Native host error' }));
-    } else {
-      chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse(response || { success: true });
-        }
-      });
-    }
+    appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
 });
@@ -334,19 +362,7 @@ function sendToSmartDM(url, referer) {
     referer: referer || null,
     userAgent: navigator.userAgent
   };
-
+  
   console.log('Sending message to native host:', message);
-  if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendNativeMessage) {
-    browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, message)
-      .then((response) => console.log('Received response from native host:', response))
-      .catch((error) => console.error('Error sending native message:', error));
-  } else {
-    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error sending native message:', chrome.runtime.lastError.message);
-      } else {
-        console.log('Received response from native host:', response);
-      }
-    });
-  }
+  appendCookiesAndSend(message, null);
 }

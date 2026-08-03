@@ -493,10 +493,12 @@ public class SmartDmApp extends Application {
         ipcServer = new io.smartdm.application.ipc.LocalIpcServer(message -> {
             if (message instanceof io.smartdm.browser.protocol.GetMediaFormatsRequest req) {
                 try {
+                    System.out.println(">>> [IPC] GET_MEDIA_FORMATS for url: " + req.url());
+                    System.out.println(">>> [IPC] Cookies received: " + (req.cookies() != null ? req.cookies().length() + " chars" : "null"));
                     io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
                     if (toolMgr.isAvailable()) {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url()).get(45, java.util.concurrent.TimeUnit.SECONDS);
+                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url(), req.cookies()).get(45, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                             metadataCache.put(req.url(), meta);
                             com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -519,10 +521,10 @@ public class SmartDmApp extends Application {
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.cookies(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                openMediaOrStandardDialog(req.url(), null, null, null, req.cookies(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -697,6 +699,7 @@ public class SmartDmApp extends Application {
         String videoUrl,
         String audioUrl,
         String preferredFormatId,
+        String cookies,
         DownloadRepository repository,
         DownloadsWorkspace[] workspaceRef,
         java.util.List<io.smartdm.domain.QueueItem> mainQueueItems,
@@ -718,7 +721,7 @@ public class SmartDmApp extends Application {
                 if (meta == null && (videoUrl == null || videoUrl.isBlank()) && toolMgr.isAvailable()) {
                     try {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        meta = extractor.extractMetadataAsync(url).get(20, java.util.concurrent.TimeUnit.SECONDS);
+                        meta = extractor.extractMetadataAsync(url, cookies).get(20, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null) metadataCache.put(url, meta);
                     } catch (Exception ex) {
                         System.err.println("Media metadata extraction failed: " + ex.getMessage());

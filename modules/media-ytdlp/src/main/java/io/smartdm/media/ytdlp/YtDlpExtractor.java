@@ -25,62 +25,90 @@ public class YtDlpExtractor implements MediaExtractor {
     }
 
     @Override
-    public CompletableFuture<MediaMetadata> extractMetadataAsync(String url) {
+    public CompletableFuture<MediaMetadata> extractMetadataAsync(String url, String cookies) {
         return CompletableFuture.supplyAsync(() -> {
             Path ytDlp = toolManager.getYtDlpPath().orElseThrow(() -> 
                 new IllegalStateException("yt-dlp executable not found. Please install yt-dlp."));
 
             try {
-                // Try 1: standard yt-dlp dump-json without hardcoded user-agent so yt-dlp uses its internal client spoofing
-                ProcessBuilder pb = new ProcessBuilder(
-                    ytDlp.toString(),
-                    "--dump-json",
-                    "--no-playlist",
-                    "--no-warnings",
-                    "--ignore-config",
-                    "--no-check-certificates",
-                    url
-                );
-
-                Process process = pb.start();
-                String jsonOutput;
-                String errOutput;
-                try (InputStream is = process.getInputStream();
-                     InputStream es = process.getErrorStream()) {
-                    jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                    errOutput = new String(es.readAllBytes(), StandardCharsets.UTF_8);
+                Path cookieFile = null;
+                if (cookies != null && !cookies.isBlank()) {
+                    cookieFile = java.nio.file.Files.createTempFile("smartdm_cookies_", ".txt");
+                    if (System.getProperty("os.name").toLowerCase().contains("linux") || System.getProperty("os.name").toLowerCase().contains("mac")) {
+                        java.nio.file.Files.setPosixFilePermissions(cookieFile, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+                    }
+                    java.nio.file.Files.writeString(cookieFile, cookies, StandardCharsets.UTF_8);
                 }
 
-                int exitCode = process.waitFor();
-                if (exitCode != 0 || jsonOutput.isBlank()) {
-                    System.err.println("yt-dlp standard dump failed: " + errOutput + ". Attempting fallback player_client...");
-                    
-                    // Try 2: fallback using ios,web_safari player clients which bypass bot checks without locking Chrome database
-                    ProcessBuilder pbCookies = new ProcessBuilder(
+                try {
+                    List<String> cmd = new ArrayList<>(List.of(
                         ytDlp.toString(),
                         "--dump-json",
                         "--no-playlist",
                         "--no-warnings",
                         "--ignore-config",
-                        "--no-check-certificates",
-                        "--extractor-args", "youtube:player_client=ios,web_safari",
-                        url
-                    );
-                    Process processCookies = pbCookies.start();
-                    try (InputStream is = processCookies.getInputStream()) {
-                        jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                        "--no-check-certificates"
+                    ));
+                    if (cookieFile != null) {
+                        cmd.add("--cookies");
+                        cmd.add(cookieFile.toAbsolutePath().toString());
                     }
-                    processCookies.waitFor();
-                }
+                    cmd.add(url);
 
-                int start = jsonOutput.indexOf('{');
-                int end = jsonOutput.lastIndexOf('}');
-                if (start >= 0 && end > start) {
-                    jsonOutput = jsonOutput.substring(start, end + 1);
-                    JsonNode root = mapper.readTree(jsonOutput);
-                    return parseMetadata(root, url);
-                } else if (errOutput != null && errOutput.contains("HTTP Error 429")) {
-                    throw new RuntimeException("HTTP Error 429: Too Many Requests");
+                    ProcessBuilder pb = new ProcessBuilder(cmd);
+                    Process process = pb.start();
+                    String jsonOutput;
+                    String errOutput;
+                    try (InputStream is = process.getInputStream();
+                         InputStream es = process.getErrorStream()) {
+                        jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                        errOutput = new String(es.readAllBytes(), StandardCharsets.UTF_8);
+                    }
+
+                    int exitCode = process.waitFor();
+                    if (exitCode != 0 || jsonOutput.isBlank()) {
+                        System.err.println("yt-dlp standard dump failed: " + errOutput + ". Attempting fallback player_client...");
+                        
+                        List<String> fallbackCmd = new ArrayList<>(List.of(
+                            ytDlp.toString(),
+                            "--dump-json",
+                            "--no-playlist",
+                            "--no-warnings",
+                            "--ignore-config",
+                            "--no-check-certificates",
+                            "--extractor-args", "youtube:player_client=ios,web_safari"
+                        ));
+                        if (cookieFile != null) {
+                            fallbackCmd.add("--cookies");
+                            fallbackCmd.add(cookieFile.toAbsolutePath().toString());
+                        }
+                        fallbackCmd.add(url);
+                        
+                        ProcessBuilder pbCookies = new ProcessBuilder(fallbackCmd);
+                        Process processCookies = pbCookies.start();
+                        try (InputStream is = processCookies.getInputStream()) {
+                            jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                        }
+                        processCookies.waitFor();
+                    }
+
+                    int start = jsonOutput.indexOf('{');
+                    int end = jsonOutput.lastIndexOf('}');
+                    if (start >= 0 && end > start) {
+                        jsonOutput = jsonOutput.substring(start, end + 1);
+                        JsonNode root = mapper.readTree(jsonOutput);
+                        return parseMetadata(root, url);
+                    } else if (errOutput != null && errOutput.contains("HTTP Error 429")) {
+                        throw new RuntimeException("HTTP Error 429: Too Many Requests");
+                    }
+                } finally {
+                    if (cookieFile != null) {
+                        try {
+                            java.nio.file.Files.deleteIfExists(cookieFile);
+                        } catch (Exception e) {
+                            System.err.println("Failed to delete temp cookie file: " + e.getMessage());
+                        }
+                    }
                 }
             } catch (Exception ex) {
                 if (ex instanceof RuntimeException) throw (RuntimeException) ex;

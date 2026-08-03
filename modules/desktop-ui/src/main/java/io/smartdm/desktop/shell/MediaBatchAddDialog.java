@@ -248,7 +248,7 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
                         Thread.sleep(600);
                     }
                     
-                    MediaMetadata meta = extractor.extractMetadataAsync(item.getUrl()).get(90, TimeUnit.SECONDS);
+                    MediaMetadata meta = extractor.extractMetadataAsync(item.getUrl(), null).get(90, TimeUnit.SECONDS);
                     item.setMetadata(meta);
                     
                     Thread.sleep(400); // Minor cooldown after finishing
