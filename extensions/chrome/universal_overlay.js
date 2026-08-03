@@ -435,51 +435,68 @@
       `;
 
       let pageUrl = window.location.href;
-      if (pageUrl.includes('facebook.com') || pageUrl.includes('instagram.com') || pageUrl.includes('x.com')) {
+      const hostLower = window.location.hostname.toLowerCase();
+      const isFb = hostLower.includes('facebook.com');
+      const isIg = hostLower.includes('instagram.com');
+      const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
+      const isTt = hostLower.includes('tiktok.com');
+
+      if (isFb || isIg || isX || isTt) {
+        const isVideoLink = (href) => {
+          if (!href) return false;
+          const h = href.toLowerCase();
+          if (isIg) {
+            return h.includes('/p/') || h.includes('/reel/') || h.includes('/reels/') || h.includes('/tv/') || h.includes('/stories/');
+          }
+          if (isFb) {
+            return h.includes('/watch') || h.includes('/reel/') || h.includes('/reels/') || h.includes('/videos/') ||
+                   h.includes('fb.watch') || h.includes('story_fbid=') || h.includes('fbid=') ||
+                   h.includes('/posts/') || h.includes('/permalink') || h.includes('/share/v/') ||
+                   h.includes('/share/r/') || h.includes('/share/p/');
+          }
+          if (isX) return h.includes('/status/');
+          if (isTt) return h.includes('/video/') || h.includes('/@');
+          return false;
+        };
+
         let el = mediaEl;
         let found = false;
-        
-        // Strategy 1: Check if any ancestor is an <a> tag
         while (el && el !== document.body) {
-          if (el.tagName === 'A' && el.href) {
-            const href = el.href;
-            if ((href.includes('/reel/') && /\d/.test(href)) || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
-              pageUrl = href;
-              found = true;
-              break;
-            }
+          if (el.tagName === 'A' && isVideoLink(el.href)) {
+            pageUrl = el.href;
+            found = true;
+            break;
           }
           el = el.parentElement;
         }
-        
-        // Strategy 2: Check for a sibling or uncle <a> tag by going up the DOM tree carefully
+
         if (!found) {
           let currentParent = mediaEl.parentElement;
           let searchDepth = 0;
-          while (currentParent && currentParent !== document.body && searchDepth < 6) {
+          while (currentParent && currentParent !== document.body && searchDepth < 10) {
             const links = currentParent.querySelectorAll('a[href]');
-            let reelLinks = [];
             for (let i = 0; i < links.length; i++) {
-              let href = links[i].href;
-              if ((href.includes('/reel/') && /\d/.test(href)) || href.includes('/watch') || href.includes('/videos/') || href.includes('/status/') || href.includes('/p/')) {
-                reelLinks.push(href);
+              if (isVideoLink(links[i].href)) {
+                pageUrl = links[i].href;
+                found = true;
+                break;
               }
             }
-            // If we found links, we assume the first one is the correct one for this card.
-            // If we found more than 2, we might have gone too high (e.g., hit the carousel wrapper), 
-            // but we still take the first one since we are searching from inside out.
-            if (reelLinks.length > 0) {
-              pageUrl = reelLinks[0];
-              found = true;
-              break;
-            }
+            if (found) break;
             currentParent = currentParent.parentElement;
             searchDepth++;
           }
         }
       }
 
-      const directSrc = mediaEl.src || mediaEl.currentSrc;
+      let directSrc = mediaEl.currentSrc || mediaEl.src;
+      if (!directSrc || directSrc.startsWith('blob:')) {
+        const sourceChild = mediaEl.querySelector('source');
+        if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
+          directSrc = sourceChild.src;
+        }
+      }
+
       let hasFound = false;
       let isYtDlpPending = true;
 
@@ -487,7 +504,6 @@
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
           
-          // Filter out HLS/DASH playlists because SmartDM downloads them as dummy text files
           netMedia = netMedia.filter(m => {
             const urlLower = m.url.toLowerCase();
             return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
@@ -514,18 +530,43 @@
           if (formatSearchInterval) clearInterval(formatSearchInterval);
           if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
+        } else if (directSrc && directSrc.startsWith('http')) {
+          hasFound = true;
+          if (formatSearchInterval) clearInterval(formatSearchInterval);
+          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+          const fallbackFormats = [{
+            format_id: 'direct_stream',
+            format_note: 'Direct Media Stream',
+            ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
+            resolution: 'Direct Video Stream (HD)',
+            filesize: 0,
+            url: directSrc
+          }];
+          renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
         } else {
           checkFormats();
         }
       });
 
-      // 30-second timeout: if no formats found after 30 seconds, display "No media formats detected."
       formatSearchTimeout = setTimeout(() => {
         if (formatSearchInterval) clearInterval(formatSearchInterval);
         if (!hasFound) {
-          content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+          if (directSrc && directSrc.startsWith('http')) {
+            hasFound = true;
+            const fallbackFormats = [{
+              format_id: 'direct_stream',
+              format_note: 'Direct Media Stream',
+              ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
+              resolution: 'Direct Video Stream (HD)',
+              filesize: 0,
+              url: directSrc
+            }];
+            renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
+          } else {
+            content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+          }
         }
-      }, 30000);
+      }, 10000);
     });
 
     container.appendChild(host);

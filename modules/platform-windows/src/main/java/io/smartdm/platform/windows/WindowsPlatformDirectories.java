@@ -37,4 +37,10 @@ public class WindowsPlatformDirectories implements PlatformDirectories {
     public Path getLogDirectory() {
         return log;
     }
+
+    @Override
+    public Path getDownloadDirectory() {
+        String userHome = System.getProperty("user.home");
+        return Paths.get(userHome, "Downloads");
+    }
 }

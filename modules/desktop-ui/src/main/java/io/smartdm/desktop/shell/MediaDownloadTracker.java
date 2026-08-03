@@ -171,7 +171,7 @@ public final class MediaDownloadTracker {
                     if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(info.download().id(), DownloadState.DOWNLOADING, info.download()));
                 });
 
-                Path appTempDir = java.nio.file.Paths.get(System.getProperty("user.home"), "AppData", "Local", "SmartDM", "temp", info.download().id().value());
+                Path appTempDir = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"), "SmartDM", "temp", info.download().id().value());
                 try {
                     java.nio.file.Files.createDirectories(appTempDir);
                 } catch (Exception ignored) {}
@@ -341,7 +341,7 @@ public final class MediaDownloadTracker {
                 }
             } finally {
                 try {
-                    java.nio.file.Path appTempDir = java.nio.file.Paths.get(System.getProperty("user.home"), "AppData", "Local", "SmartDM", "temp", info.download().id().value());
+                    java.nio.file.Path appTempDir = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"), "SmartDM", "temp", info.download().id().value());
                     if (java.nio.file.Files.exists(appTempDir)) {
                         try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(appTempDir)) {
                             walk.sorted(java.util.Comparator.reverseOrder())

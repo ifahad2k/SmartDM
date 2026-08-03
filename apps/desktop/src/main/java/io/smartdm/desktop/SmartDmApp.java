@@ -556,7 +556,7 @@ public class SmartDmApp extends Application {
                             try {
                                 String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
                                 if (filename == null || filename.isEmpty()) filename = "download_" + System.currentTimeMillis();
-                                String defaultDir = java.nio.file.Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
+                                String defaultDir = directories.getDownloadDirectory().toAbsolutePath().toString();
                                 io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(java.nio.file.Paths.get(defaultDir, filename));
                                 io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(io.smartdm.domain.SourceUri.of(url), dest);
                                 repository.save(dl);

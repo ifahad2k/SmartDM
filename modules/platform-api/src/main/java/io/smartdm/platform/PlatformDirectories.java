@@ -21,4 +21,9 @@ public interface PlatformDirectories {
      * @return The directory for storing application logs.
      */
     Path getLogDirectory();
+
+    /**
+     * @return The default user directory for downloaded files.
+     */
+    Path getDownloadDirectory();
 }

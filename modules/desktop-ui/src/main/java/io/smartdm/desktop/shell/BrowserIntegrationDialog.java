@@ -51,11 +51,27 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     if (!firefoxInstall.exists()) firefoxInstall = new File("../../extensions/firefox/host/" + scriptExt);
 
                     if (isLinux) {
-                        new ProcessBuilder("bash", chromeInstall.getAbsolutePath()).start().waitFor();
-                        new ProcessBuilder("bash", firefoxInstall.getAbsolutePath()).start().waitFor();
-                    } else {
-                        new ProcessBuilder("cmd.exe", "/c", chromeInstall.getAbsolutePath()).start().waitFor();
-                        new ProcessBuilder("cmd.exe", "/c", firefoxInstall.getAbsolutePath()).start().waitFor();
+                        String userHome = System.getProperty("user.home");
+                        java.nio.file.Path[] chromeDirs = new java.nio.file.Path[]{
+                            java.nio.file.Paths.get(userHome, ".config", "google-chrome", "NativeMessagingHosts"),
+                            java.nio.file.Paths.get(userHome, ".config", "chromium", "NativeMessagingHosts"),
+                            java.nio.file.Paths.get(userHome, ".config", "BraveSoftware", "Brave-Browser", "NativeMessagingHosts")
+                        };
+                        java.nio.file.Path firefoxDir = java.nio.file.Paths.get(userHome, ".mozilla", "native-messaging-hosts");
+                        
+                        String chromeJson = "{\n  \"name\": \"io.smartdm.host\",\n  \"description\": \"SmartDM Native Messaging Host\",\n  \"path\": \"" + chromeInstall.getAbsolutePath() + "\",\n  \"type\": \"stdio\",\n  \"allowed_origins\": [\"chrome-extension://lkbiimagmeaefiedjigomffpophipmck/\"]\n}";
+                        for (java.nio.file.Path targetDir : chromeDirs) {
+                            try {
+                                java.nio.file.Files.createDirectories(targetDir);
+                                java.nio.file.Files.writeString(targetDir.resolve("io.smartdm.host.json"), chromeJson);
+                            } catch (Exception ignored) {}
+                        }
+                        
+                        String firefoxJson = "{\n  \"name\": \"io.smartdm.host\",\n  \"description\": \"SmartDM Native Messaging Host\",\n  \"path\": \"" + firefoxInstall.getAbsolutePath() + "\",\n  \"type\": \"stdio\",\n  \"allowed_extensions\": [\"smartdm@smartdm.io\"]\n}";
+                        try {
+                            java.nio.file.Files.createDirectories(firefoxDir);
+                            java.nio.file.Files.writeString(firefoxDir.resolve("io.smartdm.host.json"), firefoxJson);
+                        } catch (Exception ignored) {}
                     }
                     javafx.application.Platform.runLater(() -> {
                         instructions.setText("Native messaging hosts successfully installed for Chrome and Firefox!");
