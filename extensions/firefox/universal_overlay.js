@@ -481,6 +481,7 @@
 
       const directSrc = mediaEl.src || mediaEl.currentSrc;
       let hasFound = false;
+      let isYtDlpPending = true;
 
       const checkFormats = () => {
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
@@ -492,7 +493,7 @@
             return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
           });
 
-          if (netMedia.length > 0) {
+          if (netMedia.length > 0 && !isYtDlpPending) {
             hasFound = true;
             if (formatSearchInterval) clearInterval(formatSearchInterval);
             if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
@@ -507,11 +508,14 @@
 
       // Async query yt-dlp formats (uses cache for instant response)
       getCachedYtDlpFormats(pageUrl, (res) => {
+        isYtDlpPending = false;
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
           if (formatSearchInterval) clearInterval(formatSearchInterval);
           if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
+        } else {
+          checkFormats();
         }
       });
 
