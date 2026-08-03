@@ -491,20 +491,6 @@
             if (formatSearchInterval) clearInterval(formatSearchInterval);
             if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
 
-            if (netMedia.length === 1) {
-              const singleItem = netMedia[0];
-              chrome.runtime.sendMessage({
-                type: 'START_MEDIA_DOWNLOAD',
-                url: singleItem.url,
-                videoUrl: singleItem.videoUrl || null,
-                audioUrl: singleItem.audioUrl || null,
-                formatId: singleItem.formatId || 'direct',
-                fileName: singleItem.filename || null
-              });
-              popover.classList.remove('active');
-              return;
-            }
-
             renderUniversalFormats(content, [], netMedia, pageUrl, popover);
           }
         });
