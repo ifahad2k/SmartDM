@@ -359,6 +359,14 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         });
         
         setContextMenu(ctxMenu);
+
+        if (provider.getLatestUpdate() != null) {
+            provider.getLatestUpdate().addListener((obs, oldVal, newVal) -> {
+                if (newVal != null && getItem() != null && newVal.id().equals(getItem())) {
+                    refreshUI(newVal);
+                }
+            });
+        }
     }
 
     private void clearAnimations() {

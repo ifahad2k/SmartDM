@@ -249,6 +249,11 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     public Download getDownload(DownloadId id) {
         return downloadMap.get(id);
     }
+
+    @Override
+    public javafx.beans.value.ObservableValue<Download> getLatestUpdate() {
+        return latestUpdate;
+    }
     
     public void addDownload(Download download) {
         downloadMap.put(download.id(), download);
@@ -272,9 +277,10 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
             if (selected != null && listView.getSelectionModel().getSelectedItem() == null) {
                 listView.getSelectionModel().select(selected);
             }
-        } else {
-            latestUpdate.set(download);
         }
+        
+        latestUpdate.set(null);
+        latestUpdate.set(download);
         
         if (selected != null && selected.equals(download.id())) {
             if (detailsPane != null) {
