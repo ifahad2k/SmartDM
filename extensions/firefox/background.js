@@ -293,11 +293,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab && tab.url) {
-    sendToSmartDM(tab.url, tab.url);
-  }
-});
+const actionApi = chrome.browserAction || chrome.action;
+if (actionApi) {
+  actionApi.onClicked.addListener((tab) => {
+    if (tab && tab.url) {
+      sendToSmartDM(tab.url, tab.url);
+    }
+  });
+}
 
 async function appendCookiesAndSend(request, sendResponse) {
   request.userAgent = navigator.userAgent;
@@ -368,24 +371,21 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
     const media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
-    const res = { success: true, media: media };
-    if (sendResponse) sendResponse(res);
-    return Promise.resolve(res);
+    sendResponse({ success: true, media: media });
+    return true;
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
-    return new Promise((resolve) => {
-      appendCookiesAndSend(request, (res) => {
-        if (sendResponse) sendResponse(res);
-        resolve(res);
-      }).catch(err => {
-        const errRes = { success: false, error: err.message || String(err) };
-        if (sendResponse) sendResponse(errRes);
-        resolve(errRes);
-      });
+    appendCookiesAndSend(request, (res) => {
+      sendResponse(res || { success: false, error: "Empty response" });
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message || String(err) });
     });
+    return true;
   }
-  return Promise.resolve({ success: false });
+  
+  sendResponse({ success: false, error: "Unknown request type" });
+  return true;
 });
 
 function sendToSmartDM(url, referer, fileName = null) {
