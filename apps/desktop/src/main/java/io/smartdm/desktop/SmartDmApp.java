@@ -127,6 +127,7 @@ public class SmartDmApp extends Application {
         // proxySelector.setConfig(ProxyConfig.system()); // System by default
 
         HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .proxy(proxySelector)
                 .build();
@@ -508,7 +509,7 @@ public class SmartDmApp extends Application {
                     io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
                     if (toolMgr.isAvailable()) {
                         io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url(), req.cookies()).get(45, java.util.concurrent.TimeUnit.SECONDS);
+                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(45, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                             metadataCache.put(req.url(), meta);
                             com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -531,10 +532,10 @@ public class SmartDmApp extends Application {
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
                 System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.cookies(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, req.cookies(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                openMediaOrStandardDialog(req.url(), null, null, null, req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
@@ -718,6 +719,7 @@ public class SmartDmApp extends Application {
         String audioUrl,
         String preferredFormatId,
         String cookies,
+        String userAgent,
         DownloadRepository repository,
         DownloadsWorkspace[] workspaceRef,
         java.util.List<io.smartdm.domain.QueueItem> mainQueueItems,
@@ -766,39 +768,52 @@ public class SmartDmApp extends Application {
                     return; // Abort opening the dialog
                 }
 
-                final io.smartdm.media.api.MediaMetadata finalMeta;
                 if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                     String webpageUrl = (meta.webpageUrl() != null && !meta.webpageUrl().isBlank()) ? meta.webpageUrl() : url;
                     String title = (meta.title() != null && !meta.title().isBlank()) ? meta.title() : deriveTitleFromUrl(url);
-                    finalMeta = new io.smartdm.media.api.MediaMetadata(
+                    final io.smartdm.media.api.MediaMetadata finalMeta = new io.smartdm.media.api.MediaMetadata(
                         meta.id(), title, meta.durationSeconds(), webpageUrl,
                         meta.thumbnailUrl(), meta.formats(), meta.subtitles()
                     );
+                    javafx.application.Platform.runLater(() -> {
+                        io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
+                            null,
+                            finalMeta,
+                            preferredFormatId,
+                            cookies,
+                            dl -> {
+                                repository.save(dl);
+                                if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
+                            },
+                            smartFolderService,
+                            repository
+                        );
+                        bringStageToFrontAndFocus(dlg);
+                    });
                 } else {
-                    String titleName = deriveTitleFromUrl(targetStreamUrl);
-                    String selFmt = (preferredFormatId != null && !preferredFormatId.isBlank()) ? preferredFormatId : "best";
-                    String qualityLabel = selFmt.contains("1080") ? "1080p HD" : (selFmt.contains("720") ? "720p HD" : "Best Quality");
-                    java.util.List<io.smartdm.media.api.MediaFormat> cleanFormats = java.util.List.of(
-                        new io.smartdm.media.api.MediaFormat(selFmt, "mp4", qualityLabel, "MP4", 0, "h264", "aac", 0, 30, false, false)
-                    );
-                    finalMeta = new io.smartdm.media.api.MediaMetadata("video", titleName, 0, targetStreamUrl, null, cleanFormats, java.util.List.of());
-                }
-
-                javafx.application.Platform.runLater(() -> {
-                    io.smartdm.desktop.shell.MediaDownloadDialog dlg = new io.smartdm.desktop.shell.MediaDownloadDialog(
-                        null,
-                        finalMeta,
-                        preferredFormatId,
-                        cookies,
-                        dl -> {
+                    // Direct media stream (TikTok, Facebook, direct MP4) - Open standard IDM-style AddDownloadDialog directly!
+                    javafx.application.Platform.runLater(() -> {
+                        io.smartdm.desktop.shell.AddDownloadDialog dlg = new io.smartdm.desktop.shell.AddDownloadDialog(
+                            null,
+                            repository.findAll(),
+                            smartFolderService
+                        );
+                        dlg.setCookiesAndUserAgent(cookies, userAgent);
+                        dlg.setOnDownloadAdded(dl -> {
                             repository.save(dl);
+                            if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                                io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                                mainQueueItems.add(item);
+                                if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                            } else {
+                                enginePool.submit(() -> coordinator.execute(dl));
+                            }
                             if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
-                        },
-                        smartFolderService,
-                        repository
-                    );
-                    bringStageToFrontAndFocus(dlg);
-                });
+                        });
+                        dlg.setUrlText(targetStreamUrl);
+                        bringStageToFrontAndFocus(dlg);
+                    });
+                }
             });
         } else {
             // Open standard file download dialog

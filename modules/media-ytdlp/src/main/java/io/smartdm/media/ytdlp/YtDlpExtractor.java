@@ -26,6 +26,11 @@ public class YtDlpExtractor implements MediaExtractor {
 
     @Override
     public CompletableFuture<MediaMetadata> extractMetadataAsync(String urlInput, String cookies) {
+        return extractMetadataAsync(urlInput, cookies, null);
+    }
+
+    @Override
+    public CompletableFuture<MediaMetadata> extractMetadataAsync(String urlInput, String cookies, String userAgent) {
         return CompletableFuture.supplyAsync(() -> {
             String url = urlInput;
             if (url != null && url.contains("instagram.com")) {
@@ -45,6 +50,7 @@ public class YtDlpExtractor implements MediaExtractor {
                 }
 
                 try {
+                    String ua = (userAgent != null && !userAgent.isBlank()) ? userAgent : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
                     List<String> cmd = new ArrayList<>(List.of(
                         ytDlp.toString(),
                         "--dump-json",
@@ -54,7 +60,7 @@ public class YtDlpExtractor implements MediaExtractor {
                         "--no-check-certificates",
                         "--force-ipv4",
                         "--user-agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        ua,
                         "--add-header",
                         "Accept-Language:en-US,en;q=0.9"
                     ));

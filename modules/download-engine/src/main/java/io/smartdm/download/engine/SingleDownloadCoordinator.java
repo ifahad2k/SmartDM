@@ -211,13 +211,41 @@ public class SingleDownloadCoordinator {
             channel = new SegmentedFileChannel(download.destination(), tempDir, download.id().value() + ".part");
             session.channel = channel;
 
+            String userAgent = (download.credential() != null && download.credential().userAgent() != null && !download.credential().userAgent().isEmpty()) 
+                               ? download.credential().userAgent() 
+                               : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
             HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                     .uri(download.source().value())
+                    .header("User-Agent", userAgent)
+                    .header("Accept", "*/*")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .header("Sec-Fetch-Dest", "video")
+                    .header("Sec-Fetch-Mode", "no-cors")
+                    .header("Sec-Fetch-Site", "cross-site")
+                    .header("Accept-Encoding", "identity")
                     .GET();
+
+            String urlStr = download.source().value().toString().toLowerCase();
+            if (urlStr.contains("tiktok.com") || urlStr.contains("tiktokcdn.com")) {
+                reqBuilder.header("Referer", "https://www.tiktok.com/");
+            } else if (urlStr.contains("facebook.com") || urlStr.contains("fbcdn.net")) {
+                reqBuilder.header("Referer", "https://www.facebook.com/");
+            } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
+                reqBuilder.header("Referer", "https://www.instagram.com/");
+            }
             
             if (download.credential() != null) {
-                String basicAuth = Base64.getEncoder().encodeToString((download.credential().username() + ":" + download.credential().password()).getBytes());
-                reqBuilder.header("Authorization", "Basic " + basicAuth);
+                if (download.credential().username() != null && !download.credential().username().isEmpty()) {
+                    String basicAuth = Base64.getEncoder().encodeToString((download.credential().username() + ":" + download.credential().password()).getBytes());
+                    reqBuilder.header("Authorization", "Basic " + basicAuth);
+                }
+                if (download.credential().cookies() != null && !download.credential().cookies().isEmpty()) {
+                    String cookieHeader = HttpProbeClient.parseNetscapeCookies(download.credential().cookies());
+                    if (!cookieHeader.isEmpty()) {
+                        reqBuilder.header("Cookie", cookieHeader);
+                    }
+                }
             }
             HttpRequest baseRequest = reqBuilder.build();
 
@@ -325,7 +353,20 @@ public class SingleDownloadCoordinator {
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
 
         } catch (Exception e) {
-            log.error("SingleDownloadCoordinator failed: {}", e.getMessage(), e);
+            log.error("Execution failed for download {}", download.id().value(), e);
+            try {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Download Failed: ").append(e.getMessage()).append("\n");
+                Throwable cause = e.getCause();
+                while (cause != null) {
+                    sb.append("Caused by: ").append(cause.getMessage()).append("\n");
+                    cause = cause.getCause();
+                }
+                java.nio.file.Files.writeString(
+                    java.nio.file.Path.of("e:/skill/projects/smartdm/smartdm_crash.txt"), 
+                    sb.toString()
+                );
+            } catch (Exception ignored) {}
             download.updateState(DownloadState.FAILED);
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));

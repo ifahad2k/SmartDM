@@ -7,12 +7,20 @@ public class AuthCredential {
     private final String realm; // Optional
     private final String username;
     private final String password;
+    private final String cookies;
+    private final String userAgent;
 
     public AuthCredential(String host, String realm, String username, String password) {
+        this(host, realm, username, password, null, null);
+    }
+
+    public AuthCredential(String host, String realm, String username, String password, String cookies, String userAgent) {
         this.host = Objects.requireNonNull(host);
         this.realm = realm;
         this.username = Objects.requireNonNull(username);
         this.password = Objects.requireNonNull(password);
+        this.cookies = cookies;
+        this.userAgent = userAgent;
     }
 
     public String host() {
@@ -29,6 +37,14 @@ public class AuthCredential {
 
     public String password() {
         return password;
+    }
+
+    public String cookies() {
+        return cookies;
+    }
+
+    public String userAgent() {
+        return userAgent;
     }
 
     @Override

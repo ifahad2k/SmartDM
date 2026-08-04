@@ -37,6 +37,7 @@ public class SegmentWorker implements Callable<Void> {
 
     @Override
     public Void call() throws Exception {
+        try {
         if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) {
             return null; // Already finished
         }
@@ -122,6 +123,15 @@ public class SegmentWorker implements Callable<Void> {
         }
 
         return null;
+    } catch (Exception e) {
+        try {
+            java.nio.file.Files.writeString(
+                java.nio.file.Path.of("e:/skill/projects/smartdm/smartdm_worker_crash.txt"), 
+                "Worker Failed: " + e.getMessage() + "\n" + java.util.Arrays.toString(e.getStackTrace())
+            );
+        } catch (Exception ignored) {}
+        throw e;
+    }
     }
 
     public void pause() {

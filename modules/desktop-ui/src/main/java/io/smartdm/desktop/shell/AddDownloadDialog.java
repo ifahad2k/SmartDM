@@ -222,7 +222,11 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         fileSizeLabel.setText("Probing...");
         try {
             SourceUri source = SourceUri.of(url);
-            prober.probeAsync(source).thenAccept(result -> {
+            io.smartdm.domain.AuthCredential cred = null;
+            if (this.cookies != null && !this.cookies.isBlank()) {
+                cred = new io.smartdm.domain.AuthCredential("", "", "", "", this.cookies, this.userAgent);
+            }
+            prober.probeAsync(source, cred).thenAccept(result -> {
                 Platform.runLater(() -> {
                     long size = result.size().value();
                     if (size > 0) {
@@ -288,25 +292,42 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
         
         io.smartdm.domain.Destination dest = io.smartdm.domain.Destination.of(destPath);
-        return io.smartdm.domain.Download.create(source, dest);
+        io.smartdm.domain.Download dl = io.smartdm.domain.Download.create(source, dest);
+        if (this.cookies != null && !this.cookies.isBlank()) {
+            dl.updateCredential(new io.smartdm.domain.AuthCredential("", "", "", "", this.cookies, this.userAgent));
+        }
+        return dl;
     }
 
     private String extractFilename(String urlStr) {
         if (urlStr == null || urlStr.trim().isEmpty()) {
-            return "download.bin";
+            return "video.mp4";
         }
+        String lower = urlStr.toLowerCase();
+        if (lower.contains("tiktok.com") || lower.contains("tiktokcdn.com")) {
+            return "TikTok_Video.mp4";
+        }
+        if (lower.contains("facebook.com") || lower.contains("fbcdn.net")) {
+            return "Facebook_Video.mp4";
+        }
+        if (lower.contains("instagram.com") || lower.contains("cdninstagram.com")) {
+            return "Instagram_Video.mp4";
+        }
+
         try {
             String pathPart = java.net.URI.create(urlStr.trim()).getPath();
             if (pathPart != null) {
                 int lastSlash = pathPart.lastIndexOf('/');
                 if (lastSlash >= 0 && lastSlash < pathPart.length() - 1) {
                     String raw = pathPart.substring(lastSlash + 1);
-                    raw = raw.replaceAll("[\\\\/:*?\"<>|\0]", "_");
-                    return raw.trim().isEmpty() ? "download.bin" : raw;
+                    raw = raw.replaceAll("[\\\\/:*?\"<>|\0]", "_").trim();
+                    if (!raw.isEmpty() && raw.contains(".") && !raw.endsWith(".bin")) {
+                        return raw;
+                    }
                 }
             }
         } catch (Exception ignored) {}
-        return "download.bin";
+        return "video.mp4";
     }
     
     private boolean isDestinationActive(Path path) {
@@ -345,6 +366,14 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         this.onDownloadAdded = onDownloadAdded;
     }
     
+    private String cookies;
+    private String userAgent;
+
+    public void setCookiesAndUserAgent(String cookies, String userAgent) {
+        this.cookies = cookies;
+        this.userAgent = userAgent;
+    }
+
     public void setUrlText(String url) {
         if (urlField != null) {
             urlField.setText(url);

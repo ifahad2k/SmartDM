@@ -14,6 +14,32 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 public class HttpProbeClient {
+    public static String parseNetscapeCookies(String netscapeCookies) {
+        if (netscapeCookies == null || netscapeCookies.trim().isEmpty()) return "";
+        
+        // Handle case where extension sent literal '\n' and '\t' instead of actual newlines and tabs
+        if (netscapeCookies.contains("\\n")) {
+            netscapeCookies = netscapeCookies.replace("\\n", "\n").replace("\\t", "\t");
+        }
+        
+        if (!netscapeCookies.contains("# Netscape")) return netscapeCookies.replaceAll("[\\r\\n]+", "");
+        
+        StringBuilder sb = new StringBuilder();
+        String[] lines = netscapeCookies.split("\\r?\\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            String[] parts = line.split("\\t");
+            if (parts.length >= 7) {
+                String name = parts[5];
+                String value = parts[6];
+                if (sb.length() > 0) sb.append("; ");
+                sb.append(name).append("=").append(value);
+            }
+        }
+        return sb.toString();
+    }
+
     private final HttpClient httpClient;
 
     public HttpProbeClient(HttpClient httpClient) {
@@ -34,15 +60,42 @@ public class HttpProbeClient {
     }
 
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri, AuthCredential credential) {
+        String userAgent = (credential != null && credential.userAgent() != null && !credential.userAgent().isEmpty()) 
+                           ? credential.userAgent() 
+                           : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+                .header("User-Agent", userAgent)
+                .header("Accept", "*/*")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Sec-Fetch-Dest", "video")
+                .header("Sec-Fetch-Mode", "no-cors")
+                .header("Sec-Fetch-Site", "cross-site")
+                .header("Accept-Encoding", "identity")
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
                 .timeout(Duration.ofSeconds(10));
+
+        String urlStr = uri.value().toString().toLowerCase();
+        if (urlStr.contains("tiktok.com") || urlStr.contains("tiktokcdn.com")) {
+            builder.header("Referer", "https://www.tiktok.com/");
+        } else if (urlStr.contains("facebook.com") || urlStr.contains("fbcdn.net")) {
+            builder.header("Referer", "https://www.facebook.com/");
+        } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
+            builder.header("Referer", "https://www.instagram.com/");
+        }
                 
         if (credential != null) {
-            String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
-            builder.header("Authorization", "Basic " + basicAuth);
+            if (credential.username() != null && !credential.username().isEmpty()) {
+                String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
+                builder.header("Authorization", "Basic " + basicAuth);
+            }
+            if (credential.cookies() != null && !credential.cookies().isEmpty()) {
+                String cookieHeader = parseNetscapeCookies(credential.cookies());
+                if (!cookieHeader.isEmpty()) {
+                    builder.header("Cookie", cookieHeader);
+                }
+            }
         }
 
         HttpRequest request = builder.build();
@@ -79,16 +132,43 @@ public class HttpProbeClient {
     }
 
     private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri, AuthCredential credential) {
+        String userAgent = (credential != null && credential.userAgent() != null && !credential.userAgent().isEmpty()) 
+                           ? credential.userAgent() 
+                           : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri.value())
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
-                .header("Range", "bytes=0-0")
+                .header("User-Agent", userAgent)
+                .header("Accept", "*/*")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Sec-Fetch-Dest", "video")
+                .header("Sec-Fetch-Mode", "no-cors")
+                .header("Sec-Fetch-Site", "cross-site")
+                .header("Accept-Encoding", "identity")
+                .header("Range", "bytes=0-8191")
                 .GET()
                 .timeout(Duration.ofSeconds(10));
+
+        String urlStr = uri.value().toString().toLowerCase();
+        if (urlStr.contains("tiktok.com") || urlStr.contains("tiktokcdn.com")) {
+            builder.header("Referer", "https://www.tiktok.com/");
+        } else if (urlStr.contains("facebook.com") || urlStr.contains("fbcdn.net")) {
+            builder.header("Referer", "https://www.facebook.com/");
+        } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
+            builder.header("Referer", "https://www.instagram.com/");
+        }
                 
         if (credential != null) {
-            String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
-            builder.header("Authorization", "Basic " + basicAuth);
+            if (credential.username() != null && !credential.username().isEmpty()) {
+                String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
+                builder.header("Authorization", "Basic " + basicAuth);
+            }
+            if (credential.cookies() != null && !credential.cookies().isEmpty()) {
+                String cookieHeader = parseNetscapeCookies(credential.cookies());
+                if (!cookieHeader.isEmpty()) {
+                    builder.header("Cookie", cookieHeader);
+                }
+            }
         }
 
         HttpRequest request = builder.build();
@@ -105,7 +185,9 @@ public class HttpProbeClient {
                         }
                         
                         if (response.statusCode() != 200 && response.statusCode() != 206) {
-                            throw new RuntimeException("GET Range failed: " + response.statusCode());
+                            StringBuilder headersDump = new StringBuilder();
+                            response.headers().map().forEach((k, v) -> headersDump.append(k).append(": ").append(v).append("\n"));
+                            throw new RuntimeException("GET Range failed: " + response.statusCode() + "\nHeaders:\n" + headersDump.toString());
                         }
                         
                         long contentLength = -1;
