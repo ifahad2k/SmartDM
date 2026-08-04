@@ -525,10 +525,19 @@
 
           if (netMedia.length > 0) {
             hasFound = true;
-            if (formatSearchInterval) clearInterval(formatSearchInterval);
-            if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-
-            renderUniversalFormats(content, [], netMedia, pageUrl, popover);
+            
+            const hostDomain = window.location.hostname.toLowerCase();
+            if (hostDomain.includes('tiktok.com')) {
+              if (netMedia.length >= 5) {
+                if (formatSearchInterval) clearInterval(formatSearchInterval);
+                if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+              }
+              renderTikTokFormats(content, netMedia, pageUrl, popover);
+            } else {
+              if (formatSearchInterval) clearInterval(formatSearchInterval);
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+              renderUniversalFormats(content, [], netMedia, pageUrl, popover);
+            }
           }
         });
       };
@@ -585,6 +594,71 @@
 
     container.appendChild(host);
   }
+
+    function renderTikTokFormats(container, netMediaList, pageUrl, popover) {
+      container.innerHTML = '';
+      if (!netMediaList || netMediaList.length === 0) {
+        container.innerHTML = '<div class="status-text">No media formats detected.</div>';
+        return;
+      }
+      const rawItems = [];
+      const sortedNet = [...netMediaList].sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
+      sortedNet.forEach((m, idx) => {
+        if (m.contentLength && m.contentLength < 50000 && sortedNet.length > 1) return;
+        const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
+        const formattedSize = formatSize(m.contentLength);
+        const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
+        let qualityName = `TikTok Video Stream ${idx + 1} (${ext})`;
+        rawItems.push({
+          title: qualityName,
+          badge: sizeText,
+          url: m.url,
+          videoUrl: m.videoUrl || null,
+          audioUrl: m.audioUrl || null,
+          formatId: 'best',
+          fileName: m.filename
+        });
+      });
+      const seenUrls = new Set();
+      const allItems = [];
+      rawItems.forEach(item => {
+        if (!seenUrls.has(item.url)) {
+          seenUrls.add(item.url);
+          allItems.push(item);
+        }
+      });
+      if (allItems.length === 0) {
+        container.innerHTML = '<div class="status-text">No media formats detected.</div>';
+        return;
+      }
+      allItems.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'format-item';
+        div.innerHTML = `
+          <div class="format-info">
+            <span class="format-title" title="${item.title}">${item.title}</span>
+          </div>
+          <span class="format-badge">${item.badge}</span>
+        `;
+        div.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
+          chrome.runtime.sendMessage({
+            type: 'START_MEDIA_DOWNLOAD',
+            url: pageUrl,
+            videoUrl: item.videoUrl || item.url,
+            audioUrl: item.audioUrl || null,
+            formatId: item.formatId
+          }, () => {
+            if (popover && document.body.contains(popover)) {
+              popover.remove();
+            }
+          });
+        });
+        container.appendChild(div);
+      });
+    }
 
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
     container.innerHTML = '';
