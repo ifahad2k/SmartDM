@@ -376,8 +376,8 @@ function sendToSmartDM(url, referer, fileName = null) {
 
 const bypassedDownloads = new Set();
 
-if (browser.downloads && browser.downloads.onCreated) {
-  browser.downloads.onCreated.addListener((downloadItem) => {
+if (browser.downloads && browser.downloads.onDeterminingFilename) {
+  browser.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     if (downloadItem.byExtensionId || bypassedDownloads.has(downloadItem.url)) {
       return;
     }
