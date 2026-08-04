@@ -183,28 +183,7 @@ public class SettingsWorkspace extends VBox {
             trayCb
         );
 
-        // Theme Selection Row
-        ComboBox<String> themeCombo = new ComboBox<>();
-        themeCombo.getItems().addAll("Dark Glassmorphism", "Light Theme", "High Contrast Dark");
-        themeCombo.setValue(appSettings.getTheme() != null ? appSettings.getTheme() : "Dark Glassmorphism");
-        themeCombo.setStyle("-fx-background-color: rgba(255,255,255,0.08); -fx-text-fill: #F8FAFC; -fx-background-radius: 6; -fx-padding: 4 8;");
-
-        themeCombo.valueProperty().addListener((obs, oldV, newV) -> {
-            if (newV != null) {
-                appSettings.setTheme(newV);
-                appSettings.saveToDisk();
-                io.smartdm.desktop.theme.ThemeManager.Theme t = io.smartdm.desktop.theme.ThemeManager.Theme.fromDisplayName(newV);
-                io.smartdm.desktop.theme.ThemeManager.getInstance().setTheme(getScene(), t);
-            }
-        });
-
-        HBox themeRow = createSettingRow(
-            "Visual Theme & Density",
-            "Choose between Dark Glassmorphism, Light Theme, or High Contrast mode.",
-            themeCombo
-        );
-
-        card.getChildren().addAll(sectionTitle, startupRow, trayRow, themeRow);
+        card.getChildren().addAll(sectionTitle, startupRow, trayRow);
         return card;
     }
 
