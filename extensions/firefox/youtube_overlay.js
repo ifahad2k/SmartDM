@@ -548,16 +548,33 @@
 
       popover.classList.add('active');
 
-      fetchYtDlpFormats(currentVideoUrl, (res) => {
-        if (res && res.success && res.formats && res.formats.length > 0) {
+      sendExtensionMessage({ type: 'GET_MEDIA_FORMATS', url: currentVideoUrl }, (res) => {
+        if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, currentVideoUrl, popover);
-        } else if (res && res.success === false) {
-          const errMsg = (res.error && res.error.includes("not running")) 
-            ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
-            : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>";
-          content.innerHTML = '<div class="status-text" style="color:#ef4444; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {
-          content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
+          // Fallback to detected network media streams if yt-dlp formats are absent
+          sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+            let netMedia = (netRes && netRes.media) ? netRes.media : [];
+            netMedia = netMedia.filter(m => !m.url.toLowerCase().includes('.ts'));
+
+            if (netMedia.length > 0) {
+              const synthFormats = netMedia.map((m, idx) => ({
+                formatId: 'net_' + idx,
+                resolution: m.customTitle || m.filename || 'Direct Stream',
+                ext: 'mp4',
+                fileSize: m.contentLength || 0,
+                videoUrl: m.url
+              }));
+              renderFormatItems(content, synthFormats, currentVideoUrl, popover);
+            } else if (res && (res.status === 'error' || res.success === false)) {
+              const errMsg = (res.message && res.message.includes("not connect")) 
+                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
+                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry.</span>";
+              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
+            } else {
+              content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
+            }
+          });
         }
       });
 
