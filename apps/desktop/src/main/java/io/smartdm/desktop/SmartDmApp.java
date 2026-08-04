@@ -508,7 +508,9 @@ public class SmartDmApp extends Application {
                     System.out.println(">>> [IPC] Cookies received: " + (req.cookies() != null ? req.cookies().length() + " chars" : "null"));
                     io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
                     if (toolMgr.isAvailable()) {
-                        io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                        io.smartdm.media.api.MediaExtractor extractor = (req.url() != null && req.url().toLowerCase().contains("tiktok.com"))
+                            ? new io.smartdm.media.ytdlp.TikTokExtractor(toolMgr)
+                            : new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
                         io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(45, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                             metadataCache.put(req.url(), meta);
@@ -741,8 +743,10 @@ public class SmartDmApp extends Application {
                 // Only invoke yt-dlp metadata dump if direct stream URL was not provided, not direct format (unless m3u8), and not in cache
                 if (meta == null && (videoUrl == null || videoUrl.isBlank()) && (!"direct".equals(preferredFormatId) || isM3u8) && toolMgr.isAvailable()) {
                     try {
-                        io.smartdm.media.ytdlp.YtDlpExtractor extractor = new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        meta = extractor.extractMetadataAsync(url, cookies).get(20, java.util.concurrent.TimeUnit.SECONDS);
+                        io.smartdm.media.api.MediaExtractor extractor = (url != null && url.toLowerCase().contains("tiktok.com"))
+                            ? new io.smartdm.media.ytdlp.TikTokExtractor(toolMgr)
+                            : new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                        meta = extractor.extractMetadataAsync(url, cookies, userAgent).get(20, java.util.concurrent.TimeUnit.SECONDS);
                         if (meta != null) metadataCache.put(url, meta);
                     } catch (Exception ex) {
                         System.err.println("Media metadata extraction failed: " + ex.getMessage());

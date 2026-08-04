@@ -32,8 +32,13 @@
       "run_at": "document_idle"
     },
     {
+      "matches": ["*://*.tiktok.com/*", "*://tiktok.com/*"],
+      "js": ["tiktok_overlay.js"],
+      "run_at": "document_idle"
+    },
+    {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["*://*.youtube.com/*"],
+      "exclude_matches": ["*://*.youtube.com/*", "*://*.tiktok.com/*", "*://tiktok.com/*"],
       "js": ["universal_overlay.js"],
       "run_at": "document_idle"
     }

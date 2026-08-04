@@ -68,7 +68,7 @@
     if (!mediaEl) return false;
     
     const host = window.location.hostname.toLowerCase();
-    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
+    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('twitter.com') || host.includes('x.com')) {
       return false; // Social media feed videos are always main videos
     }
 
@@ -134,7 +134,7 @@
     }
 
     const hostDomain = window.location.hostname.toLowerCase();
-    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('tiktok.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
+    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
       return document.body;
     }
 
@@ -439,9 +439,8 @@
       const isFb = hostLower.includes('facebook.com');
       const isIg = hostLower.includes('instagram.com');
       const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
-      const isTt = hostLower.includes('tiktok.com');
 
-      if (isFb || isIg || isX || isTt) {
+      if (isFb || isIg || isX) {
         const isVideoLink = (href) => {
           if (!href) return false;
           const h = href.toLowerCase();
@@ -455,7 +454,6 @@
                    h.includes('/share/r/') || h.includes('/share/p/');
           }
           if (isX) return h.includes('/status/');
-          if (isTt) return h.includes('/video/') || h.includes('/@');
           return false;
         };
 
@@ -526,18 +524,9 @@
           if (netMedia.length > 0) {
             hasFound = true;
             
-            const hostDomain = window.location.hostname.toLowerCase();
-            if (hostDomain.includes('tiktok.com')) {
-              if (netMedia.length >= 5) {
-                if (formatSearchInterval) clearInterval(formatSearchInterval);
-                if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-              }
-              renderTikTokFormats(content, netMedia, pageUrl, popover);
-            } else {
-              if (formatSearchInterval) clearInterval(formatSearchInterval);
-              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-              renderUniversalFormats(content, [], netMedia, pageUrl, popover);
-            }
+            if (formatSearchInterval) clearInterval(formatSearchInterval);
+            if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+            renderUniversalFormats(content, [], netMedia, pageUrl, popover);
           }
         });
       };
@@ -594,71 +583,6 @@
 
     container.appendChild(host);
   }
-
-    function renderTikTokFormats(container, netMediaList, pageUrl, popover) {
-      container.innerHTML = '';
-      if (!netMediaList || netMediaList.length === 0) {
-        container.innerHTML = '<div class="status-text">No media formats detected.</div>';
-        return;
-      }
-      const rawItems = [];
-      const sortedNet = [...netMediaList].sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
-      sortedNet.forEach((m, idx) => {
-        if (m.contentLength && m.contentLength < 50000 && sortedNet.length > 1) return;
-        const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
-        const formattedSize = formatSize(m.contentLength);
-        const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
-        let qualityName = `TikTok Video Stream ${idx + 1} (${ext})`;
-        rawItems.push({
-          title: qualityName,
-          badge: sizeText,
-          url: m.url,
-          videoUrl: m.videoUrl || null,
-          audioUrl: m.audioUrl || null,
-          formatId: 'best',
-          fileName: m.filename
-        });
-      });
-      const seenUrls = new Set();
-      const allItems = [];
-      rawItems.forEach(item => {
-        if (!seenUrls.has(item.url)) {
-          seenUrls.add(item.url);
-          allItems.push(item);
-        }
-      });
-      if (allItems.length === 0) {
-        container.innerHTML = '<div class="status-text">No media formats detected.</div>';
-        return;
-      }
-      allItems.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'format-item';
-        div.innerHTML = `
-          <div class="format-info">
-            <span class="format-title" title="${item.title}">${item.title}</span>
-          </div>
-          <span class="format-badge">${item.badge}</span>
-        `;
-        div.addEventListener('click', (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
-          chrome.runtime.sendMessage({
-            type: 'START_MEDIA_DOWNLOAD',
-            url: pageUrl,
-            videoUrl: item.videoUrl || item.url,
-            audioUrl: item.audioUrl || null,
-            formatId: item.formatId
-          }, () => {
-            if (popover && document.body.contains(popover)) {
-              popover.remove();
-            }
-          });
-        });
-        container.appendChild(div);
-      });
-    }
 
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
     container.innerHTML = '';
@@ -768,8 +692,8 @@
   // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR MEDIA SITES ---
   function scanThumbnails() {
     const host = window.location.hostname.toLowerCase();
-    // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, TikTok, Twitter/X)
-    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
+    // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, Twitter/X)
+    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('twitter.com') || host.includes('x.com')) {
       return;
     }
 
