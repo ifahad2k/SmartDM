@@ -142,8 +142,8 @@ public class SingleDownloadCoordinator {
 
             // Check identity for resume
             if (download.etag() != null || download.lastModified() != null) {
-                boolean etagChanged = download.etag() != null && !download.etag().equals(probeResult.etag());
-                boolean lmChanged = download.lastModified() != null && !download.lastModified().equals(probeResult.lastModified());
+                boolean etagChanged = download.etag() != null && probeResult.etag() != null && !download.etag().equals(probeResult.etag());
+                boolean lmChanged = download.lastModified() != null && probeResult.lastModified() != null && !download.lastModified().equals(probeResult.lastModified());
                 if (etagChanged || lmChanged) {
                     download.updateSegments(Collections.emptyList());
                     download.updateProgress(ByteCount.ZERO, ByteCount.UNKNOWN);

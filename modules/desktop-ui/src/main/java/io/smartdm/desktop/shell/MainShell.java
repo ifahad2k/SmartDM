@@ -90,8 +90,76 @@ public final class MainShell extends VBox {
             yOffset = event.getSceneY();
         });
         titleBar.setOnMouseDragged(event -> {
-            stage.setX(event.getScreenX() - xOffset);
-            stage.setY(event.getScreenY() - yOffset);
+            if (!stage.isMaximized()) {
+                stage.setX(event.getScreenX() - xOffset);
+                stage.setY(event.getScreenY() - yOffset);
+            }
+        });
+
+        // Window Border Resizing for Undecorated Stage
+        final int RESIZE_MARGIN = 8;
+        setOnMouseMoved(event -> {
+            if (stage.isMaximized()) {
+                setCursor(javafx.scene.Cursor.DEFAULT);
+                return;
+            }
+            double x = event.getX();
+            double y = event.getY();
+            double w = getWidth();
+            double h = getHeight();
+
+            if (x > w - RESIZE_MARGIN && y > h - RESIZE_MARGIN) setCursor(javafx.scene.Cursor.SE_RESIZE);
+            else if (x < RESIZE_MARGIN && y > h - RESIZE_MARGIN) setCursor(javafx.scene.Cursor.SW_RESIZE);
+            else if (x > w - RESIZE_MARGIN && y < RESIZE_MARGIN) setCursor(javafx.scene.Cursor.NE_RESIZE);
+            else if (x < RESIZE_MARGIN && y < RESIZE_MARGIN) setCursor(javafx.scene.Cursor.NW_RESIZE);
+            else if (x > w - RESIZE_MARGIN) setCursor(javafx.scene.Cursor.E_RESIZE);
+            else if (x < RESIZE_MARGIN) setCursor(javafx.scene.Cursor.W_RESIZE);
+            else if (y > h - RESIZE_MARGIN) setCursor(javafx.scene.Cursor.S_RESIZE);
+            else if (y < RESIZE_MARGIN) setCursor(javafx.scene.Cursor.N_RESIZE);
+            else setCursor(javafx.scene.Cursor.DEFAULT);
+        });
+
+        final double[] resizeStart = new double[4];
+        setOnMousePressed(event -> {
+            if (stage.isMaximized()) return;
+            double x = event.getX();
+            double y = event.getY();
+            double w = getWidth();
+            double h = getHeight();
+            if (x < RESIZE_MARGIN || x > w - RESIZE_MARGIN || y < RESIZE_MARGIN || y > h - RESIZE_MARGIN) {
+                resizeStart[0] = event.getScreenX();
+                resizeStart[1] = event.getScreenY();
+                resizeStart[2] = stage.getWidth();
+                resizeStart[3] = stage.getHeight();
+            }
+        });
+
+        setOnMouseDragged(event -> {
+            if (stage.isMaximized() || getCursor() == javafx.scene.Cursor.DEFAULT) return;
+            javafx.scene.Cursor c = getCursor();
+            double dx = event.getScreenX() - resizeStart[0];
+            double dy = event.getScreenY() - resizeStart[1];
+
+            if (c == javafx.scene.Cursor.SE_RESIZE || c == javafx.scene.Cursor.E_RESIZE || c == javafx.scene.Cursor.NE_RESIZE) {
+                stage.setWidth(Math.max(stage.getMinWidth(), resizeStart[2] + dx));
+            }
+            if (c == javafx.scene.Cursor.SE_RESIZE || c == javafx.scene.Cursor.S_RESIZE || c == javafx.scene.Cursor.SW_RESIZE) {
+                stage.setHeight(Math.max(stage.getMinHeight(), resizeStart[3] + dy));
+            }
+            if (c == javafx.scene.Cursor.SW_RESIZE || c == javafx.scene.Cursor.W_RESIZE || c == javafx.scene.Cursor.NW_RESIZE) {
+                double newW = Math.max(stage.getMinWidth(), resizeStart[2] - dx);
+                if (newW > stage.getMinWidth()) {
+                    stage.setX(resizeStart[0] + dx);
+                    stage.setWidth(newW);
+                }
+            }
+            if (c == javafx.scene.Cursor.NE_RESIZE || c == javafx.scene.Cursor.N_RESIZE || c == javafx.scene.Cursor.NW_RESIZE) {
+                double newH = Math.max(stage.getMinHeight(), resizeStart[3] - dy);
+                if (newH > stage.getMinHeight()) {
+                    stage.setY(resizeStart[1] + dy);
+                    stage.setHeight(newH);
+                }
+            }
         });
 
         // App Body - Native Layout
@@ -106,7 +174,7 @@ public final class MainShell extends VBox {
         VBox.setVgrow(workspace, Priority.ALWAYS);
         
         topBar = new TopBar(() -> workspace.getDownloadsList(), download -> {
-            workspace.addDownload(download);
+            workspace.addDownload(download, true);
             onDownloadRequested.accept(download);
         }, () -> {
             if (onQueueStatusChange != null) {

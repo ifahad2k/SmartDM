@@ -99,31 +99,19 @@ public final class TopBar extends HBox {
             }
         });
 
-        Button importBtn = new Button("Import batch");
+        Button importBtn = new Button("Batch / Link Grabber");
         importBtn.getStyleClass().addAll("btn", "btn-primary");
         
         importBtn.setOnAction(e -> {
-            BatchAddDialog d = new BatchAddDialog((javafx.stage.Stage) getScene().getWindow());
-            d.showAndWait();
-            if (d.isResultConfirmed() && d.getBatchUrls() != null) {
-                for (String url : d.getBatchUrls()) {
-                    try {
-                        String filename = java.nio.file.Paths.get(new java.net.URI(url).getPath()).getFileName().toString();
-                        if (filename == null || filename.isEmpty()) {
-                            filename = "download_" + System.currentTimeMillis();
-                        }
-                        String defaultDir = Paths.get(System.getProperty("user.home"), "Downloads").toAbsolutePath().toString();
-                        Destination dest = Destination.of(Paths.get(defaultDir, filename));
-                        Download dl = Download.create(SourceUri.of(url), dest);
-                        onDownloadAdded.accept(dl);
-                    } catch (Exception ex) {
-                        // Skip malformed URIs at this stage
-                    }
+            LinkCollectorDialog collectorDialog = new LinkCollectorDialog((javafx.stage.Stage) getScene().getWindow(), downloads -> {
+                for (Download dl : downloads) {
+                    onDownloadAdded.accept(dl);
                 }
-                if (d.isDownloadNowRequested() && onStartQueueRequested != null) {
+                if (onStartQueueRequested != null) {
                     onStartQueueRequested.run();
                 }
-            }
+            });
+            collectorDialog.show();
         });
 
         // Delete Button

@@ -16,6 +16,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.control.Label;
 import javafx.scene.shape.SVGPath;
 import javafx.util.Duration;
+import javafx.stage.Stage;
 import io.smartdm.domain.Download;
 import io.smartdm.domain.DownloadSegment;
 import io.smartdm.domain.DownloadState;
@@ -430,18 +431,59 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
                 });
             }
         });
+
+        openWithItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null && d.destination() != null && d.destination().value() != null) {
+                File file = d.destination().value().toFile();
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        String os = System.getProperty("os.name", "").toLowerCase();
+                        if (os.contains("win")) {
+                            new ProcessBuilder("rundll32.exe", "shell32.dll,OpenAs_RunDLL", file.getAbsolutePath()).start();
+                        } else {
+                            new ProcessBuilder("mimeopen", "-a", file.getAbsolutePath()).start();
+                        }
+                    } catch (Exception ex) { ex.printStackTrace(); }
+                });
+            }
+        });
         
         openFolderItem.setOnAction(e -> {
             Download d = getItem() != null ? provider.getDownload(getItem()) : null;
             if (d != null && d.destination() != null && d.destination().value() != null) {
-                File folder = d.destination().value().getParent().toFile();
+                File file = d.destination().value().toFile();
                 java.util.concurrent.CompletableFuture.runAsync(() -> {
                     try {
                         String os = System.getProperty("os.name", "").toLowerCase();
-                        if (os.contains("win")) new ProcessBuilder("explorer.exe", folder.getAbsolutePath()).start();
-                        else new ProcessBuilder("xdg-open", folder.getAbsolutePath()).start();
+                        if (os.contains("win")) {
+                            new ProcessBuilder("explorer.exe", "/select,", file.getAbsolutePath()).start();
+                        } else {
+                            new ProcessBuilder("xdg-open", file.getParentFile().getAbsolutePath()).start();
+                        }
                     } catch (Exception ex) { ex.printStackTrace(); }
                 });
+            }
+        });
+
+        moveRenameItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) {
+                Stage owner = (Stage) getScene().getWindow();
+                MoveRenameDialog dialog = new MoveRenameDialog(owner, d, (updatedDownload, newPath) -> {
+                    d.updateDestination(io.smartdm.domain.Destination.of(newPath));
+                    refreshUI(d);
+                });
+                dialog.show();
+            }
+        });
+
+        redownloadItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) {
+                MediaDownloadTracker.deleteMediaFiles(d.destination().value());
+                d.updateState(io.smartdm.domain.DownloadState.QUEUED);
+                listener.onResume(d);
             }
         });
         
@@ -463,6 +505,15 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         deleteQueueItem.setOnAction(e -> {
             Download d = getItem() != null ? provider.getDownload(getItem()) : null;
             if (d != null) listener.onDelete(d, false);
+        });
+
+        propertiesItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null) {
+                Stage owner = (Stage) getScene().getWindow();
+                PropertiesDialog dialog = new PropertiesDialog(owner, d);
+                dialog.show();
+            }
         });
         
         setContextMenu(ctxMenu);

@@ -11,6 +11,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.stage.Stage;
 
+import java.io.File;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import io.smartdm.domain.DownloadId;
@@ -18,6 +19,7 @@ import io.smartdm.domain.DownloadId;
 public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     private final ObservableList<DownloadId> items = FXCollections.observableArrayList();
     private final Map<DownloadId, Download> downloadMap = new ConcurrentHashMap<>();
+    private final Map<DownloadId, DownloadStatusDialog> activeStatusDialogs = new ConcurrentHashMap<>();
     private final ListView<DownloadId> listView;
     private final Label wsSub;
     private final DownloadActionListener listener;
@@ -155,8 +157,42 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         listView.setMinWidth(0);
         listView.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
         listView.setOnKeyPressed(e -> {
+            DownloadId selectedId = listView.getSelectionModel().getSelectedItem();
+            Download d = selectedId != null ? downloadMap.get(selectedId) : null;
+
             if (e.isControlDown() && e.getCode() == javafx.scene.input.KeyCode.A) {
                 listView.getSelectionModel().selectAll();
+                e.consume();
+            } else if (e.isControlDown() && e.getCode() == javafx.scene.input.KeyCode.M) {
+                if (d != null) {
+                    Stage owner = (Stage) getScene().getWindow();
+                    MoveRenameDialog dialog = new MoveRenameDialog(owner, d, (updatedDownload, newPath) -> {
+                        d.updateDestination(io.smartdm.domain.Destination.of(newPath));
+                        updateDownload(d);
+                    });
+                    dialog.show();
+                }
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE) {
+                if (d != null) {
+                    deleteSelected();
+                }
+                e.consume();
+            } else if (e.isAltDown() && e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                if (d != null) {
+                    Stage owner = (Stage) getScene().getWindow();
+                    PropertiesDialog dialog = new PropertiesDialog(owner, d);
+                    dialog.show();
+                }
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                if (d != null) {
+                    if (d.state() == io.smartdm.domain.DownloadState.DOWNLOADING || d.state() == io.smartdm.domain.DownloadState.PROBING) {
+                        listener.onPause(d);
+                    } else {
+                        listener.onResume(d);
+                    }
+                }
                 e.consume();
             }
         });
@@ -236,14 +272,68 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
         });
         
         listView.setOnMouseClicked(e -> {
+            io.smartdm.domain.DownloadId selectedId = listView.getSelectionModel().getSelectedItem();
+            Download d = selectedId != null ? downloadMap.get(selectedId) : null;
+
             if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
-                io.smartdm.domain.DownloadId selected = listView.getSelectionModel().getSelectedItem();
-                if (selected != null) {
-                    if (!contentArea.getChildren().contains(detailsPane)) {
-                        contentArea.getChildren().add(detailsPane);
+                if (selectedId != null && !contentArea.getChildren().contains(detailsPane)) {
+                    contentArea.getChildren().add(detailsPane);
+                }
+
+                if (e.getClickCount() == 2 && d != null) {
+                    if (e.isAltDown()) {
+                        Stage owner = (Stage) getScene().getWindow();
+                        PropertiesDialog dialog = new PropertiesDialog(owner, d);
+                        dialog.show();
+                    } else if (d.state() == io.smartdm.domain.DownloadState.COMPLETED) {
+                        File file = d.destination().value().toFile();
+                        java.util.concurrent.CompletableFuture.runAsync(() -> {
+                            try {
+                                String os = System.getProperty("os.name", "").toLowerCase();
+                                if (os.contains("win")) new ProcessBuilder("explorer.exe", file.getAbsolutePath()).start();
+                                else new ProcessBuilder("xdg-open", file.getAbsolutePath()).start();
+                            } catch (Exception ex) { ex.printStackTrace(); }
+                        });
+                    } else if (d.state() == io.smartdm.domain.DownloadState.DOWNLOADING || d.state() == io.smartdm.domain.DownloadState.PROBING) {
+                        openStatusDialog(d);
+                    } else {
+                        listener.onResume(d);
                     }
                 }
             }
+        });
+
+        // Drag and Drop URL Link Dropper
+        setOnDragOver(event -> {
+            if (event.getDragboard().hasString() || event.getDragboard().hasUrl()) {
+                event.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+            }
+            event.consume();
+        });
+
+        setOnDragDropped(event -> {
+            javafx.scene.input.Dragboard db = event.getDragboard();
+            boolean success = false;
+            String droppedUrl = null;
+
+            if (db.hasUrl()) {
+                droppedUrl = db.getUrl();
+            } else if (db.hasString()) {
+                String str = db.getString().trim();
+                if (str.startsWith("http://") || str.startsWith("https://")) {
+                    droppedUrl = str;
+                }
+            }
+
+            if (droppedUrl != null) {
+                success = true;
+                Stage owner = (Stage) getScene().getWindow();
+                EnterUrlDialog dialog = new EnterUrlDialog(owner, new java.util.ArrayList<>(downloadMap.values()), d -> addDownload(d));
+                dialog.setUrl(droppedUrl);
+                dialog.show();
+            }
+            event.setDropCompleted(success);
+            event.consume();
         });
         
         contentArea.getChildren().add(wrappedListView);
@@ -262,15 +352,51 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     }
     
     public void addDownload(Download download) {
+        addDownload(download, false);
+    }
+
+    public void addDownload(Download download, boolean showStatusWindow) {
         downloadMap.put(download.id(), download);
-        items.add(download.id());
+        if (!items.contains(download.id())) {
+            items.add(download.id());
+        }
         updateSubTitle();
+
+        if (showStatusWindow && download.state() != io.smartdm.domain.DownloadState.COMPLETED 
+                && download.state() != io.smartdm.domain.DownloadState.FAILED 
+                && download.state() != io.smartdm.domain.DownloadState.CANCELED) {
+            openStatusDialog(download);
+        }
+    }
+
+    public void openStatusDialog(Download download) {
+        if (download == null) return;
+        javafx.application.Platform.runLater(() -> {
+            Stage owner = (Stage) getScene().getWindow();
+            DownloadStatusDialog dialog = activeStatusDialogs.get(download.id());
+            if (dialog == null) {
+                dialog = new DownloadStatusDialog(null, download, listener);
+                activeStatusDialogs.put(download.id(), dialog);
+                DownloadStatusDialog finalDialog = dialog;
+                dialog.setOnCloseRequest(e -> activeStatusDialogs.remove(download.id()));
+            }
+            if (dialog != null) {
+                dialog.show();
+                dialog.toFront();
+                dialog.requestFocus();
+            }
+        });
     }
     
     public void updateDownload(Download download) {
         Download old = downloadMap.get(download.id());
         boolean stateChanged = (old == null || old.state() != download.state());
         downloadMap.put(download.id(), download);
+
+        DownloadStatusDialog activeDialog = activeStatusDialogs.get(download.id());
+        if (activeDialog != null) {
+            activeDialog.updateDownload(download);
+        }
         
         DownloadId selected = listView.getSelectionModel().getSelectedItem();
         
@@ -298,6 +424,10 @@ public final class DownloadsWorkspace extends VBox implements DownloadProvider {
     public void removeDownload(DownloadId id) {
         items.remove(id);
         downloadMap.remove(id);
+        DownloadStatusDialog activeDialog = activeStatusDialogs.remove(id);
+        if (activeDialog != null) {
+            javafx.application.Platform.runLater(activeDialog::close);
+        }
         updateSubTitle();
     }
     

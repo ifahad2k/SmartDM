@@ -30,6 +30,7 @@ public final class MediaDownloadTracker {
     ) {}
 
     private static final Map<DownloadId, Process> activeProcesses = new ConcurrentHashMap<>();
+    private static final Map<DownloadId, Process> dyingProcesses = new ConcurrentHashMap<>();
     private static final Map<DownloadId, TaskInfo> taskRegistry = new ConcurrentHashMap<>();
     private static final Map<DownloadId, Double> maxProgressMap = new ConcurrentHashMap<>();
     private static final Map<DownloadId, Long> lastProgressUpdateMap = new ConcurrentHashMap<>();
@@ -62,7 +63,11 @@ public final class MediaDownloadTracker {
         if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.PAUSED, download));
         Process p = activeProcesses.remove(download.id());
         if (p != null) {
-            new Thread(() -> killProcessTree(p), "media-kill-thread").start();
+            dyingProcesses.put(download.id(), p);
+            new Thread(() -> {
+                killProcessTree(p);
+                dyingProcesses.remove(download.id());
+            }, "media-kill-thread").start();
         }
     }
 
@@ -164,6 +169,10 @@ public final class MediaDownloadTracker {
         String formatArg = (info.formatArg() != null && !info.formatArg().isBlank()) ? info.formatArg() : "b";
 
         new Thread(() -> {
+            Process dying = dyingProcesses.get(info.download().id());
+            if (dying != null) {
+                try { dying.waitFor(5, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception ignored) {}
+            }
             try {
                 Platform.runLater(() -> {
                     info.download().updateState(DownloadState.DOWNLOADING);

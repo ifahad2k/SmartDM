@@ -60,13 +60,8 @@ public class SegmentWorker implements Callable<Void> {
             isRangeRequest = true;
         }
         
-        if (isRangeRequest) {
-            if (etag != null) {
-                builder.header("If-Range", etag);
-            } else if (lastModified != null) {
-                builder.header("If-Range", lastModified);
-            }
-        }
+        // ETag and Last-Modified are already validated during the probe phase in SingleDownloadCoordinator.
+        // Some servers (e.g. YouTube) reject If-Range headers with 400 or 412, so we omit it here.
         
         HttpRequest request = builder.GET().build();
 

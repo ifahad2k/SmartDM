@@ -7,7 +7,7 @@ import java.util.Objects;
 public class Download {
     private final DownloadId id;
     private final SourceUri source;
-    private final Destination destination;
+    private volatile Destination destination;
     private volatile DownloadState state;
     private volatile ByteCount totalBytes;
     private volatile ByteCount downloadedBytes;
@@ -32,6 +32,10 @@ public class Download {
 
     public static Download create(SourceUri source, Destination destination) {
         return new Download(DownloadId.generate(), source, destination);
+    }
+
+    public void updateDestination(Destination newDestination) {
+        this.destination = Objects.requireNonNull(newDestination);
     }
 
     public void updateState(DownloadState newState) {

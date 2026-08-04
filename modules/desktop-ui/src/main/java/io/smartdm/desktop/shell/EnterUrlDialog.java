@@ -26,6 +26,12 @@ public final class EnterUrlDialog extends GlassmorphicDialog {
         this(owner, existingDownloads, onDownloadAdded, null);
     }
 
+    public void setUrl(String url) {
+        if (urlField != null && url != null) {
+            urlField.setText(url);
+        }
+    }
+
     public EnterUrlDialog(Stage owner, java.util.List<Download> existingDownloads, java.util.function.Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService) {
         super(owner, "Enter new address to download", Modality.APPLICATION_MODAL);
         this.existingDownloads = existingDownloads;

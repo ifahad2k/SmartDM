@@ -75,7 +75,7 @@ public class SmartDmApp extends Application {
 
         profileLock = new ProfileLock(directories);
         if (!profileLock.tryAcquire()) {
-            System.err.println("Another instance of SmartDM is already running.");
+            System.err.println(">>> WARNING: Another instance of SmartDM is already running or profile.lock is held. Exiting. <<<");
             Platform.exit();
             return;
         }
@@ -116,20 +116,6 @@ public class SmartDmApp extends Application {
             ? new io.smartdm.ai.gemini.OpenAiCompatibleAdvisor(initialAiConfig)
             : new io.smartdm.ai.gemini.GeminiAiAdvisor(initialAiConfig);
         LocalSearchService localSearchService = new LocalSearchService(localSearchRepository, aiAdvisor);
-        
-        // Test search at startup
-        System.out.println("--- Testing LocalSearchService ---");
-        try {
-            java.util.List<LocalSearchResult> searchResults = localSearchService.search("video under 50 MB", 10, 0);
-            System.out.println("Found " + searchResults.size() + " search results:");
-            for (LocalSearchResult res : searchResults) {
-                System.out.println(" - " + res.name() + " (" + res.sizeBytes() + " bytes)");
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        System.out.println("----------------------------------");
-
         // ── 3. Initialize Thread Pool & HTTP Clients ────────────────────
         enginePool = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "smartdm-engine");
@@ -591,7 +577,7 @@ public class SmartDmApp extends Application {
                         enginePool, 
                         dl -> {
                             repository.save(dl);
-                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
                         }
                     );
                     d.showAndWait();
@@ -618,7 +604,15 @@ public class SmartDmApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.setMinWidth(800);
         primaryStage.setMinHeight(600);
+        primaryStage.setX(100);
+        primaryStage.setY(100);
+        primaryStage.setIconified(false);
+        primaryStage.setAlwaysOnTop(true);
+        System.out.println(">>> SmartDmApp window showing NOW <<<");
         primaryStage.show();
+        primaryStage.toFront();
+        primaryStage.requestFocus();
+        primaryStage.setAlwaysOnTop(false);
     }
 
     @Override
@@ -798,7 +792,7 @@ public class SmartDmApp extends Application {
                         cookies,
                         dl -> {
                             repository.save(dl);
-                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl);
+                            if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
                         },
                         smartFolderService,
                         repository
@@ -819,7 +813,7 @@ public class SmartDmApp extends Application {
                     } else {
                         enginePool.submit(() -> coordinator.execute(dl));
                     }
-                    if (workspaceRef[0] != null) workspaceRef[0].refresh();
+                    if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
                 });
                 d.setUrlText(url);
                 bringStageToFrontAndFocus(d);
@@ -837,6 +831,10 @@ public class SmartDmApp extends Application {
     }
 
     public static void main(String[] args) {
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            System.err.println("--- UNCAUGHT EXCEPTION in thread " + t.getName() + " ---");
+            e.printStackTrace();
+        });
         launch(args);
     }
 }
