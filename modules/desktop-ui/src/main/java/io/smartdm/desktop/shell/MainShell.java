@@ -142,8 +142,58 @@ public final class MainShell extends VBox {
 
         settingsWorkspace = new SettingsWorkspace();
         VBox.setVgrow(settingsWorkspace, Priority.ALWAYS);
+
+        SafetyWorkspace safetyWorkspace = new SafetyWorkspace();
+        VBox.setVgrow(safetyWorkspace, Priority.ALWAYS);
         
         StatusBar statusBar = new StatusBar();
+
+        io.smartdm.ai.gemini.AiProviderConfig initialAiCfg = io.smartdm.ai.gemini.AiProviderConfig.loadFromDisk();
+        statusBar.setAiStatus("AI: disabled");
+        if (initialAiCfg != null && initialAiCfg.enabled()) {
+            String name = initialAiCfg.providerType() == io.smartdm.ai.api.AiProviderType.GEMINI ? "Gemini: active" : "Local AI: active";
+            statusBar.setAiStatus(name);
+            io.smartdm.ai.api.OptionalAiAdvisor initialAdvisor = initialAiCfg.providerType() == io.smartdm.ai.api.AiProviderType.OPENAI_COMPATIBLE
+                ? new io.smartdm.ai.gemini.OpenAiCompatibleAdvisor(initialAiCfg)
+                : new io.smartdm.ai.gemini.GeminiAiAdvisor(initialAiCfg);
+            if (workspace != null && workspace.getSearchService() != null) {
+                workspace.getSearchService().setAiAdvisor(initialAdvisor);
+            }
+        }
+
+        javafx.animation.AnimationTimer statusMetricsTimer = new javafx.animation.AnimationTimer() {
+            private long lastUpdate = 0;
+            @Override
+            public void handle(long now) {
+                if (now - lastUpdate >= 400_000_000L) {
+                    if (workspace != null) {
+                        java.util.List<Download> all = workspace.getDownloadsList();
+                        double totalSpeed = 0;
+                        int active = 0;
+                        int queued = 0;
+                        long totalBytes = 0;
+
+                        for (Download d : all) {
+                            if (d.state() == io.smartdm.domain.DownloadState.DOWNLOADING || d.state() == io.smartdm.domain.DownloadState.PROBING) {
+                                active++;
+                                SpeedEtaCalculator.SpeedEtaResult res = SpeedEtaCalculator.calculate(d);
+                                totalSpeed += res.speedBps();
+                            } else if (d.state() == io.smartdm.domain.DownloadState.QUEUED || d.state() == io.smartdm.domain.DownloadState.PAUSED) {
+                                queued++;
+                            }
+
+                            if (d.downloadedBytes() != null && d.downloadedBytes().value() > 0) {
+                                totalBytes += d.downloadedBytes().value();
+                            }
+                        }
+
+                        statusBar.updateMetrics(totalSpeed, 0.0, active, queued, totalBytes);
+                    }
+                    lastUpdate = now;
+                }
+            }
+        };
+        statusMetricsTimer.start();
 
         settingsWorkspace.setOnConfigChanged(cfg -> {
             io.smartdm.ai.api.OptionalAiAdvisor newAdvisor = cfg.providerType() == io.smartdm.ai.api.AiProviderType.OPENAI_COMPATIBLE
@@ -172,6 +222,9 @@ public final class MainShell extends VBox {
                 mainContent.getChildren().addAll(topBar, schedulerWorkspace, statusBar);
             } else if ("Catalog".equals(nav) && catalogWorkspace != null) {
                 mainContent.getChildren().addAll(topBar, catalogWorkspace, statusBar);
+            } else if ("Safety".equals(nav)) {
+                safetyWorkspace.refreshQuarantineList();
+                mainContent.getChildren().addAll(topBar, safetyWorkspace, statusBar);
             } else if ("Settings".equals(nav)) {
                 mainContent.getChildren().addAll(topBar, settingsWorkspace, statusBar);
             } else {

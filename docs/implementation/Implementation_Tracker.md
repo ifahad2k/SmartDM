@@ -19,7 +19,7 @@ This document tracks the high-level progress of the SmartDM phases based on the 
 | Phase 12 | Local smart folder selection | NOT STARTED | | | |
 | Phase 13 | Local natural-language search | NOT STARTED | | | |
 | Phase 14 | Optional Gemini consented fallback | NOT STARTED | | | |
-| Phase 15 | Local safety scanner and risk center | NOT STARTED | | | |
+| Phase 15 | Local safety scanner and risk center | COMPLETE | 2026-08-04 | 2026-08-04 | Pre/post-download risk rules, magic byte verifier, archive bomb detection, Windows Defender & ClamAV adapters, SafetyCenterDialog UI |
 | Phase 16 | Remaining IDM-parity workflows | IN PROGRESS | 2026-07-20 | | IDM dark context menu, action handlers (Open, Open Folder, Resume, Stop, Remove), left/right click behavior |
 | Phase 17 | UX, accessibility, localization, performance hardening | IN PROGRESS | 2026-07-20 | | Non-flickering progress bar layout fixes, dark glassmorphic dialog background consistency |
 | Phase 18 | Packaging, browser-extension bundling, release hardening | NOT STARTED | | | |

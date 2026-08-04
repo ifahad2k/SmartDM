@@ -192,9 +192,20 @@ public final class MediaDownloadTracker {
                 commandList.add("--paths");
                 commandList.add("home:" + appTempDir.toString());
 
+                commandList.add("--user-agent");
+                commandList.add("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+                if (toolMgr.getFfmpegPath().isPresent()) {
+                    commandList.add("--ffmpeg-location");
+                    commandList.add(toolMgr.getFfmpegPath().get().toAbsolutePath().toString());
+                }
+
                 if (info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"))) {
                     commandList.add("--extractor-args");
                     commandList.add("youtube:player_client=web,default");
+                } else if (info.webpageUrl() != null && info.webpageUrl().contains("instagram.com")) {
+                    commandList.add("--referer");
+                    commandList.add("https://www.instagram.com/");
                 }
 
                 if (info.cookies() != null && !info.cookies().isBlank()) {
@@ -206,10 +217,22 @@ public final class MediaDownloadTracker {
                     } catch (Exception ignored) {}
                 }
 
+                String fArg;
+                if (formatArg == null || formatArg.isBlank() || "best".equalsIgnoreCase(formatArg) || "b".equalsIgnoreCase(formatArg)) {
+                    fArg = "bv*+ba/b/best";
+                } else if (formatArg.startsWith("audio_") || formatArg.toLowerCase().contains("audio") || "ba".equalsIgnoreCase(formatArg) || "bestaudio".equalsIgnoreCase(formatArg)) {
+                    fArg = formatArg;
+                } else {
+                    fArg = formatArg + "+ba/" + formatArg + "+bestaudio/" + formatArg + "/bv*+ba/b/best";
+                }
+
                 commandList.add("-f");
-                commandList.add(formatArg);
+                commandList.add(fArg);
+                commandList.add("--merge-output-format");
+                commandList.add("mp4");
                 commandList.add("-o");
                 commandList.add(tempOutputFile.toString());
+                commandList.add("--force-ipv4");
                 commandList.add(info.webpageUrl());
 
                 ProcessBuilder pb = new ProcessBuilder(commandList);

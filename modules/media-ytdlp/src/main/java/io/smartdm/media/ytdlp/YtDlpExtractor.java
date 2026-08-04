@@ -25,8 +25,12 @@ public class YtDlpExtractor implements MediaExtractor {
     }
 
     @Override
-    public CompletableFuture<MediaMetadata> extractMetadataAsync(String url, String cookies) {
+    public CompletableFuture<MediaMetadata> extractMetadataAsync(String urlInput, String cookies) {
         return CompletableFuture.supplyAsync(() -> {
+            String url = urlInput;
+            if (url != null && url.contains("instagram.com")) {
+                url = url.replaceAll("instagram\\.com/reels/([A-Za-z0-9_-]+)", "instagram.com/reel/$1");
+            }
             Path ytDlp = toolManager.getYtDlpPath().orElseThrow(() -> 
                 new IllegalStateException("yt-dlp executable not found. Please install yt-dlp."));
 
@@ -47,12 +51,20 @@ public class YtDlpExtractor implements MediaExtractor {
                         "--no-playlist",
                         "--no-warnings",
                         "--ignore-config",
-                        "--no-check-certificates"
+                        "--no-check-certificates",
+                        "--force-ipv4",
+                        "--user-agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "--add-header",
+                        "Accept-Language:en-US,en;q=0.9"
                     ));
                     
                     if (url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
                         cmd.add("--extractor-args");
                         cmd.add("youtube:player_client=web,default");
+                    } else if (url != null && url.contains("instagram.com")) {
+                        cmd.add("--referer");
+                        cmd.add("https://www.instagram.com/");
                     }
                     
                     if (cookieFile != null) {
@@ -62,18 +74,16 @@ public class YtDlpExtractor implements MediaExtractor {
                     cmd.add(url);
 
                     ProcessBuilder pb = new ProcessBuilder(cmd);
+                    pb.redirectErrorStream(true);
                     Process process = pb.start();
-                    String jsonOutput;
-                    String errOutput;
-                    try (InputStream is = process.getInputStream();
-                         InputStream es = process.getErrorStream()) {
-                        jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                        errOutput = new String(es.readAllBytes(), StandardCharsets.UTF_8);
+                    String combinedOutput;
+                    try (InputStream is = process.getInputStream()) {
+                        combinedOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                     }
 
                     int exitCode = process.waitFor();
-                    if (exitCode != 0 || jsonOutput.isBlank()) {
-                        System.err.println("yt-dlp standard dump failed: " + errOutput + ". Attempting fallback player_client...");
+                    if (exitCode != 0 || combinedOutput.isBlank() || (!combinedOutput.contains("{") && !combinedOutput.contains("}"))) {
+                        System.err.println("yt-dlp standard dump failed: " + combinedOutput + ". Attempting fallback player_client...");
                         
                         List<String> fallbackCmd = new ArrayList<>(List.of(
                             ytDlp.toString(),
@@ -81,12 +91,20 @@ public class YtDlpExtractor implements MediaExtractor {
                             "--no-playlist",
                             "--no-warnings",
                             "--ignore-config",
-                            "--no-check-certificates"
+                            "--no-check-certificates",
+                            "--force-ipv4",
+                            "--user-agent",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "--add-header",
+                            "Accept-Language:en-US,en;q=0.9"
                         ));
                         
                         if (url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
                             fallbackCmd.add("--extractor-args");
                             fallbackCmd.add("youtube:player_client=mweb,default");
+                        } else if (url != null && url.contains("instagram.com")) {
+                            fallbackCmd.add("--referer");
+                            fallbackCmd.add("https://www.instagram.com/");
                         }
                         if (cookieFile != null) {
                             fallbackCmd.add("--cookies");
@@ -95,20 +113,21 @@ public class YtDlpExtractor implements MediaExtractor {
                         fallbackCmd.add(url);
                         
                         ProcessBuilder pbCookies = new ProcessBuilder(fallbackCmd);
+                        pbCookies.redirectErrorStream(true);
                         Process processCookies = pbCookies.start();
                         try (InputStream is = processCookies.getInputStream()) {
-                            jsonOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                            combinedOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                         }
                         processCookies.waitFor();
                     }
 
-                    int start = jsonOutput.indexOf('{');
-                    int end = jsonOutput.lastIndexOf('}');
+                    int start = combinedOutput.indexOf('{');
+                    int end = combinedOutput.lastIndexOf('}');
                     if (start >= 0 && end > start) {
-                        jsonOutput = jsonOutput.substring(start, end + 1);
+                        String jsonOutput = combinedOutput.substring(start, end + 1);
                         JsonNode root = mapper.readTree(jsonOutput);
                         return parseMetadata(root, url);
-                    } else if (errOutput != null && errOutput.contains("HTTP Error 429")) {
+                    } else if (combinedOutput != null && combinedOutput.contains("HTTP Error 429")) {
                         throw new RuntimeException("HTTP Error 429: Too Many Requests");
                     }
                 } finally {
@@ -125,7 +144,6 @@ public class YtDlpExtractor implements MediaExtractor {
                 System.err.println("YtDlpExtractor error for URL [" + url + "]: " + ex.getMessage());
             }
 
-            // Return null on extraction failure to correctly display as "Failed to fetch" in UI
             return null;
         });
     }
@@ -138,6 +156,19 @@ public class YtDlpExtractor implements MediaExtractor {
         String thumbnail = root.path("thumbnail").asText("");
 
         List<MediaFormat> formatsList = new ArrayList<>();
+
+        // If root object has a direct URL (common for Instagram, Twitter, Direct Videos)
+        if (root.has("url") && !root.path("url").asText().isBlank()) {
+            String res = root.path("resolution").asText("");
+            if (res.isBlank() && root.has("height") && root.get("height").asInt() > 0) {
+                res = root.get("height").asInt() + "p";
+            }
+            if (res.isBlank()) res = "Best Quality (MP4)";
+            formatsList.add(new MediaFormat(
+                "best", "mp4", res, "Best Quality Video + Audio", 0, "h264", "aac", 0, 0, false, false
+            ));
+        }
+
         JsonNode formatsNode = root.path("formats");
         if (formatsNode.isArray()) {
             for (JsonNode f : formatsNode) {
@@ -170,12 +201,28 @@ public class YtDlpExtractor implements MediaExtractor {
             }
         }
 
+        boolean hasCombined = formatsList.stream().anyMatch(f -> !f.isVideoOnly() && !f.isAudioOnly());
+        if (!hasCombined && !formatsList.isEmpty()) {
+            MediaFormat topFmt = formatsList.get(0);
+            String res = topFmt.resolution() != null && !topFmt.resolution().isBlank() ? topFmt.resolution() : "High Quality";
+            formatsList.add(0, new MediaFormat(
+                "best", "mp4", res, "Best Quality (Video + Audio)", 0, "h264", "aac", 0, 0, false, false
+            ));
+        }
+
         formatsList.sort((a, b) -> Double.compare(b.tbr(), a.tbr()));
 
         List<MediaFormat> cleanList = new ArrayList<>();
         java.util.Set<String> seenResolutions = new java.util.HashSet<>();
         for (MediaFormat fmt : formatsList) {
-            String key = fmt.isAudioOnly() ? ("audio_" + fmt.ext()) : (fmt.resolution() != null && !fmt.resolution().isBlank() ? fmt.resolution() : fmt.formatNote());
+            String key;
+            if (fmt.isAudioOnly()) {
+                key = "audio_" + fmt.ext() + "_" + fmt.formatId();
+            } else {
+                key = (fmt.resolution() != null && !fmt.resolution().isBlank()) 
+                    ? fmt.resolution() 
+                    : ((fmt.formatNote() != null && !fmt.formatNote().isBlank()) ? fmt.formatNote() : fmt.formatId());
+            }
             if (!key.isBlank() && !seenResolutions.contains(key)) {
                 seenResolutions.add(key);
                 cleanList.add(fmt);

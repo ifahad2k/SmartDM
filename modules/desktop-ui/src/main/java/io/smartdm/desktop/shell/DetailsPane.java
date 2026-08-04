@@ -19,6 +19,7 @@ public final class DetailsPane extends VBox {
     private final Label safeLbl;
     private final SVGPath safeChipIcon;
     private final HBox safeChip;
+    private final Label safeNote;
     
     private final Label statusVal;
     private final Label downloadedVal;
@@ -77,11 +78,72 @@ public final class DetailsPane extends VBox {
         safeLbl = new Label("Not scanned");
         safeChip.getChildren().addAll(safeChipIcon, safeLbl);
         
-        Label safeNote = new Label("No virus scanner is currently configured. File safety is unknown.");
+        safeNote = new Label("Analyzing file safety...");
         safeNote.getStyleClass().add("note");
         safeNote.setWrapText(true);
         
+        safetyCard.setStyle("-fx-cursor: hand;");
         safetyCard.getChildren().addAll(safeChip, safeNote);
+        safetyCard.setOnMouseClicked(e -> {
+            if (activeDownload != null && activeDownload.destination() != null && activeDownload.destination().value() != null) {
+                java.io.File file = activeDownload.destination().value().toFile();
+                javafx.stage.Stage owner = (javafx.stage.Stage) getScene().getWindow();
+                
+                io.smartdm.safety.api.FileScanner avScanner = System.getProperty("os.name", "").toLowerCase().contains("win")
+                    ? new io.smartdm.safety.av.windows.WindowsDefenderScanner()
+                    : new io.smartdm.safety.av.clamav.ClamAvScanner();
+                    
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    java.util.List<io.smartdm.safety.api.SafetyEvidence> evidences = new java.util.ArrayList<>();
+                    long totalSize = (activeDownload.totalBytes() != null && activeDownload.totalBytes().value() > 0) ? activeDownload.totalBytes().value() : -1L;
+                    io.smartdm.safety.api.PreDownloadContext preContext = new io.smartdm.safety.api.PreDownloadContext(
+                        activeDownload.source().value().toString(),
+                        totalSize,
+                        null,
+                        file.getName(),
+                        java.util.List.of()
+                    );
+                    evidences.addAll(new io.smartdm.safety.rules.PreDownloadRiskRules().evaluate(preContext));
+                    if (file.exists()) {
+                        evidences.addAll(new io.smartdm.safety.rules.MagicByteVerifier().verify(file.toPath(), null));
+                        evidences.addAll(new io.smartdm.safety.rules.ArchiveStructureInspector().inspectArchive(file.toPath()));
+                    }
+                    if (avScanner.isAvailable() && file.exists()) {
+                        try {
+                            var scanResult = avScanner.scanFileAsync(file.toPath()).get();
+                            if (scanResult.status() == io.smartdm.safety.api.ScanStatus.MALWARE_DETECTED) {
+                                evidences.add(new io.smartdm.safety.api.SafetyEvidence("ANTIVIRUS", "AV_THREAT", scanResult.details(), io.smartdm.safety.api.RiskLevel.CRITICAL, scanResult.threatName()));
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                    io.smartdm.safety.rules.RiskDecisionEngine.SafetyDecision decision = new io.smartdm.safety.rules.RiskDecisionEngine().evaluate(evidences);
+                    String sha256 = "N/A";
+                    try {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
+                        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                        byte[] digest = md.digest(bytes);
+                        StringBuilder sb = new StringBuilder();
+                        for (byte b : digest) sb.append(String.format("%02x", b));
+                        sha256 = sb.toString();
+                    } catch (Exception ignored) {}
+                    final String finalSha256 = sha256;
+                    javafx.application.Platform.runLater(() -> {
+                        SafetyCenterDialog dialog = new SafetyCenterDialog(
+                            owner,
+                            file,
+                            decision.status(),
+                            decision.overallRiskLevel(),
+                            decision.evidence(),
+                            finalSha256,
+                            avScanner.getScannerName(),
+                            new io.smartdm.safety.rules.LocalQuarantineManager()
+                        );
+                        dialog.show();
+                    });
+                });
+            }
+        });
+
         safetySec.getChildren().addAll(safetyH, safetyCard);
         
         // Transfer Section
@@ -166,10 +228,77 @@ public final class DetailsPane extends VBox {
         this.activeDownload = download;
         if (download != null) {
             refreshUI();
+            checkSafetyAsync(download);
             timer.start();
         } else {
             timer.stop();
         }
+    }
+
+    private void checkSafetyAsync(Download download) {
+        if (download == null || download.destination() == null || download.destination().value() == null) return;
+        java.io.File file = download.destination().value().toFile();
+        
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            java.util.List<io.smartdm.safety.api.SafetyEvidence> evidences = new java.util.ArrayList<>();
+            long totalSize = (download.totalBytes() != null && download.totalBytes().value() > 0) ? download.totalBytes().value() : -1L;
+            
+            io.smartdm.safety.api.PreDownloadContext preContext = new io.smartdm.safety.api.PreDownloadContext(
+                download.source().value().toString(),
+                totalSize,
+                null,
+                file.getName(),
+                java.util.List.of()
+            );
+            evidences.addAll(new io.smartdm.safety.rules.PreDownloadRiskRules().evaluate(preContext));
+
+            if (file.exists()) {
+                evidences.addAll(new io.smartdm.safety.rules.MagicByteVerifier().verify(file.toPath(), null));
+                evidences.addAll(new io.smartdm.safety.rules.ArchiveStructureInspector().inspectArchive(file.toPath()));
+            }
+
+            io.smartdm.safety.api.FileScanner avScanner = System.getProperty("os.name", "").toLowerCase().contains("win")
+                ? new io.smartdm.safety.av.windows.WindowsDefenderScanner()
+                : new io.smartdm.safety.av.clamav.ClamAvScanner();
+
+            if (avScanner.isAvailable() && file.exists()) {
+                try {
+                    var scanResult = avScanner.scanFileAsync(file.toPath()).get();
+                    if (scanResult.status() == io.smartdm.safety.api.ScanStatus.MALWARE_DETECTED) {
+                        evidences.add(new io.smartdm.safety.api.SafetyEvidence(
+                            "ANTIVIRUS",
+                            "AV_THREAT_DETECTED",
+                            scanResult.details() != null ? scanResult.details() : "Malware detected",
+                            io.smartdm.safety.api.RiskLevel.CRITICAL,
+                            scanResult.threatName()
+                        ));
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            io.smartdm.safety.rules.RiskDecisionEngine.SafetyDecision decision = new io.smartdm.safety.rules.RiskDecisionEngine().evaluate(evidences);
+
+            javafx.application.Platform.runLater(() -> {
+                if (activeDownload == download) {
+                    if (decision.status() == io.smartdm.safety.api.SafetyStatus.NO_THREATS_DETECTED || decision.status() == io.smartdm.safety.api.SafetyStatus.UNSCANNED) {
+                        safeLbl.setText("No threats detected");
+                        safeChip.setStyle("-fx-background-color: rgba(0, 214, 143, 0.15); -fx-background-radius: 12px; -fx-padding: 4 10;");
+                        safeLbl.setStyle("-fx-text-fill: #00D68F; -fx-font-weight: bold; -fx-font-size: 12px;");
+                        safeNote.setText("Scanned with " + avScanner.getScannerName() + " & local magic byte verifier.");
+                    } else if (decision.status() == io.smartdm.safety.api.SafetyStatus.SUSPICIOUS) {
+                        safeLbl.setText("Suspicious");
+                        safeChip.setStyle("-fx-background-color: rgba(255, 194, 75, 0.15); -fx-background-radius: 12px; -fx-padding: 4 10;");
+                        safeLbl.setStyle("-fx-text-fill: #FFC24B; -fx-font-weight: bold; -fx-font-size: 12px;");
+                        safeNote.setText("Potential risk detected by heuristic inspection rules.");
+                    } else if (decision.status() == io.smartdm.safety.api.SafetyStatus.MALWARE_DETECTED) {
+                        safeLbl.setText("Malware Detected!");
+                        safeChip.setStyle("-fx-background-color: rgba(255, 77, 106, 0.15); -fx-background-radius: 12px; -fx-padding: 4 10;");
+                        safeLbl.setStyle("-fx-text-fill: #FF4D6A; -fx-font-weight: bold; -fx-font-size: 12px;");
+                        safeNote.setText("Threat identified! Click to open Safety & Quarantine Center.");
+                    }
+                }
+            });
+        });
     }
     
     private void refreshUI() {
@@ -198,8 +327,9 @@ public final class DetailsPane extends VBox {
         if (host == null) host = "-";
         if (!host.equals(hostVal.getText())) hostVal.setText(host);
         
-        if (!"-".equals(speedVal.getText())) speedVal.setText("-");
-        if (!"-".equals(etaVal.getText())) etaVal.setText("-");
+        SpeedEtaCalculator.SpeedEtaResult speedEta = SpeedEtaCalculator.calculate(activeDownload);
+        if (!speedEta.speedFormatted().equals(speedVal.getText())) speedVal.setText(speedEta.speedFormatted());
+        if (!speedEta.etaFormatted().equals(etaVal.getText())) etaVal.setText(speedEta.etaFormatted());
         
         // Destination
         String destPath = activeDownload.destination().value().toString();

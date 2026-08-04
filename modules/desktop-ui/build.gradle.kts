@@ -16,6 +16,10 @@ dependencies {
     implementation(project(":modules:persistence-sqlcipher"))
     implementation(project(":modules:ai-api"))
     implementation(project(":modules:ai-gemini"))
+    implementation(project(":modules:safety-api"))
+    implementation(project(":modules:safety-rules"))
+    implementation(project(":modules:safety-windows-defender"))
+    implementation(project(":modules:safety-clamav"))
     
     testImplementation(libs.bundles.testing)
     uiTestImplementation(libs.bundles.testing)

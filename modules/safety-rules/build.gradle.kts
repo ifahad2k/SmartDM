@@ -5,4 +5,6 @@ plugins {
 
 dependencies {
     implementation(project(":modules:safety-api"))
+    implementation(libs.jackson.databind)
+    implementation(libs.slf4j.api)
 }

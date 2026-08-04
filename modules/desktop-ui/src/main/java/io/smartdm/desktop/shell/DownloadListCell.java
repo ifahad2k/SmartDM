@@ -24,6 +24,19 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.smartdm.safety.api.SafetyEvidence;
+import io.smartdm.safety.api.SafetyStatus;
+import io.smartdm.safety.api.RiskLevel;
+import io.smartdm.safety.api.FileScanner;
+import io.smartdm.safety.api.PreDownloadContext;
+import io.smartdm.safety.rules.PreDownloadRiskRules;
+import io.smartdm.safety.rules.MagicByteVerifier;
+import io.smartdm.safety.rules.ArchiveStructureInspector;
+import io.smartdm.safety.rules.RiskDecisionEngine;
+import io.smartdm.safety.rules.LocalQuarantineManager;
+import io.smartdm.safety.av.windows.WindowsDefenderScanner;
+import io.smartdm.safety.av.clamav.ClamAvScanner;
+
 public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
     
     public interface Listener {
@@ -266,6 +279,7 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         
         javafx.scene.control.MenuItem deleteQueueItem = new javafx.scene.control.MenuItem("Delete from queue");
         javafx.scene.control.Menu doubleClickMenu = new javafx.scene.control.Menu("On Double click");
+        javafx.scene.control.MenuItem safetyItem = new javafx.scene.control.MenuItem("Safety & Security Info...");
         javafx.scene.control.MenuItem propertiesItem = new javafx.scene.control.MenuItem("Properties");
 
         ctxMenu.getItems().addAll(
@@ -285,8 +299,101 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
                 new javafx.scene.control.SeparatorMenuItem(),
                 doubleClickMenu,
                 new javafx.scene.control.SeparatorMenuItem(),
+                safetyItem,
+                new javafx.scene.control.SeparatorMenuItem(),
                 propertiesItem
         );
+
+        safetyItem.setOnAction(e -> {
+            Download d = getItem() != null ? provider.getDownload(getItem()) : null;
+            if (d != null && d.destination() != null && d.destination().value() != null) {
+                File file = d.destination().value().toFile();
+                javafx.stage.Stage owner = (javafx.stage.Stage) getScene().getWindow();
+
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    List<SafetyEvidence> evidences = new ArrayList<>();
+                    
+                    long totalSize = (d.totalBytes() != null && d.totalBytes().value() > 0) ? d.totalBytes().value() : -1L;
+                    PreDownloadContext preContext = new PreDownloadContext(
+                        d.source().value().toString(),
+                        totalSize,
+                        null,
+                        file.getName(),
+                        List.of()
+                    );
+                    evidences.addAll(new PreDownloadRiskRules().evaluate(preContext));
+
+                    String sha256 = "N/A";
+                    if (file.exists()) {
+                        try {
+                            byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
+                            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                            byte[] digest = md.digest(bytes);
+                            StringBuilder sb = new StringBuilder();
+                            for (byte b : digest) sb.append(String.format("%02x", b));
+                            sha256 = sb.toString();
+                        } catch (Exception ignored) {}
+
+                        evidences.addAll(new MagicByteVerifier().verify(file.toPath(), null));
+                        evidences.addAll(new ArchiveStructureInspector().inspectArchive(file.toPath()));
+                    }
+
+                    FileScanner avScanner = System.getProperty("os.name", "").toLowerCase().contains("win")
+                        ? new WindowsDefenderScanner()
+                        : new ClamAvScanner();
+
+                    if (avScanner.isAvailable() && file.exists()) {
+                        try {
+                            var scanResult = avScanner.scanFileAsync(file.toPath()).get();
+                            if (scanResult.status() == io.smartdm.safety.api.ScanStatus.MALWARE_DETECTED) {
+                                evidences.add(new SafetyEvidence(
+                                    "ANTIVIRUS",
+                                    "AV_THREAT_DETECTED",
+                                    scanResult.details() != null ? scanResult.details() : "Malware detected by " + avScanner.getScannerName(),
+                                    RiskLevel.CRITICAL,
+                                    scanResult.threatName()
+                                ));
+                            } else if (scanResult.status() == io.smartdm.safety.api.ScanStatus.NO_THREATS_DETECTED) {
+                                evidences.add(new SafetyEvidence(
+                                    "ANTIVIRUS",
+                                    "AV_CLEAN",
+                                    "No threats detected by " + avScanner.getScannerName(),
+                                    RiskLevel.NONE,
+                                    "CLEAN"
+                                ));
+                            }
+                        } catch (Exception ignored) {}
+                    }
+
+                    RiskDecisionEngine engine = new RiskDecisionEngine();
+                    RiskDecisionEngine.SafetyDecision decision = engine.evaluate(evidences);
+                    final String finalSha256 = sha256;
+
+                    javafx.application.Platform.runLater(() -> {
+                        SafetyCenterDialog dialog = new SafetyCenterDialog(
+                            owner,
+                            file,
+                            decision.status(),
+                            decision.overallRiskLevel(),
+                            decision.evidence(),
+                            finalSha256,
+                            avScanner.getScannerName(),
+                            new LocalQuarantineManager()
+                        );
+                        dialog.setOnOpenRequested(f -> openItem.getOnAction().handle(null));
+                        dialog.setOnDeleteRequested(f -> listener.onDelete(d, true));
+                        dialog.setOnQuarantineRequested(f -> {
+                            try {
+                                new LocalQuarantineManager().quarantine(f.toPath(), f.getName());
+                            } catch (Exception ex) {
+                                ex.printStackTrace();
+                            }
+                        });
+                        dialog.show();
+                    });
+                });
+            }
+        });
 
         queueItem.setOnAction(e -> {
             io.smartdm.domain.DownloadId id = getItem();
@@ -481,8 +588,25 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
                     scheduleText = " · Starting now...";
                 }
             }
-            String metaText = url + " · " + total + progressPercent + scheduleText + " · ETA -";
+            SpeedEtaCalculator.SpeedEtaResult speedEta = SpeedEtaCalculator.calculate(download);
+            String speedStr = speedEta.speedFormatted();
+            String etaStr = speedEta.etaFormatted();
+
+            String metaText = url + " · " + total + progressPercent + scheduleText;
+            if (download.state() == DownloadState.DOWNLOADING || download.state() == DownloadState.PROBING) {
+                metaText += " · " + speedStr + " · ETA " + etaStr;
+            } else if (download.state() == DownloadState.COMPLETED) {
+                metaText += " · ETA 0s";
+            } else {
+                metaText += " · ETA -";
+            }
             if (!metaText.equals(metaLbl.getText())) metaLbl.setText(metaText);
+
+            String progressTextStr = (download.segments() != null && !download.segments().isEmpty() ? download.segments().size() : 1) + " parallel segment(s)";
+            if (download.state() == DownloadState.DOWNLOADING || download.state() == DownloadState.PROBING) {
+                progressTextStr += " · " + speedStr + " · ETA " + etaStr;
+            }
+            if (!progressTextStr.equals(progressTxt.getText())) progressTxt.setText(progressTextStr);
             
             String targetClass;
             if (download.state() == DownloadState.COMPLETED) targetClass = "ok";

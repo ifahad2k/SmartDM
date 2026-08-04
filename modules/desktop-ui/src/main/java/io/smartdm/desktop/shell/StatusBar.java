@@ -1,20 +1,58 @@
 package io.smartdm.desktop.shell;
 
+import javafx.application.Platform;
+import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-import javafx.scene.control.Label;
 
 public class StatusBar extends HBox {
     
     private final Region dot;
     private final Label onlineLbl;
     private final Label geminiLbl;
+    private final Label dlSpeedLbl;
+    private final Label ulSpeedLbl;
+    private final Label activeCountLbl;
+    private final Label queuedCountLbl;
+    private final Label totalTodayLbl;
 
     public void setAiStatus(String status) {
         if (geminiLbl != null) {
-            javafx.application.Platform.runLater(() -> geminiLbl.setText(status));
+            Platform.runLater(() -> geminiLbl.setText(status));
         }
+    }
+
+    public void updateMetrics(double totalDlSpeedBytesPerSec, double totalUlSpeedBytesPerSec, int activeCount, int queuedCount, long totalBytesToday) {
+        Platform.runLater(() -> {
+            if (dlSpeedLbl != null) {
+                if (totalDlSpeedBytesPerSec <= 10) {
+                    dlSpeedLbl.setText("- MB/s");
+                } else if (totalDlSpeedBytesPerSec < 1024 * 1024) {
+                    dlSpeedLbl.setText(String.format("%.1f KB/s", totalDlSpeedBytesPerSec / 1024.0));
+                } else {
+                    dlSpeedLbl.setText(String.format("%.2f MB/s", totalDlSpeedBytesPerSec / (1024.0 * 1024.0)));
+                }
+            }
+            if (ulSpeedLbl != null) {
+                if (totalUlSpeedBytesPerSec <= 10) {
+                    ulSpeedLbl.setText("- MB/s");
+                } else {
+                    ulSpeedLbl.setText(String.format("%.1f KB/s", totalUlSpeedBytesPerSec / 1024.0));
+                }
+            }
+            if (activeCountLbl != null) activeCountLbl.setText(String.valueOf(activeCount));
+            if (queuedCountLbl != null) queuedCountLbl.setText(String.valueOf(queuedCount));
+            if (totalTodayLbl != null) {
+                if (totalBytesToday >= 1024 * 1024 * 1024) {
+                    totalTodayLbl.setText(String.format("%.2f GB", (double) totalBytesToday / (1024 * 1024 * 1024)));
+                } else if (totalBytesToday >= 1024 * 1024) {
+                    totalTodayLbl.setText(String.format("%.1f MB", (double) totalBytesToday / (1024 * 1024)));
+                } else {
+                    totalTodayLbl.setText(String.format("%d KB", totalBytesToday / 1024));
+                }
+            }
+        });
     }
 
     @SuppressWarnings("this-escape")
@@ -35,37 +73,37 @@ public class StatusBar extends HBox {
         dlBox.getStyleClass().add("sb-item");
         Label dlIcon = new Label("↓");
         dlIcon.setStyle("-fx-text-fill: #A6ADC4;");
-        Label dlSpeed = new Label("- MB/s");
-        dlSpeed.getStyleClass().add("sb-item-strong");
-        dlBox.getChildren().addAll(dlIcon, dlSpeed);
+        dlSpeedLbl = new Label("- MB/s");
+        dlSpeedLbl.getStyleClass().add("sb-item-strong");
+        dlBox.getChildren().addAll(dlIcon, dlSpeedLbl);
         
         // Upload Speed
         HBox ulBox = new HBox();
         ulBox.getStyleClass().add("sb-item");
         Label ulIcon = new Label("↑");
         ulIcon.setStyle("-fx-text-fill: #A6ADC4;");
-        Label ulSpeed = new Label("- MB/s");
-        ulSpeed.getStyleClass().add("sb-item-strong");
-        ulBox.getChildren().addAll(ulIcon, ulSpeed);
+        ulSpeedLbl = new Label("- MB/s");
+        ulSpeedLbl.getStyleClass().add("sb-item-strong");
+        ulBox.getChildren().addAll(ulIcon, ulSpeedLbl);
         
         // Active / Queued
         HBox activeBox = new HBox();
         activeBox.getStyleClass().add("sb-item");
-        Label activeCount = new Label("0");
-        activeCount.getStyleClass().add("sb-item-strong");
+        activeCountLbl = new Label("0");
+        activeCountLbl.getStyleClass().add("sb-item-strong");
         Label activeText = new Label("active ·");
-        Label queuedCount = new Label("0");
-        queuedCount.getStyleClass().add("sb-item-strong");
+        queuedCountLbl = new Label("0");
+        queuedCountLbl.getStyleClass().add("sb-item-strong");
         Label queuedText = new Label("queued");
-        activeBox.getChildren().addAll(activeCount, activeText, queuedCount, queuedText);
+        activeBox.getChildren().addAll(activeCountLbl, activeText, queuedCountLbl, queuedText);
         
         // Total Today
         HBox totalTodayBox = new HBox();
         totalTodayBox.getStyleClass().add("sb-item");
         Label totalText = new Label("Total today:");
-        Label totalCount = new Label("0 MB");
-        totalCount.getStyleClass().add("sb-item-strong");
-        totalTodayBox.getChildren().addAll(totalText, totalCount);
+        totalTodayLbl = new Label("0 MB");
+        totalTodayLbl.getStyleClass().add("sb-item-strong");
+        totalTodayBox.getChildren().addAll(totalText, totalTodayLbl);
         
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -87,7 +125,7 @@ public class StatusBar extends HBox {
         Thread thread = new Thread(() -> {
             while (true) {
                 boolean isOnline = checkInternetConnectivity();
-                javafx.application.Platform.runLater(() -> {
+                Platform.runLater(() -> {
                     if (isOnline) {
                         onlineLbl.setText("Online");
                         dot.setStyle("-fx-background-color: #3CFFC4;");
@@ -97,7 +135,7 @@ public class StatusBar extends HBox {
                     }
                 });
                 try {
-                    Thread.sleep(5000); // Check every 5 seconds
+                    Thread.sleep(5000);
                 } catch (InterruptedException e) {
                     break;
                 }
