@@ -24,22 +24,16 @@
   }
 
   function sendExtensionMessage(message, callback) {
-    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
-      browser.runtime.sendMessage(message)
-        .then(res => {
-          if (callback) callback(res || null);
-        })
-        .catch(err => {
-          console.warn('sendExtensionMessage error:', err);
-          if (callback) callback(null);
-        });
-    } else if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage(message, (res) => {
         const err = chrome.runtime.lastError;
-        if (callback) callback(err ? null : res);
+        if (err) {
+          console.warn('sendExtensionMessage error:', err.message);
+        }
+        if (callback) callback(err ? { success: false, error: err.message } : (res || { success: false, error: 'Empty response' }));
       });
     } else {
-      if (callback) callback(null);
+      if (callback) callback({ success: false, error: 'Extension API not found' });
     }
   }
 
@@ -318,11 +312,8 @@
               }));
               renderFormatItems(content, synthFormats, videoUrl, popover);
             } else if (!res || res.status === 'error' || res.success === false) {
-              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : "");
-              const errMsg = (errTxt.includes("not connect") || errTxt.includes("running")) 
-                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
-                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Check SmartDM or retry.</span>";
-              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
+              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : (!res ? "null response" : ""));
+              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0; word-break: break-all;">Error: ' + errTxt + '</div>';
             } else {
               content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
             }
@@ -565,11 +556,8 @@
               }));
               renderFormatItems(content, synthFormats, currentVideoUrl, popover);
             } else if (!res || res.status === 'error' || res.success === false) {
-              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : "");
-              const errMsg = (errTxt.includes("not connect") || errTxt.includes("running")) 
-                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
-                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Check SmartDM or retry.</span>";
-              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
+              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : (!res ? "null response" : ""));
+              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0; word-break: break-all;">Error: ' + errTxt + '</div>';
             } else {
               content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
             }
