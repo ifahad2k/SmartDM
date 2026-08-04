@@ -793,8 +793,79 @@
     -fx-background-color: rgba(15, 20, 32, 0.8);
 }
 
-.table-view .placeholder .label {
-    -fx-text-fill: #767E96;
+
+/* ── Sleek Glassmorphism Control Customizations ──────────────────────────── */
+
+/* CheckBox Styling */
+.check-box {
+    -fx-text-fill: #E2E8F0;
     -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+.check-box .box {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-border-color: rgba(255, 255, 255, 0.18);
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-min-width: 18px;
+    -fx-min-height: 18px;
+    -fx-max-width: 18px;
+    -fx-max-height: 18px;
+}
+.check-box:hover .box {
+    -fx-background-color: rgba(255, 255, 255, 0.16);
+    -fx-border-color: #38BDF8;
+}
+.check-box:selected .box {
+    -fx-background-color: #38BDF8;
+    -fx-border-color: #38BDF8;
+}
+.check-box:selected .mark {
+    -fx-background-color: #0F172A;
+    -fx-shape: "M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z";
+    -fx-scale-x: 0.8;
+    -fx-scale-y: 0.8;
+}
+
+/* Slider Styling */
+.slider .track {
+    -fx-background-color: rgba(255, 255, 255, 0.12);
+    -fx-background-radius: 6px;
+    -fx-pref-height: 6px;
+}
+.slider .thumb {
+    -fx-background-color: #38BDF8;
+    -fx-background-radius: 10px;
+    -fx-pref-width: 16px;
+    -fx-pref-height: 16px;
+    -fx-effect: dropshadow(three-pass-box, rgba(56, 189, 248, 0.6), 8, 0, 0, 0);
+    -fx-cursor: hand;
+}
+.slider:hover .thumb {
+    -fx-background-color: #7DD3FC;
+    -fx-scale-x: 1.15;
+    -fx-scale-y: 1.15;
+}
+
+/* Separator Styling */
+.separator .line {
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-width: 1px 0 0 0;
+}
+
+/* ScrollBar Styling */
+.scroll-bar:vertical, .scroll-bar:horizontal {
+    -fx-background-color: transparent;
+}
+.scroll-bar:vertical .track, .scroll-bar:horizontal .track {
+    -fx-background-color: transparent;
+}
+.scroll-bar:vertical .thumb, .scroll-bar:horizontal .thumb {
+    -fx-background-color: rgba(255, 255, 255, 0.14);
+    -fx-background-radius: 8px;
+}
+.scroll-bar:vertical:hover .thumb, .scroll-bar:horizontal:hover .thumb {
+    -fx-background-color: rgba(56, 189, 248, 0.5);
 }
 

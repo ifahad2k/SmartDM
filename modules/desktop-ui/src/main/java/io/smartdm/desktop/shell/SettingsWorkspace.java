@@ -150,70 +150,69 @@ public class SettingsWorkspace extends VBox {
 
     // ── 1. GENERAL & SYSTEM SECTION ──────────────────────────────────────────
     private VBox buildGeneralSection() {
-        VBox card = new VBox(16);
+        VBox card = new VBox(12);
         card.setStyle("-fx-background-color: rgba(30, 41, 59, 0.5); -fx-background-radius: 12; -fx-padding: 20; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 12;");
 
         Label sectionTitle = new Label("System Behavior & Startup");
         sectionTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
-        // Run on Startup Toggle
-        CheckBox startupCb = new CheckBox("Run SmartDM on Windows Startup");
+        // Run on Startup Row
+        CheckBox startupCb = new CheckBox();
         startupCb.setSelected(appSettings.isRunOnStartup());
-        startupCb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-size: 13px; -fx-font-weight: bold;");
-        Label startupHint = new Label("Automatically launch SmartDM in the background when your computer turns on.");
-        startupHint.setStyle("-fx-text-fill: #94A3B8; -fx-font-size: 11px;");
-
         startupCb.selectedProperty().addListener((obs, oldV, newV) -> {
             appSettings.setRunOnStartup(newV);
             appSettings.saveToDisk();
             SystemStartupManager.setStartup(newV);
         });
+        HBox startupRow = createSettingRow(
+            "Run SmartDM on Windows Startup",
+            "Automatically launch SmartDM in the background when your computer turns on.",
+            startupCb
+        );
 
-        // Close to Tray Toggle
-        CheckBox trayCb = new CheckBox("Minimize to System Tray on Close (X button)");
+        // Close to Tray Row
+        CheckBox trayCb = new CheckBox();
         trayCb.setSelected(appSettings.isCloseToTray());
-        trayCb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-size: 13px; -fx-font-weight: bold;");
-        Label trayHint = new Label("Closing the SmartDM window keeps active downloads running in the Windows Taskbar Notification Tray.");
-        trayHint.setStyle("-fx-text-fill: #94A3B8; -fx-font-size: 11px;");
-
         trayCb.selectedProperty().addListener((obs, oldV, newV) -> {
             appSettings.setCloseToTray(newV);
             appSettings.saveToDisk();
         });
+        HBox trayRow = createSettingRow(
+            "Minimize to System Tray on Close (X button)",
+            "Closing the SmartDM window keeps active downloads running in the Windows Taskbar Notification Tray.",
+            trayCb
+        );
 
-        // Theme Selection
-        Label themeLabel = new Label("Visual Theme & Density");
-        themeLabel.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        // Theme Selection Row
         ComboBox<String> themeCombo = new ComboBox<>();
         themeCombo.getItems().addAll("Dark Glassmorphism", "High Contrast Dark", "Comfortable Standard");
         themeCombo.setValue("Dark Glassmorphism");
+        themeCombo.setStyle("-fx-background-color: rgba(255,255,255,0.08); -fx-text-fill: #F8FAFC; -fx-background-radius: 6; -fx-padding: 4 8;");
 
-        card.getChildren().addAll(sectionTitle, startupCb, startupHint, new Separator(), trayCb, trayHint, new Separator(), themeLabel, themeCombo);
+        HBox themeRow = createSettingRow(
+            "Visual Theme & Density",
+            "Choose between sleek dark glassmorphism or high contrast density modes.",
+            themeCombo
+        );
+
+        card.getChildren().addAll(sectionTitle, startupRow, trayRow, themeRow);
         return card;
     }
 
     // ── 2. NETWORK & ENGINE SECTION ──────────────────────────────────────────
     private VBox buildNetworkSection() {
-        VBox card = new VBox(16);
+        VBox card = new VBox(12);
         card.setStyle("-fx-background-color: rgba(30, 41, 59, 0.5); -fx-background-radius: 12; -fx-padding: 20; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 12;");
 
         Label sectionTitle = new Label("Download Engine & Parallel Connections");
         sectionTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
-        Label segLabel = new Label("Maximum Parallel Connection Segments per Download:");
-        segLabel.setStyle("-fx-text-fill: #E2E8F0; -fx-font-weight: bold;");
-
-        HBox segRow = new HBox(12);
-        segRow.setAlignment(Pos.CENTER_LEFT);
+        // Segment Slider Row
         Slider segSlider = new Slider(1, 16, appSettings.getMaxParallelSegments());
         segSlider.setBlockIncrement(1);
-        segSlider.setMajorTickUnit(2);
-        segSlider.setSnapToTicks(true);
-        segSlider.setShowTickMarks(true);
-        HBox.setHgrow(segSlider, Priority.ALWAYS);
-
+        segSlider.setPrefWidth(220);
         Label segVal = new Label(String.valueOf(appSettings.getMaxParallelSegments()));
-        segVal.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold; -fx-font-size: 14px;");
+        segVal.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold; -fx-font-size: 14px; -fx-min-width: 24;");
 
         segSlider.valueProperty().addListener((obs, oldV, newV) -> {
             int val = newV.intValue();
@@ -221,19 +220,23 @@ public class SettingsWorkspace extends VBox {
             appSettings.setMaxParallelSegments(val);
             appSettings.saveToDisk();
         });
-        segRow.getChildren().addAll(segSlider, segVal);
+        HBox segControlBox = new HBox(10, segSlider, segVal);
+        segControlBox.setAlignment(Pos.CENTER_RIGHT);
 
-        // Speed Limiter
-        CheckBox speedCb = new CheckBox("Enable Global Speed Limiter by Default");
+        HBox segRow = createSettingRow(
+            "Maximum Parallel Connection Segments",
+            "Split downloads into 1-16 parallel connection streams for accelerated speed.",
+            segControlBox
+        );
+
+        // Speed Limiter Row
+        CheckBox speedCb = new CheckBox();
         speedCb.setSelected(appSettings.isEnableSpeedLimit());
-        speedCb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-weight: bold;");
 
-        HBox speedRow = new HBox(12);
-        speedRow.setAlignment(Pos.CENTER_LEFT);
         Slider speedSlider = new Slider(100, 10000, appSettings.getDefaultSpeedLimitKbps());
-        HBox.setHgrow(speedSlider, Priority.ALWAYS);
+        speedSlider.setPrefWidth(180);
         Label speedVal = new Label(appSettings.getDefaultSpeedLimitKbps() + " KB/s");
-        speedVal.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold;");
+        speedVal.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold; -fx-font-size: 12px; -fx-min-width: 70;");
 
         speedSlider.valueProperty().addListener((obs, oldV, newV) -> {
             int kb = newV.intValue();
@@ -249,10 +252,45 @@ public class SettingsWorkspace extends VBox {
         });
         speedSlider.setDisable(!appSettings.isEnableSpeedLimit());
 
-        speedRow.getChildren().addAll(speedSlider, speedVal);
+        HBox speedControlBox = new HBox(10, speedCb, speedSlider, speedVal);
+        speedControlBox.setAlignment(Pos.CENTER_RIGHT);
 
-        card.getChildren().addAll(sectionTitle, segLabel, segRow, new Separator(), speedCb, speedRow);
+        HBox speedRow = createSettingRow(
+            "Global Download Speed Limiter",
+            "Enable speed throttling by default to save bandwidth for other applications.",
+            speedControlBox
+        );
+
+        card.getChildren().addAll(sectionTitle, segRow, speedRow);
         return card;
+    }
+
+    private HBox createSettingRow(String title, String description, javafx.scene.Node rightControl) {
+        HBox row = new HBox(16);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.setPadding(new Insets(12, 16, 12, 16));
+        row.setStyle(
+            "-fx-background-color: rgba(255, 255, 255, 0.035); " +
+            "-fx-background-radius: 8; " +
+            "-fx-border-color: rgba(255, 255, 255, 0.06); " +
+            "-fx-border-radius: 8;"
+        );
+
+        VBox textStack = new VBox(3);
+        Label t = new Label(title);
+        t.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #F1F5F9;");
+        Label d = new Label(description);
+        d.setStyle("-fx-font-size: 11px; -fx-text-fill: #94A3B8;");
+        d.setWrapText(true);
+        textStack.getChildren().addAll(t, d);
+        HBox.setHgrow(textStack, Priority.ALWAYS);
+
+        if (rightControl != null) {
+            row.getChildren().addAll(textStack, rightControl);
+        } else {
+            row.getChildren().add(textStack);
+        }
+        return row;
     }
 
     // ── 3. UPDATES SECTION ────────────────────────────────────────────────────
