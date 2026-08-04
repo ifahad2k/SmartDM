@@ -361,15 +361,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-function sendToSmartDM(url, referer) {
+function sendToSmartDM(url, referer, fileName = null) {
   const message = {
     type: 'ADD_DOWNLOAD',
     url: url,
-    fileName: null,
+    fileName: fileName,
     referer: referer || null,
     userAgent: navigator.userAgent
   };
   
   console.log('Sending message to native host:', message);
   appendCookiesAndSend(message, null);
+}
+
+const bypassedDownloads = new Set();
+
+if (browser.downloads && browser.downloads.onCreated) {
+  browser.downloads.onCreated.addListener((downloadItem) => {
+    if (downloadItem.byExtensionId || bypassedDownloads.has(downloadItem.url)) {
+      return;
+    }
+    
+    if (downloadItem.url.startsWith('blob:') || downloadItem.url.startsWith('data:')) {
+      return;
+    }
+
+    // Cancel browser download
+    browser.downloads.cancel(downloadItem.id).then(() => {
+      let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
+      const message = {
+        type: 'ADD_DOWNLOAD',
+        url: downloadItem.finalUrl || downloadItem.url,
+        fileName: basename,
+        referer: downloadItem.referrer || null,
+        userAgent: navigator.userAgent
+      };
+
+      appendCookiesAndSend(message, (response) => {
+        if (browser.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
+          console.error("SmartDM unavailable, resuming standard download...", browser.runtime.lastError);
+          bypassedDownloads.add(downloadItem.url);
+          browser.downloads.download({
+            url: downloadItem.url,
+            filename: basename,
+            saveAs: true
+          });
+          setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+        }
+      });
+    });
+  });
 }

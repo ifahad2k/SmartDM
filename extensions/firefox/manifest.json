@@ -9,7 +9,8 @@
     "activeTab",
     "webRequest",
     "cookies",
-    "<all_urls>"
+    "<all_urls>",
+    "downloads"
   ],
   "background": {
     "scripts": ["background.js"]

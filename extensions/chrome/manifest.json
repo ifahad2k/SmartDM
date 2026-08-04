@@ -9,7 +9,8 @@
     "nativeMessaging",
     "activeTab",
     "webRequest",
-    "cookies"
+    "cookies",
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"

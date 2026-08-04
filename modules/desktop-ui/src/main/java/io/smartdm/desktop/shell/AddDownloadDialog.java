@@ -381,6 +381,12 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
     }
 
+    public void setFileName(String fileName) {
+        if (nameField != null && fileName != null && !fileName.isBlank()) {
+            nameField.setText(fileName);
+        }
+    }
+
     private void updateSmartFolderSuggestions() {
         if (smartFolderService == null || suggestionPanel == null) return;
         String url = urlField.getText();

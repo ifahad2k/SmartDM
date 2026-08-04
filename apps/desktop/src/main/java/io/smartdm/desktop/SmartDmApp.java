@@ -537,7 +537,29 @@ public class SmartDmApp extends Application {
                 openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
-                openMediaOrStandardDialog(req.url(), null, null, null, req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                javafx.application.Platform.runLater(() -> {
+                    io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(primaryStage, repository.findAll(), smartFolderService);
+                    d.setCookiesAndUserAgent(req.cookies(), req.userAgent());
+                    d.setOnDownloadAdded(dl -> {
+                        repository.save(dl);
+                        if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
+                            io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
+                            mainQueueItems.add(item);
+                            if (queueCoordinatorRef.get() != null) queueCoordinatorRef.get().updateQueueItems("main-queue", mainQueueItems);
+                        } else {
+                            enginePool.submit(() -> coordinator.execute(dl));
+                        }
+                        if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
+                    });
+                    if (req.url() != null && !req.url().isBlank()) {
+                        d.setUrlText(req.url());
+                    }
+                    if (req.fileName() != null && !req.fileName().isBlank()) {
+                        d.setFileName(req.fileName());
+                    }
+                    d.show();
+                    d.toFront();
+                });
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
                 javafx.application.Platform.runLater(() -> {
