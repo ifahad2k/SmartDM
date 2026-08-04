@@ -1,23 +1,61 @@
 /* SmartDM Light Theme */
 .root {
-    -fx-color-surface: #ffffff;
-    -fx-color-surface-dim: #f3f4f6;
-    -fx-color-surface-sunken: #e5e7eb;
+    -fx-color-surface: #FFFFFF;
+    -fx-color-surface-dim: #F8FAFC;
+    -fx-color-surface-sunken: #E2E8F0;
     
-    -fx-color-text: #111827;
-    -fx-color-text-muted: #6b7280;
+    -fx-color-text: #0F172A;
+    -fx-color-text-muted: #64748B;
     
-    -fx-color-primary: #2563eb;
-    -fx-color-primary-hover: #1d4ed8;
-    -fx-color-primary-text: #ffffff;
+    -fx-color-primary: #2563EB;
+    -fx-color-primary-hover: #1D4ED8;
+    -fx-color-primary-text: #FFFFFF;
     
-    -fx-color-success: #16a34a;
-    -fx-color-warning: #ea580c;
-    -fx-color-danger: #dc2626;
+    -fx-color-success: #16A34A;
+    -fx-color-warning: #EA580C;
+    -fx-color-danger: #DC2626;
     
-    -fx-color-border: #d1d5db;
+    -fx-color-border: #CBD5E1;
     
-    /* System defaults override */
-    -fx-background-color: -fx-color-surface;
-    -fx-text-fill: -fx-color-text;
+    -fx-background-color: #F8FAFC;
+    -fx-text-fill: #0F172A;
+}
+
+.os-window {
+    -fx-background-color: linear-gradient(to bottom right, #FFFFFF, #F1F5F9, #E2E8F0);
+    -fx-border-color: #CBD5E1;
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+    -fx-background-radius: 16px;
+}
+
+.label {
+    -fx-text-fill: #0F172A;
+}
+
+.titlebar {
+    -fx-background-color: rgba(241, 245, 249, 0.9);
+    -fx-border-color: transparent transparent #CBD5E1 transparent;
+}
+
+.nav-rail {
+    -fx-background-color: #F1F5F9;
+    -fx-border-color: transparent #CBD5E1 transparent transparent;
+}
+
+.workspace {
+    -fx-background-color: rgba(255, 255, 255, 0.85);
+}
+
+.app-title {
+    -fx-text-fill: #334155;
+}
+
+.check-box {
+    -fx-text-fill: #0F172A;
+}
+
+.check-box .box {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #94A3B8;
 }

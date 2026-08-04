@@ -1,0 +1,48 @@
+/* SmartDM High Contrast Dark Theme */
+.root {
+    -fx-color-surface: #000000;
+    -fx-color-surface-dim: #050505;
+    -fx-color-surface-sunken: #0A0A0A;
+    
+    -fx-color-text: #FFFFFF;
+    -fx-color-text-muted: #FACC15;
+    
+    -fx-color-primary: #38BDF8;
+    -fx-color-primary-hover: #7DD3FC;
+    -fx-color-primary-text: #000000;
+    
+    -fx-color-success: #4ADE80;
+    -fx-color-warning: #FACC15;
+    -fx-color-danger: #F87171;
+    
+    -fx-color-border: #FACC15;
+    
+    -fx-background-color: #000000;
+    -fx-text-fill: #FFFFFF;
+}
+
+.os-window {
+    -fx-background-color: #000000;
+    -fx-border-color: #FACC15;
+    -fx-border-width: 2px;
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+}
+
+.label {
+    -fx-text-fill: #FFFFFF;
+}
+
+.titlebar {
+    -fx-background-color: #111111;
+    -fx-border-color: transparent transparent #FACC15 transparent;
+}
+
+.nav-rail {
+    -fx-background-color: #050505;
+    -fx-border-color: transparent #FACC15 transparent transparent;
+}
+
+.workspace {
+    -fx-background-color: #000000;
+}

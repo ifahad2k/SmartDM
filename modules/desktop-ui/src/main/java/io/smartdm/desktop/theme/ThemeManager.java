@@ -6,17 +6,34 @@ import java.net.URL;
 public class ThemeManager {
     
     public enum Theme {
-        LIGHT("theme-light.css"),
-        DARK("theme-dark.css");
+        DARK("theme-dark.css", "Dark Glassmorphism"),
+        LIGHT("theme-light.css", "Light Theme"),
+        HIGH_CONTRAST("theme-high-contrast.css", "High Contrast Dark");
         
         private final String cssFile;
+        private final String displayName;
         
-        Theme(String cssFile) {
+        Theme(String cssFile, String displayName) {
             this.cssFile = cssFile;
+            this.displayName = displayName;
         }
         
         public String getCssFile() {
             return cssFile;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public static Theme fromDisplayName(String name) {
+            if (name == null) return DARK;
+            for (Theme t : values()) {
+                if (t.getDisplayName().equalsIgnoreCase(name) || t.name().equalsIgnoreCase(name)) {
+                    return t;
+                }
+            }
+            return DARK;
         }
     }
     
@@ -35,14 +52,28 @@ public class ThemeManager {
         }
     }
 
-    private Theme currentTheme = Theme.LIGHT;
+    private static final ThemeManager INSTANCE = new ThemeManager();
+
+    public static ThemeManager getInstance() {
+        return INSTANCE;
+    }
+
+    private Theme currentTheme = Theme.DARK;
     private Density currentDensity = Density.COMFORTABLE;
 
+    public Theme getCurrentTheme() {
+        return currentTheme;
+    }
+
     public void applyTheme(Scene scene) {
+        if (scene == null) return;
         scene.getStylesheets().clear();
         
         loadStylesheet(scene, "theme-base.css");
-        loadStylesheet(scene, currentTheme.getCssFile());
+        loadStylesheet(scene, "main.css");
+        if (currentTheme != Theme.DARK) {
+            loadStylesheet(scene, currentTheme.getCssFile());
+        }
         loadStylesheet(scene, currentDensity.getCssFile());
     }
 
