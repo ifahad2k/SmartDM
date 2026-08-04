@@ -512,7 +512,7 @@
       let hasFound = false;
       let isYtDlpPending = true;
 
-      const checkFormats = () => {
+      const checkFormats = (onComplete) => {
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
           
@@ -527,6 +527,8 @@
             if (formatSearchInterval) clearInterval(formatSearchInterval);
             if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
             renderUniversalFormats(content, [], netMedia, pageUrl, popover);
+          } else if (onComplete) {
+            onComplete();
           }
         });
       };
@@ -542,21 +544,32 @@
           if (formatSearchInterval) clearInterval(formatSearchInterval);
           if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
-        } else if (directSrc && directSrc.startsWith('http')) {
-          hasFound = true;
-          if (formatSearchInterval) clearInterval(formatSearchInterval);
-          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-          const fallbackFormats = [{
-            format_id: 'direct_stream',
-            format_note: 'Direct Media Stream',
-            ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
-            resolution: 'Direct Video Stream (HD)',
-            filesize: 0,
-            url: directSrc
-          }];
-          renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
         } else {
-          checkFormats();
+          // yt-dlp produced no formats (e.g. on Instagram/failures)
+          // Fall back to detected media or directSrc
+          checkFormats(() => {
+            if (!hasFound) {
+              if (directSrc && directSrc.startsWith('http')) {
+                hasFound = true;
+                if (formatSearchInterval) clearInterval(formatSearchInterval);
+                if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+                const fallbackFormats = [{
+                  format_id: 'direct_stream',
+                  format_note: 'Direct Media Stream',
+                  ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
+                  resolution: 'Direct Video Stream (HD)',
+                  filesize: 0,
+                  url: directSrc
+                }];
+                renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
+              } else {
+                hasFound = true;
+                if (formatSearchInterval) clearInterval(formatSearchInterval);
+                if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+                content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+              }
+            }
+          });
         }
       });
 
