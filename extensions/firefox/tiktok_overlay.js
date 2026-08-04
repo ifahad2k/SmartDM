@@ -1,62 +1,48 @@
 (function () {
   'use strict';
 
-  const POST_PROCESSED_ATTR = 'data-smartdm-tiktok-card-processed';
+  const PLAYER_PROCESSED_ATTR = 'data-smartdm-tiktok-processed';
 
   function initTikTokOverlay() {
     const observer = new MutationObserver(() => {
-      scanTikTokPosts();
+      scanPlayers();
     });
     observer.observe(document.body, { childList: true, subtree: true });
-    scanTikTokPosts();
+    scanPlayers();
   }
 
-  function scanTikTokPosts() {
-    // Select all TikTok post card containers in feeds, profile grids, and video pages
-    const selectors = [
-      'div[data-e2e="recommend-list-item-container"]',
-      'div[data-e2e="user-post-item"]',
-      'div[class*="DivItemContainer"]',
-      'div[class*="DivVideoWrapper"]',
-      'div[class*="DivContainer"]',
-      'article'
-    ];
-
-    const postElements = document.querySelectorAll(selectors.join(','));
-    postElements.forEach(attachTikTokBannerToCard);
-
-    // Fallback: also scan standalone <video> elements that might not be inside card containers
-    const mediaElements = document.querySelectorAll('video:not([' + POST_PROCESSED_ATTR + '])');
-    mediaElements.forEach((videoEl) => {
-      const parentCard = videoEl.closest(selectors.join(',')) || videoEl.parentElement;
-      if (parentCard) attachTikTokBannerToCard(parentCard);
-    });
+  function scanPlayers() {
+    const mediaElements = document.querySelectorAll('video:not([' + PLAYER_PROCESSED_ATTR + '])');
+    mediaElements.forEach(attachTikTokBanner);
   }
 
-  function formatSize(bytes) {
-    if (!bytes || bytes <= 0) return null;
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  function attachTikTokBannerToCard(cardEl) {
-    if (!cardEl || cardEl.getAttribute(POST_PROCESSED_ATTR)) return;
-    cardEl.setAttribute(POST_PROCESSED_ATTR, 'true');
-
-    // Ensure container has relative positioning for absolute placement
-    if (window.getComputedStyle(cardEl).position === 'static') {
-      cardEl.style.position = 'relative';
-    }
+  function attachTikTokBanner(mediaEl) {
+    if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
+    mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
     const host = document.createElement('div');
     host.className = 'smartdm-tiktok-host';
-    host.style.position = 'absolute';
-    host.style.top = '16px';
-    host.style.right = '16px';
+    host.style.position = 'fixed';
     host.style.zIndex = '2147483647';
     host.style.pointerEvents = 'auto';
+
+    const syncPos = () => {
+      const rect = mediaEl.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
+        host.style.opacity = '0';
+        host.style.pointerEvents = 'none';
+      } else {
+        host.style.opacity = '1';
+        host.style.pointerEvents = 'auto';
+        host.style.top = (rect.top + 16) + 'px';
+        host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
+      }
+    };
+
+    window.addEventListener('scroll', syncPos, true);
+    window.addEventListener('resize', syncPos);
+    setInterval(syncPos, 100);
+    setTimeout(syncPos, 50);
 
     const shadow = host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
@@ -252,153 +238,120 @@
         </div>
       `;
 
-      // DYNAMIC AT CLICK TIME: Query the live video element inside THIS specific post container
-      const liveVideoEl = cardEl.querySelector('video') || document.querySelector('video');
-      let directSrc = liveVideoEl ? (liveVideoEl.currentSrc || liveVideoEl.src) : null;
-      if (!directSrc || directSrc.startsWith('blob:')) {
-        const sourceChild = liveVideoEl ? liveVideoEl.querySelector('source') : null;
-        if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
-          directSrc = sourceChild.src;
+      // Extract exact page URL for this specific video post
+      let pageUrl = window.location.href;
+      const isVideoLink = (href) => {
+        if (!href) return false;
+        const h = href.toLowerCase();
+        return h.includes('/video/') || h.includes('/@');
+      };
+
+      let el = mediaEl;
+      let found = false;
+      while (el && el !== document.body) {
+        if (el.tagName === 'A' && isVideoLink(el.href)) {
+          pageUrl = el.href;
+          found = true;
+          break;
+        }
+        el = el.parentElement;
+      }
+
+      if (!found) {
+        let currentParent = mediaEl.parentElement;
+        let searchDepth = 0;
+        while (currentParent && currentParent !== document.body && searchDepth < 25) {
+          const links = currentParent.querySelectorAll('a[href]');
+          for (let i = 0; i < links.length; i++) {
+            if (isVideoLink(links[i].href)) {
+              pageUrl = links[i].href;
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+          currentParent = currentParent.parentElement;
+          searchDepth++;
         }
       }
 
-      // DYNAMIC AT CLICK TIME: Query the exact post URL link inside THIS specific post container
-      let pageUrl = window.location.href;
-      const postLink = cardEl.querySelector('a[href*="/video/"]');
-      if (postLink && postLink.href) {
-        pageUrl = postLink.href;
-      }
-
       const startTime = Date.now();
-      const MIN_SEARCH_TIME = 1500; // Enforce searching animation for at least 1.5 seconds
+      const MIN_SEARCH_TIME = 1500;
 
       const checkFormats = () => {
-        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-          let netMedia = (netRes && netRes.media) ? netRes.media : [];
-
-          netMedia = netMedia.filter(m => {
-            const urlLower = m.url.toLowerCase();
-            return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
-          });
-
-          const elapsed = Date.now() - startTime;
-
-          if (elapsed >= MIN_SEARCH_TIME) {
-            if (formatSearchInterval) clearInterval(formatSearchInterval);
-            if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-            renderTikTokFormats(content, directSrc, netMedia, pageUrl, popover);
+        const elapsed = Date.now() - startTime;
+        if (elapsed >= MIN_SEARCH_TIME) {
+          if (formatSearchInterval) clearInterval(formatSearchInterval);
+          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+          
+          let liveSrc = mediaEl.currentSrc || mediaEl.src;
+          if (!liveSrc || liveSrc.startsWith('blob:')) {
+            const sourceChild = mediaEl.querySelector('source');
+            if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
+              liveSrc = sourceChild.src;
+            }
           }
-        });
+          renderTikTokFormats(content, liveSrc, pageUrl, popover);
+        }
       };
 
       checkFormats();
-      formatSearchInterval = setInterval(checkFormats, 500);
+      formatSearchInterval = setInterval(checkFormats, 300);
 
       formatSearchTimeout = setTimeout(() => {
         if (formatSearchInterval) clearInterval(formatSearchInterval);
-        renderTikTokFormats(content, directSrc, [], pageUrl, popover);
-      }, 5000);
+        let liveSrc = mediaEl.currentSrc || mediaEl.src;
+        if (!liveSrc || liveSrc.startsWith('blob:')) {
+          const sourceChild = mediaEl.querySelector('source');
+          if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
+            liveSrc = sourceChild.src;
+          }
+        }
+        renderTikTokFormats(content, liveSrc, pageUrl, popover);
+      }, 4000);
     });
 
-    cardEl.appendChild(host);
+    document.body.appendChild(host);
   }
 
-  function renderTikTokFormats(container, directSrc, netMediaList, pageUrl, popover) {
+  function renderTikTokFormats(container, liveSrc, pageUrl, popover) {
     container.innerHTML = '';
 
-    const rawItems = [];
-
-    // 1. Direct stream from the exact live video element of THIS post card
-    if (directSrc && directSrc.startsWith('http')) {
-      rawItems.push({
-        title: 'TikTok Video Stream (HD)',
-        badge: 'Main Stream',
-        url: directSrc,
-        videoUrl: directSrc,
-        audioUrl: null,
-        formatId: 'best',
-        fileName: null
-      });
-    } else if (netMediaList && netMediaList.length > 0) {
-      // 2. Fallback to netMedia ONLY if directSrc is missing
-      let videoId = null;
-      if (pageUrl) {
-        const match = pageUrl.match(/\/video\/(\d+)/);
-        if (match) videoId = match[1];
-      }
-
-      let filteredNet = netMediaList;
-      if (videoId) {
-        const idMatches = netMediaList.filter(m => m.url.includes(videoId));
-        if (idMatches.length > 0) filteredNet = idMatches;
-      }
-
-      const sortedNet = [...filteredNet].sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
-      sortedNet.forEach((m, idx) => {
-        if (m.contentLength && m.contentLength < 50000 && sortedNet.length > 1) return;
-
-        const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
-        const formattedSize = formatSize(m.contentLength);
-        const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
-        let qualityName = `TikTok Video Stream ${idx + 1} (${ext})`;
-
-        rawItems.push({
-          title: qualityName,
-          badge: sizeText,
-          url: m.url,
-          videoUrl: m.videoUrl || m.url,
-          audioUrl: m.audioUrl || null,
-          formatId: 'best',
-          fileName: m.filename
-        });
-      });
-    }
-
-    const seenUrls = new Set();
-    const allItems = [];
-    rawItems.forEach(item => {
-      if (!seenUrls.has(item.url)) {
-        seenUrls.add(item.url);
-        allItems.push(item);
-      }
-    });
-
-    if (allItems.length === 0) {
-      container.innerHTML = '<div class="status-text">No TikTok media streams detected.</div>';
+    if (!liveSrc || !liveSrc.startsWith('http')) {
+      container.innerHTML = '<div class="status-text">No active TikTok media stream detected.</div>';
       return;
     }
 
-    allItems.forEach(item => {
-      const div = document.createElement('div');
-      div.className = 'format-item';
-      div.innerHTML = `
-        <div class="format-info">
-          <span class="format-title" title="${item.title}">${item.title}</span>
-        </div>
-        <span class="format-badge">${item.badge}</span>
-      `;
-      div.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
-        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-        runtime.sendMessage({
-          type: 'START_MEDIA_DOWNLOAD',
-          url: pageUrl,
-          videoUrl: item.url,
-          audioUrl: null,
-          formatId: 'best'
-        }, () => {
-          setTimeout(() => {
-            if (popover && popover.classList) {
-              popover.classList.remove('active');
-            }
-          }, 800);
-        });
+    const div = document.createElement('div');
+    div.className = 'format-item';
+    div.innerHTML = `
+      <div class="format-info">
+        <span class="format-title">TikTok Video Stream (HD)</span>
+      </div>
+      <span class="format-badge">Main Stream</span>
+    `;
+
+    div.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
+      const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+      runtime.sendMessage({
+        type: 'START_MEDIA_DOWNLOAD',
+        url: pageUrl,
+        videoUrl: liveSrc,
+        audioUrl: null,
+        formatId: 'best'
+      }, () => {
+        setTimeout(() => {
+          if (popover && popover.classList) {
+            popover.classList.remove('active');
+          }
+        }, 800);
       });
-      container.appendChild(div);
     });
+
+    container.appendChild(div);
   }
 
   if (document.readyState === 'loading') {
