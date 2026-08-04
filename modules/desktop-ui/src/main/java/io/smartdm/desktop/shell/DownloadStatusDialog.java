@@ -324,24 +324,38 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
             segIdx.setPrefWidth(30);
             segIdx.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold; -fx-font-size: 11px;");
 
-            ProgressBar pBar = new ProgressBar();
-            pBar.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(pBar, Priority.ALWAYS);
+            Region segTrack = new Region();
+            segTrack.setStyle("-fx-background-color: rgba(255,255,255,0.08); -fx-background-radius: 4; -fx-min-height: 8;");
+            HBox.setHgrow(segTrack, Priority.ALWAYS);
+
+            Region segFill = new Region();
+            segFill.setStyle("-fx-background-color: linear-gradient(to right, #38BDF8, #818CF8); -fx-background-radius: 4; -fx-min-height: 8;");
+            segFill.setMinWidth(Region.USE_PREF_SIZE);
+            segFill.setMaxWidth(Region.USE_PREF_SIZE);
 
             long segCurrent = seg.downloadedBytes();
             long segTotal = seg.totalBytes();
-            if (segTotal > 0) {
-                pBar.setProgress(Math.min(1.0, (double) segCurrent / segTotal));
-            } else {
-                pBar.setProgress(0);
-            }
+            double segPct = (segTotal > 0) ? Math.min(1.0, (double) segCurrent / segTotal) : 0;
+
+            StackPane segWrap = new StackPane();
+            segWrap.setAlignment(Pos.CENTER_LEFT);
+            segWrap.getChildren().addAll(segTrack, segFill);
+            HBox.setHgrow(segWrap, Priority.ALWAYS);
+
+            segWrap.widthProperty().addListener((obs, oldW, newW) -> {
+                if (newW != null && newW.doubleValue() > 0) {
+                    segFill.setPrefWidth(segPct * newW.doubleValue());
+                }
+            });
+            // Initial layout calculation
+            segFill.setPrefWidth(0);
 
             Label segBytes = new Label(formatBytes(segCurrent));
             segBytes.setPrefWidth(80);
             segBytes.setAlignment(Pos.CENTER_RIGHT);
             segBytes.setStyle("-fx-text-fill: #CBD5E1; -fx-font-size: 11px; -fx-font-family: 'JetBrains Mono', monospace;");
 
-            row.getChildren().addAll(segIdx, pBar, segBytes);
+            row.getChildren().addAll(segIdx, segWrap, segBytes);
             segmentsBox.getChildren().add(row);
         }
     }
