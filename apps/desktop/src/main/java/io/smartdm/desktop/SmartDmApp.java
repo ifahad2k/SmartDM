@@ -537,6 +537,7 @@ public class SmartDmApp extends Application {
                 openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
+                System.out.println(">>> [IPC] Received ADD_DOWNLOAD request for URL: " + req.url());
                 javafx.application.Platform.runLater(() -> {
                     io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(primaryStage, repository.findAll(), smartFolderService);
                     d.setCookiesAndUserAgent(req.cookies(), req.userAgent());
@@ -634,10 +635,68 @@ public class SmartDmApp extends Application {
         primaryStage.setIconified(false);
         primaryStage.setAlwaysOnTop(true);
         System.out.println(">>> SmartDmApp window showing NOW <<<");
+
+        // Close-to-Tray setup
+        javafx.application.Platform.setImplicitExit(false);
+        primaryStage.setOnCloseRequest(event -> {
+            io.smartdm.desktop.shell.settings.AppSettings settings = io.smartdm.desktop.shell.settings.AppSettings.loadFromDisk();
+            if (settings.isCloseToTray()) {
+                event.consume();
+                primaryStage.hide();
+            } else {
+                javafx.application.Platform.exit();
+                System.exit(0);
+            }
+        });
+
+        setupSystemTray(primaryStage);
+
         primaryStage.show();
         primaryStage.toFront();
         primaryStage.requestFocus();
         primaryStage.setAlwaysOnTop(false);
+    }
+
+    private void setupSystemTray(Stage primaryStage) {
+        if (!java.awt.SystemTray.isSupported()) return;
+
+        try {
+            java.awt.SystemTray tray = java.awt.SystemTray.getSystemTray();
+            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g = img.createGraphics();
+            g.setColor(new java.awt.Color(56, 189, 248));
+            g.fillOval(0, 0, 16, 16);
+            g.dispose();
+
+            java.awt.PopupMenu popup = new java.awt.PopupMenu();
+
+            java.awt.MenuItem openItem = new java.awt.MenuItem("Open SmartDM");
+            openItem.addActionListener(e -> javafx.application.Platform.runLater(() -> {
+                primaryStage.show();
+                primaryStage.toFront();
+            }));
+
+            java.awt.MenuItem exitItem = new java.awt.MenuItem("Exit SmartDM");
+            exitItem.addActionListener(e -> {
+                javafx.application.Platform.exit();
+                System.exit(0);
+            });
+
+            popup.add(openItem);
+            popup.addSeparator();
+            popup.add(exitItem);
+
+            java.awt.TrayIcon trayIcon = new java.awt.TrayIcon(img, "SmartDM", popup);
+            trayIcon.setImageAutoSize(true);
+            trayIcon.addActionListener(e -> javafx.application.Platform.runLater(() -> {
+                primaryStage.show();
+                primaryStage.toFront();
+            }));
+
+            tray.add(trayIcon);
+        } catch (Exception e) {
+            System.err.println("Could not initialize SystemTray: " + e.getMessage());
+        }
     }
 
     @Override
