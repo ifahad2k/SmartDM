@@ -344,18 +344,36 @@ async function appendCookiesAndSend(request, sendResponse, storeId = null) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-    if (chrome.runtime.lastError) {
-      if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      else console.error('Error sending native message:', chrome.runtime.lastError.message);
-    } else {
+  const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+  
+  try {
+    if (api.runtime.sendNativeMessage.length === 2 || (typeof browser !== 'undefined')) {
+      // Firefox / Promise API
+      const response = await api.runtime.sendNativeMessage(NATIVE_HOST_NAME, request);
       if (sendResponse) sendResponse(response || { success: true });
       else console.log('Received response from native host:', response);
+    } else {
+      // Chrome / Callback API
+      api.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+        const err = api.runtime.lastError;
+        if (err) {
+          if (sendResponse) sendResponse({ success: false, error: err.message });
+          else console.error('Error sending native message:', err.message);
+        } else {
+          if (sendResponse) sendResponse(response || { success: true });
+          else console.log('Received response from native host:', response);
+        }
+      });
     }
-  });
+  } catch (err) {
+    console.error('Exception in sendNativeMessage:', err);
+    if (sendResponse) sendResponse({ success: false, error: err.message || String(err) });
+  }
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+
+api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
     const media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
@@ -365,7 +383,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
     const storeId = sender.tab ? sender.tab.cookieStoreId : null;
-    appendCookiesAndSend(request, sendResponse, storeId);
+    appendCookiesAndSend(request, (res) => {
+      sendResponse(res || { success: false, error: "Empty response" });
+    }, storeId).catch(err => {
+      sendResponse({ success: false, error: err.message || String(err) });
+    });
     return true; // Async response
   }
   
