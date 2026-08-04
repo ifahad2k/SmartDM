@@ -401,11 +401,16 @@ if (browser.downloads && browser.downloads.onCreated) {
         if (browser.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
           console.error("SmartDM unavailable, resuming standard download...", browser.runtime.lastError);
           bypassedDownloads.add(downloadItem.url);
-          browser.downloads.download({
+          
+          let dlOptions = {
             url: downloadItem.url,
-            filename: basename,
             saveAs: true
-          });
+          };
+          if (basename && basename.length > 0) {
+              dlOptions.filename = basename;
+          }
+          browser.downloads.download(dlOptions);
+          
           setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
         }
       });

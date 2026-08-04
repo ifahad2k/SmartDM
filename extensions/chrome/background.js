@@ -387,28 +387,33 @@ if (chrome.downloads && chrome.downloads.onCreated) {
     }
 
     // Cancel browser download
-    chrome.downloads.cancel(downloadItem.id, () => {
-      let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
-      const message = {
-        type: 'ADD_DOWNLOAD',
-        url: downloadItem.finalUrl || downloadItem.url,
-        fileName: basename,
-        referer: downloadItem.referrer || null,
-        userAgent: navigator.userAgent
-      };
+    chrome.downloads.cancel(downloadItem.id);
+    
+    let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
+    const message = {
+      type: 'ADD_DOWNLOAD',
+      url: downloadItem.finalUrl || downloadItem.url,
+      fileName: basename,
+      referer: downloadItem.referrer || null,
+      userAgent: navigator.userAgent
+    };
 
-      appendCookiesAndSend(message, (response) => {
-        if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
-          console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
-          bypassedDownloads.add(downloadItem.url);
-          chrome.downloads.download({
-            url: downloadItem.url,
-            filename: basename,
-            saveAs: true
-          });
-          setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+    appendCookiesAndSend(message, (response) => {
+      if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
+        console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
+        bypassedDownloads.add(downloadItem.url);
+        
+        let dlOptions = {
+          url: downloadItem.url,
+          saveAs: true
+        };
+        if (basename && basename.length > 0) {
+            dlOptions.filename = basename;
         }
-      });
+        chrome.downloads.download(dlOptions);
+        
+        setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+      }
     });
   });
 }
