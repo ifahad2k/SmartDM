@@ -68,7 +68,7 @@
     if (!mediaEl) return false;
     
     const host = window.location.hostname.toLowerCase();
-    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('twitter.com') || host.includes('x.com')) {
+    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
       return false; // Social media feed videos are always main videos
     }
 
@@ -134,7 +134,7 @@
     }
 
     const hostDomain = window.location.hostname.toLowerCase();
-    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
+    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('tiktok.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
       return document.body;
     }
 
@@ -439,8 +439,9 @@
       const isFb = hostLower.includes('facebook.com');
       const isIg = hostLower.includes('instagram.com');
       const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
+      const isTt = hostLower.includes('tiktok.com');
 
-      if (isFb || isIg || isX) {
+      if (isFb || isIg || isX || isTt) {
         const isVideoLink = (href) => {
           if (!href) return false;
           const h = href.toLowerCase();
@@ -454,6 +455,7 @@
                    h.includes('/share/r/') || h.includes('/share/p/');
           }
           if (isX) return h.includes('/status/');
+          if (isTt) return h.includes('/video/') || h.includes('/@');
           return false;
         };
 
@@ -512,7 +514,7 @@
       let hasFound = false;
       let isYtDlpPending = true;
 
-      const checkFormats = (onComplete) => {
+      const checkFormats = () => {
         chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
           
@@ -523,12 +525,10 @@
 
           if (netMedia.length > 0) {
             hasFound = true;
-            
             if (formatSearchInterval) clearInterval(formatSearchInterval);
             if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+
             renderUniversalFormats(content, [], netMedia, pageUrl, popover);
-          } else if (onComplete) {
-            onComplete();
           }
         });
       };
@@ -544,32 +544,21 @@
           if (formatSearchInterval) clearInterval(formatSearchInterval);
           if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
+        } else if (directSrc && directSrc.startsWith('http')) {
+          hasFound = true;
+          if (formatSearchInterval) clearInterval(formatSearchInterval);
+          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+          const fallbackFormats = [{
+            format_id: 'direct_stream',
+            format_note: 'Direct Media Stream',
+            ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
+            resolution: 'Direct Video Stream (HD)',
+            filesize: 0,
+            url: directSrc
+          }];
+          renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
         } else {
-          // yt-dlp produced no formats (e.g. on Instagram/failures)
-          // Fall back to detected media or directSrc
-          checkFormats(() => {
-            if (!hasFound) {
-              if (directSrc && directSrc.startsWith('http')) {
-                hasFound = true;
-                if (formatSearchInterval) clearInterval(formatSearchInterval);
-                if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-                const fallbackFormats = [{
-                  format_id: 'direct_stream',
-                  format_note: 'Direct Media Stream',
-                  ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
-                  resolution: 'Direct Video Stream (HD)',
-                  filesize: 0,
-                  url: directSrc
-                }];
-                renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
-              } else {
-                hasFound = true;
-                if (formatSearchInterval) clearInterval(formatSearchInterval);
-                if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-                content.innerHTML = '<div class="status-text">No media formats detected.</div>';
-              }
-            }
-          });
+          checkFormats();
         }
       });
 
@@ -705,8 +694,8 @@
   // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR MEDIA SITES ---
   function scanThumbnails() {
     const host = window.location.hostname.toLowerCase();
-    // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, Twitter/X)
-    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('twitter.com') || host.includes('x.com')) {
+    // Do NOT attach thumbnail badges on social feed platforms (Facebook, Instagram, TikTok, Twitter/X)
+    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
       return;
     }
 
