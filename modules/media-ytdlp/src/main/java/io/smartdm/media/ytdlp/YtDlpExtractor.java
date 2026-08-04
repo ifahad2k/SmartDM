@@ -42,11 +42,12 @@ public class YtDlpExtractor implements MediaExtractor {
             try {
                 Path cookieFile = null;
                 if (cookies != null && !cookies.isBlank()) {
+                    String cleanCookies = cookies.replace("\\n", "\n").replace("\\t", "\t");
                     cookieFile = java.nio.file.Files.createTempFile("smartdm_cookies_", ".txt");
                     if (System.getProperty("os.name").toLowerCase().contains("linux") || System.getProperty("os.name").toLowerCase().contains("mac")) {
                         java.nio.file.Files.setPosixFilePermissions(cookieFile, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
                     }
-                    java.nio.file.Files.writeString(cookieFile, cookies, StandardCharsets.UTF_8);
+                    java.nio.file.Files.writeString(cookieFile, cleanCookies, StandardCharsets.UTF_8);
                 }
 
                 try {

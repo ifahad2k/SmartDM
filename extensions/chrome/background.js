@@ -308,8 +308,14 @@ async function appendCookiesAndSend(request, sendResponse) {
     }
     
     if (targetUrl && chrome.cookies) {
+      let cookieDomainUrl = targetUrl;
+      try {
+        const parsed = new URL(targetUrl);
+        cookieDomainUrl = parsed.protocol + '//' + parsed.hostname + '/';
+      } catch (e) {}
+
       const cookies = await new Promise(resolve => {
-        chrome.cookies.getAll({ url: targetUrl }, (c) => resolve(c || []));
+        chrome.cookies.getAll({ url: cookieDomainUrl }, (c) => resolve(c || []));
       });
       
       if (cookies && cookies.length > 0) {
