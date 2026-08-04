@@ -95,6 +95,7 @@ public abstract class GlassmorphicDialog extends Stage {
 
         Scene scene = new Scene(root);
         scene.setFill(Color.TRANSPARENT);
+        io.smartdm.desktop.theme.ThemeManager.getInstance().applyTheme(scene);
         scene.getStylesheets().add(Objects.requireNonNull(
             getClass().getResource("/io/smartdm/desktop/theme/dialog.css")
         ).toExternalForm());

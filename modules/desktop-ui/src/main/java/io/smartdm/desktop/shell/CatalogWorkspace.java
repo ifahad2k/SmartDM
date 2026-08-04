@@ -41,9 +41,9 @@ public class CatalogWorkspace extends VBox {
         // Header
         VBox headerBox = new VBox(4);
         Label title = new Label("Local File Catalog & Duplicate Center");
-        title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #F3F4F6;");
+        title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         Label subtitle = new Label("Index approved local folders and detect duplicates using 3-tier fingerprinting.");
-        subtitle.setStyle("-fx-font-size: 13px; -fx-text-fill: #9CA3AF;");
+        subtitle.setStyle("-fx-font-size: 13px;");
         headerBox.getChildren().addAll(title, subtitle);
 
         // Action Toolbar
@@ -51,11 +51,11 @@ public class CatalogWorkspace extends VBox {
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         Button addFolderBtn = new Button("+ Add Folder to Index");
-        addFolderBtn.setStyle("-fx-background-color: linear-gradient(to bottom right, #37E9FF, #9B6BFF); -fx-text-fill: #04141A; -fx-font-weight: bold; -fx-background-radius: 8px; -fx-padding: 8px 16px; -fx-cursor: hand;");
+        addFolderBtn.setStyle("-fx-background-color: linear-gradient(to bottom right, #38BDF8, #818CF8); -fx-text-fill: #0F172A; -fx-font-weight: bold; -fx-background-radius: 8px; -fx-padding: 8px 16px; -fx-cursor: hand;");
         addFolderBtn.setOnAction(e -> handleAddFolder());
 
         Button checkDupBtn = new Button("🔍 Check File for Duplicates...");
-        checkDupBtn.setStyle("-fx-background-color: rgba(255, 255, 255, 0.08); -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8px; -fx-background-radius: 8px; -fx-text-fill: #F3F4F6; -fx-font-weight: bold; -fx-padding: 8px 16px; -fx-cursor: hand;");
+        checkDupBtn.getStyleClass().add("btn");
         checkDupBtn.setOnAction(e -> handleCheckDuplicate());
 
         Region spacer = new Region();
@@ -63,14 +63,14 @@ public class CatalogWorkspace extends VBox {
 
         searchField.setPromptText("Search indexed files (FTS5)...");
         searchField.setPrefWidth(280);
-        searchField.setStyle("-fx-background-color: rgba(255, 255, 255, 0.06); -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8px; -fx-background-radius: 8px; -fx-text-fill: #F3F4F6; -fx-prompt-text-fill: #6B7280; -fx-padding: 8px 12px;");
+        searchField.getStyleClass().add("search-field");
         searchField.textProperty().addListener((obs, old, val) -> handleSearch(val));
 
         toolbar.getChildren().addAll(addFolderBtn, checkDupBtn, spacer, searchField);
 
         // Section 1: Approved Catalog Roots Table
         Label rootsHeader = new Label("Approved Catalog Folders");
-        rootsHeader.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #E5E7EB;");
+        rootsHeader.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
 
         setupRootTable();
         VBox.setVgrow(rootTable, Priority.NEVER);
@@ -78,7 +78,7 @@ public class CatalogWorkspace extends VBox {
 
         // Section 2: Indexed Files Table
         Label filesHeader = new Label("Indexed Files & Fingerprints");
-        filesHeader.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #E5E7EB;");
+        filesHeader.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
 
         setupFileTable();
         VBox.setVgrow(fileTable, Priority.ALWAYS);
@@ -92,7 +92,6 @@ public class CatalogWorkspace extends VBox {
     private void setupRootTable() {
         rootTable.setItems(rootList);
         rootTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        rootTable.setStyle("-fx-background-color: rgba(17, 24, 39, 0.5); -fx-border-color: rgba(255, 255, 255, 0.1); -fx-border-radius: 8px; -fx-background-radius: 8px;");
 
         TableColumn<CatalogRoot, String> nameCol = new TableColumn<>("Name");
         nameCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getDisplayName()));
