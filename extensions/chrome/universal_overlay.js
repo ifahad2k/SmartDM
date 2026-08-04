@@ -702,6 +702,42 @@
     });
   }
 
+  // --- GLOBAL CLICK INTERCEPTOR FOR FILE DOWNLOADS ---
+  function initGlobalClickInterceptor() {
+    document.addEventListener('click', (e) => {
+      if (e.button !== 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+      
+      let el = e.target;
+      while (el && el !== document.body) {
+        if (el.tagName === 'A' && el.href) {
+          const urlLower = el.href.toLowerCase();
+          const isFileExt = urlLower.match(/\.(zip|rar|7z|exe|msi|iso|bin|mp4|mkv|avi|mp3|flac|wav|pdf|epub|mobi|apk|tar|gz|bz2)(\?.*)?$/i);
+          const isDownloadAttr = el.hasAttribute('download');
+          
+          if ((isFileExt || isDownloadAttr) && urlLower.startsWith('http')) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            let basename = '';
+            try {
+              basename = new URL(el.href).pathname.split('/').pop();
+            } catch(err) {}
+            
+            const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+            runtime.sendMessage({
+              type: 'ADD_DOWNLOAD',
+              url: el.href,
+              fileName: basename || null,
+              referer: window.location.href
+            });
+            return;
+          }
+        }
+        el = el.parentElement;
+      }
+    }, true);
+  }
+
   // --- THUMBNAIL HOVER DOWNLOAD OVERLAY FOR MEDIA SITES ---
   function scanThumbnails() {
     const host = window.location.hostname.toLowerCase();
@@ -1062,8 +1098,12 @@
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initUniversalOverlay);
+    document.addEventListener('DOMContentLoaded', () => {
+      initUniversalOverlay();
+      initGlobalClickInterceptor();
+    });
   } else {
     initUniversalOverlay();
+    initGlobalClickInterceptor();
   }
 })();

@@ -355,7 +355,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
+  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
     appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
@@ -376,8 +376,9 @@ function sendToSmartDM(url, referer, fileName = null) {
 
 const bypassedDownloads = new Set();
 
-if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
-  chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+if (chrome.downloads && chrome.downloads.onCreated) {
+  chrome.downloads.onCreated.addListener((downloadItem) => {
+    if (downloadItem.state !== 'in_progress') return;
     if (downloadItem.byExtensionId || bypassedDownloads.has(downloadItem.url)) {
       return;
     }
