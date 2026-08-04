@@ -341,19 +341,28 @@
         formatId: 'best',
         fileName: null
       });
-    }
+    } else if (netMediaList && netMediaList.length > 0) {
+      // Fallback to netMedia ONLY if directSrc is missing/blob
+      let videoId = null;
+      if (pageUrl) {
+        const match = pageUrl.match(/\/video\/(\d+)/);
+        if (match) videoId = match[1];
+      }
 
-    // 2. Add network intercepted media streams
-    if (netMediaList && netMediaList.length > 0) {
-      const sortedNet = [...netMediaList].sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
+      let filteredNet = netMediaList;
+      if (videoId) {
+        const idMatches = netMediaList.filter(m => m.url.includes(videoId));
+        if (idMatches.length > 0) filteredNet = idMatches;
+      }
+
+      const sortedNet = [...filteredNet].sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
       sortedNet.forEach((m, idx) => {
         if (m.contentLength && m.contentLength < 50000 && sortedNet.length > 1) return;
-        if (directSrc && m.url === directSrc) return;
 
         const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
         const formattedSize = formatSize(m.contentLength);
         const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
-        let qualityName = `TikTok Video Stream ${rawItems.length + 1} (${ext})`;
+        let qualityName = `TikTok Video Stream ${idx + 1} (${ext})`;
 
         rawItems.push({
           title: qualityName,
