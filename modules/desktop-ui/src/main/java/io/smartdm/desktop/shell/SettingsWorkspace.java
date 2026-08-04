@@ -356,7 +356,7 @@ public class SettingsWorkspace extends VBox {
             }
         });
 
-        Button aboutBtn = new Button("🛡️ About SmartDM & Verification");
+        Button aboutBtn = new Button("🛡️ About SmartDM");
         aboutBtn.setStyle("-fx-background-color: rgba(255,255,255,0.1); -fx-text-fill: #E2E8F0; -fx-font-weight: bold; -fx-background-radius: 6; -fx-padding: 8 16; -fx-cursor: hand;");
         aboutBtn.setOnAction(e -> {
             Stage owner = (Stage) getScene().getWindow();
@@ -364,7 +364,15 @@ public class SettingsWorkspace extends VBox {
             dlg.show();
         });
 
-        btnBox.getChildren().addAll(reportBugBtn, aboutBtn);
+        Button privacyBtn = new Button("🔒 Privacy Policy");
+        privacyBtn.setStyle("-fx-background-color: rgba(255,255,255,0.1); -fx-text-fill: #E2E8F0; -fx-font-weight: bold; -fx-background-radius: 6; -fx-padding: 8 16; -fx-cursor: hand;");
+        privacyBtn.setOnAction(e -> {
+            Stage owner = (Stage) getScene().getWindow();
+            PrivacyPolicyDialog dlg = new PrivacyPolicyDialog(owner);
+            dlg.show();
+        });
+
+        btnBox.getChildren().addAll(reportBugBtn, aboutBtn, privacyBtn);
 
         card.getChildren().addAll(sectionTitle, bugDesc, btnBox);
         return card;
