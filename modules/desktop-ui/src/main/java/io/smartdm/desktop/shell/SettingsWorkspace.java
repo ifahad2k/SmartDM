@@ -332,6 +332,8 @@ public class SettingsWorkspace extends VBox {
         return card;
     }
 
+    private static final String BUG_REPORT_URL = "https://github.com/ifahad2k/SmartDM/issues";
+
     // ── 5. HELP & SUPPORT SECTION ─────────────────────────────────────────────
     private VBox buildHelpSection() {
         VBox card = new VBox(16);
@@ -343,23 +345,12 @@ public class SettingsWorkspace extends VBox {
         Label bugDesc = new Label("Found an issue or have a feature request? Submit feedback directly to our issue tracker.");
         bugDesc.setStyle("-fx-text-fill: #CBD5E1; -fx-font-size: 12px;");
 
-        TextField bugUrlField = new TextField(appSettings.getReportBugUrl());
-        bugUrlField.setPromptText("Report Bug Website URL...");
-        bugUrlField.textProperty().addListener((obs, oldV, newV) -> {
-            if (newV != null && !newV.isBlank()) {
-                appSettings.setReportBugUrl(newV);
-                appSettings.saveToDisk();
-            }
-        });
-
         HBox btnBox = new HBox(12);
         Button reportBugBtn = new Button("🐛 Report a Bug / Open Website");
         reportBugBtn.setStyle("-fx-background-color: #EF4444; -fx-text-fill: #FFFFFF; -fx-font-weight: bold; -fx-background-radius: 6; -fx-padding: 8 16; -fx-cursor: hand;");
         reportBugBtn.setOnAction(e -> {
             try {
-                String target = appSettings.getReportBugUrl();
-                if (target == null || target.isBlank()) target = "https://github.com/ifahad2k/SmartDM/issues";
-                Desktop.getDesktop().browse(new URI(target));
+                Desktop.getDesktop().browse(new URI(BUG_REPORT_URL));
             } catch (Exception ex) {
                 System.err.println("Could not open bug URL: " + ex.getMessage());
             }
@@ -375,7 +366,7 @@ public class SettingsWorkspace extends VBox {
 
         btnBox.getChildren().addAll(reportBugBtn, aboutBtn);
 
-        card.getChildren().addAll(sectionTitle, bugDesc, new Label("Bug Reporting Endpoint URL:"), bugUrlField, btnBox);
+        card.getChildren().addAll(sectionTitle, bugDesc, btnBox);
         return card;
     }
 
