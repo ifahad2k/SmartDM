@@ -317,10 +317,11 @@
                 videoUrl: m.url
               }));
               renderFormatItems(content, synthFormats, videoUrl, popover);
-            } else if (res && (res.status === 'error' || res.success === false)) {
-              const errMsg = (res.message && res.message.includes("not connect")) 
+            } else if (!res || res.status === 'error' || res.success === false) {
+              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : "");
+              const errMsg = (errTxt.includes("not connect") || errTxt.includes("running")) 
                 ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
-                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry.</span>";
+                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Check SmartDM or retry.</span>";
               content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
             } else {
               content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
@@ -563,10 +564,11 @@
                 videoUrl: m.url
               }));
               renderFormatItems(content, synthFormats, currentVideoUrl, popover);
-            } else if (res && (res.status === 'error' || res.success === false)) {
-              const errMsg = (res.message && res.message.includes("not connect")) 
+            } else if (!res || res.status === 'error' || res.success === false) {
+              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : "");
+              const errMsg = (errTxt.includes("not connect") || errTxt.includes("running")) 
                 ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
-                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry.</span>";
+                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Check SmartDM or retry.</span>";
               content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
             } else {
               content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';

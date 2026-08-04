@@ -335,17 +335,31 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-  runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-    const err = runtime.lastError;
-    if (err) {
-      if (sendResponse) sendResponse({ success: false, error: err.message });
-      else console.error('Error sending native message:', err.message);
-    } else {
+  const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+  
+  try {
+    if (api.runtime.sendNativeMessage.length === 2 || (typeof browser !== 'undefined')) {
+      // Firefox / Promise API
+      const response = await api.runtime.sendNativeMessage(NATIVE_HOST_NAME, request);
       if (sendResponse) sendResponse(response || { success: true });
       else console.log('Received response from native host:', response);
+    } else {
+      // Chrome / Callback API
+      api.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+        const err = api.runtime.lastError;
+        if (err) {
+          if (sendResponse) sendResponse({ success: false, error: err.message });
+          else console.error('Error sending native message:', err.message);
+        } else {
+          if (sendResponse) sendResponse(response || { success: true });
+          else console.log('Received response from native host:', response);
+        }
+      });
     }
-  });
+  } catch (err) {
+    console.error('Exception in sendNativeMessage:', err);
+    if (sendResponse) sendResponse({ success: false, error: err.message || String(err) });
+  }
 }
 
 const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
@@ -364,6 +378,10 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
       appendCookiesAndSend(request, (res) => {
         if (sendResponse) sendResponse(res);
         resolve(res);
+      }).catch(err => {
+        const errRes = { success: false, error: err.message || String(err) };
+        if (sendResponse) sendResponse(errRes);
+        resolve(errRes);
       });
     });
   }
