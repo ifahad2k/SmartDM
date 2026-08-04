@@ -18,22 +18,16 @@
   const THUMB_PROCESSED_ATTR = 'data-smartdm-universal-thumb-attached';
 
   function sendExtensionMessage(message, callback) {
-    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
-      browser.runtime.sendMessage(message)
-        .then(res => {
-          if (callback) callback(res || null);
-        })
-        .catch(err => {
-          console.warn('sendExtensionMessage error:', err);
-          if (callback) callback(null);
-        });
-    } else if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage(message, (res) => {
         const err = chrome.runtime.lastError;
-        if (callback) callback(err ? null : res);
+        if (err) {
+          console.warn('sendExtensionMessage error:', err.message);
+        }
+        if (callback) callback(err ? { success: false, error: err.message } : (res || { success: false, error: 'Empty response' }));
       });
     } else {
-      if (callback) callback(null);
+      if (callback) callback({ success: false, error: 'Extension API not found' });
     }
   }
 
@@ -185,6 +179,8 @@
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
+    host.style.width = 'max-content';
+    host.style.height = 'max-content';
     
     if (container === document.body) {
       host.style.position = 'fixed';
@@ -200,7 +196,7 @@
           host.style.opacity = '1';
           host.style.pointerEvents = 'auto';
           host.style.top = (rect.top + 16) + 'px';
-          host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
+          host.style.left = Math.max(16, (rect.right - host.offsetWidth - 16)) + 'px';
         }
       };
       
