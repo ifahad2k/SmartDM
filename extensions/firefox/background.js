@@ -348,19 +348,26 @@ async function appendCookiesAndSend(request, sendResponse) {
   });
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+
+api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
     const media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
-    sendResponse({ success: true, media: media });
-    return true;
+    const res = { success: true, media: media };
+    if (sendResponse) sendResponse(res);
+    return Promise.resolve(res);
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
-    appendCookiesAndSend(request, sendResponse);
-    return true; // Async response
+    return new Promise((resolve) => {
+      appendCookiesAndSend(request, (res) => {
+        if (sendResponse) sendResponse(res);
+        resolve(res);
+      });
+    });
   }
-  return true;
+  return Promise.resolve({ success: false });
 });
 
 function sendToSmartDM(url, referer, fileName = null) {

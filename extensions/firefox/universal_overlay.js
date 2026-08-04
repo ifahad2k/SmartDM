@@ -18,24 +18,21 @@
   const THUMB_PROCESSED_ATTR = 'data-smartdm-universal-thumb-attached';
 
   function sendExtensionMessage(message, callback) {
-    const runtime = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome.runtime : (typeof browser !== 'undefined' ? browser.runtime : null);
-    if (!runtime) return;
-    try {
-      let called = false;
-      const safeCb = (res) => {
-        if (!called) {
-          called = true;
-          if (callback) callback(res);
-        }
-      };
-      const resPromise = runtime.sendMessage(message, (res) => {
-        const err = runtime.lastError;
-        safeCb(err ? null : res);
+    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
+      browser.runtime.sendMessage(message)
+        .then(res => {
+          if (callback) callback(res || null);
+        })
+        .catch(err => {
+          console.warn('sendExtensionMessage error:', err);
+          if (callback) callback(null);
+        });
+    } else if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage(message, (res) => {
+        const err = chrome.runtime.lastError;
+        if (callback) callback(err ? null : res);
       });
-      if (resPromise && typeof resPromise.then === 'function') {
-        resPromise.then(res => safeCb(res)).catch(() => safeCb(null));
-      }
-    } catch (e) {
+    } else {
       if (callback) callback(null);
     }
   }
