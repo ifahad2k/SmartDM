@@ -19,16 +19,31 @@
 
   const ytDlpCache = {};
 
+  function sendExtensionMessage(message, callback) {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage(message, (res) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          console.warn('sendExtensionMessage error:', err.message);
+        }
+        if (callback) callback(err ? { success: false, error: err.message } : (res || { success: false, error: 'Empty response' }));
+      });
+    } else {
+      if (callback) callback({ success: false, error: 'Extension API not found' });
+    }
+  }
+
   function prefetchYtDlpFormats(url) {
     if (!ytDlpCache[url]) {
       ytDlpCache[url] = { status: 'fetching', formats: null, callbacks: [] };
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-        if (res && res.success && res.formats && res.formats.length > 0) {
+      sendExtensionMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+        if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
           ytDlpCache[url].status = 'done';
           ytDlpCache[url].formats = res;
           ytDlpCache[url].callbacks.forEach(cb => cb(res));
           ytDlpCache[url].callbacks = [];
         } else {
+          ytDlpCache[url].status = 'error';
           const cbs = ytDlpCache[url].callbacks || [];
           delete ytDlpCache[url];
           cbs.forEach(cb => cb(res));
@@ -519,58 +534,47 @@
       }
 
       let hasFound = false;
-      let isYtDlpPending = true;
-
-      const checkFormats = () => {
-        chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-          let netMedia = (netRes && netRes.media) ? netRes.media : [];
-          
-          netMedia = netMedia.filter(m => {
-            const urlLower = m.url.toLowerCase();
-            return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
-          });
-
-          if (netMedia.length > 0) {
-            hasFound = true;
-            if (formatSearchInterval) clearInterval(formatSearchInterval);
-            if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-
-            renderUniversalFormats(content, [], netMedia, pageUrl, popover);
-          }
-        });
-      };
-
-      checkFormats();
-      formatSearchInterval = setInterval(checkFormats, 1000);
 
       // Async query yt-dlp formats (uses cache for instant response)
       getCachedYtDlpFormats(pageUrl, (res) => {
-        isYtDlpPending = false;
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
-          if (formatSearchInterval) clearInterval(formatSearchInterval);
           if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
-        } else if (directSrc && directSrc.startsWith('http')) {
-          hasFound = true;
-          if (formatSearchInterval) clearInterval(formatSearchInterval);
-          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-          const fallbackFormats = [{
-            format_id: 'direct_stream',
-            format_note: 'Direct Media Stream',
-            ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
-            resolution: 'Direct Video Stream (HD)',
-            filesize: 0,
-            url: directSrc
-          }];
-          renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
         } else {
-          checkFormats();
+          // yt-dlp failed or no formats, try network streams
+          chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+            let netMedia = (netRes && netRes.media) ? netRes.media : [];
+            netMedia = netMedia.filter(m => {
+              const urlLower = m.url.toLowerCase();
+              return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
+            });
+
+            if (netMedia.length > 0) {
+              hasFound = true;
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+              renderUniversalFormats(content, [], netMedia, pageUrl, popover);
+            } else if (directSrc && directSrc.startsWith('http')) {
+              hasFound = true;
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+              const fallbackFormats = [{
+                format_id: 'direct_stream',
+                format_note: 'Direct Media Stream',
+                ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
+                resolution: 'Direct Video Stream (HD)',
+                filesize: 0,
+                url: directSrc
+              }];
+              renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
+            } else {
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+              content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+            }
+          });
         }
       });
 
       formatSearchTimeout = setTimeout(() => {
-        if (formatSearchInterval) clearInterval(formatSearchInterval);
         if (!hasFound) {
           if (directSrc && directSrc.startsWith('http')) {
             hasFound = true;
@@ -584,7 +588,7 @@
             }];
             renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
           } else {
-            content.innerHTML = '<div class="status-text">No media formats detected.</div>';
+            content.innerHTML = '<div class="status-text">No media formats detected. Timeout.</div>';
           }
         }
       }, 10000);
