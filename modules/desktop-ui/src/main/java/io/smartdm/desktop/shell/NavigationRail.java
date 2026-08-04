@@ -36,7 +36,6 @@ public final class NavigationRail extends VBox {
         
         ToggleButton btnQueue = createNavButton("Queue", "M8 6 L21 6 M8 12 L21 12 M8 18 L21 18 M3 6 L3.01 6 M3 12 L3.01 12 M3 18 L3.01 18", group);
         ToggleButton btnScheduler = createNavButton("Scheduler", "M12 3 A9 9 0 1 0 12 21 A9 9 0 1 0 12 3 M12 7 L12 12 L15.5 14", group);
-        ToggleButton btnMedia = createNavButton("Media", "M2 4 h20 v16 h-20 z M10 9 L15.5 12 L10 15", group);
         ToggleButton btnCatalog = createNavButton("Catalog", "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z", group);
         ToggleButton btnSafety = createNavButton("Safety", "M12 2 L4 5 v6 c0 5 3.4 8.4 8 11 c4.6-2.6 8-6 8-11 V5 L12 2", group);
         
@@ -45,7 +44,7 @@ public final class NavigationRail extends VBox {
         
         ToggleButton btnSettings = createNavButton("Settings", "M12 9 A3 3 0 1 0 12 15 A3 3 0 1 0 12 9", group);
         
-        getChildren().addAll(brand, btnDownloads, btnQueue, btnScheduler, btnMedia, btnCatalog, btnSafety, spacer, btnSettings);
+        getChildren().addAll(brand, btnDownloads, btnQueue, btnScheduler, btnCatalog, btnSafety, spacer, btnSettings);
         
         group.selectedToggleProperty().addListener((obs, old, newVal) -> {
             if (newVal != null) {
