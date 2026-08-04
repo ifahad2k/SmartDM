@@ -413,6 +413,79 @@
       }
     });
 
+    let pageUrl = window.location.href;
+    const hostLower = window.location.hostname.toLowerCase();
+    const isFb = hostLower.includes('facebook.com');
+    const isIg = hostLower.includes('instagram.com');
+    const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
+    const isTt = hostLower.includes('tiktok.com');
+
+    if (isFb || isIg || isX || isTt) {
+      const isVideoLink = (href) => {
+        if (!href) return false;
+        const h = href.toLowerCase();
+        if (isIg) {
+          if (h.includes('/audio/') || h.includes('/music/')) return false;
+          return /\/(p|reel|reels|tv)\/[\w\-]+/.test(h) || h.includes('/stories/');
+        }
+        if (isFb) {
+          return h.includes('/watch') || h.includes('/reel/') || h.includes('/reels/') || h.includes('/videos/') ||
+                 h.includes('fb.watch') || h.includes('story_fbid=') || h.includes('fbid=') ||
+                 h.includes('/posts/') || h.includes('/permalink') || h.includes('/share/v/') ||
+                 h.includes('/share/r/') || h.includes('/share/p/');
+        }
+        if (isX) return h.includes('/status/');
+        if (isTt) return h.includes('/video/') || h.includes('/@');
+        return false;
+      };
+
+      let el = mediaEl;
+      let found = false;
+      while (el && el !== document.body) {
+        if (el.tagName === 'A' && isVideoLink(el.href)) {
+          pageUrl = el.href;
+          found = true;
+          break;
+        }
+        el = el.parentElement;
+      }
+
+      if (!found) {
+        const card = mediaEl.closest('[data-pagelet*="FeedUnit"], [role="feed"] > div, [role="article"], article, section, [data-video-id], div[class*="x1yztall"]');
+        if (card) {
+          const links = card.querySelectorAll('a[href]');
+          for (let i = 0; i < links.length; i++) {
+            if (isVideoLink(links[i].href)) {
+              pageUrl = links[i].href;
+              found = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!found) {
+        let currentParent = mediaEl.parentElement;
+        let searchDepth = 0;
+        while (currentParent && currentParent !== document.body && searchDepth < 25) {
+          const links = currentParent.querySelectorAll('a[href]');
+          for (let i = 0; i < links.length; i++) {
+            if (isVideoLink(links[i].href)) {
+              pageUrl = links[i].href;
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+          currentParent = currentParent.parentElement;
+          searchDepth++;
+        }
+      }
+    }
+
+    // Immediately fetch video resolutions for the resolved URL so they are ready when clicked
+    prefetchYtDlpFormats(pageUrl);
+
     let formatSearchInterval = null;
     let formatSearchTimeout = null;
 
@@ -436,76 +509,6 @@
           <span class="status-text" style="padding:0;">Searching for video formats...</span>
         </div>
       `;
-
-      let pageUrl = window.location.href;
-      const hostLower = window.location.hostname.toLowerCase();
-      const isFb = hostLower.includes('facebook.com');
-      const isIg = hostLower.includes('instagram.com');
-      const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
-      const isTt = hostLower.includes('tiktok.com');
-
-      if (isFb || isIg || isX || isTt) {
-        const isVideoLink = (href) => {
-          if (!href) return false;
-          const h = href.toLowerCase();
-          if (isIg) {
-            if (h.includes('/audio/') || h.includes('/music/')) return false;
-            return /\/(p|reel|reels|tv)\/[\w\-]+/.test(h) || h.includes('/stories/');
-          }
-          if (isFb) {
-            return h.includes('/watch') || h.includes('/reel/') || h.includes('/reels/') || h.includes('/videos/') ||
-                   h.includes('fb.watch') || h.includes('story_fbid=') || h.includes('fbid=') ||
-                   h.includes('/posts/') || h.includes('/permalink') || h.includes('/share/v/') ||
-                   h.includes('/share/r/') || h.includes('/share/p/');
-          }
-          if (isX) return h.includes('/status/');
-          if (isTt) return h.includes('/video/') || h.includes('/@');
-          return false;
-        };
-
-        let el = mediaEl;
-        let found = false;
-        while (el && el !== document.body) {
-          if (el.tagName === 'A' && isVideoLink(el.href)) {
-            pageUrl = el.href;
-            found = true;
-            break;
-          }
-          el = el.parentElement;
-        }
-
-        if (!found) {
-          const card = mediaEl.closest('[data-pagelet*="FeedUnit"], [role="feed"] > div, [role="article"], article, section, [data-video-id], div[class*="x1yztall"]');
-          if (card) {
-            const links = card.querySelectorAll('a[href]');
-            for (let i = 0; i < links.length; i++) {
-              if (isVideoLink(links[i].href)) {
-                pageUrl = links[i].href;
-                found = true;
-                break;
-              }
-            }
-          }
-        }
-
-        if (!found) {
-          let currentParent = mediaEl.parentElement;
-          let searchDepth = 0;
-          while (currentParent && currentParent !== document.body && searchDepth < 25) {
-            const links = currentParent.querySelectorAll('a[href]');
-            for (let i = 0; i < links.length; i++) {
-              if (isVideoLink(links[i].href)) {
-                pageUrl = links[i].href;
-                found = true;
-                break;
-              }
-            }
-            if (found) break;
-            currentParent = currentParent.parentElement;
-            searchDepth++;
-          }
-        }
-      }
 
       let directSrc = mediaEl.currentSrc || mediaEl.src;
       if (!directSrc || directSrc.startsWith('blob:')) {
