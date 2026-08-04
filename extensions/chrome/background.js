@@ -301,6 +301,7 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 async function appendCookiesAndSend(request, sendResponse) {
+  request.userAgent = navigator.userAgent;
   try {
     let targetUrl = request.url;
     if (!targetUrl && request.urls && request.urls.length > 0) {

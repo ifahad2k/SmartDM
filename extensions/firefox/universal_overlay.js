@@ -38,6 +38,9 @@
   }
 
   function getCachedYtDlpFormats(url, callback) {
+    if (ytDlpCache[url] && ytDlpCache[url].status === 'error') {
+      delete ytDlpCache[url];
+    }
     if (!ytDlpCache[url]) {
       prefetchYtDlpFormats(url);
     }
@@ -446,6 +449,7 @@
           if (!href) return false;
           const h = href.toLowerCase();
           if (isIg) {
+            if (h.includes('/audio/') || h.includes('/music/')) return false;
             return /\/(p|reel|reels|tv)\/[\w\-]+/.test(h) || h.includes('/stories/');
           }
           if (isFb) {
