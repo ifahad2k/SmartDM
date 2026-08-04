@@ -161,7 +161,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
-                              url.includes('.html') || url.includes('.ico');
+                              url.includes('.html') || url.includes('.ico') || url.includes('.wasm') ||
+                              url.includes('.txt');
       if (isNonMediaAsset) return;
 
       // Filter out HLS/DASH segment chunks
