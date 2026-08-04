@@ -16,6 +16,14 @@
     mediaElements.forEach(attachTikTokBanner);
   }
 
+  function formatSize(bytes) {
+    if (!bytes || bytes <= 0) return null;
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
   function attachTikTokBanner(mediaEl) {
     if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
@@ -238,7 +246,6 @@
         </div>
       `;
 
-      // Extract exact page URL for this specific video post
       let pageUrl = window.location.href;
       const isVideoLink = (href) => {
         if (!href) return false;
@@ -276,23 +283,33 @@
       }
 
       const startTime = Date.now();
-      const MIN_SEARCH_TIME = 1500;
+      const MIN_SEARCH_TIME = 1200;
 
       const checkFormats = () => {
-        const elapsed = Date.now() - startTime;
-        if (elapsed >= MIN_SEARCH_TIME) {
-          if (formatSearchInterval) clearInterval(formatSearchInterval);
-          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
-          
-          let liveSrc = mediaEl.currentSrc || mediaEl.src;
-          if (!liveSrc || liveSrc.startsWith('blob:')) {
-            const sourceChild = mediaEl.querySelector('source');
-            if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
-              liveSrc = sourceChild.src;
+        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+          let netMedia = (netRes && netRes.media) ? netRes.media : [];
+
+          netMedia = netMedia.filter(m => {
+            const urlLower = m.url.toLowerCase();
+            return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
+          });
+
+          const elapsed = Date.now() - startTime;
+          if (elapsed >= MIN_SEARCH_TIME) {
+            if (formatSearchInterval) clearInterval(formatSearchInterval);
+            if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+
+            let liveSrc = mediaEl.currentSrc || mediaEl.src;
+            if (!liveSrc || liveSrc.startsWith('blob:')) {
+              const sourceChild = mediaEl.querySelector('source');
+              if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
+                liveSrc = sourceChild.src;
+              }
             }
+            renderTikTokFormats(content, liveSrc, netMedia, pageUrl, popover);
           }
-          renderTikTokFormats(content, liveSrc, pageUrl, popover);
-        }
+        });
       };
 
       checkFormats();
@@ -307,51 +324,117 @@
             liveSrc = sourceChild.src;
           }
         }
-        renderTikTokFormats(content, liveSrc, pageUrl, popover);
+        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+          let netMedia = (netRes && netRes.media) ? netRes.media : [];
+          renderTikTokFormats(content, liveSrc, netMedia, pageUrl, popover);
+        });
       }, 4000);
     });
 
     document.body.appendChild(host);
   }
 
-  function renderTikTokFormats(container, liveSrc, pageUrl, popover) {
+  function renderTikTokFormats(container, liveSrc, netMediaList, pageUrl, popover) {
     container.innerHTML = '';
 
-    if (!liveSrc || !liveSrc.startsWith('http')) {
+    const rawItems = [];
+
+    // 1. Direct stream from the active <video> element
+    if (liveSrc && liveSrc.startsWith('http')) {
+      rawItems.push({
+        title: 'TikTok Video Stream (HD)',
+        badge: 'Main Stream',
+        url: liveSrc,
+        videoUrl: liveSrc,
+        audioUrl: null,
+        formatId: 'best',
+        fileName: null
+      });
+    }
+
+    // 2. Intercepted network streams (fallback if blob / photo post / slideshow / audio)
+    if (netMediaList && netMediaList.length > 0) {
+      let videoId = null;
+      if (pageUrl) {
+        const match = pageUrl.match(/\/video\/(\d+)/);
+        if (match) videoId = match[1];
+      }
+
+      let filteredNet = netMediaList;
+      if (videoId) {
+        const idMatches = netMediaList.filter(m => m.url.includes(videoId));
+        if (idMatches.length > 0) filteredNet = idMatches;
+      }
+
+      const sortedNet = [...filteredNet].sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
+      sortedNet.forEach((m, idx) => {
+        if (m.contentLength && m.contentLength < 50000 && sortedNet.length > 1) return;
+        if (liveSrc && m.url === liveSrc) return;
+
+        const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
+        const formattedSize = formatSize(m.contentLength);
+        const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
+
+        const isAudio = (m.contentType && m.contentType.includes('audio/')) || m.url.includes('.m4a') || m.url.includes('.mp3');
+        let qualityName = isAudio ? `TikTok Audio Stream ${idx + 1} (${ext})` : `TikTok Stream ${rawItems.length + 1} (${ext})`;
+
+        rawItems.push({
+          title: qualityName,
+          badge: sizeText,
+          url: m.url,
+          videoUrl: m.videoUrl || m.url,
+          audioUrl: m.audioUrl || null,
+          formatId: 'best',
+          fileName: m.filename
+        });
+      });
+    }
+
+    const seenUrls = new Set();
+    const allItems = [];
+    rawItems.forEach(item => {
+      if (!seenUrls.has(item.url)) {
+        seenUrls.add(item.url);
+        allItems.push(item);
+      }
+    });
+
+    if (allItems.length === 0) {
       container.innerHTML = '<div class="status-text">No active TikTok media stream detected.</div>';
       return;
     }
 
-    const div = document.createElement('div');
-    div.className = 'format-item';
-    div.innerHTML = `
-      <div class="format-info">
-        <span class="format-title">TikTok Video Stream (HD)</span>
-      </div>
-      <span class="format-badge">Main Stream</span>
-    `;
-
-    div.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
-      const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-      runtime.sendMessage({
-        type: 'START_MEDIA_DOWNLOAD',
-        url: pageUrl,
-        videoUrl: liveSrc,
-        audioUrl: null,
-        formatId: 'best'
-      }, () => {
-        setTimeout(() => {
-          if (popover && popover.classList) {
-            popover.classList.remove('active');
-          }
-        }, 800);
+    allItems.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'format-item';
+      div.innerHTML = `
+        <div class="format-info">
+          <span class="format-title" title="${item.title}">${item.title}</span>
+        </div>
+        <span class="format-badge">${item.badge}</span>
+      `;
+      div.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
+        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+        runtime.sendMessage({
+          type: 'START_MEDIA_DOWNLOAD',
+          url: pageUrl,
+          videoUrl: item.url,
+          audioUrl: null,
+          formatId: 'best'
+        }, () => {
+          setTimeout(() => {
+            if (popover && popover.classList) {
+              popover.classList.remove('active');
+            }
+          }, 800);
+        });
       });
+      container.appendChild(div);
     });
-
-    container.appendChild(div);
   }
 
   if (document.readyState === 'loading') {
