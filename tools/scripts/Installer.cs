@@ -25,6 +25,8 @@ namespace SmartDM.Installer
     {
         private Label titleLabel;
         private Label statusLabel;
+        private TextBox pathTextBox;
+        private Button browseButton;
         private ProgressBar progressBar;
         private Button installButton;
         private CheckBox launchCheckBox;
@@ -36,8 +38,8 @@ namespace SmartDM.Installer
 
         private void InitializeComponent()
         {
-            this.Text = "SmartDM v1.0.0 Installer";
-            this.Size = new Size(520, 340);
+            this.Text = "SmartDM v1.0.0 Setup";
+            this.Size = new Size(540, 390);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -47,29 +49,61 @@ namespace SmartDM.Installer
             titleLabel.Text = "Install SmartDM Download Manager";
             titleLabel.Font = new Font("Segoe UI", 14, FontStyle.Bold);
             titleLabel.ForeColor = Color.FromArgb(56, 189, 248); // Accent blue (#38bdf8)
-            titleLabel.Location = new Point(30, 25);
-            titleLabel.Size = new Size(440, 35);
+            titleLabel.Location = new Point(30, 20);
+            titleLabel.Size = new Size(460, 35);
             this.Controls.Add(titleLabel);
 
             Label subtitleLabel = new Label();
-            subtitleLabel.Text = "Includes high-speed download engine and browser extensions.\nTarget directory: C:\\Program Files\\SmartDM\\";
+            subtitleLabel.Text = "Includes high-speed download engine and browser extensions.";
             subtitleLabel.Font = new Font("Segoe UI", 9.5f);
             subtitleLabel.ForeColor = Color.FromArgb(226, 232, 240);
-            subtitleLabel.Location = new Point(30, 65);
-            subtitleLabel.Size = new Size(440, 45);
+            subtitleLabel.Location = new Point(30, 60);
+            subtitleLabel.Size = new Size(460, 25);
             this.Controls.Add(subtitleLabel);
+
+            Label pathLabel = new Label();
+            pathLabel.Text = "Destination Folder:";
+            pathLabel.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+            pathLabel.ForeColor = Color.FromArgb(148, 163, 184);
+            pathLabel.Location = new Point(30, 95);
+            pathLabel.Size = new Size(200, 20);
+            this.Controls.Add(pathLabel);
+
+            pathTextBox = new TextBox();
+            string defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SmartDM");
+            pathTextBox.Text = defaultPath;
+            pathTextBox.Font = new Font("Segoe UI", 9.5f);
+            pathTextBox.BackColor = Color.FromArgb(30, 41, 59);
+            pathTextBox.ForeColor = Color.White;
+            pathTextBox.BorderStyle = BorderStyle.FixedSingle;
+            pathTextBox.Location = new Point(30, 120);
+            pathTextBox.Size = new Size(360, 26);
+            this.Controls.Add(pathTextBox);
+
+            browseButton = new Button();
+            browseButton.Text = "Browse...";
+            browseButton.Font = new Font("Segoe UI", 9f);
+            browseButton.ForeColor = Color.White;
+            browseButton.BackColor = Color.FromArgb(51, 65, 85);
+            browseButton.FlatStyle = FlatStyle.Flat;
+            browseButton.FlatAppearance.BorderSize = 0;
+            browseButton.Location = new Point(400, 119);
+            browseButton.Size = new Size(90, 28);
+            browseButton.Cursor = Cursors.Hand;
+            browseButton.Click += OnBrowseClick;
+            this.Controls.Add(browseButton);
 
             statusLabel = new Label();
             statusLabel.Text = "Ready to install.";
             statusLabel.Font = new Font("Segoe UI", 9, FontStyle.Italic);
             statusLabel.ForeColor = Color.FromArgb(148, 163, 184);
-            statusLabel.Location = new Point(30, 125);
-            statusLabel.Size = new Size(440, 25);
+            statusLabel.Location = new Point(30, 165);
+            statusLabel.Size = new Size(460, 25);
             this.Controls.Add(statusLabel);
 
             progressBar = new ProgressBar();
-            progressBar.Location = new Point(30, 155);
-            progressBar.Size = new Size(440, 22);
+            progressBar.Location = new Point(30, 195);
+            progressBar.Size = new Size(460, 22);
             progressBar.Style = ProgressBarStyle.Marquee;
             progressBar.Visible = false;
             this.Controls.Add(progressBar);
@@ -79,7 +113,7 @@ namespace SmartDM.Installer
             launchCheckBox.Checked = true;
             launchCheckBox.Font = new Font("Segoe UI", 9.5f);
             launchCheckBox.ForeColor = Color.FromArgb(226, 232, 240);
-            launchCheckBox.Location = new Point(30, 195);
+            launchCheckBox.Location = new Point(30, 235);
             launchCheckBox.Size = new Size(250, 25);
             this.Controls.Add(launchCheckBox);
 
@@ -90,21 +124,41 @@ namespace SmartDM.Installer
             installButton.BackColor = Color.FromArgb(2, 132, 199); // Button Blue
             installButton.FlatStyle = FlatStyle.Flat;
             installButton.FlatAppearance.BorderSize = 0;
-            installButton.Location = new Point(290, 235);
+            installButton.Location = new Point(310, 275);
             installButton.Size = new Size(180, 42);
             installButton.Cursor = Cursors.Hand;
             installButton.Click += OnInstallClick;
             this.Controls.Add(installButton);
         }
 
+        private void OnBrowseClick(object sender, EventArgs e)
+        {
+            using (FolderBrowserDialog dlg = new FolderBrowserDialog())
+            {
+                dlg.Description = "Select installation folder for SmartDM:";
+                dlg.SelectedPath = pathTextBox.Text;
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    pathTextBox.Text = dlg.SelectedPath;
+                }
+            }
+        }
+
         private async void OnInstallClick(object sender, EventArgs e)
         {
-            installButton.Enabled = false;
-            progressBar.Visible = true;
-            statusLabel.Text = "Extracting SmartDM files to C:\\Program Files\\SmartDM...";
-            statusLabel.ForeColor = Color.FromArgb(56, 189, 248);
+            string targetDir = pathTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(targetDir))
+            {
+                MessageBox.Show("Please enter a valid installation directory.", "Invalid Path", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
-            string targetDir = @"C:\Program Files\SmartDM";
+            installButton.Enabled = false;
+            browseButton.Enabled = false;
+            pathTextBox.Enabled = false;
+            progressBar.Visible = true;
+            statusLabel.Text = "Installing SmartDM to " + targetDir + "...";
+            statusLabel.ForeColor = Color.FromArgb(56, 189, 248);
 
             try
             {
@@ -200,6 +254,8 @@ namespace SmartDM.Installer
                 statusLabel.Text = "Error: " + ex.Message;
                 statusLabel.ForeColor = Color.FromArgb(248, 113, 113);
                 installButton.Enabled = true;
+                browseButton.Enabled = true;
+                pathTextBox.Enabled = true;
             }
         }
     }

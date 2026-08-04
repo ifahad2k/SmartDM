@@ -103,7 +103,8 @@ $CscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $InstallerCs = "$ProjectRoot\tools\scripts\Installer.cs"
 $TargetExe = "$ReleaseDir\SmartDM-Setup-v1.0.0.exe"
 
-& $CscPath /target:winexe /out:$TargetExe /resource:$PayloadZip,payload.zip /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $InstallerCs
+$ManifestPath = "$ProjectRoot\tools\scripts\app.manifest"
+& $CscPath /target:winexe /out:$TargetExe /resource:$PayloadZip,payload.zip /win32manifest:$ManifestPath /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $InstallerCs
 if ($LASTEXITCODE -ne 0) { throw "Installer C# compilation failed!" }
 
 # Generate SHA256SUMS.txt
