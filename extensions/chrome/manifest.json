@@ -23,7 +23,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://www.youtube.com/*"],
+      "matches": ["*://*.youtube.com/*", "*://youtube.com/*"],
       "js": ["youtube_overlay.js"],
       "run_at": "document_idle"
     },

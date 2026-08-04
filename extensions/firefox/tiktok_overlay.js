@@ -282,17 +282,39 @@
         }
       }
 
+  function sendExtensionMessage(message, callback) {
+    const runtime = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome.runtime : (typeof browser !== 'undefined' ? browser.runtime : null);
+    if (!runtime) return;
+    try {
+      let called = false;
+      const safeCb = (res) => {
+        if (!called) {
+          called = true;
+          if (callback) callback(res);
+        }
+      };
+      const resPromise = runtime.sendMessage(message, (res) => {
+        const err = runtime.lastError;
+        safeCb(err ? null : res);
+      });
+      if (resPromise && typeof resPromise.then === 'function') {
+        resPromise.then(res => safeCb(res)).catch(() => safeCb(null));
+      }
+    } catch (e) {
+      if (callback) callback(null);
+    }
+  }
+
       const startTime = Date.now();
       const MIN_SEARCH_TIME = 1200;
 
       const checkFormats = () => {
-        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
 
           netMedia = netMedia.filter(m => {
             const urlLower = m.url.toLowerCase();
-            return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
+            return !urlLower.includes('.ts');
           });
 
           const elapsed = Date.now() - startTime;
@@ -324,8 +346,7 @@
             liveSrc = sourceChild.src;
           }
         }
-        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
           renderTikTokFormats(content, liveSrc, netMedia, pageUrl, popover);
         });

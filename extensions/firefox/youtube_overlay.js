@@ -23,6 +23,29 @@
     }
   }
 
+  function sendExtensionMessage(message, callback) {
+    const runtime = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome.runtime : (typeof browser !== 'undefined' ? browser.runtime : null);
+    if (!runtime) return;
+    try {
+      let called = false;
+      const safeCb = (res) => {
+        if (!called) {
+          called = true;
+          if (callback) callback(res);
+        }
+      };
+      const resPromise = runtime.sendMessage(message, (res) => {
+        const err = runtime.lastError;
+        safeCb(err ? null : res);
+      });
+      if (resPromise && typeof resPromise.then === 'function') {
+        resPromise.then(res => safeCb(res)).catch(() => safeCb(null));
+      }
+    } catch (e) {
+      if (callback) callback(null);
+    }
+  }
+
   const ytDlpCache = {};
 
   function fetchYtDlpFormats(url, callback) {
@@ -38,8 +61,7 @@
 
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
 
-    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+    sendExtensionMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
       if (res && res.success && res.formats && res.formats.length > 0) {
         ytDlpCache[url].status = 'done';
         ytDlpCache[url].data = res;

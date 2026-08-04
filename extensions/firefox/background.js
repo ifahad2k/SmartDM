@@ -164,16 +164,12 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.html') || url.includes('.ico');
       if (isNonMediaAsset) return;
 
-      // Filter out HLS/DASH segment chunks and range requests
+      // Filter out HLS/DASH segment chunks
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
-                             (url.includes('.m4s') && !url.includes('master')) ||
-                             url.includes('bytestart=') || 
-                             url.includes('byteend=') ||
-                             url.includes('range=');
+                             (url.includes('.m4s') && !url.includes('master') && !url.includes('init'));
       if (isSegmentChunk) return;
 
       const targetUrl = details.url;
-
 
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
@@ -184,7 +180,10 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       const isMediaExt = url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
-                         url.includes('.avi') || url.includes('.mkv');
+                         url.includes('.avi') || url.includes('.mkv') ||
+                         url.includes('googlevideo.com/videoplayback') ||
+                         url.includes('fbcdn.net') ||
+                         url.includes('cdn.tiktok');
 
       if (isMediaMime || isMediaExt) {
         if (!detectedMediaMap.has(details.tabId)) {
@@ -336,10 +335,12 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-    if (chrome.runtime.lastError) {
-      if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      else console.error('Error sending native message:', chrome.runtime.lastError.message);
+  const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+  runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+    const err = runtime.lastError;
+    if (err) {
+      if (sendResponse) sendResponse({ success: false, error: err.message });
+      else console.error('Error sending native message:', err.message);
     } else {
       if (sendResponse) sendResponse(response || { success: true });
       else console.log('Received response from native host:', response);
@@ -352,13 +353,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab ? sender.tab.id : null;
     const media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
     sendResponse({ success: true, media: media });
-    return false;
+    return true;
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH') {
     appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
+  return true;
 });
 
 function sendToSmartDM(url, referer, fileName = null) {
