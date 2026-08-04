@@ -1,19 +1,36 @@
 (function () {
   'use strict';
 
-  const PLAYER_PROCESSED_ATTR = 'data-smartdm-tiktok-processed';
+  const POST_PROCESSED_ATTR = 'data-smartdm-tiktok-card-processed';
 
   function initTikTokOverlay() {
     const observer = new MutationObserver(() => {
-      scanPlayers();
+      scanTikTokPosts();
     });
     observer.observe(document.body, { childList: true, subtree: true });
-    scanPlayers();
+    scanTikTokPosts();
   }
 
-  function scanPlayers() {
-    const mediaElements = document.querySelectorAll('video:not([' + PLAYER_PROCESSED_ATTR + '])');
-    mediaElements.forEach(attachTikTokBanner);
+  function scanTikTokPosts() {
+    // Select all TikTok post card containers in feeds, profile grids, and video pages
+    const selectors = [
+      'div[data-e2e="recommend-list-item-container"]',
+      'div[data-e2e="user-post-item"]',
+      'div[class*="DivItemContainer"]',
+      'div[class*="DivVideoWrapper"]',
+      'div[class*="DivContainer"]',
+      'article'
+    ];
+
+    const postElements = document.querySelectorAll(selectors.join(','));
+    postElements.forEach(attachTikTokBannerToCard);
+
+    // Fallback: also scan standalone <video> elements that might not be inside card containers
+    const mediaElements = document.querySelectorAll('video:not([' + POST_PROCESSED_ATTR + '])');
+    mediaElements.forEach((videoEl) => {
+      const parentCard = videoEl.closest(selectors.join(',')) || videoEl.parentElement;
+      if (parentCard) attachTikTokBannerToCard(parentCard);
+    });
   }
 
   function formatSize(bytes) {
@@ -24,33 +41,22 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
-  function attachTikTokBanner(mediaEl) {
-    if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
-    mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
+  function attachTikTokBannerToCard(cardEl) {
+    if (!cardEl || cardEl.getAttribute(POST_PROCESSED_ATTR)) return;
+    cardEl.setAttribute(POST_PROCESSED_ATTR, 'true');
+
+    // Ensure container has relative positioning for absolute placement
+    if (window.getComputedStyle(cardEl).position === 'static') {
+      cardEl.style.position = 'relative';
+    }
 
     const host = document.createElement('div');
     host.className = 'smartdm-tiktok-host';
-    host.style.position = 'fixed';
+    host.style.position = 'absolute';
+    host.style.top = '16px';
+    host.style.right = '16px';
     host.style.zIndex = '2147483647';
     host.style.pointerEvents = 'auto';
-
-    const syncPos = () => {
-      const rect = mediaEl.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
-        host.style.opacity = '0';
-        host.style.pointerEvents = 'none';
-      } else {
-        host.style.opacity = '1';
-        host.style.pointerEvents = 'auto';
-        host.style.top = (rect.top + 16) + 'px';
-        host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
-      }
-    };
-
-    window.addEventListener('scroll', syncPos, true);
-    window.addEventListener('resize', syncPos);
-    setInterval(syncPos, 100);
-    setTimeout(syncPos, 50);
 
     const shadow = host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
@@ -246,48 +252,21 @@
         </div>
       `;
 
-      let directSrc = mediaEl.currentSrc || mediaEl.src;
+      // DYNAMIC AT CLICK TIME: Query the live video element inside THIS specific post container
+      const liveVideoEl = cardEl.querySelector('video') || document.querySelector('video');
+      let directSrc = liveVideoEl ? (liveVideoEl.currentSrc || liveVideoEl.src) : null;
       if (!directSrc || directSrc.startsWith('blob:')) {
-        const sourceChild = mediaEl.querySelector('source');
+        const sourceChild = liveVideoEl ? liveVideoEl.querySelector('source') : null;
         if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
           directSrc = sourceChild.src;
         }
       }
 
+      // DYNAMIC AT CLICK TIME: Query the exact post URL link inside THIS specific post container
       let pageUrl = window.location.href;
-      const isVideoLink = (href) => {
-        if (!href) return false;
-        const h = href.toLowerCase();
-        return h.includes('/video/') || h.includes('/@');
-      };
-
-      let el = mediaEl;
-      let found = false;
-      while (el && el !== document.body) {
-        if (el.tagName === 'A' && isVideoLink(el.href)) {
-          pageUrl = el.href;
-          found = true;
-          break;
-        }
-        el = el.parentElement;
-      }
-
-      if (!found) {
-        let currentParent = mediaEl.parentElement;
-        let searchDepth = 0;
-        while (currentParent && currentParent !== document.body && searchDepth < 25) {
-          const links = currentParent.querySelectorAll('a[href]');
-          for (let i = 0; i < links.length; i++) {
-            if (isVideoLink(links[i].href)) {
-              pageUrl = links[i].href;
-              found = true;
-              break;
-            }
-          }
-          if (found) break;
-          currentParent = currentParent.parentElement;
-          searchDepth++;
-        }
+      const postLink = cardEl.querySelector('a[href*="/video/"]');
+      if (postLink && postLink.href) {
+        pageUrl = postLink.href;
       }
 
       const startTime = Date.now();
@@ -322,7 +301,7 @@
       }, 5000);
     });
 
-    document.body.appendChild(host);
+    cardEl.appendChild(host);
   }
 
   function renderTikTokFormats(container, directSrc, netMediaList, pageUrl, popover) {
@@ -330,7 +309,7 @@
 
     const rawItems = [];
 
-    // 1. Direct stream from the exact <video> element clicked
+    // 1. Direct stream from the exact live video element of THIS post card
     if (directSrc && directSrc.startsWith('http')) {
       rawItems.push({
         title: 'TikTok Video Stream (HD)',
@@ -342,7 +321,7 @@
         fileName: null
       });
     } else if (netMediaList && netMediaList.length > 0) {
-      // Fallback to netMedia ONLY if directSrc is missing/blob
+      // 2. Fallback to netMedia ONLY if directSrc is missing
       let videoId = null;
       if (pageUrl) {
         const match = pageUrl.match(/\/video\/(\d+)/);
