@@ -17,13 +17,18 @@ namespace SmartDM.Launcher
                 
                 if (File.Exists(batPath))
                 {
-                    ProcessStartInfo psi = new ProcessStartInfo(batPath)
+                    string arguments = "/c \"" + batPath + "\"";
+                    if (args != null && args.Length > 0)
+                    {
+                        arguments += " " + string.Join(" ", args);
+                    }
+
+                    ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", arguments)
                     {
                         WorkingDirectory = baseDir,
                         WindowStyle = ProcessWindowStyle.Hidden,
                         CreateNoWindow = true,
-                        UseShellExecute = true,
-                        Arguments = string.Join(" ", args)
+                        UseShellExecute = false
                     };
                     Process.Start(psi);
                 }
