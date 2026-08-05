@@ -71,7 +71,6 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
         this.smartFolderService = smartFolderService;
         this.repository = repository;
 
-        setAlwaysOnTop(true);
         toFront();
         requestFocus();
 

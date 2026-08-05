@@ -97,7 +97,6 @@ public final class MediaBatchAddDialog extends GlassmorphicDialog {
         this.executorService = executorService;
         this.onDownloadAdded = onDownloadAdded;
 
-        setAlwaysOnTop(true);
         toFront();
         requestFocus();
 

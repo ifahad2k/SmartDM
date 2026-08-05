@@ -52,8 +52,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         this.smartFolderService = smartFolderService;
         this.prober = new HttpProbeClient();
         
-        // Ensure the window pops up over everything (like IDM)
-        setAlwaysOnTop(true);
+        // Bring window to front safely without stealing system-wide mouse input
         toFront();
         requestFocus();
         

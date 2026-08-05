@@ -633,7 +633,6 @@ public class SmartDmApp extends Application {
         primaryStage.setX(100);
         primaryStage.setY(100);
         primaryStage.setIconified(false);
-        primaryStage.setAlwaysOnTop(true);
         System.out.println(">>> SmartDmApp window showing NOW <<<");
 
         // Close-to-Tray setup
@@ -654,7 +653,6 @@ public class SmartDmApp extends Application {
         primaryStage.show();
         primaryStage.toFront();
         primaryStage.requestFocus();
-        primaryStage.setAlwaysOnTop(false);
     }
 
     private void setupSystemTray(Stage primaryStage) {
