@@ -709,33 +709,51 @@
     document.addEventListener('click', (e) => {
       if (e.button !== 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
       
-      let el = e.target;
-      while (el && el !== document.body) {
-        if (el.tagName === 'A' && el.href) {
-          const urlLower = el.href.toLowerCase();
-          const isFileExt = urlLower.match(/\.(zip|rar|7z|exe|msi|iso|bin|mp4|mkv|avi|mp3|flac|wav|pdf|epub|mobi|apk|tar|gz|bz2)(\?.*)?$/i);
-          const isDownloadAttr = el.hasAttribute('download');
-          
-          if ((isFileExt || isDownloadAttr) && urlLower.startsWith('http')) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            let basename = '';
-            try {
-              basename = new URL(el.href).pathname.split('/').pop();
-            } catch(err) {}
-            
-            const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-            runtime.sendMessage({
-              type: 'ADD_DOWNLOAD',
-              url: el.href,
-              fileName: basename || null,
-              referer: window.location.href
-            });
-            return;
+      try {
+        let el = e.target;
+        let depth = 0;
+        while (el && el !== document.body && depth < 10) {
+          if (el.tagName && (el.tagName.toUpperCase() === 'A' || el.tagName.toUpperCase() === 'SVG')) {
+            let rawHref = el.href;
+            let hrefStr = '';
+            if (typeof rawHref === 'string') {
+              hrefStr = rawHref;
+            } else if (rawHref && typeof rawHref.baseVal === 'string') {
+              hrefStr = rawHref.baseVal;
+            } else if (el.getAttribute) {
+              hrefStr = el.getAttribute('href') || '';
+            }
+
+            if (hrefStr && typeof hrefStr === 'string') {
+              const urlLower = hrefStr.toLowerCase();
+              const isFileExt = urlLower.match(/\.(zip|rar|7z|exe|msi|iso|bin|mp4|mkv|avi|mp3|flac|wav|pdf|epub|mobi|apk|tar|gz|bz2)(\?.*)?$/i);
+              const isDownloadAttr = el.hasAttribute && el.hasAttribute('download');
+              
+              if ((isFileExt || isDownloadAttr) && urlLower.startsWith('http')) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                let basename = '';
+                try {
+                  basename = new URL(hrefStr).pathname.split('/').pop();
+                } catch(err) {}
+                
+                const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+                runtime.sendMessage({
+                  type: 'ADD_DOWNLOAD',
+                  url: hrefStr,
+                  fileName: basename || null,
+                  referer: window.location.href
+                });
+                return;
+              }
+            }
           }
+          el = el.parentElement || el.parentNode;
+          depth++;
         }
-        el = el.parentElement;
+      } catch (err) {
+        // Never swallow errors to ensure web page clicks remain 100% functional
       }
     }, true);
   }

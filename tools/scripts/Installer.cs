@@ -211,6 +211,38 @@ namespace SmartDM.Installer
                         }
                     }
 
+                    // Create Uninstall script & register Windows Apps & Features Uninstall entry
+                    try
+                    {
+                        string uninstallBat = Path.Combine(targetDir, "uninstall.bat");
+                        string uninstallCmd = "@echo off\r\n" +
+                            "reg delete \"HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\io.smartdm.host\" /f >nul 2>&1\r\n" +
+                            "reg delete \"HKLM\\Software\\Google\\Chrome\\NativeMessagingHosts\\io.smartdm.host\" /f >nul 2>&1\r\n" +
+                            "reg delete \"HKCU\\Software\\Mozilla\\NativeMessagingHosts\\io.smartdm.host\" /f >nul 2>&1\r\n" +
+                            "reg delete \"HKLM\\Software\\Mozilla\\NativeMessagingHosts\\io.smartdm.host\" /f >nul 2>&1\r\n" +
+                            "reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SmartDM\" /f >nul 2>&1\r\n" +
+                            "reg delete \"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SmartDM\" /f >nul 2>&1\r\n" +
+                            "if exist \"%USERPROFILE%\\Desktop\\SmartDM.lnk\" del /f /q \"%USERPROFILE%\\Desktop\\SmartDM.lnk\" >nul 2>&1\r\n" +
+                            "timeout /t 1 >nul\r\n" +
+                            "rmdir /s /q \"%~dp0\" >nul 2>&1\r\n";
+                        File.WriteAllText(uninstallBat, uninstallCmd);
+
+                        // Register in HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\SmartDM
+                        using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\SmartDM"))
+                        {
+                            if (key != null)
+                            {
+                                key.SetValue("DisplayName", "SmartDM Download Manager");
+                                key.SetValue("DisplayVersion", "1.0.0");
+                                key.SetValue("Publisher", "SmartDM");
+                                key.SetValue("InstallLocation", targetDir);
+                                key.SetValue("UninstallString", "\"" + uninstallBat + "\"");
+                                key.SetValue("DisplayIcon", Path.Combine(targetDir, "bin", "desktop.bat"));
+                            }
+                        }
+                    }
+                    catch { }
+
                     // Create Desktop Shortcut using Windows Script Host
                     try
                     {
