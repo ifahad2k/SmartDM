@@ -35,11 +35,12 @@ $UnpackedName = (Get-ChildItem $StagingDir -Directory | Where-Object { $_.Name -
 Copy-Item -Path "$UnpackedName\*" -Destination $AppImageDir -Recurse -Force
 Remove-Item -Recurse -Force $UnpackedName
 
-# 2. Compile native SmartDM.exe executable into installation folder
+# 2. Compile native SmartDM.exe executable launcher into installation folder
 Write-Host "`n[2/6] Compiling native SmartDM.exe executable launcher..." -ForegroundColor Yellow
 $AppLauncherCs = "$ProjectRoot\tools\scripts\AppLauncher.cs"
 $TargetAppExe = "$AppImageDir\SmartDM.exe"
-& $CscPath /target:winexe /out:$TargetAppExe /reference:System.Windows.Forms.dll $AppLauncherCs
+$AppIcon = "$ProjectRoot\tools\scripts\app.ico"
+& $CscPath /target:winexe /out:$TargetAppExe /win32icon:$AppIcon /reference:System.Windows.Forms.dll $AppLauncherCs
 if ($LASTEXITCODE -ne 0) { throw "SmartDM.exe compilation failed!" }
 Write-Host "  + Created: $TargetAppExe" -ForegroundColor Green
 
@@ -109,8 +110,9 @@ Write-Host "`n[6/6] Compiling Single-EXE Installer (SmartDM-Setup-v1.0.0.exe)...
 $InstallerCs = "$ProjectRoot\tools\scripts\Installer.cs"
 $TargetExe = "$ReleaseDir\SmartDM-Setup-v1.0.0.exe"
 $ManifestPath = "$ProjectRoot\tools\scripts\app.manifest"
+$SetupIcon = "$ProjectRoot\tools\scripts\setup.ico"
 
-& $CscPath /target:winexe /out:$TargetExe /resource:$PayloadZip,payload.zip /win32manifest:$ManifestPath /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $InstallerCs
+& $CscPath /target:winexe /out:$TargetExe /win32icon:$SetupIcon /resource:$PayloadZip,payload.zip /win32manifest:$ManifestPath /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $InstallerCs
 if ($LASTEXITCODE -ne 0) { throw "Installer C# compilation failed!" }
 
 # Generate SHA256SUMS.txt

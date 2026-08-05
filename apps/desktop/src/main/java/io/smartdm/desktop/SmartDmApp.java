@@ -626,6 +626,14 @@ public class SmartDmApp extends Application {
         scene.getStylesheets().add(getClass().getResource("/io/smartdm/desktop/theme/main.css").toExternalForm());
 
         primaryStage.setTitle("SmartDM");
+        try {
+            java.io.InputStream iconStream = getClass().getResourceAsStream("/io/smartdm/desktop/theme/logo.png");
+            if (iconStream != null) {
+                primaryStage.getIcons().add(new javafx.scene.image.Image(iconStream));
+            }
+        } catch (Exception ex) {
+            System.err.println("Failed to load window icon: " + ex.getMessage());
+        }
         primaryStage.setScene(scene);
         primaryStage.setMinWidth(800);
         primaryStage.setMinHeight(600);
@@ -659,11 +667,24 @@ public class SmartDmApp extends Application {
 
         try {
             java.awt.SystemTray tray = java.awt.SystemTray.getSystemTray();
-            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-            java.awt.Graphics2D g = img.createGraphics();
-            g.setColor(new java.awt.Color(56, 189, 248));
-            g.fillOval(0, 0, 16, 16);
-            g.dispose();
+            java.awt.Image trayImg = null;
+            try {
+                java.net.URL trayImgUrl = getClass().getResource("/io/smartdm/desktop/theme/logo32.png");
+                if (trayImgUrl != null) {
+                    trayImg = java.awt.Toolkit.getDefaultToolkit().getImage(trayImgUrl);
+                }
+            } catch (Exception ex) {
+                System.err.println("Could not load tray image resource: " + ex.getMessage());
+            }
+
+            if (trayImg == null) {
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D g = img.createGraphics();
+                g.setColor(new java.awt.Color(56, 189, 248));
+                g.fillOval(0, 0, 16, 16);
+                g.dispose();
+                trayImg = img;
+            }
 
             java.awt.PopupMenu popup = new java.awt.PopupMenu();
 
@@ -683,7 +704,7 @@ public class SmartDmApp extends Application {
             popup.addSeparator();
             popup.add(exitItem);
 
-            java.awt.TrayIcon trayIcon = new java.awt.TrayIcon(img, "SmartDM", popup);
+            java.awt.TrayIcon trayIcon = new java.awt.TrayIcon(trayImg, "SmartDM", popup);
             trayIcon.setImageAutoSize(true);
             trayIcon.addActionListener(e -> javafx.application.Platform.runLater(() -> {
                 primaryStage.show();
