@@ -23,20 +23,6 @@
     }
   }
 
-  function sendExtensionMessage(message, callback) {
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage(message, (res) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          console.warn('sendExtensionMessage error:', err.message);
-        }
-        if (callback) callback(err ? { success: false, error: err.message } : (res || { success: false, error: 'Empty response' }));
-      });
-    } else {
-      if (callback) callback({ success: false, error: 'Extension API not found' });
-    }
-  }
-
   const ytDlpCache = {};
 
   function fetchYtDlpFormats(url, callback) {
@@ -52,7 +38,8 @@
 
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
 
-    sendExtensionMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
       if (res && res.success && res.formats && res.formats.length > 0) {
         ytDlpCache[url].status = 'done';
         ytDlpCache[url].data = res;
@@ -91,12 +78,11 @@
         ev.stopPropagation();
         container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
 
-        sendExtensionMessage(
+        runtime.sendMessage(
           {
             type: 'START_MEDIA_DOWNLOAD',
             url: videoUrl,
             formatId: fmt.formatId,
-            videoUrl: fmt.videoUrl || null,
             fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
           },
           () => {
@@ -137,9 +123,11 @@
         .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
         .idm-banner {
-          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-          color: #f8fafc;
-          border: 1px solid rgba(56, 189, 248, 0.5);
+          background: rgba(15, 23, 42, 0.5);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          color: rgba(248, 250, 252, 0.85);
+          border: 1px solid rgba(56, 189, 248, 0.35);
           border-radius: 6px;
           padding: 6px 12px;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -149,14 +137,17 @@
           display: flex;
           align-items: center;
           gap: 6px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-          transition: all 0.2s ease;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+          opacity: 0.5;
+          transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
           user-select: none;
         }
         .idm-banner:hover {
-          background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+          opacity: 1.0;
+          background: rgba(15, 23, 42, 0.95);
           border-color: #38bdf8;
-          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
+          color: #ffffff;
+          box-shadow: 0 6px 22px rgba(56, 189, 248, 0.6);
           transform: translateY(-1px);
         }
         .play-icon {
@@ -293,31 +284,18 @@
 
       popover.classList.add('active');
 
-      sendExtensionMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
+      fetchYtDlpFormats(videoUrl, (res) => {
+        if (res && res.success && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, videoUrl, popover);
+        } else if (res && res.success === false) {
+          const errMsg = res.error 
+            ? (res.error.includes("not running") 
+                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please open SmartDM desktop app.</span>" 
+                : res.error + "<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>")
+            : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry or check SmartDM app.</span>";
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {
-          // Fallback to detected network media streams if yt-dlp formats are absent
-          sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-            let netMedia = (netRes && netRes.media) ? netRes.media : [];
-            netMedia = netMedia.filter(m => !m.url.toLowerCase().includes('.ts'));
-
-            if (netMedia.length > 0) {
-              const synthFormats = netMedia.map((m, idx) => ({
-                formatId: 'net_' + idx,
-                resolution: m.customTitle || m.filename || 'Direct Stream',
-                ext: 'mp4',
-                fileSize: m.contentLength || 0,
-                videoUrl: m.url
-              }));
-              renderFormatItems(content, synthFormats, videoUrl, popover);
-            } else if (!res || res.status === 'error' || res.success === false) {
-              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : (!res ? "null response" : ""));
-              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0; word-break: break-all;">Error: ' + errTxt + '</div>';
-            } else {
-              content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
-            }
-          });
+          content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
 
@@ -380,10 +358,11 @@
         .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
         .badge-btn {
-          background: rgba(15, 23, 42, 0.85);
-          backdrop-filter: blur(8px);
-          color: #38bdf8;
-          border: 1px solid rgba(56, 189, 248, 0.4);
+          background: rgba(15, 23, 42, 0.5);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          color: rgba(248, 250, 252, 0.85);
+          border: 1px solid rgba(56, 189, 248, 0.35);
           border-radius: 6px;
           padding: 4px 8px;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -393,15 +372,16 @@
           display: flex;
           align-items: center;
           gap: 4px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-          transition: all 0.2s ease;
-          opacity: 0.85;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          opacity: 0.5;
+          transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
         }
         .badge-btn:hover {
-          opacity: 1;
-          background: rgba(14, 165, 233, 0.9);
+          opacity: 1.0;
+          background: rgba(15, 23, 42, 0.95);
           color: #ffffff;
-          border-color: #ffffff;
+          border-color: #38bdf8;
+          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.6);
           transform: translateY(-1px);
         }
         .popover {
@@ -537,12 +517,11 @@
 
       popover.classList.add('active');
 
-      sendExtensionMessage({ type: 'GET_MEDIA_FORMATS', url: currentVideoUrl }, (res) => {
+      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: currentVideoUrl }, (res) => {
         if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, currentVideoUrl, popover);
         } else {
-          // Fallback to detected network media streams if yt-dlp formats are absent
-          sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+          chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
             let netMedia = (netRes && netRes.media) ? netRes.media : [];
             netMedia = netMedia.filter(m => !m.url.toLowerCase().includes('.ts'));
 
@@ -555,9 +534,11 @@
                 videoUrl: m.url
               }));
               renderFormatItems(content, synthFormats, currentVideoUrl, popover);
-            } else if (!res || res.status === 'error' || res.success === false) {
-              const errTxt = (res && res.error) ? res.error : ((res && res.message) ? res.message : (!res ? "null response" : ""));
-              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0; word-break: break-all;">Error: ' + errTxt + '</div>';
+            } else if (res && (res.status === 'error' || res.success === false)) {
+              const errMsg = (res.message && res.message.includes("not connect")) 
+                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
+                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry.</span>";
+              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
             } else {
               content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
             }

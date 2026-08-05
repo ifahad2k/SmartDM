@@ -130,6 +130,11 @@
   }
 
   function findTopPlayerContainer(mediaEl) {
+    const hostDomain = window.location.hostname.toLowerCase();
+    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('tiktok.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
+      return document.body;
+    }
+
     let current = mediaEl;
     let container = mediaEl.parentElement || mediaEl;
     let depth = 0;
@@ -151,11 +156,6 @@
       depth++;
     }
 
-    const hostDomain = window.location.hostname.toLowerCase();
-    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('tiktok.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
-      return document.body;
-    }
-
     if (window.getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
     }
@@ -164,85 +164,95 @@
   }
 
   function attachUniversalBanner(mediaEl) {
-    if (mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
-    mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
-
-
-
-    // Do NOT attach banner to thumbnail videos inside cards or grid feeds
-    if (isThumbnailVideo(mediaEl)) return;
-
-    // Immediately fetch video resolutions when the new link opens so they are already saved when clicked
-    prefetchYtDlpFormats(window.location.href);
-
     const container = findTopPlayerContainer(mediaEl);
     if (container !== document.body && container.querySelector('.smartdm-universal-host')) return;
+    mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
     
     if (container === document.body) {
-      host.style.position = 'fixed';
-      host.style.zIndex = '2147483647';
-      host.style.pointerEvents = 'auto';
+      host.style.setProperty('position', 'fixed', 'important');
+      host.style.setProperty('z-index', '2147483647', 'important');
+      host.style.setProperty('pointer-events', 'auto', 'important');
       
       const syncPos = () => {
-        const rect = mediaEl.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
-          host.style.opacity = '0';
-          host.style.pointerEvents = 'none';
+        if (!mediaEl || !mediaEl.isConnected) {
+          if (host.parentNode) host.parentNode.removeChild(host);
+          return;
+        }
+        let targetEl = mediaEl;
+        let rect = targetEl.getBoundingClientRect();
+        if ((rect.width === 0 || rect.height === 0) && mediaEl.parentElement) {
+          targetEl = mediaEl.parentElement;
+          rect = targetEl.getBoundingClientRect();
+        }
+        
+        if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
+          host.style.display = 'none';
         } else {
+          host.style.display = 'block';
           host.style.opacity = '1';
           host.style.pointerEvents = 'auto';
-          host.style.top = (rect.top + 16) + 'px';
-          host.style.left = (rect.right - host.offsetWidth - 16) + 'px';
+          host.style.top = Math.max(16, rect.top + 16) + 'px';
+          const bannerWidth = host.offsetWidth || 160;
+          host.style.left = Math.max(16, rect.right - bannerWidth - 16) + 'px';
         }
       };
       
       window.addEventListener('scroll', syncPos, true);
       window.addEventListener('resize', syncPos);
       setInterval(syncPos, 100);
-      
-      // Delay first sync slightly to ensure host has width
       setTimeout(syncPos, 50);
     } else {
-      host.style.position = 'absolute';
-      host.style.top = '16px';
-      host.style.right = '16px';
-      host.style.zIndex = '2147483647'; // Maximum z-index
-      host.style.pointerEvents = 'auto';
+      host.style.setProperty('position', 'absolute', 'important');
+      host.style.setProperty('top', '16px', 'important');
+      host.style.setProperty('right', '16px', 'important');
+      host.style.setProperty('z-index', '2147483647', 'important');
+      host.style.setProperty('pointer-events', 'auto', 'important');
     }
 
     const shadow = host.attachShadow({ mode: 'open' });
 
     shadow.innerHTML = `
       <style>
+        :host {
+          z-index: 2147483647 !important;
+          pointer-events: auto !important;
+        }
         .idm-banner {
-          background: rgba(15, 23, 42, 0.7);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          color: #f8fafc;
-          border: 1px solid rgba(56, 189, 248, 0.5);
+          background: rgba(15, 23, 42, 0.5) !important;
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          color: rgba(248, 250, 252, 0.85);
+          border: 1px solid rgba(56, 189, 248, 0.35);
           border-radius: 6px;
           padding: 6px 12px;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
           font-size: 12px;
           font-weight: 700;
-          cursor: grab;
+          cursor: pointer !important;
           display: flex;
           align-items: center;
           gap: 6px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-          transition: background 0.2s ease, border-color 0.2s ease;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+          opacity: 0.5;
+          transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
           user-select: none;
+          pointer-events: auto !important;
+          position: relative !important;
+          z-index: 2147483647 !important;
         }
         .idm-banner:active {
           cursor: grabbing;
         }
         .idm-banner:hover {
-          background: rgba(2, 132, 199, 0.8);
-          border-color: #38bdf8;
-          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.5);
+          opacity: 1.0 !important;
+          background: rgba(15, 23, 42, 0.95) !important;
+          border-color: #38bdf8 !important;
+          color: #ffffff !important;
+          box-shadow: 0 6px 22px rgba(56, 189, 248, 0.6) !important;
+          transform: translateY(-1px);
         }
         .icon {
           width: 14px;
@@ -428,14 +438,14 @@
       }
     });
 
-    let pageUrl = window.location.href;
-    const hostLower = window.location.hostname.toLowerCase();
-    const isFb = hostLower.includes('facebook.com');
-    const isIg = hostLower.includes('instagram.com');
-    const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
-    const isTt = hostLower.includes('tiktok.com');
+    function resolveCurrentMediaUrl(mEl) {
+      let pageUrl = window.location.href;
+      const hostLower = window.location.hostname.toLowerCase();
+      const isFb = hostLower.includes('facebook.com');
+      const isIg = hostLower.includes('instagram.com');
+      const isX = hostLower.includes('x.com') || hostLower.includes('twitter.com');
+      const isTt = hostLower.includes('tiktok.com');
 
-    if (isFb || isIg || isX || isTt) {
       const isVideoLink = (href) => {
         if (!href) return false;
         const h = href.toLowerCase();
@@ -454,52 +464,71 @@
         return false;
       };
 
-      let el = mediaEl;
-      let found = false;
-      while (el && el !== document.body) {
-        if (el.tagName === 'A' && isVideoLink(el.href)) {
-          pageUrl = el.href;
-          found = true;
-          break;
+      if (isFb || isIg || isX || isTt) {
+        if (isVideoLink(pageUrl)) {
+          if (isIg) pageUrl = pageUrl.replace('/reels/', '/reel/');
+          if (isFb) pageUrl = pageUrl.replace('/reels/', '/reel/');
+          return pageUrl;
         }
-        el = el.parentElement;
-      }
 
-      if (!found) {
-        const card = mediaEl.closest('[data-pagelet*="FeedUnit"], [role="feed"] > div, [role="article"], article, section, [data-video-id], div[class*="x1yztall"]');
-        if (card) {
-          const links = card.querySelectorAll('a[href]');
-          for (let i = 0; i < links.length; i++) {
-            if (isVideoLink(links[i].href)) {
-              pageUrl = links[i].href;
-              found = true;
-              break;
+        let el = mEl;
+        let found = false;
+        while (el && el !== document.body) {
+          if (el.tagName === 'A' && isVideoLink(el.href)) {
+            pageUrl = el.href;
+            found = true;
+            break;
+          }
+          el = el.parentElement;
+        }
+
+        if (!found && mEl) {
+          const card = mEl.closest('[data-pagelet*="FeedUnit"], [role="feed"] > div, [role="article"], article, section, [data-video-id], div[class*="x1yztall"]');
+          if (card) {
+            const links = card.querySelectorAll('a[href]');
+            for (let i = 0; i < links.length; i++) {
+              if (isVideoLink(links[i].href)) {
+                pageUrl = links[i].href;
+                found = true;
+                break;
+              }
             }
           }
         }
-      }
 
-      if (!found) {
-        let currentParent = mediaEl.parentElement;
-        let searchDepth = 0;
-        while (currentParent && currentParent !== document.body && searchDepth < 25) {
-          const links = currentParent.querySelectorAll('a[href]');
-          for (let i = 0; i < links.length; i++) {
-            if (isVideoLink(links[i].href)) {
-              pageUrl = links[i].href;
-              found = true;
-              break;
+        if (!found && mEl) {
+          let currentParent = mEl.parentElement;
+          let searchDepth = 0;
+          while (currentParent && currentParent !== document.body && searchDepth < 25) {
+            const links = currentParent.querySelectorAll('a[href]');
+            for (let i = 0; i < links.length; i++) {
+              if (isVideoLink(links[i].href)) {
+                pageUrl = links[i].href;
+                found = true;
+                break;
+              }
             }
+            if (found) break;
+            currentParent = currentParent.parentElement;
+            searchDepth++;
           }
-          if (found) break;
-          currentParent = currentParent.parentElement;
-          searchDepth++;
         }
       }
+      if (isIg && pageUrl) pageUrl = pageUrl.replace('/reels/', '/reel/');
+      if (isFb && pageUrl) pageUrl = pageUrl.replace('/reels/', '/reel/');
+      return pageUrl;
     }
 
-    // Immediately fetch video resolutions for the resolved URL so they are ready when clicked
-    prefetchYtDlpFormats(pageUrl);
+    ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(evtName => {
+      bannerBtn.addEventListener(evtName, (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }, true);
+    });
+
+    bannerBtn.addEventListener('mouseenter', () => {
+      prefetchYtDlpFormats(resolveCurrentMediaUrl(mediaEl));
+    });
 
     let formatSearchInterval = null;
     let formatSearchTimeout = null;
@@ -508,6 +537,8 @@
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
+
+      const pageUrl = resolveCurrentMediaUrl(mediaEl);
 
       const isActive = popover.classList.contains('active');
       if (isActive) {

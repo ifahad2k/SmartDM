@@ -4,8 +4,9 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -15,7 +16,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
 
     @SuppressWarnings("this-escape")
     public BrowserIntegrationDialog(Stage owner) {
-        super(owner, "Browser Integration");
+        super(owner, "Browser Integration & Extension Setup");
 
         dialogBody.setSpacing(15);
         dialogBody.setPadding(new Insets(20));
@@ -24,24 +25,63 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         String scriptExt = isLinux ? "install.sh" : "install.bat";
 
         Label instructions = new Label(
-            "To connect SmartDM with your browser:\n\n" +
-            "For Google Chrome / Chromium:\n" +
-            "1. Run '" + scriptExt + "' from extensions/chrome/host\n" +
-            "2. Open Chrome -> Extensions -> Enable Developer Mode\n" +
-            "3. Click 'Load unpacked' and select the 'extensions/chrome' folder\n\n" +
-            "For Mozilla Firefox:\n" +
-            "1. Run '" + scriptExt + "' from extensions/firefox/host\n" +
-            "2. Open Firefox -> about:debugging#/runtime/this-firefox\n" +
-            "3. Click 'Load Temporary Add-on' and select 'extensions/firefox/manifest.json'\n"
+            "SmartDM comes with pre-packaged browser extensions ready to install:\n\n" +
+            "📌 For Google Chrome / Edge / Brave / Vivaldi:\n" +
+            "1. Open chrome://extensions (or edge://extensions) in your browser.\n" +
+            "2. Enable 'Developer mode' in the top right corner.\n" +
+            "3. Click 'Open Chrome Extension Folder' below (the path will also be copied to clipboard).\n" +
+            "4. Click 'Load unpacked' in your browser and select that folder!\n\n" +
+            "📌 For Mozilla Firefox:\n" +
+            "1. Open about:debugging#/runtime/this-firefox in Firefox.\n" +
+            "2. Click 'Load Temporary Add-on...'\n" +
+            "3. Select the 'manifest.json' file inside the Firefox extension folder."
         );
         instructions.setWrapText(true);
         instructions.getStyleClass().add("dialog-label");
+        instructions.setStyle("-fx-font-size: 13px; -fx-text-fill: #CBD5E1; -fx-line-spacing: 4px;");
+
+        Label statusLabel = new Label("");
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
         HBox btnBox = new HBox(10);
-        btnBox.setAlignment(Pos.CENTER_RIGHT);
+        btnBox.setAlignment(Pos.CENTER_LEFT);
 
-        Button installHostsBtn = new Button("Auto-Install Host Scripts");
-        installHostsBtn.getStyleClass().addAll("btn", "btn-primary");
+        Button openChromeFolderBtn = new Button("📁 Open Chrome Extension Folder");
+        openChromeFolderBtn.getStyleClass().addAll("btn", "btn-primary");
+        openChromeFolderBtn.setOnAction(e -> {
+            File chromeDir = findExtensionDir("chrome");
+            if (chromeDir != null && chromeDir.exists()) {
+                // Copy path to clipboard
+                ClipboardContent content = new ClipboardContent();
+                content.putString(chromeDir.getAbsolutePath());
+                Clipboard.getSystemClipboard().setContent(content);
+
+                // Open folder in File Explorer
+                openFolderInExplorer(chromeDir);
+                statusLabel.setText("📋 Copied path & opened Chrome extension folder!");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+            } else {
+                statusLabel.setText("❌ Could not locate Chrome extension folder.");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
+            }
+        });
+
+        Button openFirefoxFolderBtn = new Button("🦊 Open Firefox Extension Folder");
+        openFirefoxFolderBtn.getStyleClass().add("btn");
+        openFirefoxFolderBtn.setOnAction(e -> {
+            File firefoxDir = findExtensionDir("firefox");
+            if (firefoxDir != null && firefoxDir.exists()) {
+                openFolderInExplorer(firefoxDir);
+                statusLabel.setText("📂 Opened Firefox extension folder!");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+            } else {
+                statusLabel.setText("❌ Could not locate Firefox extension folder.");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
+            }
+        });
+
+        Button installHostsBtn = new Button("⚡ Re-Register Native Host");
+        installHostsBtn.getStyleClass().add("btn");
         installHostsBtn.setOnAction(e -> {
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
@@ -59,7 +99,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                         };
                         java.nio.file.Path firefoxDir = java.nio.file.Paths.get(userHome, ".mozilla", "native-messaging-hosts");
                         
-                        String chromeJson = "{\n  \"name\": \"io.smartdm.host\",\n  \"description\": \"SmartDM Native Messaging Host\",\n  \"path\": \"" + chromeInstall.getAbsolutePath() + "\",\n  \"type\": \"stdio\",\n  \"allowed_origins\": [\"chrome-extension://lkbiimagmeaefiedjigomffpophipmck/\"]\n}";
+                        String chromeJson = "{\n  \"name\": \"io.smartdm.host\",\n  \"description\": \"SmartDM Native Messaging Host\",\n  \"path\": \"" + chromeInstall.getAbsolutePath() + "\",\n  \"type\": \"stdio\",\n  \"allowed_origins\": [\"chrome-extension://lkbiimagmeaefiedjigomffpophipmck/\", \"chrome-extension://knldjnnmkkebefogdbmggjijknmjeaoh/\"]\n}";
                         for (java.nio.file.Path targetDir : chromeDirs) {
                             try {
                                 java.nio.file.Files.createDirectories(targetDir);
@@ -74,7 +114,8 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                         } catch (Exception ignored) {}
                     }
                     javafx.application.Platform.runLater(() -> {
-                        instructions.setText("Native messaging hosts successfully installed for Chrome and Firefox!");
+                        statusLabel.setText("✅ Native messaging hosts successfully registered!");
+                        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
                     });
                 } catch (Exception ex) {
                     ex.printStackTrace();
@@ -82,43 +123,45 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
             });
         });
 
-        Button openFolderBtn = new Button("Open Extensions Folder");
-        openFolderBtn.getStyleClass().add("btn");
-        openFolderBtn.setOnAction(e -> {
+        Button closeBtn = new Button("Close");
+        closeBtn.getStyleClass().add("btn");
+        closeBtn.setOnAction(e -> close());
+
+        btnBox.getChildren().addAll(openChromeFolderBtn, openFirefoxFolderBtn, installHostsBtn, closeBtn);
+
+        dialogBody.getChildren().addAll(instructions, statusLabel, btnBox);
+    }
+
+    private File findExtensionDir(String browser) {
+        String[] candidatePaths = new String[]{
+            "extensions/" + browser,
+            "../extensions/" + browser,
+            "../../extensions/" + browser,
+            System.getProperty("user.dir") + "/extensions/" + browser
+        };
+        for (String p : candidatePaths) {
+            File f = new File(p);
+            if (f.exists() && f.isDirectory()) {
+                return f.getAbsoluteFile();
+            }
+        }
+        return null;
+    }
+
+    private void openFolderInExplorer(File target) {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
-                File extDir = new File("../../extensions");
-                if (!extDir.exists()) {
-                    extDir = new File("extensions");
-                }
-                if (extDir.exists()) {
-                    File target = extDir.getAbsoluteFile();
-                    java.util.concurrent.CompletableFuture.runAsync(() -> {
-                        try {
-                            String os = System.getProperty("os.name", "").toLowerCase();
-                            if (os.contains("win")) {
-                                new ProcessBuilder("explorer.exe", target.getAbsolutePath()).start();
-                            } else {
-                                new ProcessBuilder("xdg-open", target.getAbsolutePath()).start();
-                            }
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                        }
-                    });
+                String os = System.getProperty("os.name", "").toLowerCase();
+                if (os.contains("win")) {
+                    new ProcessBuilder("explorer.exe", target.getAbsolutePath()).start();
                 } else {
-                    System.err.println("Could not find extensions directory: " + new File(".").getAbsolutePath());
+                    new ProcessBuilder("xdg-open", target.getAbsolutePath()).start();
                 }
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
         });
-
-        Button closeBtn = new Button("Close");
-        closeBtn.getStyleClass().add("btn");
-        closeBtn.setOnAction(e -> close());
-
-        btnBox.getChildren().addAll(installHostsBtn, openFolderBtn, closeBtn);
-
-        dialogBody.getChildren().addAll(instructions, btnBox);
     }
 }
+
 

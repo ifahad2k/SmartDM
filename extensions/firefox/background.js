@@ -161,16 +161,19 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
-                              url.includes('.html') || url.includes('.ico') || url.includes('.wasm') ||
-                              url.includes('.txt');
+                              url.includes('.html') || url.includes('.ico');
       if (isNonMediaAsset) return;
 
-      // Filter out HLS/DASH segment chunks
+      // Filter out HLS/DASH segment chunks and range requests
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
-                             (url.includes('.m4s') && !url.includes('master') && !url.includes('init'));
+                             (url.includes('.m4s') && !url.includes('master')) ||
+                             url.includes('bytestart=') || 
+                             url.includes('byteend=') ||
+                             url.includes('range=');
       if (isSegmentChunk) return;
 
       const targetUrl = details.url;
+
 
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
@@ -181,10 +184,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       const isMediaExt = url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
-                         url.includes('.avi') || url.includes('.mkv') ||
-                         url.includes('googlevideo.com/videoplayback') ||
-                         url.includes('fbcdn.net') ||
-                         url.includes('cdn.tiktok');
+                         url.includes('.avi') || url.includes('.mkv');
 
       if (isMediaMime || isMediaExt) {
         if (!detectedMediaMap.has(details.tabId)) {
@@ -294,16 +294,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-const actionApi = chrome.browserAction || chrome.action;
-if (actionApi) {
-  actionApi.onClicked.addListener((tab) => {
-    if (tab && tab.url) {
-      sendToSmartDM(tab.url, tab.url);
-    }
-  });
-}
+chrome.action.onClicked.addListener((tab) => {
+  if (tab && tab.url) {
+    sendToSmartDM(tab.url, tab.url);
+  }
+});
 
-async function appendCookiesAndSend(request, sendResponse, storeId = null) {
+async function appendCookiesAndSend(request, sendResponse) {
   request.userAgent = navigator.userAgent;
   try {
     let targetUrl = request.url;
@@ -318,13 +315,8 @@ async function appendCookiesAndSend(request, sendResponse, storeId = null) {
         cookieDomainUrl = parsed.protocol + '//' + parsed.hostname + '/';
       } catch (e) {}
 
-      const cookieQuery = { url: cookieDomainUrl };
-      if (storeId) {
-        cookieQuery.storeId = storeId;
-      }
-
       const cookies = await new Promise(resolve => {
-        chrome.cookies.getAll(cookieQuery, (c) => resolve(c || []));
+        chrome.cookies.getAll({ url: cookieDomainUrl }, (c) => resolve(c || []));
       });
       
       if (cookies && cookies.length > 0) {
@@ -344,36 +336,18 @@ async function appendCookiesAndSend(request, sendResponse, storeId = null) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
-  
-  try {
-    if (api.runtime.sendNativeMessage.length === 2 || (typeof browser !== 'undefined')) {
-      // Firefox / Promise API
-      const response = await api.runtime.sendNativeMessage(NATIVE_HOST_NAME, request);
+  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+    if (chrome.runtime.lastError) {
+      if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      else console.error('Error sending native message:', chrome.runtime.lastError.message);
+    } else {
       if (sendResponse) sendResponse(response || { success: true });
       else console.log('Received response from native host:', response);
-    } else {
-      // Chrome / Callback API
-      api.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-        const err = api.runtime.lastError;
-        if (err) {
-          if (sendResponse) sendResponse({ success: false, error: err.message });
-          else console.error('Error sending native message:', err.message);
-        } else {
-          if (sendResponse) sendResponse(response || { success: true });
-          else console.log('Received response from native host:', response);
-        }
-      });
     }
-  } catch (err) {
-    console.error('Exception in sendNativeMessage:', err);
-    if (sendResponse) sendResponse({ success: false, error: err.message || String(err) });
-  }
+  });
 }
 
-const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
-
-api.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
     const media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
@@ -382,17 +356,9 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
-    const storeId = sender.tab ? sender.tab.cookieStoreId : null;
-    appendCookiesAndSend(request, (res) => {
-      sendResponse(res || { success: false, error: "Empty response" });
-    }, storeId).catch(err => {
-      sendResponse({ success: false, error: err.message || String(err) });
-    });
+    appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
-  
-  sendResponse({ success: false, error: "Unknown request type" });
-  return true;
 });
 
 function sendToSmartDM(url, referer, fileName = null) {
@@ -410,8 +376,9 @@ function sendToSmartDM(url, referer, fileName = null) {
 
 const bypassedDownloads = new Set();
 
-if (browser.downloads && browser.downloads.onDeterminingFilename) {
-  browser.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+if (chrome.downloads && chrome.downloads.onCreated) {
+  chrome.downloads.onCreated.addListener((downloadItem) => {
+    if (downloadItem.state !== 'in_progress') return;
     if (downloadItem.byExtensionId || bypassedDownloads.has(downloadItem.url)) {
       return;
     }
@@ -421,33 +388,33 @@ if (browser.downloads && browser.downloads.onDeterminingFilename) {
     }
 
     // Cancel browser download
-    browser.downloads.cancel(downloadItem.id).then(() => {
-      let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
-      const message = {
-        type: 'ADD_DOWNLOAD',
-        url: downloadItem.finalUrl || downloadItem.url,
-        fileName: basename,
-        referer: downloadItem.referrer || null,
-        userAgent: navigator.userAgent
-      };
+    chrome.downloads.cancel(downloadItem.id);
+    
+    let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
+    const message = {
+      type: 'ADD_DOWNLOAD',
+      url: downloadItem.finalUrl || downloadItem.url,
+      fileName: basename,
+      referer: downloadItem.referrer || null,
+      userAgent: navigator.userAgent
+    };
 
-      appendCookiesAndSend(message, (response) => {
-        if (browser.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
-          console.error("SmartDM unavailable, resuming standard download...", browser.runtime.lastError);
-          bypassedDownloads.add(downloadItem.url);
-          
-          let dlOptions = {
-            url: downloadItem.url,
-            saveAs: true
-          };
-          if (basename && basename.length > 0) {
-              dlOptions.filename = basename;
-          }
-          browser.downloads.download(dlOptions);
-          
-          setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+    appendCookiesAndSend(message, (response) => {
+      if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
+        console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
+        bypassedDownloads.add(downloadItem.url);
+        
+        let dlOptions = {
+          url: downloadItem.url,
+          saveAs: true
+        };
+        if (basename && basename.length > 0) {
+            dlOptions.filename = basename;
         }
-      });
+        chrome.downloads.download(dlOptions);
+        
+        setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+      }
     });
   });
 }

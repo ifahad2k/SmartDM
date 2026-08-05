@@ -1,3 +1,3 @@
 @echo off
-REG DELETE "HKCU\Software\Mozilla\NativeMessagingHosts\io.smartdm.host" /f
-echo Uninstalled Firefox Native Messaging Host.
+REG DELETE "HKCU\Software\Google\Chrome\NativeMessagingHosts\io.smartdm.host" /f
+echo Uninstalled Chrome Native Messaging Host.

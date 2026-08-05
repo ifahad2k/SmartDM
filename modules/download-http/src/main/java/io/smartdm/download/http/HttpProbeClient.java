@@ -104,7 +104,10 @@ public class HttpProbeClient {
                 .thenApply(response -> {
                     if (response.statusCode() == 401) {
                         String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
-                        throw new UnauthorizedException(wwwAuth);
+                        if (wwwAuth.toLowerCase().contains("basic") || wwwAuth.toLowerCase().contains("digest")) {
+                            throw new UnauthorizedException(wwwAuth.isEmpty() ? "Secure Area" : wwwAuth);
+                        }
+                        throw new RuntimeException("HTTP 401 Unauthorized");
                     }
                     if (response.statusCode() >= 300) {
                         throw new RuntimeException("HEAD status: " + response.statusCode());
@@ -121,10 +124,13 @@ public class HttpProbeClient {
                     if (ex == null) {
                         return CompletableFuture.completedFuture(result);
                     }
-                    // HEAD failed (possibly 405 Method Not Allowed), fall back to GET with Range: bytes=0-0
-                    // If it was a 401, re-throw it so we can catch it in UI
+                    // HEAD failed (possibly 405 Method Not Allowed or 401/403 from CDN)
                     if (ex.getCause() instanceof UnauthorizedException) {
                         return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
+                    }
+                    // If probing with cookies failed, retry WITHOUT cookies (fixes GitHub releases & S3/Azure presigned URLs)
+                    if (credential != null && credential.cookies() != null && !credential.cookies().isEmpty()) {
+                        return probeAsync(uri, null);
                     }
                     return probeViaGetRange(uri, credential);
                 })
@@ -181,7 +187,10 @@ public class HttpProbeClient {
                         
                         if (response.statusCode() == 401) {
                             String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
-                            throw new UnauthorizedException(wwwAuth);
+                            if (wwwAuth.toLowerCase().contains("basic") || wwwAuth.toLowerCase().contains("digest")) {
+                                throw new UnauthorizedException(wwwAuth.isEmpty() ? "Secure Area" : wwwAuth);
+                            }
+                            throw new RuntimeException("HTTP 401 Unauthorized");
                         }
                         
                         if (response.statusCode() != 200 && response.statusCode() != 206) {
@@ -216,6 +225,19 @@ public class HttpProbeClient {
                     } catch (Exception e) {
                         throw new RuntimeException("Failed to process GET Range response", e);
                     }
-                });
+                })
+                .handle((result, ex) -> {
+                    if (ex == null) {
+                        return CompletableFuture.completedFuture(result);
+                    }
+                    if (ex.getCause() instanceof UnauthorizedException) {
+                        return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
+                    }
+                    if (credential != null && credential.cookies() != null && !credential.cookies().isEmpty()) {
+                        return probeViaGetRange(uri, null);
+                    }
+                    return CompletableFuture.<ProbeResult>failedFuture(ex);
+                })
+                .thenCompose(future -> future);
     }
 }

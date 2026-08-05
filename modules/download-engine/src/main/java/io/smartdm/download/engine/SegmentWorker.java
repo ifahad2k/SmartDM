@@ -42,8 +42,7 @@ public class SegmentWorker implements Callable<Void> {
             return null; // Already finished
         }
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder(baseRequest.uri())
-                .timeout(Duration.ofSeconds(10));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(baseRequest.uri());
         
         // Copy original headers if any (simplified here)
         baseRequest.headers().map().forEach((k, v) -> {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 exec 2>> /tmp/smartdm_host.log
-echo "--- Firefox Native Host Launched at $(date) ---" >> /tmp/smartdm_host.log
+echo "--- Native Host Launched at $(date) ---" >> /tmp/smartdm_host.log
 echo "PATH=$PATH" >> /tmp/smartdm_host.log
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

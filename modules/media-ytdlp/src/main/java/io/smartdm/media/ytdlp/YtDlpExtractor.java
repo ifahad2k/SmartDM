@@ -36,6 +36,9 @@ public class YtDlpExtractor implements MediaExtractor {
             if (url != null && url.contains("instagram.com")) {
                 url = url.replaceAll("instagram\\.com/reels/([A-Za-z0-9_-]+)", "instagram.com/reel/$1");
             }
+            if (url != null && (url.contains("facebook.com") || url.contains("fb.watch"))) {
+                url = url.replaceAll("facebook\\.com/reels/([0-9A-Za-z_-]+)", "facebook.com/reel/$1");
+            }
             Path ytDlp = toolManager.getYtDlpPath().orElseThrow(() -> 
                 new IllegalStateException("yt-dlp executable not found. Please install yt-dlp."));
 
@@ -72,6 +75,9 @@ public class YtDlpExtractor implements MediaExtractor {
                     } else if (url != null && url.contains("instagram.com")) {
                         cmd.add("--referer");
                         cmd.add("https://www.instagram.com/");
+                    } else if (url != null && (url.contains("facebook.com") || url.contains("fb.watch"))) {
+                        cmd.add("--referer");
+                        cmd.add("https://www.facebook.com/");
                     }
                     
                     if (cookieFile != null) {
@@ -112,6 +118,9 @@ public class YtDlpExtractor implements MediaExtractor {
                         } else if (url != null && url.contains("instagram.com")) {
                             fallbackCmd.add("--referer");
                             fallbackCmd.add("https://www.instagram.com/");
+                        } else if (url != null && (url.contains("facebook.com") || url.contains("fb.watch"))) {
+                            fallbackCmd.add("--referer");
+                            fallbackCmd.add("https://www.facebook.com/");
                         }
                         if (cookieFile != null) {
                             fallbackCmd.add("--cookies");

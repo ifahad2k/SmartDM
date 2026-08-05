@@ -558,8 +558,7 @@ public class SmartDmApp extends Application {
                     if (req.fileName() != null && !req.fileName().isBlank()) {
                         d.setFileName(req.fileName());
                     }
-                    d.show();
-                    d.toFront();
+                    bringStageToFrontAndFocus(d);
                 });
                 return "{\"status\":\"ok\",\"version\":\"1.0\"}";
             } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
@@ -926,6 +925,7 @@ public class SmartDmApp extends Application {
         stage.show();
         stage.toFront();
         stage.requestFocus();
+        stage.setAlwaysOnTop(false);
     }
 
     public static void main(String[] args) {

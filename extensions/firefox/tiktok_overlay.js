@@ -62,25 +62,28 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        background: rgba(15, 23, 42, 0.85);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        color: #f8fafc;
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(15, 23, 42, 0.5);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        color: rgba(248, 250, 252, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.35);
         border-radius: 20px;
         padding: 6px 12px;
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
         box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-        transition: all 0.2s ease;
+        opacity: 0.5;
+        transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
         user-select: none;
       }
       .banner-btn:hover {
-        background: rgba(30, 41, 59, 0.95);
-        border-color: rgba(56, 189, 248, 0.5);
+        opacity: 1.0;
+        background: rgba(15, 23, 42, 0.95);
+        border-color: #38bdf8;
+        color: #ffffff;
         transform: translateY(-1px);
-        box-shadow: 0 6px 16px rgba(56, 189, 248, 0.25);
+        box-shadow: 0 6px 20px rgba(56, 189, 248, 0.6);
       }
       .banner-icon {
         width: 14px;
@@ -282,30 +285,17 @@
         }
       }
 
-  function sendExtensionMessage(message, callback) {
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage(message, (res) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          console.warn('sendExtensionMessage error:', err.message);
-        }
-        if (callback) callback(err ? { success: false, error: err.message } : (res || { success: false, error: 'Empty response' }));
-      });
-    } else {
-      if (callback) callback({ success: false, error: 'Extension API not found' });
-    }
-  }
-
       const startTime = Date.now();
       const MIN_SEARCH_TIME = 1200;
 
       const checkFormats = () => {
-        sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
 
           netMedia = netMedia.filter(m => {
             const urlLower = m.url.toLowerCase();
-            return !urlLower.includes('.ts');
+            return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
           });
 
           const elapsed = Date.now() - startTime;
@@ -337,7 +327,8 @@
             liveSrc = sourceChild.src;
           }
         }
-        sendExtensionMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+        runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
           let netMedia = (netRes && netRes.media) ? netRes.media : [];
           renderTikTokFormats(content, liveSrc, netMedia, pageUrl, popover);
         });

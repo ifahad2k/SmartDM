@@ -4,7 +4,7 @@ plugins {
 }
 
 application {
-    mainClass.set("io.smartdm.desktop.SmartDmApp")
+    mainClass.set("io.smartdm.desktop.Launcher")
 }
 
 dependencies {
