@@ -237,7 +237,7 @@ namespace SmartDM.Installer
                                 key.SetValue("Publisher", "SmartDM");
                                 key.SetValue("InstallLocation", targetDir);
                                 key.SetValue("UninstallString", "\"" + uninstallBat + "\"");
-                                key.SetValue("DisplayIcon", Path.Combine(targetDir, "bin", "desktop.bat"));
+                                key.SetValue("DisplayIcon", Path.Combine(targetDir, "SmartDM.exe"));
                             }
                         }
                     }
@@ -250,9 +250,9 @@ namespace SmartDM.Installer
                         dynamic shell = Activator.CreateInstance(shellType);
                         string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
                         dynamic shortcut = shell.CreateShortcut(Path.Combine(desktopPath, "SmartDM.lnk"));
-                        shortcut.TargetPath = Path.Combine(targetDir, "bin", "desktop.bat");
+                        shortcut.TargetPath = Path.Combine(targetDir, "SmartDM.exe");
                         shortcut.WorkingDirectory = targetDir;
-                        shortcut.IconLocation = Path.Combine(targetDir, "bin", "desktop.bat") + ",0";
+                        shortcut.IconLocation = Path.Combine(targetDir, "SmartDM.exe") + ",0";
                         shortcut.Save();
                     }
                     catch { }
@@ -264,13 +264,12 @@ namespace SmartDM.Installer
 
                 if (launchCheckBox.Checked)
                 {
-                    string batPath = Path.Combine(targetDir, "bin", "desktop.bat");
-                    if (File.Exists(batPath))
+                    string exePath = Path.Combine(targetDir, "SmartDM.exe");
+                    if (File.Exists(exePath))
                     {
-                        ProcessStartInfo launchInfo = new ProcessStartInfo(batPath)
+                        ProcessStartInfo launchInfo = new ProcessStartInfo(exePath)
                         {
                             WorkingDirectory = targetDir,
-                            WindowStyle = ProcessWindowStyle.Hidden,
                             UseShellExecute = true
                         };
                         Process.Start(launchInfo);

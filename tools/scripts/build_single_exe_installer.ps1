@@ -14,6 +14,7 @@ Write-Host "============================================================" -Foreg
 $ReleaseDir = "$ProjectRoot\build\release"
 $StagingDir = "$ProjectRoot\build\installer-staging"
 $AppImageDir = "$StagingDir\SmartDM"
+$CscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
 if (Test-Path $ReleaseDir) { Remove-Item -Recurse -Force $ReleaseDir }
@@ -21,7 +22,7 @@ New-Item -ItemType Directory -Path $ReleaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $AppImageDir -Force | Out-Null
 
 # 1. Run Gradle to build distribution zip
-Write-Host "`n[1/5] Compiling SmartDM Desktop App..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Compiling SmartDM Desktop App..." -ForegroundColor Yellow
 & "$ProjectRoot\gradlew.bat" :apps:desktop:distZip
 if ($LASTEXITCODE -ne 0) { throw "Gradle build failed!" }
 
@@ -34,8 +35,16 @@ $UnpackedName = (Get-ChildItem $StagingDir -Directory | Where-Object { $_.Name -
 Copy-Item -Path "$UnpackedName\*" -Destination $AppImageDir -Recurse -Force
 Remove-Item -Recurse -Force $UnpackedName
 
-# 2. Copy tools (yt-dlp.exe, ffmpeg.exe) into tools/ directory
-Write-Host "`n[2/5] Bundling native tools (yt-dlp, ffmpeg)..." -ForegroundColor Yellow
+# 2. Compile native SmartDM.exe executable into installation folder
+Write-Host "`n[2/6] Compiling native SmartDM.exe executable launcher..." -ForegroundColor Yellow
+$AppLauncherCs = "$ProjectRoot\tools\scripts\AppLauncher.cs"
+$TargetAppExe = "$AppImageDir\SmartDM.exe"
+& $CscPath /target:winexe /out:$TargetAppExe /reference:System.Windows.Forms.dll $AppLauncherCs
+if ($LASTEXITCODE -ne 0) { throw "SmartDM.exe compilation failed!" }
+Write-Host "  + Created: $TargetAppExe" -ForegroundColor Green
+
+# 3. Copy tools (yt-dlp.exe, ffmpeg.exe) into tools/ directory
+Write-Host "`n[3/6] Bundling native tools (yt-dlp, ffmpeg)..." -ForegroundColor Yellow
 $ToolsDir = "$AppImageDir\tools"
 New-Item -ItemType Directory -Path $ToolsDir -Force | Out-Null
 
@@ -44,8 +53,8 @@ Get-ChildItem -Path "$ProjectRoot\tools" -Filter "*.exe" -Recurse -ErrorAction S
     Write-Host "  + Bundled: $($_.Name)" -ForegroundColor Green
 }
 
-# 3. Copy Browser Extensions into extensions/ directory
-Write-Host "`n[3/5] Bundling Browser Extensions..." -ForegroundColor Yellow
+# 4. Copy Browser Extensions into extensions/ directory
+Write-Host "`n[4/6] Bundling Browser Extensions..." -ForegroundColor Yellow
 $ExtDir = "$AppImageDir\extensions"
 New-Item -ItemType Directory -Path "$ExtDir\chrome" -Force | Out-Null
 New-Item -ItemType Directory -Path "$ExtDir\firefox" -Force | Out-Null
@@ -55,8 +64,8 @@ Copy-Item -Path "$ProjectRoot\extensions\firefox\*" -Destination "$ExtDir\firefo
 Write-Host "  + Bundled Chrome Extension" -ForegroundColor Green
 Write-Host "  + Bundled Firefox Extension" -ForegroundColor Green
 
-# 4. Create Native Host Registration Script inside App Directory
-Write-Host "`n[4/5] Creating Native Host Registry Auto-Installer..." -ForegroundColor Yellow
+# 5. Create Native Host Registration Script inside App Directory
+Write-Host "`n[5/6] Creating Native Host Registry Auto-Installer..." -ForegroundColor Yellow
 $RegisterScript = @"
 @echo off
 setlocal
@@ -66,7 +75,7 @@ set "APP_DIR=%APP_DIR:\=/%"
 echo { > "%~dp0io.smartdm.host.json"
 echo   "name": "io.smartdm.host", >> "%~dp0io.smartdm.host.json"
 echo   "description": "SmartDM Browser Native Host", >> "%~dp0io.smartdm.host.json"
-echo   "path": "%APP_DIR%bin/desktop.bat", >> "%~dp0io.smartdm.host.json"
+echo   "path": "%APP_DIR%SmartDM.exe", >> "%~dp0io.smartdm.host.json"
 echo   "type": "stdio", >> "%~dp0io.smartdm.host.json"
 echo   "allowed_origins": [ >> "%~dp0io.smartdm.host.json"
 echo     "chrome-extension://knldjnnmkkebefogdbmggjijknmjeaoh/", >> "%~dp0io.smartdm.host.json"
@@ -77,7 +86,7 @@ echo } >> "%~dp0io.smartdm.host.json"
 echo { > "%~dp0io.smartdm.host.firefox.json"
 echo   "name": "io.smartdm.host", >> "%~dp0io.smartdm.host.firefox.json"
 echo   "description": "SmartDM Browser Native Host", >> "%~dp0io.smartdm.host.firefox.json"
-echo   "path": "%APP_DIR%bin/desktop.bat", >> "%~dp0io.smartdm.host.firefox.json"
+echo   "path": "%APP_DIR%SmartDM.exe", >> "%~dp0io.smartdm.host.firefox.json"
 echo   "type": "stdio", >> "%~dp0io.smartdm.host.firefox.json"
 echo   "allowed_extensions": [ >> "%~dp0io.smartdm.host.firefox.json"
 echo     "smartdm@smartdm.io", >> "%~dp0io.smartdm.host.firefox.json"
@@ -97,13 +106,12 @@ $PayloadZip = "$StagingDir\payload.zip"
 Write-Host "Compressing payload zip..." -ForegroundColor Yellow
 Compress-Archive -Path "$AppImageDir\*" -DestinationPath $PayloadZip -Force
 
-# 5. Compile Installer.cs into SmartDM-Setup-v1.0.0.exe
-Write-Host "`n[5/5] Compiling Single-EXE Installer (SmartDM-Setup-v1.0.0.exe)..." -ForegroundColor Yellow
-$CscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+# 6. Compile Installer.cs into SmartDM-Setup-v1.0.0.exe
+Write-Host "`n[6/6] Compiling Single-EXE Installer (SmartDM-Setup-v1.0.0.exe)..." -ForegroundColor Yellow
 $InstallerCs = "$ProjectRoot\tools\scripts\Installer.cs"
 $TargetExe = "$ReleaseDir\SmartDM-Setup-v1.0.0.exe"
-
 $ManifestPath = "$ProjectRoot\tools\scripts\app.manifest"
+
 & $CscPath /target:winexe /out:$TargetExe /resource:$PayloadZip,payload.zip /win32manifest:$ManifestPath /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $InstallerCs
 if ($LASTEXITCODE -ne 0) { throw "Installer C# compilation failed!" }
 
