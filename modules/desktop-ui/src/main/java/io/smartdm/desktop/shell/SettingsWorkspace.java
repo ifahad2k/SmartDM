@@ -298,7 +298,7 @@ public class SettingsWorkspace extends VBox {
             appSettings.saveToDisk();
         });
 
-        Label statusResultLabel = new Label("Current Version: v1.0.0 (Up to date)");
+        Label statusResultLabel = new Label("Current Version: v1.0.1 (Up to date)");
         statusResultLabel.setStyle("-fx-text-fill: #CBD5E1; -fx-font-size: 12px;");
 
         Button checkNowBtn = new Button("Check for Updates Now");
@@ -311,7 +311,7 @@ public class SettingsWorkspace extends VBox {
                 } else if (res.updateAvailable()) {
                     statusResultLabel.setText("🎉 New version available: " + res.latestVersion());
                 } else {
-                    statusResultLabel.setText("✅ You are running the latest version of SmartDM (v1.0.0).");
+                    statusResultLabel.setText("✅ You are running the latest version of SmartDM (v1.0.1).");
                 }
             }));
         });

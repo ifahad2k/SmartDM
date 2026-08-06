@@ -35,7 +35,7 @@ public class AboutDialog extends Stage {
         Label title = new Label("⚡ SmartDM Download Manager");
         title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
-        Label version = new Label("Version 1.0.0 (Windows x64)");
+        Label version = new Label("Version 1.0.1 (Windows x64)");
         version.setStyle("-fx-font-size: 12px; -fx-text-fill: #94A3B8;");
 
         Label noticeHeader = new Label("🛡️ Unsigned Distribution Notice");

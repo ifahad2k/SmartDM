@@ -101,24 +101,32 @@ Once the browser extension is installed, whenever you click a download button on
 
 ---
 
-## ❓ Troubleshooting & FAQ
+## 5. Security & Verification
 
-### Q1: Downloads are not triggering when I click links in Chrome!
-* **Check for IDM Conflict**: If you have **Internet Download Manager (IDM)** installed, IDM's browser extension may steal clicks before Chrome registers them. Disable or exit IDM.
-* **Verify Developer Mode**: Ensure **Developer mode** is toggled **ON** in `chrome://extensions`.
+SmartDM is open-source. Release binaries are published with cryptographic SHA-256 signatures in `SHA256SUMS.txt`.
 
-### Q2: Browser displays "SmartDM App is not running" or connection lost?
-* Open SmartDM desktop app.
-* Click **Browser Integration (🧩 Puzzle icon)** in the top bar.
-* Click **⚡ Re-Register Native Host**. This instantly repairs the Windows Registry connection between Chrome and SmartDM.
+To verify your installer integrity:
+```powershell
+Get-FileHash SmartDM-Setup-v1.0.1.exe -Algorithm SHA256
+```
+
+---
+
+## 6. Frequently Asked Questions (FAQ)
+
+### Q1: Does SmartDM support Facebook & Instagram Reels?
+* Yes! SmartDM includes dynamic URL resolution and capture-phase mouse handling to bypass transparent gesture overlays on Facebook and Instagram Reels.
+
+### Q2: Does SmartDM support TikTok?
+* Yes! SmartDM has a dedicated TikTok overlay engine that parses intercepted video streams and direct media URLs seamlessly.
 
 ### Q3: Why does GitHub ask for a password?
-* GitHub releases are completely free and public. If a password prompt appears, simply update to **SmartDM v1.0.0+** where automatic cookie fallback resolves presigned CDN redirects smoothly.
+* GitHub releases are completely free and public. If a password prompt appears, simply update to **SmartDM v1.0.1+** where automatic cookie fallback resolves presigned CDN redirects smoothly.
 
 ### Q4: How do I verify the installer's safety?
-* Compare the SHA-256 hash of your downloaded `SmartDM-Setup-v1.0.0.exe` with the official hashes listed in **`SHA256SUMS.txt`** on the release page using PowerShell:
+* Compare the SHA-256 hash of your downloaded `SmartDM-Setup-v1.0.1.exe` with the official hashes listed in **`SHA256SUMS.txt`** on the release page using PowerShell:
   ```powershell
-  Get-FileHash SmartDM-Setup-v1.0.0.exe -Algorithm SHA256
+  Get-FileHash SmartDM-Setup-v1.0.1.exe -Algorithm SHA256
   ```
 
 ---

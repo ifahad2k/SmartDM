@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 public class UpdateCheckerService {
 
     private static final String REPO_API = "https://api.github.com/repos/ifahad2k/SmartDM/releases/latest";
-    private static final String CURRENT_VERSION = "v1.0.0";
+    private static final String CURRENT_VERSION = "v1.0.1";
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
         .build();
