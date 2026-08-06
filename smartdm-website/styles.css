@@ -96,14 +96,9 @@ body:hover .cursor-glow { opacity: 1; }
 .site-header.scrolled { background: rgba(7,9,22,.76); border-bottom: 1px solid var(--line); backdrop-filter: blur(20px); }
 .nav-wrap { height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
 .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 850; letter-spacing: -.035em; font-size: 1.2rem; }
-.brand > span:last-child > span { color: var(--cyan); }
-.brand-mark { width: 34px; height: 34px; position: relative; display: inline-grid; place-items: center; filter: drop-shadow(0 0 12px rgba(46,231,255,.34)); }
-.brand-mark span { position: absolute; width: 21px; height: 6px; border: 2px solid transparent; border-image: linear-gradient(90deg,var(--cyan),var(--violet)) 1; transform: skewX(-22deg); }
-.brand-mark span:nth-child(1){ top: 6px; left: 7px; }
-.brand-mark span:nth-child(2){ top: 14px; left: 4px; }
-.brand-mark span:nth-child(3){ top: 22px; left: 7px; }
-.brand-mark.mini { transform: scale(.62); margin: -6px; }
-.brand-mark.large { width: 58px; height: 58px; transform: scale(1.55); }
+.brand-logo-img { height: 38px; width: auto; object-fit: contain; display: block; filter: drop-shadow(0 0 10px rgba(46,231,255,.25)); }
+.footer-logo-img { height: 42px; width: auto; object-fit: contain; display: block; filter: drop-shadow(0 0 12px rgba(46,231,255,.25)); }
+.cta-logo-img { width: 64px; height: 64px; object-fit: contain; display: block; filter: drop-shadow(0 0 16px rgba(46,231,255,.4)); }
 .desktop-nav { display: flex; align-items: center; gap: 30px; color: #b7c1dc; font-size: .92rem; }
 .desktop-nav a { transition: color .2s; }
 .desktop-nav a:hover { color: var(--text); }
@@ -152,13 +147,8 @@ body:hover .cursor-glow { opacity: 1; }
 .hero-visual { perspective: 1200px; }
 .app-stage { position: relative; transform-style: preserve-3d; transition: transform .15s ease-out; }
 .app-glow { position: absolute; inset: 13% 6% 4%; border-radius: 50%; background: linear-gradient(90deg,rgba(46,231,255,.3),rgba(159,102,255,.33)); filter: blur(65px); opacity: .44; }
-.window-frame { position: relative; z-index: 2; padding: 8px; border-radius: 22px; background: linear-gradient(135deg,rgba(139,196,255,.34),rgba(255,255,255,.06),rgba(186,93,255,.26)); box-shadow: var(--shadow); transform: rotateY(-4deg) rotateX(2deg); }
-.window-frame::after { content: ""; position: absolute; inset: 1px; border-radius: 21px; border: 1px solid rgba(255,255,255,.16); pointer-events: none; }
-.window-topbar { height: 42px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; border-radius: 15px 15px 0 0; background: rgba(8,11,25,.95); border-bottom: 1px solid rgba(255,255,255,.07); color: #a7b3d2; font-size: .72rem; }
-.traffic { display: flex; gap: 5px; }.traffic i { width: 7px; height: 7px; border-radius: 50%; background: #36405f; }.traffic i:first-child{background:#ff6a87}.traffic i:nth-child(2){background:#ffd56a}.traffic i:nth-child(3){background:#57e9b7}
-.window-title { display: flex; align-items: center; font-weight: 700; color: #d9e1f6; }
-.topbar-status { color: var(--green); }
-.window-frame img { border-radius: 0 0 15px 15px; width: 100%; opacity: .97; }
+.window-frame { position: relative; z-index: 2; padding: 5px; border-radius: 20px; background: linear-gradient(135deg,rgba(139,196,255,.32),rgba(255,255,255,.08),rgba(186,93,255,.28)); box-shadow: 0 30px 90px rgba(0,0,0,.55), 0 0 40px rgba(46,231,255,.15); transform: rotateY(-3deg) rotateX(2deg); overflow: hidden; }
+.window-frame img { border-radius: 16px; width: 100%; height: auto; display: block; opacity: .98; }
 .floating-card { position: absolute; z-index: 4; display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-width: 170px; border: 1px solid rgba(159,190,255,.22); border-radius: 14px; background: rgba(13,18,38,.82); backdrop-filter: blur(14px); box-shadow: 0 16px 40px rgba(0,0,0,.34); animation: floatCard 4.4s ease-in-out infinite; }
 .floating-card b,.floating-card small { display:block; }.floating-card b{font-size:.83rem}.floating-card small{font-size:.66rem;color:var(--muted);margin-top:1px}
 .card-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--cyan); background: rgba(46,231,255,.1); }
