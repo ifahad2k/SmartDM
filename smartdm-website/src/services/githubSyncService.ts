@@ -10,13 +10,13 @@ export interface GitHubSyncData {
 }
 
 const DEFAULT_SYNC_DATA: GitHubSyncData = {
-  version: '1.0.2',
+  version: '1.0.3',
   stargazersCount: 0,
   starText: 'Star',
   releaseUrl: 'https://github.com/ifahad2k/SmartDM/releases/latest',
-  windowsDownloadUrl: 'https://github.com/ifahad2k/SmartDM/releases/download/v1.0.2/SmartDM-Setup-v1.0.2.exe',
-  appImageDownloadUrl: 'https://github.com/ifahad2k/SmartDM/releases/download/v1.0.2/SmartDM-1.0.2-x86_64.AppImage',
-  debDownloadUrl: 'https://github.com/ifahad2k/SmartDM/releases/download/v1.0.2/smartdm_1.0.2_amd64.deb',
+  windowsDownloadUrl: 'https://github.com/ifahad2k/SmartDM/releases/download/v1.0.3/SmartDM-Setup-v1.0.3.exe',
+  appImageDownloadUrl: 'https://github.com/ifahad2k/SmartDM/releases/download/v1.0.3/SmartDM-1.0.3-x86_64.AppImage',
+  debDownloadUrl: 'https://github.com/ifahad2k/SmartDM/releases/download/v1.0.3/smartdm_1.0.3_amd64.deb',
 };
 
 const CACHE_KEY = 'smartdm_github_sync_cache';
