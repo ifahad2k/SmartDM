@@ -116,6 +116,16 @@ export const Header: React.FC = () => {
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {user.isAdmin && (
+                        <Link 
+                          to="/admin" 
+                          className="button button-small button-secondary"
+                          onClick={() => setUserDropdownOpen(false)}
+                          style={{ fontSize: '0.75rem', justifyContent: 'flex-start', background: 'var(--surface-light)' }}
+                        >
+                          <ShieldCheck size={14} /> Admin Dashboard
+                        </Link>
+                      )}
                       <button
                         className="button button-small button-secondary"
                         onClick={() => {

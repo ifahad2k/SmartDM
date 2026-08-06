@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogIn, UserPlus, Github, Mail, Lock, AlertCircle, RefreshCw } from 'lucide-react';
+import { Lock, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GithubIcon } from '../components/GithubIcon';
 
@@ -73,8 +73,7 @@ export const AuthPage: React.FC = () => {
 
         {displayError && (
           <div style={{ backgroundColor: 'rgba(255, 107, 138, 0.1)', color: 'var(--danger)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.9rem' }}>
-            <AlertCircle size={18} style={{ flexShrink: 0 }} />
-            <span>{displayError}</span>
+            <span>⚠️ {displayError}</span>
           </div>
         )}
 
@@ -84,7 +83,7 @@ export const AuthPage: React.FC = () => {
               Email address
             </label>
             <div style={{ position: 'relative' }}>
-              <Mail size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }}>✉️</span>
               <input
                 type="email"
                 value={email}
@@ -138,7 +137,7 @@ export const AuthPage: React.FC = () => {
             style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}
             disabled={loading}
           >
-            {loading ? <RefreshCw size={18} className="spin" /> : (isLogin ? <LogIn size={18} /> : <UserPlus size={18} />)}
+            {loading ? <RefreshCw size={18} className="spin" /> : null}
             {isLogin ? 'Sign In' : 'Sign Up'}
           </button>
         </form>

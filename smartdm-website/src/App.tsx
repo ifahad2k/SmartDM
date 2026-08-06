@@ -9,6 +9,10 @@ import { InstallDoc } from './components/docs/InstallDoc';
 import { BrowserExtensionDoc } from './components/docs/BrowserExtensionDoc';
 import { SecurityDoc } from './components/docs/SecurityDoc';
 import { TroubleshootingDoc } from './components/docs/TroubleshootingDoc';
+import { ProtectedRoute, AdminRoute } from './components/auth/RouteGuards';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { NewBugReportPage } from './pages/NewBugReportPage';
+import { NewFeaturePage } from './pages/NewFeaturePage';
 
 export const App: React.FC = () => {
   return (
@@ -19,6 +23,11 @@ export const App: React.FC = () => {
           <Route path="/login" element={<AuthPage />} />
           <Route path="/account/sign-in" element={<Navigate to="/login" replace />} />
           <Route path="/account/sign-up" element={<Navigate to="/login" replace />} />
+
+          <Route path="/feedback/bug" element={<ProtectedRoute><NewBugReportPage /></ProtectedRoute>} />
+          <Route path="/feedback/feature" element={<ProtectedRoute><NewFeaturePage /></ProtectedRoute>} />
+          
+          <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
 
           <Route path="/docs" element={<DocsLayout />}>
             <Route index element={<Navigate to="/docs/install" replace />} />

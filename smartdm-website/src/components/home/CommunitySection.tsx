@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bug, Lightbulb, MessageSquare, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { smartdmConfig } from '../../config/smartdmConfig';
 
 export const CommunitySection: React.FC = () => {
@@ -15,30 +16,26 @@ export const CommunitySection: React.FC = () => {
         </div>
 
         <div className="community-grid">
-          <a
+          <Link
             className="community-card bug"
-            href={smartdmConfig.links.issuesBug}
-            target="_blank"
-            rel="noreferrer"
+            to="/feedback/bug"
           >
             <div className="community-icon">
               <Bug size={24} />
             </div>
             <div>
-              <small>GitHub Issues</small>
+              <small>SmartDM Feedback</small>
               <h3>Report a Bug</h3>
               <p>Found an issue with multi-segment downloads or browser interception? Submit a reproducible report.</p>
             </div>
             <div className="card-arrow">
               <ArrowRight size={20} />
             </div>
-          </a>
+          </Link>
 
-          <a
+          <Link
             className="community-card idea"
-            href={smartdmConfig.links.issuesFeature}
-            target="_blank"
-            rel="noreferrer"
+            to="/feedback/feature"
           >
             <div className="community-icon">
               <Lightbulb size={24} />
@@ -51,7 +48,7 @@ export const CommunitySection: React.FC = () => {
             <div className="card-arrow">
               <ArrowRight size={20} />
             </div>
-          </a>
+          </Link>
 
           <a
             className="community-card"
