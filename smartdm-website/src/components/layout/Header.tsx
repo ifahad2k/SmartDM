@@ -4,11 +4,12 @@ import { Download, Star, Menu, X, ShieldCheck, UserCheck, LogOut, ChevronDown, U
 import { GithubIcon as Github } from '../GithubIcon';
 import { smartdmConfig } from '../../config/smartdmConfig';
 import { useAuth } from '../../context/AuthContext';
+import { fetchGitHubRepositoryData } from '../../services/githubSyncService';
 
 export const Header: React.FC = () => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [starCount, setStarCount] = useState<string>('1.4k');
+  const [starCount, setStarCount] = useState<string>('Star');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   const { user, loginAsAdmin, loginAsUser, logout } = useAuth();
@@ -23,12 +24,10 @@ export const Header: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetch(`https://api.github.com/repos/${smartdmConfig.githubOwner}/SmartDM`)
-      .then((res) => res.json())
+    fetchGitHubRepositoryData()
       .then((data) => {
-        if (data && typeof data.stargazers_count === 'number') {
-          const count = data.stargazers_count;
-          setStarCount(count >= 1000 ? `${(count / 1000).toFixed(1)}k` : `${count}`);
+        if (data.starText) {
+          setStarCount(data.starText);
         }
       })
       .catch(() => {});
