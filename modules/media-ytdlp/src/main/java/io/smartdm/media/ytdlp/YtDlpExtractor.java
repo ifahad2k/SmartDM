@@ -18,10 +18,13 @@ public class YtDlpExtractor implements MediaExtractor {
 
     private final MediaToolManager toolManager;
     private final ObjectMapper mapper;
+    private final NativeDirectExtractor nativeDirectExtractor;
+    private final java.util.Map<String, MediaMetadata> metadataCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public YtDlpExtractor(MediaToolManager toolManager) {
         this.toolManager = toolManager;
         this.mapper = new ObjectMapper();
+        this.nativeDirectExtractor = new NativeDirectExtractor(this.mapper);
     }
 
     @Override
@@ -39,6 +42,21 @@ public class YtDlpExtractor implements MediaExtractor {
             if (url != null && (url.contains("facebook.com") || url.contains("fb.watch"))) {
                 url = url.replaceAll("facebook\\.com/reels/([0-9A-Za-z_-]+)", "facebook.com/reel/$1");
             }
+
+            // 1. Check in-memory cache
+            if (url != null && metadataCache.containsKey(url)) {
+                System.out.println("Serving media metadata from memory cache for: " + url);
+                return metadataCache.get(url);
+            }
+
+            // 2. Fast-Path: Try NativeDirectExtractor (sub-200ms) for YouTube & Facebook
+            java.util.Optional<MediaMetadata> directMeta = nativeDirectExtractor.tryExtract(url, cookies, userAgent);
+            if (directMeta.isPresent()) {
+                System.out.println("Fast-Path NativeDirectExtractor succeeded for: " + url);
+                metadataCache.put(url, directMeta.get());
+                return directMeta.get();
+            }
+
             Path ytDlp = toolManager.getYtDlpPath().orElseThrow(() -> 
                 new IllegalStateException("yt-dlp executable not found. Please install yt-dlp."));
 
@@ -71,7 +89,7 @@ public class YtDlpExtractor implements MediaExtractor {
                     
                     if (url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
                         cmd.add("--extractor-args");
-                        cmd.add("youtube:player_client=web,default");
+                        cmd.add("youtube:player_client=android,web");
                     } else if (url != null && url.contains("instagram.com")) {
                         cmd.add("--referer");
                         cmd.add("https://www.instagram.com/");
@@ -142,7 +160,11 @@ public class YtDlpExtractor implements MediaExtractor {
                     if (start >= 0 && end > start) {
                         String jsonOutput = combinedOutput.substring(start, end + 1);
                         JsonNode root = mapper.readTree(jsonOutput);
-                        return parseMetadata(root, url);
+                        MediaMetadata meta = parseMetadata(root, url);
+                        if (meta != null && url != null) {
+                            metadataCache.put(url, meta);
+                        }
+                        return meta;
                     } else if (combinedOutput != null && combinedOutput.contains("HTTP Error 429")) {
                         throw new RuntimeException("HTTP Error 429: Too Many Requests");
                     }
