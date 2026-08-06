@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/ifahad2k/SmartDM/discussions
+    about: Ask questions, share ideas, and engage with the SmartDM community.
+  - name: Security Disclosure
+    url: https://github.com/ifahad2k/SmartDM/security/advisories
+    about: Report security vulnerabilities privately.

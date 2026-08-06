@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#070916" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://api.github.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com;" />
+  <meta name="description" content="SmartDM is an open-source, local-first, AI-powered download manager for Windows and Linux." />
+  <meta property="og:title" content="SmartDM — Fast, intelligent, secure downloads" />
+  <meta property="og:description" content="A modern open-source download manager with multi-segment acceleration, browser interception, media fetching, AI cataloging, and security checks." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="assets/smartdm-app.png" />
+  <title>SmartDM — High-Speed Open Source AI Download Manager</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="config.js" defer></script>
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.3 4 5 5 0 0 0 19.1.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.9.5 3.9.5A5 5 0 0 0 3.7 4a5.4 5.4 0 0 0-1.5 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 8 18v4m-4-7c-1.5 0-2.3-1.6-3-2"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2 3 6 7 .9-5 4.9 1.2 7-6.2-3.3L5.8 21 7 14l-5-5 7-.9z"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 5.5v14"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><path d="m8 2 1.5 2M16 2l-1.5 2M7 9H3m18 0h-4M7 15H3m18 0h-4M9 21h6a2 2 0 0 0 2-2V8a5 5 0 0 0-10 0v11a2 2 0 0 0 2 2Z"/><path d="M8 12h8"/></symbol>
+    <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M9 18h6m-5 4h4m-8-9a6 6 0 1 1 12 0c0 2-1 3-2 4H8c-1-1-2-2-2-4Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="m13 2-9 12h8l-1 8 9-12h-8z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v1a3 3 0 0 0-2 2.8A3.2 3.2 0 0 0 7.2 15H8v1.5A3.5 3.5 0 0 0 11.5 20V4.5Zm5 0A3.5 3.5 0 0 1 18 8v1a3 3 0 0 1 2 2.8 3.2 3.2 0 0 1-3.2 3.2H16v1.5a3.5 3.5 0 0 1-3.5 3.5V4.5Z"/><path d="M8 9h3.5M16 9h-3.5M8 15h3.5M16 15h-3.5"/></symbol>
+    <symbol id="i-segments" viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/><path d="m17 15 3 3-3 3"/></symbol>
+    <symbol id="i-browser" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 5.5 10.5 4v7H3zm8.5-1.7L21 2v9h-9.5zM3 12h7.5v7L3 17.5zm8.5 0H21v9l-9.5-1.8z"/></symbol>
+    <symbol id="i-linux" viewBox="0 0 24 24"><path d="M12 3c-3 0-4 3-4 6 0 1-.3 2-1 3-1.5 2-2 5 0 7 1.5 1.4 3.2.8 5 0 1.8.8 3.5 1.4 5 0 2-2 1.5-5.1 0-7-.7-1-1-2-1-3 0-3-1-6-4-6Z"/><path d="M9 13c1 1 5 1 6 0M9.5 9h.01M14.5 9h.01M8 18c2-1 6-1 8 0"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m5 0h5"/></symbol>
+  </svg>
+
+  <div class="noise" aria-hidden="true"></div>
+  <div class="cursor-glow" aria-hidden="true"></div>
+  <div class="scroll-progress" aria-hidden="true"><span></span></div>
+
+  <header class="site-header" id="top">
+    <div class="container nav-wrap">
+      <a class="brand" href="#top" aria-label="SmartDM home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span>Smart<span>DM</span></span>
+      </a>
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="#docs">Documentation</a>
+        <a href="#security">Security</a>
+        <a href="#community">Community</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="icon-link github-repo-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM" target="_blank" rel="noreferrer" aria-label="Star SmartDM on GitHub">
+          <svg><use href="#i-github"/></svg>
+          <span class="star-pill" data-star-count aria-label="GitHub Star Count"><svg><use href="#i-star"/></svg> Star</span>
+        </a>
+        <a class="button button-small button-primary" data-action="primary-download" href="#download"><svg><use href="#i-download"/></svg><span>Download</span></a>
+        <button class="menu-button" aria-label="Open navigation menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
+      </div>
+    </div>
+    <div class="mobile-panel" aria-hidden="true">
+      <a href="#features">Features</a><a href="#download">Download</a><a href="#docs">Documentation</a><a href="#security">Security</a><a href="#community">Community</a>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="hero section-shell">
+      <div class="hero-grid-bg" aria-hidden="true"></div>
+      <div class="aurora aurora-a" aria-hidden="true"></div>
+      <div class="aurora aurora-b" aria-hidden="true"></div>
+      <div class="container hero-content">
+        <div class="hero-copy reveal">
+          <a class="release-pill github-release-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM/releases" target="_blank" rel="noreferrer">
+            <span class="pulse-dot"></span>
+            SmartDM <span class="version-text">v1.0.0</span> is available
+            <svg><use href="#i-arrow"/></svg>
+          </a>
+          <h1>Downloads, accelerated.<br/><span>Organized by intelligence.</span></h1>
+          <p class="hero-lead">An open-source download and media manager for Windows and Linux—built with multi-segment acceleration, browser interception, AI cataloging, and local security verification.</p>
+          <div class="hero-actions">
+            <a class="button button-primary button-large primary-download" data-action="primary-download" href="#download">
+              <svg><use href="#i-download"/></svg>
+              <span class="primary-download-label">Download SmartDM</span>
+              <small>Free & open source (GPL-3.0)</small>
+            </a>
+            <a class="button button-secondary button-large github-repo-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM" target="_blank" rel="noreferrer">
+              <svg><use href="#i-github"/></svg>
+              <span>Star on GitHub</span>
+            </a>
+          </div>
+          <div class="hero-trust">
+            <span><svg><use href="#i-check"/></svg>No ads or telemetry</span>
+            <span><svg><use href="#i-check"/></svg>Local-first encryption</span>
+            <span><svg><use href="#i-check"/></svg>Community driven</span>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" data-delay="120">
+          <div class="app-stage" data-tilt>
+            <div class="app-glow"></div>
+            <div class="window-frame">
+              <div class="window-topbar">
+                <div class="traffic"><i></i><i></i><i></i></div>
+                <div class="window-title"><span class="brand-mark mini"><span></span><span></span><span></span></span>SmartDM</div>
+                <div class="topbar-status">AI ready</div>
+              </div>
+              <img src="assets/smartdm-app.png" width="900" height="580" alt="SmartDM desktop application showing Settings, Speed Acceleration, and System Configuration" />
+            </div>
+            <div class="floating-card card-speed">
+              <span class="card-icon"><svg><use href="#i-zap"/></svg></span>
+              <span><b>16 streams</b><small>Dynamic acceleration</small></span>
+            </div>
+            <div class="floating-card card-ai">
+              <span class="card-icon"><svg><use href="#i-brain"/></svg></span>
+              <span><b>AI organized</b><small>Gemini + Ollama</small></span>
+            </div>
+            <div class="floating-card card-safe">
+              <span class="card-icon"><svg><use href="#i-shield"/></svg></span>
+              <span><b>Verified</b><small>SHA-256 + safety checks</small></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#features" aria-label="Scroll to features section"><span></span>Explore SmartDM</a>
+    </section>
+
+    <section class="ticker" aria-label="SmartDM core capabilities">
+      <div class="ticker-track">
+        <span><svg><use href="#i-zap"/></svg>Multi-segment engine</span>
+        <span><svg><use href="#i-play"/></svg>Media extraction</span>
+        <span><svg><use href="#i-browser"/></svg>Browser interception</span>
+        <span><svg><use href="#i-brain"/></svg>AI cataloging</span>
+        <span><svg><use href="#i-shield"/></svg>Security diagnostics</span>
+        <span><svg><use href="#i-zap"/></svg>Multi-segment engine</span>
+        <span><svg><use href="#i-play"/></svg>Media extraction</span>
+        <span><svg><use href="#i-browser"/></svg>Browser interception</span>
+        <span><svg><use href="#i-brain"/></svg>AI cataloging</span>
+        <span><svg><use href="#i-shield"/></svg>Security diagnostics</span>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-heading reveal">
+          <span class="eyebrow">Built for control</span>
+          <h2>Everything a modern download manager should be.</h2>
+          <p>Fast when speed matters, intelligent when downloads get messy, and transparent when security matters most.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card feature-wide reveal">
+            <div class="feature-copy">
+              <span class="feature-icon"><svg><use href="#i-segments"/></svg></span>
+              <h3>Dynamic multi-segment acceleration</h3>
+              <p>Split supported downloads into up to 16 parallel byte ranges, with adaptive chunking, automated speed calculation, and reliable assembly.</p>
+              <div class="mini-tags"><span>Up to 16 streams</span><span>Resume support</span><span>Range-aware</span></div>
+            </div>
+            <div class="speed-viz" aria-label="Animated download speed visualization">
+              <div class="speed-head"><span>Download speed</span><strong><span id="speed-number">84.6</span> MB/s</strong></div>
+              <div class="speed-bars" aria-hidden="true"></div>
+              <div class="segments-row"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+              <div class="speed-foot"><span>smartdm-release.bin</span><b>78%</b></div>
+            </div>
+          </article>
+
+          <article class="feature-card reveal" data-delay="70">
+            <span class="feature-icon"><svg><use href="#i-play"/></svg></span>
+            <h3>Instant media fetching</h3>
+            <p>Resolve downloadable video streams and audio formats from web platforms using integrated locally executed <code>yt-dlp</code> and <code>FFmpeg</code> tools.</p>
+            <div class="platform-orbit" aria-hidden="true"><i>YT</i><i>FB</i><i>IG</i><i>TT</i><span><svg><use href="#i-play"/></svg></span></div>
+          </article>
+
+          <article class="feature-card reveal" data-delay="110">
+            <span class="feature-icon"><svg><use href="#i-browser"/></svg></span>
+            <h3>Native browser integration</h3>
+            <p>Intercept downloads from Chrome, Edge, Brave, and Firefox using native messaging protocols and lightweight extension components.</p>
+            <div class="browser-row" aria-hidden="true"><span>Chrome</span><span>Edge</span><span>Brave</span><span>Firefox</span></div>
+          </article>
+
+          <article class="feature-card feature-ai reveal">
+            <div class="feature-copy">
+              <span class="feature-icon"><svg><use href="#i-brain"/></svg></span>
+              <h3>AI that keeps downloads organized</h3>
+              <p>Use optional Gemini API assistance or stay 100% offline with local Ollama models to auto-classify files and suggest destination folders.</p>
+              <a href="#ai" class="text-link">Explore AI features <svg><use href="#i-arrow"/></svg></a>
+            </div>
+            <div class="ai-console" aria-hidden="true">
+              <div class="console-top"><span></span><span></span><span></span><b>SmartDM AI</b></div>
+              <div class="console-line"><i>01</i><span>Analyzing <b>project-assets.zip</b></span></div>
+              <div class="console-line"><i>02</i><span>Category → <em>Development</em></span></div>
+              <div class="console-line"><i>03</i><span>Risk status → <em class="safe">Verified</em></span></div>
+              <div class="console-line"><i>04</i><span>Moved to <b>/Downloads/Projects</b></span></div>
+              <div class="console-cursor"></div>
+            </div>
+          </article>
+
+          <article class="feature-card reveal" data-delay="70">
+            <span class="feature-icon"><svg><use href="#i-shield"/></svg></span>
+            <h3>Safety & health diagnostics</h3>
+            <p>Validate cryptographic SHA-256 hashes, integrate Windows Defender scans, flag Right-to-Left Override (RTLO) spoofing, and encrypt local databases with SQLCipher.</p>
+            <div class="security-meter" aria-hidden="true"><span><i></i></span><b>Protection active</b></div>
+          </article>
+
+          <article class="feature-card reveal" data-delay="110">
+            <span class="feature-icon"><svg><use href="#i-folder"/></svg></span>
+            <h3>Clean background operation</h3>
+            <p>Minimize to the system tray, schedule heavy download queues, and manage file operations without cluttering your active workspace.</p>
+            <div class="tray-demo" aria-hidden="true"><span></span><span></span><span class="active"><svg><use href="#i-download"/></svg></span><span></span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section ai-section" id="ai">
+      <div class="container ai-layout">
+        <div class="ai-copy reveal">
+          <span class="eyebrow">Optional intelligence</span>
+          <h2>Your downloads, finally self-organizing.</h2>
+          <p>SmartDM can process download metadata using Google Gemini or remain entirely offline using Ollama. Create automatic destination rules based on file content, extensions, and categories.</p>
+          <ul class="check-list">
+            <li><svg><use href="#i-check"/></svg>Content-aware file categories and auto-tagging</li>
+            <li><svg><use href="#i-check"/></svg>Local-first option powered by local Ollama models</li>
+            <li><svg><use href="#i-check"/></svg>Encrypted SQLite storage via SQLCipher</li>
+            <li><svg><use href="#i-check"/></svg>AI features remain strictly optional</li>
+          </ul>
+          <a class="button button-secondary" href="#docs"><svg><use href="#i-book"/></svg>Read setup guide</a>
+        </div>
+        <div class="ai-workflow reveal" data-delay="100">
+          <div class="workflow-line"></div>
+          <div class="workflow-card source"><span><svg><use href="#i-download"/></svg></span><div><small>New file</small><b>lecture-recording.mp4</b></div></div>
+          <div class="workflow-card model"><span><svg><use href="#i-brain"/></svg></span><div><small>AI analysis</small><b>Education · Video · Safe</b></div></div>
+          <div class="workflow-card target"><span><svg><use href="#i-folder"/></svg></span><div><small>Auto-organized</small><b>Learning / Lectures</b></div></div>
+          <div class="model-switch"><button class="active">Gemini</button><button>Ollama</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section download-section" id="download">
+      <div class="container">
+        <div class="section-heading reveal">
+          <span class="eyebrow">Get SmartDM</span>
+          <h2>Choose your platform release.</h2>
+          <p>Free, open source under GPL-3.0, and hosted on GitHub Releases.</p>
+        </div>
+        <div class="download-grid">
+          <article class="download-card recommended reveal">
+            <span class="recommend-badge">Windows Recommended</span>
+            <div class="os-icon"><svg><use href="#i-windows"/></svg></div>
+            <div><small>Windows 10 / 11 (64-bit)</small><h3>Windows Installer</h3><p>Bundles runtime components, native messaging scripts, yt-dlp, FFmpeg, and browser extension assets.</p></div>
+            <div class="download-meta"><span>x64</span><span class="version-text">v1.0.0</span><span>.exe</span></div>
+            <a class="button button-primary download-windows" data-download="windows" href="https://github.com/ifahad2k/SmartDM/releases/download/v1.0.0/SmartDM-Setup-v1.0.0.exe"><svg><use href="#i-download"/></svg>Download for Windows</a>
+            <small class="asset-name">SmartDM-Setup-v1.0.0.exe</small>
+          </article>
+
+          <article class="download-card reveal" data-delay="90">
+            <div class="os-icon"><svg><use href="#i-linux"/></svg></div>
+            <div><small>Linux (Portable)</small><h3>AppImage Package</h3><p>Standalone AppImage package for Linux desktop environments. Make executable and launch immediately.</p></div>
+            <div class="download-meta"><span>x86_64</span><span class="version-text">v1.0.0</span><span>.AppImage</span></div>
+            <a class="button button-secondary download-appimage" data-download="appimage" href="https://github.com/ifahad2k/SmartDM/releases/download/v1.0.0/SmartDM-1.0.0-x86_64.AppImage"><svg><use href="#i-download"/></svg>Download AppImage</a>
+            <small class="asset-name">SmartDM-1.0.0-x86_64.AppImage</small>
+          </article>
+
+          <article class="download-card reveal" data-delay="140">
+            <div class="os-icon"><svg><use href="#i-linux"/></svg></div>
+            <div><small>Debian / Ubuntu</small><h3>DEB Package</h3><p>Native Debian package for Ubuntu, Debian, Linux Mint, and derivative Linux distributions.</p></div>
+            <div class="download-meta"><span>amd64</span><span class="version-text">v1.0.0</span><span>.deb</span></div>
+            <a class="button button-secondary download-deb" data-download="deb" href="https://github.com/ifahad2k/SmartDM/releases/download/v1.0.0/smartdm_1.0.0_amd64.deb"><svg><use href="#i-download"/></svg>Download .deb</a>
+            <small class="asset-name">smartdm_1.0.0_amd64.deb</small>
+          </article>
+        </div>
+        <div class="download-footer reveal">
+          <p><svg><use href="#i-github"/></svg>Looking for source code or signature files?</p>
+          <a class="text-link github-release-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM/releases" target="_blank" rel="noreferrer">View all GitHub release assets <svg><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section docs-section" id="docs">
+      <div class="container">
+        <div class="section-heading reveal">
+          <span class="eyebrow">Setup documentation</span>
+          <h2>From download to browser integration.</h2>
+          <p>Installation guides for Windows, Linux, Chrome, Edge, Brave, and Firefox.</p>
+        </div>
+
+        <div class="docs-shell reveal">
+          <div class="docs-sidebar" role="tablist" aria-label="Documentation sections">
+            <button class="active" data-doc-tab="install" role="tab" aria-selected="true" aria-controls="panel-install" id="tab-install"><span>01</span>Install SmartDM</button>
+            <button data-doc-tab="chromium" role="tab" aria-selected="false" aria-controls="panel-chromium" id="tab-chromium"><span>02</span>Chrome / Edge / Brave</button>
+            <button data-doc-tab="firefox" role="tab" aria-selected="false" aria-controls="panel-firefox" id="tab-firefox"><span>03</span>Firefox</button>
+            <button data-doc-tab="verify" role="tab" aria-selected="false" aria-controls="panel-verify" id="tab-verify"><span>04</span>Verify SHA-256</button>
+            <button data-doc-tab="troubleshoot" role="tab" aria-selected="false" aria-controls="panel-troubleshoot" id="tab-troubleshoot"><span>05</span>Troubleshooting</button>
+          </div>
+          <div class="docs-content">
+            <section class="doc-panel active" data-doc-panel="install" id="panel-install" role="tabpanel" aria-labelledby="tab-install">
+              <span class="doc-kicker">Desktop application</span>
+              <h3>Install SmartDM in under a minute.</h3>
+              <ol class="step-list">
+                <li><span>1</span><div><b>Download the installer</b><p>Get <code>SmartDM-Setup-v1.0.0.exe</code> from official GitHub Releases.</p></div></li>
+                <li><span>2</span><div><b>Run setup wizard</b><p>Follow prompts to configure default download folders and native browser host integration.</p></div></li>
+                <li><span>3</span><div><b>Launch SmartDM</b><p>Open SmartDM from your Start Menu or application launcher.</p></div></li>
+              </ol>
+              <a class="button button-primary download-windows" data-download="windows" href="https://github.com/ifahad2k/SmartDM/releases/download/v1.0.0/SmartDM-Setup-v1.0.0.exe"><svg><use href="#i-download"/></svg>Download installer</a>
+            </section>
+
+            <section class="doc-panel" data-doc-panel="chromium" id="panel-chromium" role="tabpanel" aria-labelledby="tab-chromium">
+              <span class="doc-kicker">Chromium browsers</span>
+              <h3>Enable Chrome, Edge, or Brave interception.</h3>
+              <ol class="step-list">
+                <li><span>1</span><div><b>Open extensions page</b><p>Visit <code>chrome://extensions</code> or <code>edge://extensions</code> in your browser.</p></div></li>
+                <li><span>2</span><div><b>Enable Developer mode</b><p>Toggle the Developer mode switch in the top-right corner.</p></div></li>
+                <li><span>3</span><div><b>Load unpacked extension</b><p>Click <strong>Load unpacked</strong> and select the packaged <code>extensions/chrome</code> directory.</p></div></li>
+              </ol>
+              <div class="path-box"><code>C:\Program Files\SmartDM\extensions\chrome</code><button class="copy-button" data-copy="C:\Program Files\SmartDM\extensions\chrome" aria-label="Copy extension directory path"><svg><use href="#i-copy"/></svg></button></div>
+            </section>
+
+            <section class="doc-panel" data-doc-panel="firefox" id="panel-firefox" role="tabpanel" aria-labelledby="tab-firefox">
+              <span class="doc-kicker">Firefox</span>
+              <h3>Load the packaged Firefox extension.</h3>
+              <ol class="step-list">
+                <li><span>1</span><div><b>Open Firefox debugging</b><p>Navigate to <code>about:debugging#/runtime/this-firefox</code>.</p></div></li>
+                <li><span>2</span><div><b>Load temporary add-on</b><p>Click <strong>Load Temporary Add-on...</strong></p></div></li>
+                <li><span>3</span><div><b>Select extension manifest</b><p>Select <code>manifest.json</code> from SmartDM's Firefox extension folder.</p></div></li>
+              </ol>
+              <div class="path-box"><code>...\extensions\firefox\manifest.json</code><button class="copy-button" data-copy="...\extensions\firefox\manifest.json" aria-label="Copy manifest path"><svg><use href="#i-copy"/></svg></button></div>
+            </section>
+
+            <section class="doc-panel" data-doc-panel="verify" id="panel-verify" role="tabpanel" aria-labelledby="tab-verify">
+              <span class="doc-kicker">Cryptographic verification</span>
+              <h3>Verify release integrity before installation.</h3>
+              <p>Compare the SHA-256 hash of your downloaded binary against the expected checksum:</p>
+              <div class="terminal-box">
+                <div class="terminal-title"><svg><use href="#i-terminal"/></svg>PowerShell</div>
+                <code>Get-FileHash -Algorithm SHA256 SmartDM-Setup-v1.0.0.exe</code>
+                <button class="copy-button" data-copy="Get-FileHash -Algorithm SHA256 SmartDM-Setup-v1.0.0.exe" aria-label="Copy PowerShell command"><svg><use href="#i-copy"/></svg></button>
+              </div>
+              <div class="hash-row"><span>Expected SHA-256</span><code class="sha-value">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code><button class="copy-button" data-copy="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" aria-label="Copy expected hash"><svg><use href="#i-copy"/></svg></button></div>
+            </section>
+
+            <section class="doc-panel" data-doc-panel="troubleshoot" id="panel-troubleshoot" role="tabpanel" aria-labelledby="tab-troubleshoot">
+              <span class="doc-kicker">Common fixes</span>
+              <h3>Resolve integration issues quickly.</h3>
+              <div class="troubleshoot-list">
+                <details><summary>SmartDM does not intercept browser downloads</summary><p>Verify that native host messaging scripts are registered and SmartDM is running in your background system tray.</p></details>
+                <details><summary>Video formats or playlists fail to extract</summary><p>Update `yt-dlp` from SmartDM's internal updater tab to ensure support for changing site extractors.</p></details>
+                <details><summary>A segmented download cannot resume</summary><p>Ensure the remote server supports HTTP byte ranges (`Accept-Ranges: bytes`). If temporary download URLs expired, refresh the link in SmartDM.</p></details>
+              </div>
+              <a class="button button-secondary github-issues-link" data-link="bug-report" href="https://github.com/ifahad2k/SmartDM/issues/new?template=bug_report.yml" target="_blank" rel="noreferrer"><svg><use href="#i-bug"/></svg>Open support issue</a>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section security-section" id="security">
+      <div class="container security-layout">
+        <div class="security-visual reveal">
+          <div class="shield-core"><svg><use href="#i-shield"/></svg><span></span><span></span><span></span></div>
+          <div class="scan-card"><span>File scan</span><b><svg><use href="#i-check"/></svg> Defender verified</b></div>
+          <div class="scan-card checksum"><span>SHA-256</span><b><svg><use href="#i-check"/></svg> Checksum matched</b></div>
+          <div class="scan-card spoof"><span>Filename protection</span><b><svg><use href="#i-check"/></svg> RTLO check passed</b></div>
+        </div>
+        <div class="security-copy reveal" data-delay="100">
+          <span class="eyebrow">Security by design</span>
+          <h2>Know what you download.</h2>
+          <p>SmartDM combines cryptographic SHA-256 release checksums, Windows Defender diagnostics, RTLO filename spoofing checks, and SQLCipher database encryption.</p>
+          <div class="security-points">
+            <div><span><svg><use href="#i-lock"/></svg></span><p><b>Checksum validation</b>Validate binary integrity prior to local execution.</p></div>
+            <div><span><svg><use href="#i-shield"/></svg></span><p><b>Defender diagnostics</b>Integrated system safety checks for incoming downloads.</p></div>
+            <div><span><svg><use href="#i-folder"/></svg></span><p><b>Local database encryption</b>Protect history, secrets, and catalog data with SQLCipher.</p></div>
+          </div>
+          <a class="text-link github-security-link" data-link="security" href="https://github.com/ifahad2k/SmartDM/blob/main/SECURITY.md" target="_blank" rel="noreferrer">Read security policy <svg><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section community-section" id="community">
+      <div class="container">
+        <div class="section-heading reveal">
+          <span class="eyebrow">Open-source community</span>
+          <h2>Use it. Improve it. Help shape what comes next.</h2>
+          <p>SmartDM thrives on community feedback, GitHub stars, bug reports, and code contributions.</p>
+        </div>
+        <div class="community-grid">
+          <a class="community-card star github-repo-link reveal" data-link="repository" href="https://github.com/ifahad2k/SmartDM" target="_blank" rel="noreferrer">
+            <span class="community-icon"><svg><use href="#i-star"/></svg></span>
+            <span><small>Support the project</small><h3>Star SmartDM on GitHub</h3><p>Help more users discover SmartDM and follow release updates.</p></span>
+            <span class="card-arrow"><svg><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="community-card bug github-issues-link reveal" data-delay="70" data-link="bug-report" href="https://github.com/ifahad2k/SmartDM/issues/new?template=bug_report.yml" target="_blank" rel="noreferrer">
+            <span class="community-icon"><svg><use href="#i-bug"/></svg></span>
+            <span><small>Found a problem?</small><h3>Report a bug</h3><p>Submit reproducible details, OS details, and logs.</p></span>
+            <span class="card-arrow"><svg><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="community-card idea github-feature-link reveal" data-delay="120" data-link="feature-request" href="https://github.com/ifahad2k/SmartDM/issues/new?template=feature_request.yml" target="_blank" rel="noreferrer">
+            <span class="community-icon"><svg><use href="#i-lightbulb"/></svg></span>
+            <span><small>Have an idea?</small><h3>Suggest a feature</h3><p>Propose integrations, UI enhancements, or performance ideas.</p></span>
+            <span class="card-arrow"><svg><use href="#i-arrow"/></svg></span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section faq-section">
+      <div class="container faq-layout">
+        <div class="faq-heading reveal"><span class="eyebrow">FAQ</span><h2>Answers before you install.</h2><p>Common questions about platform support, licensing, and privacy.</p></div>
+        <div class="faq-list reveal" data-delay="70">
+          <details open><summary>Is SmartDM completely free?</summary><p>Yes. SmartDM is 100% free and open-source under GNU GPL-3.0. There are no paid tiers, ads, or hidden telemetry.</p></details>
+          <details><summary>Do I need to enable AI features?</summary><p>No. AI cataloging is completely optional. You can connect a free Gemini API key, run a local Ollama model, or keep AI turned off.</p></details>
+          <details><summary>Which operating systems are supported?</summary><p>SmartDM supports 64-bit Windows 10/11 and Linux (via AppImage and DEB packages).</p></details>
+          <details><summary>How does browser download interception work?</summary><p>SmartDM uses lightweight browser extensions combined with a native messaging host to capture download requests automatically.</p></details>
+          <details><summary>How do I verify official release files?</summary><p>Run <code>Get-FileHash -Algorithm SHA256 SmartDM-Setup-v1.0.0.exe</code> and check it against the published SHA-256 checksum on GitHub.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="cta-aurora" aria-hidden="true"></div>
+      <div class="container final-cta-inner reveal">
+        <span class="brand-mark large" aria-hidden="true"><span></span><span></span><span></span></span>
+        <div><span class="eyebrow">Ready when you are</span><h2>Take control of every download.</h2><p>Get SmartDM for Windows or Linux, then star the project on GitHub.</p></div>
+        <div class="cta-actions"><a class="button button-primary button-large primary-download" data-action="primary-download" href="#download"><svg><use href="#i-download"/></svg>Download SmartDM</a><a class="button button-secondary button-large github-repo-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM" target="_blank" rel="noreferrer"><svg><use href="#i-github"/></svg>GitHub Repository</a></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#top"><span class="brand-mark"><span></span><span></span><span></span></span><span>Smart<span>DM</span></span></a>
+        <p>High-speed, intelligent, local-first download management for Windows and Linux.</p>
+      </div>
+      <div><h4>Product</h4><a href="#features">Features</a><a href="#download">Downloads</a><a href="#docs">Documentation</a><a href="#security">Security</a></div>
+      <div><h4>Community</h4><a class="github-repo-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM" target="_blank" rel="noreferrer">GitHub</a><a class="github-issues-link" data-link="bug-report" href="https://github.com/ifahad2k/SmartDM/issues/new?template=bug_report.yml" target="_blank" rel="noreferrer">Report a bug</a><a class="github-feature-link" data-link="feature-request" href="https://github.com/ifahad2k/SmartDM/issues/new?template=feature_request.yml" target="_blank" rel="noreferrer">Suggest a feature</a><a class="github-release-link" data-link="repository" href="https://github.com/ifahad2k/SmartDM/releases" target="_blank" rel="noreferrer">Release notes</a></div>
+      <div><h4>Project</h4><a class="github-license-link" data-link="license" href="https://github.com/ifahad2k/SmartDM/blob/main/LICENSE" target="_blank" rel="noreferrer">License (GPL-3.0)</a><a class="github-security-link" data-link="security" href="https://github.com/ifahad2k/SmartDM/blob/main/SECURITY.md" target="_blank" rel="noreferrer">Security policy</a><a class="github-contributing-link" data-link="contributing" href="https://github.com/ifahad2k/SmartDM/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">Contributing</a></div>
+    </div>
+    <div class="container footer-bottom"><span>© <span id="current-year"></span> SmartDM contributors.</span><span>Built in the open.</span></div>
+  </footer>
+
+  <div class="toast" role="status" aria-live="polite"><svg><use href="#i-check"/></svg><span>Copied to clipboard</span></div>
+</body>
+</html>

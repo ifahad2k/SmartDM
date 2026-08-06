@@ -1,0 +1,68 @@
+name: Bug Report
+description: Create a report to help us reproduce and fix a bug in SmartDM
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue in SmartDM!
+        Please fill out the details below to help us investigate.
+  - type: input
+    id: version
+    attributes:
+      label: SmartDM Version
+      description: What version of SmartDM are you running? (e.g. v1.0.0)
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11
+        - Windows 10 (64-bit)
+        - Linux AppImage
+        - Ubuntu / Debian (.deb)
+        - Other Linux distribution
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser & Extension (if applicable)
+      description: e.g. Chrome 122 + SmartDM Extension v1.0
+      placeholder: Chrome 122
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Describe step-by-step how to trigger the bug.
+      placeholder: |
+        1. Open SmartDM desktop app.
+        2. Click 'Add Download' with URL 'https://example.com/file.zip'.
+        3. Observe error message...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Screenshots
+      description: |
+        Paste relevant log output or paste screenshots here.
+        WARNING: Please strip any sensitive personal data or API keys before submitting!
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Self-Check
+      options:
+        - label: I have searched existing GitHub issues and verified this is not a duplicate.
+          required: true

@@ -1,0 +1,37 @@
+name: Validate SmartDM Website
+
+on:
+  push:
+    branches: [ main, smartdm-website ]
+    paths:
+      - 'smartdm-website/**'
+  pull_request:
+    branches: [ main, smartdm-website ]
+    paths:
+      - 'smartdm-website/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: smartdm-website
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate Placeholder Strings
+        run: |
+          if grep -E "YOUR_GITHUB_USERNAME|ADD_YOUR_RELEASE_SHA256_HERE" config.js index.html script.js; then
+            echo "::error::Placeholder string found in website production code!"
+            exit 1
+          fi
+
+      - name: Check HTML Integrity
+        run: |
+          npx -y htmlhint index.html

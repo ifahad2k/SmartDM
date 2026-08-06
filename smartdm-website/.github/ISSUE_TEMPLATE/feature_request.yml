@@ -1,0 +1,43 @@
+name: Feature Request
+description: Propose a new feature, integration, or improvement for SmartDM
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make SmartDM better? We'd love to hear it!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear description of what the problem or limitation is.
+      placeholder: I am frustrated when...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or workflow you'd like to see implemented.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - Desktop UI & UX
+        - Download Engine & Segmenting
+        - Browser Extension & Native Host
+        - AI Cataloging (Gemini / Ollama)
+        - Safety & Antivirus Integration
+        - Media Extraction (yt-dlp / FFmpeg)
+        - Documentation / Website
+    validations:
+      required: true
