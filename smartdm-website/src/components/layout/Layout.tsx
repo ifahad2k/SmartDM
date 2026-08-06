@@ -61,12 +61,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <Header />
 
       <main id="main-content">
-        {React.Children.map(children, (child) => {
-          if (React.isValidElement(child)) {
-            return React.cloneElement(child, { triggerToast } as any);
-          }
-          return child;
-        })}
+        {children}
       </main>
 
       <Footer />
