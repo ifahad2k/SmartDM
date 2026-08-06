@@ -806,26 +806,36 @@
     }
 
     const selectors = [
-      'a[href*="/view_video.php"]',
-      'a[href*="/video-"]',
-      'a[href*="/videos/"]',
-      'a[href*="/video/"]',
-      'a[href*="/watch/"]',
+      'a[href*="/view_video.php"] img',
+      'a[href*="/video-"] img',
+      'a[href*="/videos/"] img',
+      'a[href*="/video/"] img',
+      'a[href*="/watch/"] img',
+      'a[href*="/watch?"] img',
       '.ph-thumbnail',
       '.videoCard',
-      '.thumb'
+      '.video-card',
+      '.thumb',
+      '[class*="thumbnail"]'
     ];
 
     const elements = document.querySelectorAll(selectors.join(','));
     elements.forEach((el) => {
       // Find outermost card container to prevent multiple buttons on the same video card
-      const cardContainer = el.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb') || el;
+      const cardContainer = el.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, a') || el;
+      
+      // Strict filtering: must have some height to avoid text links
+      const rect = cardContainer.getBoundingClientRect();
+      if (rect.height < 40) return;
+
       if (cardContainer.getAttribute(THUMB_PROCESSED_ATTR)) return;
       cardContainer.setAttribute(THUMB_PROCESSED_ATTR, 'true');
 
-      let videoUrl = el.href;
-      if (!videoUrl) {
-        const link = cardContainer.querySelector('a[href*="/view_video.php"], a[href*="/video-"], a[href*="/videos/"], a[href*="/video/"], a[href*="/watch/"]');
+      let videoUrl = null;
+      if (cardContainer.tagName === 'A' && cardContainer.href) {
+        videoUrl = cardContainer.href;
+      } else {
+        const link = cardContainer.querySelector('a[href*="/view_video.php"], a[href*="/video-"], a[href*="/videos/"], a[href*="/video/"], a[href*="/watch/"], a[href*="/watch?"]');
         if (link) videoUrl = link.href;
       }
       if (!videoUrl) return;
