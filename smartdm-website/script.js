@@ -182,5 +182,62 @@
     }
   };
 
+  // Dynamic Latest Release Resolution System
+  const applyReleaseData = (tag, assets) => {
+    if (!tag) return;
+    const cleanVer = tag.replace(/^v/, "");
+    
+    // Update all version tags
+    setText(".version-text", `v${cleanVer}`);
+
+    // Resolve Windows setup asset URL
+    const winAsset = assets?.find(a => a.name && (a.name.endsWith(".exe") || a.name.includes("Setup")));
+    const winDownloadUrl = winAsset ? winAsset.browser_download_url : `${repo}/releases/download/${tag}/SmartDM-Setup-${tag}.exe`;
+    const winFilename = winAsset ? winAsset.name : `SmartDM-Setup-${tag}.exe`;
+
+    // Update download buttons
+    setHref("[data-action='primary-download']", winDownloadUrl);
+    setHref("[data-download='windows']", winDownloadUrl);
+    setHref(".download-windows", winDownloadUrl);
+
+    // Update filename text & verification code blocks
+    setText(".windows-asset-name", winFilename);
+    setText(".windows-filename-code", winFilename);
+    setText(".verify-command-code", `Get-FileHash -Algorithm SHA256 ${winFilename}`);
+
+    const verifyBtn = document.querySelector(".verify-copy-button");
+    if (verifyBtn) verifyBtn.dataset.copy = `Get-FileHash -Algorithm SHA256 ${winFilename}`;
+  };
+
+  const fetchLatestRelease = async () => {
+    const cachedStr = sessionStorage.getItem("smartdm_latest_release_cache");
+    if (cachedStr) {
+      try {
+        const cached = JSON.parse(cachedStr);
+        if (Date.now() - cached.time < 300000) { // 5 minutes TTL
+          applyReleaseData(cached.tag, cached.assets);
+          return;
+        }
+      } catch (e) {}
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`https://api.github.com/repos/${owner}/SmartDM/releases/latest`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const tag = data.tag_name;
+        const assets = data.assets || [];
+        sessionStorage.setItem("smartdm_latest_release_cache", JSON.stringify({ tag, assets, time: Date.now() }));
+        applyReleaseData(tag, assets);
+      }
+    } catch {
+      // Graceful fallback to static config values
+    }
+  };
+
   updateStarCount();
+  fetchLatestRelease();
 })();

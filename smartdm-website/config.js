@@ -4,14 +4,14 @@
  */
 window.SMARTDM_CONFIG = {
   productName: "SmartDM",
-  version: "1.0.0",
+  version: "1.0.1",
   githubOwner: "ifahad2k",
   githubRepo: "https://github.com/ifahad2k/SmartDM",
   defaultBranch: "main",
   license: "GPL-3.0-or-later",
   releaseAssets: {
     windows: {
-      filename: "SmartDM-Setup-v1.0.0.exe",
+      filename: "SmartDM-Setup-v1.0.1.exe",
       architecture: "x64",
       minimumOs: "Windows 10"
     },
