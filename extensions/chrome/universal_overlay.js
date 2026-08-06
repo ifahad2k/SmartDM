@@ -578,7 +578,7 @@
             let netMedia = (netRes && netRes.media) ? netRes.media : [];
             netMedia = netMedia.filter(m => {
               const urlLower = m.url.toLowerCase();
-              return !urlLower.includes('.m3u8') && !urlLower.includes('.mpd') && !urlLower.includes('.ts');
+              return !urlLower.includes('.ts') && !urlLower.includes('manifest.webmanifest');
             });
 
             if (netMedia.length > 0) {
@@ -622,7 +622,7 @@
             content.innerHTML = '<div class="status-text">No media formats detected. Timeout.</div>';
           }
         }
-      }, 10000);
+      }, 40000);
     });
 
     container.appendChild(host);

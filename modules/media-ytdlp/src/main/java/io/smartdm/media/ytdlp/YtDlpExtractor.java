@@ -166,7 +166,30 @@ public class YtDlpExtractor implements MediaExtractor {
 
     private MediaMetadata parseMetadata(JsonNode root, String originalUrl) {
         String id = root.path("id").asText("");
-        String title = root.path("title").asText("Untitled Video");
+        String title = root.path("title").asText("");
+        if (title.isBlank() || title.equalsIgnoreCase("Video") || title.equalsIgnoreCase("Untitled Video") || title.equalsIgnoreCase("Facebook Video")) {
+            if (root.has("description") && !root.path("description").asText().isBlank()) {
+                String desc = root.path("description").asText();
+                String[] lines = desc.split("\n");
+                if (lines.length > 0 && !lines[0].isBlank()) {
+                    title = lines[0].trim();
+                }
+            }
+            if (title.isBlank() || title.equalsIgnoreCase("Video")) {
+                if (root.has("_filename")) {
+                    String fn = root.path("_filename").asText();
+                    fn = fn.replaceAll("\\[[A-Za-z0-9_\\-]+\\]\\.[a-zA-Z0-9]+$", "").trim();
+                    if (!fn.isBlank() && !fn.equalsIgnoreCase("Video.mp4")) title = fn;
+                } else if (root.has("filename")) {
+                    String fn = root.path("filename").asText();
+                    fn = fn.replaceAll("\\[[A-Za-z0-9_\\-]+\\]\\.[a-zA-Z0-9]+$", "").trim();
+                    if (!fn.isBlank() && !fn.equalsIgnoreCase("Video.mp4")) title = fn;
+                }
+            }
+        }
+        if (title.isBlank()) {
+            title = "Untitled Video";
+        }
         long duration = root.path("duration").asLong(0);
         String webpageUrl = root.path("webpage_url").asText(originalUrl);
         String thumbnail = root.path("thumbnail").asText("");
@@ -194,18 +217,30 @@ public class YtDlpExtractor implements MediaExtractor {
                 if (resolution.isBlank() && f.has("height") && f.get("height").asInt() > 0) {
                     resolution = f.get("height").asInt() + "p";
                 }
+                if (resolution.isBlank() && !formatId.isBlank()) {
+                    if ("sd".equalsIgnoreCase(formatId)) resolution = "SD Quality (480p)";
+                    else if ("hd".equalsIgnoreCase(formatId)) resolution = "HD Quality (720p/1080p)";
+                    else resolution = formatId.toUpperCase();
+                }
+                if (resolution.isBlank()) resolution = "Standard Video Stream";
+
                 String formatNote = f.path("format_note").asText("");
                 long fileSize = f.path("filesize").asLong(f.path("filesize_approx").asLong(0));
                 String vcodec = f.path("vcodec").asText("none");
                 String acodec = f.path("acodec").asText("none");
                 double tbr = f.path("tbr").asDouble(0);
                 int fps = f.path("fps").asInt(0);
+                String fmtUrl = f.path("url").asText("");
 
                 if (formatNote.toLowerCase().contains("storyboard") || "mhtml".equalsIgnoreCase(ext)) {
                     continue;
                 }
+                
+                // Allow formats with missing codec information if they have a direct URL
                 if ("none".equalsIgnoreCase(vcodec) && "none".equalsIgnoreCase(acodec)) {
-                    continue;
+                    if (fmtUrl.isBlank() && !f.has("manifest_url")) {
+                        continue;
+                    }
                 }
 
                 boolean isAudioOnly = "none".equalsIgnoreCase(vcodec) && !"none".equalsIgnoreCase(acodec);
@@ -239,7 +274,10 @@ public class YtDlpExtractor implements MediaExtractor {
                     ? fmt.resolution() 
                     : ((fmt.formatNote() != null && !fmt.formatNote().isBlank()) ? fmt.formatNote() : fmt.formatId());
             }
-            if (!key.isBlank() && !seenResolutions.contains(key)) {
+            if (key == null || key.isBlank()) {
+                key = (fmt.formatId() != null && !fmt.formatId().isBlank()) ? fmt.formatId() : "fmt_" + cleanList.size();
+            }
+            if (!seenResolutions.contains(key)) {
                 seenResolutions.add(key);
                 cleanList.add(fmt);
             }
