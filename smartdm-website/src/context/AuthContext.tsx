@@ -67,10 +67,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatedAt: new Date().toISOString(),
       };
       
-      await setDoc(userDocRef, profileData, { merge: true });
+      try {
+        await setDoc(userDocRef, profileData, { merge: true });
+      } catch (setErr) {
+        console.warn('Firestore profile sync set note:', setErr);
+      }
       return profileData;
     } catch (dbErr) {
       console.warn('Firestore profile sync note:', dbErr);
+      // If everything fails, at least return a basic profile without admin
       return null;
     }
   };
