@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Layout } from './components/layout/Layout';
 import { HomePage } from './pages/HomePage';
+import { AuthPage } from './pages/AuthPage';
 import { DocsLayout } from './components/docs/DocsLayout';
 import { InstallDoc } from './components/docs/InstallDoc';
 import { BrowserExtensionDoc } from './components/docs/BrowserExtensionDoc';
@@ -15,6 +16,9 @@ export const App: React.FC = () => {
       <Layout>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<AuthPage />} />
+          <Route path="/account/sign-in" element={<Navigate to="/login" replace />} />
+          <Route path="/account/sign-up" element={<Navigate to="/login" replace />} />
 
           <Route path="/docs" element={<DocsLayout />}>
             <Route index element={<Navigate to="/docs/install" replace />} />

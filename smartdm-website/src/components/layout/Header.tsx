@@ -85,30 +85,26 @@ export const Header: React.FC = () => {
             <span>Download</span>
           </a>
 
-          {/* User Profile / Admin Badge Menu */}
+          {/* User Profile / Auth */}
           <div className="user-menu-wrap">
-            <button
-              className="icon-link"
-              onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-              title={user ? `${user.displayName} (${user.role})` : 'User Menu'}
-              aria-expanded={userDropdownOpen}
-            >
-              {user ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div className="avatar-badge">{user.displayName ? user.displayName.charAt(0) : 'U'}</div>
-                  <ChevronDown size={14} />
-                </div>
-              ) : (
-                <User size={18} />
-              )}
-            </button>
+            {user ? (
+              <>
+                <button
+                  className="icon-link"
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  title={`${user.displayName} (${user.role})`}
+                  aria-expanded={userDropdownOpen}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div className="avatar-badge">{user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}</div>
+                    <ChevronDown size={14} />
+                  </div>
+                </button>
 
-            {userDropdownOpen && (
-              <div className="user-menu-dropdown">
-                {user ? (
-                  <>
+                {userDropdownOpen && (
+                  <div className="user-menu-dropdown">
                     <div className="user-info-row">
-                      <div className="avatar-badge">{user.displayName?.charAt(0) || 'U'}</div>
+                      <div className="avatar-badge">{user.displayName?.charAt(0).toUpperCase() || 'U'}</div>
                       <div className="user-details">
                         <strong>{user.displayName}</strong>
                         <small>{user.email}</small>
@@ -123,26 +119,6 @@ export const Header: React.FC = () => {
                       <button
                         className="button button-small button-secondary"
                         onClick={() => {
-                          loginAsUser();
-                          setUserDropdownOpen(false);
-                        }}
-                        style={{ fontSize: '0.75rem', justifyContent: 'flex-start' }}
-                      >
-                        <UserCheck size={14} /> Switch to Contributor
-                      </button>
-                      <button
-                        className="button button-small button-secondary"
-                        onClick={() => {
-                          loginAsAdmin();
-                          setUserDropdownOpen(false);
-                        }}
-                        style={{ fontSize: '0.75rem', justifyContent: 'flex-start' }}
-                      >
-                        <ShieldCheck size={14} /> Switch to Admin
-                      </button>
-                      <button
-                        className="button button-small button-secondary"
-                        onClick={() => {
                           logout();
                           setUserDropdownOpen(false);
                         }}
@@ -151,31 +127,13 @@ export const Header: React.FC = () => {
                         <LogOut size={14} /> Sign Out
                       </button>
                     </div>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px' }}>
-                    <small style={{ color: 'var(--muted)' }}>Select user session context:</small>
-                    <button
-                      className="button button-small button-primary"
-                      onClick={() => {
-                        loginAsAdmin();
-                        setUserDropdownOpen(false);
-                      }}
-                    >
-                      <ShieldCheck size={14} /> Login as Admin
-                    </button>
-                    <button
-                      className="button button-small button-secondary"
-                      onClick={() => {
-                        loginAsUser();
-                        setUserDropdownOpen(false);
-                      }}
-                    >
-                      <UserCheck size={14} /> Login as Contributor
-                    </button>
                   </div>
                 )}
-              </div>
+              </>
+            ) : (
+              <Link to="/login" className="button button-small button-secondary" style={{ padding: '0.5rem 1rem' }}>
+                <User size={16} /> Sign In
+              </Link>
             )}
           </div>
 
