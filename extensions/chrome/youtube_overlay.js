@@ -283,6 +283,8 @@
       }
     });
 
+    fetchYtDlpFormats(videoUrl, () => {});
+
     bannerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
