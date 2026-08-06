@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db, googleProvider, githubProvider } from '../config/firebase';
 import { UserProfile } from '../types';
 
@@ -41,23 +41,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const syncUserProfileToFirestore = async (fbUser: FirebaseUser, adminClaim: boolean) => {
+  const syncUserProfileToFirestore = async (fbUser: FirebaseUser) => {
     try {
-      if (!db) return;
+      if (!db) return null;
       const userDocRef = doc(db, 'users', fbUser.uid);
+      const docSnap = await getDoc(userDocRef);
+
+      let isAdmin = false;
+      let role: 'Admin' | 'User' | 'Contributor' = 'User';
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        isAdmin = !!data.isAdmin;
+        role = data.role || (isAdmin ? 'Admin' : 'User');
+      }
+
       const profileData = {
         uid: fbUser.uid,
         email: fbUser.email,
         displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'User'),
         photoURL: fbUser.photoURL,
-        isAdmin: adminClaim,
+        isAdmin: isAdmin,
         emailVerified: fbUser.emailVerified,
-        role: adminClaim ? ('Admin' as const) : ('User' as const),
+        role: role,
         updatedAt: new Date().toISOString(),
       };
+      
       await setDoc(userDocRef, profileData, { merge: true });
+      return profileData;
     } catch (dbErr) {
       console.warn('Firestore profile sync note:', dbErr);
+      return null;
     }
   };
 
@@ -67,37 +81,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (currentFirebaseUser) {
         try {
-          const idTokenResult = await currentFirebaseUser.getIdTokenResult(true);
-          const adminClaim = idTokenResult.claims.admin === true;
-
-          const profile: UserProfile = {
-            uid: currentFirebaseUser.uid,
-            email: currentFirebaseUser.email,
-            displayName: currentFirebaseUser.displayName || (currentFirebaseUser.email ? currentFirebaseUser.email.split('@')[0] : 'User'),
-            photoURL: currentFirebaseUser.photoURL,
-            isAdmin: adminClaim,
-            emailVerified: currentFirebaseUser.emailVerified,
-            role: adminClaim ? 'Admin' : 'User',
-          };
-
-          setUser(profile);
-          setIsAdmin(adminClaim);
-
-          await syncUserProfileToFirestore(currentFirebaseUser, adminClaim);
+          const profileData = await syncUserProfileToFirestore(currentFirebaseUser);
+          
+          if (profileData) {
+            setUser(profileData as UserProfile);
+            setIsAdmin(profileData.isAdmin);
+          } else {
+            // Fallback if DB is unavailable
+            const profile: UserProfile = {
+              uid: currentFirebaseUser.uid,
+              email: currentFirebaseUser.email,
+              displayName: currentFirebaseUser.displayName || (currentFirebaseUser.email ? currentFirebaseUser.email.split('@')[0] : 'User'),
+              photoURL: currentFirebaseUser.photoURL,
+              isAdmin: false,
+              emailVerified: currentFirebaseUser.emailVerified,
+              role: 'User',
+            };
+            setUser(profile);
+            setIsAdmin(false);
+          }
         } catch (err: any) {
-          console.warn('Auth token result / claim evaluation error:', err);
-          const adminClaim = false;
+          console.warn('Auth state processing error:', err);
           const profile: UserProfile = {
             uid: currentFirebaseUser.uid,
             email: currentFirebaseUser.email,
             displayName: currentFirebaseUser.displayName || (currentFirebaseUser.email ? currentFirebaseUser.email.split('@')[0] : 'User'),
             photoURL: currentFirebaseUser.photoURL,
-            isAdmin: adminClaim,
+            isAdmin: false,
             emailVerified: currentFirebaseUser.emailVerified,
             role: 'User',
           };
           setUser(profile);
-          setIsAdmin(adminClaim);
+          setIsAdmin(false);
         }
       } else {
         setUser(null);

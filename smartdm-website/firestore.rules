@@ -17,9 +17,9 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // Checks if the user carries an active admin claim (request.auth.token.admin == true)
+    // Checks if the user has isAdmin set to true in their Firestore document
     function isAdmin() {
-      return isSignedIn() && request.auth.token.admin == true;
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
     // Checks if the authenticated user matches the specified user ID
@@ -50,10 +50,12 @@ service cloud.firestore {
 
     // 2. User Profiles (users/{userId})
     // - Users can read & update their own profile data; admins can view profiles
+    // - Users cannot escalate their own privileges (cannot modify isAdmin or role) unless they are already an Admin
     // - Deletion is denied
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'role']) || isAdmin());
       allow delete: if false;
     }
 

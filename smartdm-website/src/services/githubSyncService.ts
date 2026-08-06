@@ -37,16 +37,19 @@ export const fetchGitHubRepositoryData = async (): Promise<GitHubSyncData> => {
   let stargazersCount = DEFAULT_SYNC_DATA.stargazersCount;
   let starText = DEFAULT_SYNC_DATA.starText;
 
-  // 1. Resolve Latest Version via GitHub HTML Redirect (Zero Rate Limit)
+  // 1. Resolve Latest Version via GitHub REST API (CORS enabled)
   try {
-    const redirectRes = await fetch('https://github.com/ifahad2k/SmartDM/releases/latest', { method: 'HEAD', redirect: 'follow' });
-    const finalUrl = redirectRes.url || '';
-    const match = finalUrl.match(/\/tag\/v?([0-9]+\.[0-9]+\.[0-9]+)/i);
-    if (match && match[1]) {
-      version = match[1];
+    const releaseRes = await fetch('https://api.github.com/repos/ifahad2k/SmartDM/releases/latest');
+    if (releaseRes.ok) {
+      const releaseData = await releaseRes.json();
+      const tagName = releaseData.tag_name || '';
+      const match = tagName.match(/v?([0-9]+\.[0-9]+\.[0-9]+)/i);
+      if (match && match[1]) {
+        version = match[1];
+      }
     }
   } catch (err) {
-    console.warn('GitHub HTML redirect check note:', err);
+    console.warn('GitHub API release check note:', err);
   }
 
   // 2. Try GitHub REST API for detailed star count & release assets
