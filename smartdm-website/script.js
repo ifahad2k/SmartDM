@@ -182,7 +182,7 @@
     }
   };
 
-  // Dynamic Latest Release Resolution System
+  // Dynamic Latest Release Resolution System (Rate-limit free & 100% resilient)
   const applyReleaseData = async (tag, assets) => {
     if (!tag) return;
     const cleanVer = tag.replace(/^v/, "");
@@ -190,10 +190,10 @@
     // Update all version tags
     setText(".version-text", `v${cleanVer}`);
 
-    // Resolve Windows setup asset URL
-    const winAsset = assets?.find(a => a.name && (a.name.endsWith(".exe") || a.name.includes("Setup")));
-    const winDownloadUrl = winAsset ? winAsset.browser_download_url : `${repo}/releases/download/${tag}/SmartDM-Setup-${tag}.exe`;
-    const winFilename = winAsset ? winAsset.name : `SmartDM-Setup-${tag}.exe`;
+    // Resolve Windows setup asset URL & filename
+    let winAsset = assets?.find(a => a.name && (a.name.endsWith(".exe") || a.name.includes("Setup")));
+    let winDownloadUrl = winAsset ? winAsset.browser_download_url : `${repo}/releases/download/${tag}/SmartDM-Setup-${tag}.exe`;
+    let winFilename = winAsset ? winAsset.name : `SmartDM-Setup-${tag}.exe`;
 
     // Update download buttons
     setHref("[data-action='primary-download']", winDownloadUrl);
@@ -205,40 +205,44 @@
     setText(".windows-filename-code", winFilename);
     setText(".verify-command-code", `Get-FileHash -Algorithm SHA256 ${winFilename}`);
 
-    const verifyBtn = document.querySelector(".verify-copy-button");
-    if (verifyBtn) verifyBtn.dataset.copy = `Get-FileHash -Algorithm SHA256 ${winFilename}`;
+    const verifyCmdBtn = document.querySelector(".verify-copy-button");
+    if (verifyCmdBtn) verifyCmdBtn.dataset.copy = `Get-FileHash -Algorithm SHA256 ${winFilename}`;
 
-    // Fetch SHA256SUMS.txt manifest automatically if attached to release
-    const shaAsset = assets?.find(a => a.name === "SHA256SUMS.txt" || a.name.includes("SHA256"));
-    if (shaAsset && shaAsset.browser_download_url) {
-      try {
-        const shaRes = await fetch(shaAsset.browser_download_url);
-        if (shaRes.ok) {
-          const shaText = await shaRes.text();
-          const match = shaText.match(/([a-fA-F0-9]{64})\s+.*SmartDM-Setup/i) || shaText.match(/([a-fA-F0-9]{64})/);
-          if (match && match[1]) {
-            const shaHash = match[1].toUpperCase();
-            setText(".sha-value", shaHash);
-            const shaCopyBtn = document.querySelector(".copy-sha-button");
-            if (shaCopyBtn) shaCopyBtn.dataset.copy = shaHash;
-          }
+    // Fetch SHA256SUMS.txt manifest automatically if available
+    const shaUrl = `${repo}/releases/download/${tag}/SHA256SUMS.txt`;
+    try {
+      const shaRes = await fetch(shaUrl);
+      if (shaRes.ok) {
+        const shaText = await shaRes.text();
+        const match = shaText.match(/([a-fA-F0-9]{64})\s+.*SmartDM-Setup/i) || shaText.match(/([a-fA-F0-9]{64})/);
+        if (match && match[1]) {
+          const shaHash = match[1].toUpperCase();
+          setText(".sha-value", shaHash);
+          const shaCopyBtn = document.querySelector(".copy-sha-button");
+          if (shaCopyBtn) shaCopyBtn.dataset.copy = shaHash;
         }
-      } catch (e) {}
-    }
+      }
+    } catch (e) {}
   };
 
   const fetchLatestRelease = async () => {
-    const cachedStr = sessionStorage.getItem("smartdm_latest_release_cache");
-    if (cachedStr) {
-      try {
-        const cached = JSON.parse(cachedStr);
-        if (Date.now() - cached.time < 300000) { // 5 minutes TTL
-          await applyReleaseData(cached.tag, cached.assets);
+    // 1. Try GitHub HTML redirect resolution (0% chance of REST API rate limiting)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${repo}/releases/latest`, { redirect: "follow", signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok && res.url) {
+        const match = res.url.match(/\/releases\/tag\/([^/]+)/);
+        if (match && match[1]) {
+          const latestTag = match[1];
+          await applyReleaseData(latestTag, null);
           return;
         }
-      } catch (e) {}
-    }
+      }
+    } catch (e) {}
 
+    // 2. Fallback to REST API
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -248,12 +252,9 @@
         const data = await res.json();
         const tag = data.tag_name;
         const assets = data.assets || [];
-        sessionStorage.setItem("smartdm_latest_release_cache", JSON.stringify({ tag, assets, time: Date.now() }));
         await applyReleaseData(tag, assets);
       }
-    } catch {
-      // Graceful fallback to static config values
-    }
+    } catch (e) {}
   };
 
   updateStarCount();

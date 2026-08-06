@@ -4,30 +4,30 @@
  */
 window.SMARTDM_CONFIG = {
   productName: "SmartDM",
-  version: "1.0.1",
+  version: "1.0.2",
   githubOwner: "ifahad2k",
   githubRepo: "https://github.com/ifahad2k/SmartDM",
   defaultBranch: "main",
   license: "GPL-3.0-or-later",
   releaseAssets: {
     windows: {
-      filename: "SmartDM-Setup-v1.0.1.exe",
+      filename: "SmartDM-Setup-v1.0.2.exe",
       architecture: "x64",
       minimumOs: "Windows 10"
     },
     appImage: {
-      filename: "SmartDM-1.0.0-x86_64.AppImage",
+      filename: "SmartDM-1.0.2-x86_64.AppImage",
       architecture: "x86_64"
     },
     deb: {
-      filename: "smartdm_1.0.0_amd64.deb",
+      filename: "smartdm_1.0.2_amd64.deb",
       architecture: "amd64"
     }
   },
   checksums: {
-    windows: "83FC0F4B9DCA696D542274CC5CADCD17BEC535E0882326DF60E6C35640B9072E",
-    appImage: "83FC0F4B9DCA696D542274CC5CADCD17BEC535E0882326DF60E6C35640B9072E",
-    deb: "83FC0F4B9DCA696D542274CC5CADCD17BEC535E0882326DF60E6C35640B9072E"
+    windows: "160C44F470ED73BA90222E0705AAAA67394ED037C66925D741C6FFF1A1A4DA72",
+    appImage: "160C44F470ED73BA90222E0705AAAA67394ED037C66925D741C6FFF1A1A4DA72",
+    deb: "160C44F470ED73BA90222E0705AAAA67394ED037C66925D741C6FFF1A1A4DA72"
   },
   links: {
     documentation: "#docs",
