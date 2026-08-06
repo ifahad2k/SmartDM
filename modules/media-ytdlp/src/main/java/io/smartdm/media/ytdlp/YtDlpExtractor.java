@@ -54,7 +54,7 @@ public class YtDlpExtractor implements MediaExtractor {
                 }
 
                 try {
-                    String ua = (userAgent != null && !userAgent.isBlank()) ? userAgent : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+                    String ua = (userAgent != null && !userAgent.isBlank()) ? userAgent : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
                     List<String> cmd = new ArrayList<>(List.of(
                         ytDlp.toString(),
                         "--dump-json",
@@ -107,7 +107,7 @@ public class YtDlpExtractor implements MediaExtractor {
                             "--no-check-certificates",
                             "--force-ipv4",
                             "--user-agent",
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                             "--add-header",
                             "Accept-Language:en-US,en;q=0.9"
                         ));
