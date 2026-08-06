@@ -134,6 +134,34 @@ img { display: block; max-width: 100%; }
 .text-link svg { transition: transform .2s; }
 .text-link:hover svg { transform: translateX(4px); }
 
+/* Forms */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+.input:focus { border-color: var(--cyan); }
+.alert { padding: 1rem; border-radius: 8px; display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; }
+.badge { padding: 4px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block; }
+.badge-primary { background: rgba(46,231,255,.12); color: var(--cyan); border: 1px solid rgba(46,231,255,.3); }
+.badge-danger { background: rgba(255,107,138,.12); color: var(--danger); border: 1px solid rgba(255,107,138,.3); }
+
+/* Layout Cards */
+.card {
+  background: rgba(15, 20, 40, 0.4);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 /* Hero Section */
 .hero { position: relative; display: grid; align-items: center; padding: 132px 0 80px; overflow: hidden; }
 .hero-grid-bg { position: absolute; inset: 0; background-image: linear-gradient(rgba(114,146,255,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(114,146,255,.055) 1px,transparent 1px); background-size: 58px 58px; mask-image: linear-gradient(to bottom,black,transparent 78%); }

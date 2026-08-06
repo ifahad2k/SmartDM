@@ -49,7 +49,7 @@ export const NewFeaturePage: React.FC = () => {
   };
 
   return (
-    <div className="container" style={{ padding: '6rem 0', maxWidth: '800px' }}>
+    <div className="container" style={{ padding: '8rem 1rem 6rem', maxWidth: '800px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <div style={{ background: 'var(--primary-glow)', padding: '0.75rem', borderRadius: '12px' }}>
           <Lightbulb size={32} color="var(--primary)" />
