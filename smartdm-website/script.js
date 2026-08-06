@@ -32,15 +32,13 @@
   setText(".sha-value", checksums.windows || config.sha256 || "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   setText("#current-year", new Date().getFullYear());
 
-  // Platform-aware download CTA
-  const ua = (navigator.userAgent || "").toLowerCase();
-  const isLinux = ua.includes("linux") && !ua.includes("android");
-  const primaryTargetHref = `${releaseBase}/${isLinux ? appImageAsset : winAsset}`;
+  // Primary download CTA (Windows installer)
+  const primaryTargetHref = `${releaseBase}/${winAsset}`;
 
   document.querySelectorAll("[data-action='primary-download']").forEach(link => {
     link.href = primaryTargetHref;
     const label = link.querySelector(".primary-download-label");
-    if (label) label.textContent = isLinux ? "Download for Linux" : "Download for Windows";
+    if (label) label.textContent = "Download for Windows";
   });
 
   // Header, scroll progress and mobile navigation
