@@ -38,7 +38,7 @@ namespace SmartDM.Installer
 
         private void InitializeComponent()
         {
-            this.Text = "SmartDM v1.0.1 Setup";
+            this.Text = "SmartDM v1.0.2 Setup";
             this.Size = new Size(540, 390);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -233,7 +233,7 @@ namespace SmartDM.Installer
                             if (key != null)
                             {
                                 key.SetValue("DisplayName", "SmartDM Download Manager");
-                                key.SetValue("DisplayVersion", "1.0.1");
+                                key.SetValue("DisplayVersion", "1.0.2");
                                 key.SetValue("Publisher", "SmartDM");
                                 key.SetValue("InstallLocation", targetDir);
                                 key.SetValue("UninstallString", "\"" + uninstallBat + "\"");
