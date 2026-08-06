@@ -14,6 +14,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script>
+    window.addEventListener('error', function(e) {
+      var errDiv = document.createElement('div');
+      errDiv.style.cssText = 'position:fixed;inset:0;background:#070916;color:#ff6b8a;padding:50px;font-family:monospace;font-size:18px;z-index:999999;overflow:auto;';
+      errDiv.innerHTML = '<h2>Script Error Detected:</h2><p>' + (e.message || e.error) + '</p><p>URL: ' + e.filename + ':' + e.lineno + '</p>';
+      document.body.appendChild(errDiv);
+    }, true);
+  </script>
 </head>
 <body>
   <div id="root">
