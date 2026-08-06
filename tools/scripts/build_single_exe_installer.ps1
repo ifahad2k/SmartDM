@@ -18,6 +18,7 @@ $CscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
 if (Test-Path $ReleaseDir) { Remove-Item -Recurse -Force $ReleaseDir }
+if (Test-Path "$ProjectRoot\apps\desktop\build\distributions") { Remove-Item -Recurse -Force "$ProjectRoot\apps\desktop\build\distributions\*" }
 New-Item -ItemType Directory -Path $ReleaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $AppImageDir -Force | Out-Null
 
@@ -26,7 +27,7 @@ Write-Host "`n[1/6] Compiling SmartDM Desktop App..." -ForegroundColor Yellow
 & "$ProjectRoot\gradlew.bat" :apps:desktop:distZip
 if ($LASTEXITCODE -ne 0) { throw "Gradle build failed!" }
 
-$DistZip = (Get-ChildItem "$ProjectRoot\apps\desktop\build\distributions\*.zip")[0].FullName
+$DistZip = (Get-ChildItem "$ProjectRoot\apps\desktop\build\distributions\*.zip" | Sort-Object LastWriteTime -Descending)[0].FullName
 Write-Host "Unpacking distribution zip: $DistZip" -ForegroundColor Yellow
 Expand-Archive -Path $DistZip -DestinationPath $StagingDir -Force
 
