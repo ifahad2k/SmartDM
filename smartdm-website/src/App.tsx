@@ -13,6 +13,10 @@ export const App: React.FC = () => {
   return (
     <AuthProvider>
       <Layout>
+        <div style={{ padding: '100px 20px', textAlign: 'center', color: '#2ee7ff', zIndex: 9999, position: 'relative' }}>
+          <h1 style={{ fontSize: '3rem' }}>SmartDM AI Download Manager</h1>
+          <p style={{ color: '#fff', fontSize: '1.2rem' }}>Next Generation Open Source Speed & Media Intelligence</p>
+        </div>
         <Routes>
           <Route path="/" element={<HomePage />} />
 
