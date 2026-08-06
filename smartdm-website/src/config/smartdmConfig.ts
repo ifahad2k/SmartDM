@@ -1,7 +1,7 @@
 import { SmartDMConfig } from '../types';
 
 const GITHUB_REPO = 'https://github.com/ifahad2k/SmartDM';
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 const RELEASE_BASE = `${GITHUB_REPO}/releases/download/v${VERSION}`;
 
 export const smartdmConfig: SmartDMConfig = {
