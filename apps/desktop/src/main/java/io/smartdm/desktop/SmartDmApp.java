@@ -657,9 +657,26 @@ public class SmartDmApp extends Application {
 
         setupSystemTray(primaryStage);
 
-        primaryStage.show();
-        primaryStage.toFront();
-        primaryStage.requestFocus();
+        boolean silent = false;
+        try {
+            Parameters params = getParameters();
+            if (params != null) {
+                for (String p : params.getRaw()) {
+                    if ("--autostart".equalsIgnoreCase(p) || "--silent".equalsIgnoreCase(p) || "--tray".equalsIgnoreCase(p)) {
+                        silent = true;
+                        break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        if (!silent) {
+            primaryStage.show();
+            primaryStage.toFront();
+            primaryStage.requestFocus();
+        } else {
+            System.out.println(">>> SmartDmApp started silently in system tray <<<");
+        }
     }
 
     private void setupSystemTray(Stage primaryStage) {

@@ -107,45 +107,87 @@ namespace SmartDM.Launcher
 
         static string ForwardToSmartDM(byte[] payload, Action<string> log)
         {
-            try
-            {
-                string ipcFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm", "ipc.info");
-                if (!File.Exists(ipcFile)) {
-                    log("IPC file not found");
-                    return "{\"status\":\"error\",\"message\":\"SmartDM is not running.\"}";
-                }
-                
+            string ipcFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm", "ipc.info");
+            
+            Func<string> tryPost = () => {
+                if (!File.Exists(ipcFile)) return null;
                 string[] lines = File.ReadAllLines(ipcFile);
-                if (lines.Length < 2) {
-                    log("IPC file format invalid");
-                    return "{\"status\":\"error\"}";
-                }
-                
+                if (lines.Length < 2) return null;
                 string port = lines[0].Trim();
                 string token = lines[1].Trim();
-                log(string.Format("Forwarding to 127.0.0.1:{0}", port));
-                
+
                 WebRequest request = WebRequest.Create("http://127.0.0.1:" + port + "/api/browser");
                 request.Method = "POST";
+                request.Timeout = 3000;
                 request.Headers.Add("Authorization", "Bearer " + token);
                 request.ContentType = "application/json";
                 request.ContentLength = payload.Length;
-                
+
                 using (Stream reqStream = request.GetRequestStream())
                 {
                     reqStream.Write(payload, 0, payload.Length);
                 }
-                
+
                 using (WebResponse response = request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream()))
                 {
                     return reader.ReadToEnd();
                 }
+            };
+
+            try
+            {
+                string res = tryPost();
+                if (res != null) return res;
             }
             catch (Exception ex)
             {
-                log(string.Format("Error during IPC: {0}", ex.Message));
-                return "{\"status\":\"error\",\"message\":\"" + ex.Message.Replace("\"", "'").Replace("\n", " ").Replace("\r", "") + "\"}";
+                log("Initial IPC attempt failed: " + ex.Message);
+            }
+
+            log("SmartDM process not responding. Auto-starting SmartDM in system tray...");
+            EnsureSmartDMRunning(log);
+
+            for (int i = 0; i < 14; i++)
+            {
+                System.Threading.Thread.Sleep(500);
+                try
+                {
+                    string res = tryPost();
+                    if (res != null)
+                    {
+                        log("IPC connected successfully after auto-start!");
+                        return res;
+                    }
+                }
+                catch {}
+            }
+
+            return "{\"status\":\"error\",\"message\":\"SmartDM desktop app could not be started.\"}";
+        }
+
+        static void EnsureSmartDMRunning(Action<string> log)
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string batPath = Path.Combine(baseDir, "bin", "desktop.bat");
+                if (File.Exists(batPath))
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + batPath + "\" --autostart")
+                    {
+                        WorkingDirectory = baseDir,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    };
+                    Process.Start(psi);
+                    log("Auto-launched SmartDM in background system tray");
+                }
+            }
+            catch (Exception ex)
+            {
+                log("Failed to launch SmartDM background process: " + ex.Message);
             }
         }
     }

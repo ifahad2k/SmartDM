@@ -240,6 +240,15 @@ namespace SmartDM.Installer
                                 key.SetValue("DisplayIcon", Path.Combine(targetDir, "SmartDM.exe"));
                             }
                         }
+
+                        // Register Windows Startup with --autostart flag
+                        using (Microsoft.Win32.RegistryKey runKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
+                        {
+                            if (runKey != null)
+                            {
+                                runKey.SetValue("SmartDM", "\"" + Path.Combine(targetDir, "SmartDM.exe") + "\" --autostart");
+                            }
+                        }
                     }
                     catch { }
 
