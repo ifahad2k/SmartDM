@@ -103,11 +103,8 @@ public class HttpProbeClient {
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
                 .thenApply(response -> {
                     if (response.statusCode() == 401) {
-                        String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
-                        if (wwwAuth.toLowerCase().contains("basic") || wwwAuth.toLowerCase().contains("digest")) {
-                            throw new UnauthorizedException(wwwAuth.isEmpty() ? "Secure Area" : wwwAuth);
-                        }
-                        throw new RuntimeException("HTTP 401 Unauthorized");
+                        String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("Secure Area");
+                        throw new UnauthorizedException(wwwAuth);
                     }
                     if (response.statusCode() >= 300) {
                         throw new RuntimeException("HEAD status: " + response.statusCode());
@@ -186,11 +183,8 @@ public class HttpProbeClient {
                         int unused = is.read();
                         
                         if (response.statusCode() == 401) {
-                            String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
-                            if (wwwAuth.toLowerCase().contains("basic") || wwwAuth.toLowerCase().contains("digest")) {
-                                throw new UnauthorizedException(wwwAuth.isEmpty() ? "Secure Area" : wwwAuth);
-                            }
-                            throw new RuntimeException("HTTP 401 Unauthorized");
+                            String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("Secure Area");
+                            throw new UnauthorizedException(wwwAuth);
                         }
                         
                         if (response.statusCode() != 200 && response.statusCode() != 206) {

@@ -161,15 +161,21 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
-                              url.includes('.html') || url.includes('.ico');
+                              url.includes('.html') || url.includes('.ico') || url.includes('.webmanifest') ||
+                              url.includes('manifest.');
       if (isNonMediaAsset) return;
 
+      // Ignore small UI sound effects (< 300KB or audio files named success/failure/no_input/open)
+      if (url.includes('.mp3') || url.includes('.wav') || url.includes('.ogg')) {
+        if (contentLength > 0 && contentLength < 300 * 1024) return;
+        if (url.includes('success') || url.includes('failure') || url.includes('no_input') || url.includes('open') || url.includes('sound')) return;
+      }
+
       // Filter out HLS/DASH segment chunks and range requests
+      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com');
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
                              (url.includes('.m4s') && !url.includes('master')) ||
-                             url.includes('bytestart=') || 
-                             url.includes('byteend=') ||
-                             url.includes('range=');
+                             (!isFbMedia && (url.includes('bytestart=') || url.includes('byteend=') || url.includes('range=')));
       if (isSegmentChunk) return;
 
       const targetUrl = details.url;

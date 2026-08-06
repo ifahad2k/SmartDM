@@ -533,8 +533,8 @@ public class SmartDmApp extends Application {
                 resp.put("formats", java.util.List.of());
                 try { return jsonMapper.writeValueAsString(resp); } catch (Exception e) { return "{\"success\":false}"; }
             } else if (message instanceof io.smartdm.browser.protocol.StartMediaDownloadRequest req) {
-                System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId());
-                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
+                System.out.println(">>> [IPC] Received StartMediaDownloadRequest: url=" + req.url() + " videoUrl=" + req.videoUrl() + " audioUrl=" + req.audioUrl() + " formatId=" + req.formatId() + " title=" + req.title() + " fileName=" + req.fileName());
+                openMediaOrStandardDialog(req.url(), req.videoUrl(), req.audioUrl(), req.formatId(), req.title(), req.fileName(), req.cookies(), req.userAgent(), repository, workspaceRef, mainQueueItems, queueCoordinatorRef, enginePool, coordinator, smartFolderService);
                 return "{\"success\":true}";
             } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
                 System.out.println(">>> [IPC] Received ADD_DOWNLOAD request for URL: " + req.url());
@@ -844,6 +844,8 @@ public class SmartDmApp extends Application {
         String videoUrl,
         String audioUrl,
         String preferredFormatId,
+        String reqTitle,
+        String reqFileName,
         String cookies,
         String userAgent,
         DownloadRepository repository,
@@ -898,7 +900,12 @@ public class SmartDmApp extends Application {
 
                 if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
                     String webpageUrl = (meta.webpageUrl() != null && !meta.webpageUrl().isBlank()) ? meta.webpageUrl() : url;
-                    String title = (meta.title() != null && !meta.title().isBlank()) ? meta.title() : deriveTitleFromUrl(url);
+                    String title = meta.title();
+                    if (reqTitle != null && !reqTitle.isBlank() && (title == null || title.isBlank() || title.equals("Untitled Video") || title.equals("Video"))) {
+                        title = reqTitle;
+                    } else if (title == null || title.isBlank()) {
+                        title = deriveTitleFromUrl(url);
+                    }
                     final io.smartdm.media.api.MediaMetadata finalMeta = new io.smartdm.media.api.MediaMetadata(
                         meta.id(), title, meta.durationSeconds(), webpageUrl,
                         meta.thumbnailUrl(), meta.formats(), meta.subtitles()
@@ -927,6 +934,11 @@ public class SmartDmApp extends Application {
                             smartFolderService
                         );
                         dlg.setCookiesAndUserAgent(cookies, userAgent);
+                        if (reqFileName != null && !reqFileName.isBlank()) {
+                            dlg.setFileName(reqFileName);
+                        } else if (reqTitle != null && !reqTitle.isBlank()) {
+                            dlg.setFileName(reqTitle + ".mp4");
+                        }
                         dlg.setOnDownloadAdded(dl -> {
                             repository.save(dl);
                             if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
@@ -946,8 +958,16 @@ public class SmartDmApp extends Application {
         } else {
             // Open standard file download dialog
             javafx.application.Platform.runLater(() -> {
-                io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, repository.findAll(), smartFolderService);
-                d.setOnDownloadAdded(dl -> {
+                io.smartdm.desktop.shell.AddDownloadDialog dlg = new io.smartdm.desktop.shell.AddDownloadDialog(
+                    null,
+                    repository.findAll(),
+                    smartFolderService
+                );
+                dlg.setCookiesAndUserAgent(cookies, userAgent);
+                if (reqFileName != null && !reqFileName.isBlank()) {
+                    dlg.setFileName(reqFileName);
+                }
+                dlg.setOnDownloadAdded(dl -> {
                     repository.save(dl);
                     if (dl.state() == io.smartdm.domain.DownloadState.QUEUED) {
                         io.smartdm.domain.QueueItem item = new io.smartdm.domain.QueueItem(java.util.UUID.randomUUID().toString(), "main-queue", dl.id(), 1, mainQueueItems.size());
@@ -958,8 +978,8 @@ public class SmartDmApp extends Application {
                     }
                     if (workspaceRef[0] != null) workspaceRef[0].addDownload(dl, true);
                 });
-                d.setUrlText(url);
-                bringStageToFrontAndFocus(d);
+                dlg.setUrlText(url);
+                bringStageToFrontAndFocus(dlg);
             });
         }
     }

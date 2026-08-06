@@ -52,7 +52,7 @@ public class LocalIpcServer {
                     responseJson = "{\"status\":\"ok\",\"version\":\"1.0\"}";
                 }
 
-                byte[] responseBytes = responseJson.getBytes();
+                byte[] responseBytes = responseJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, responseBytes.length);
                 exchange.getResponseBody().write(responseBytes);

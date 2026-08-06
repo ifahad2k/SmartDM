@@ -17,7 +17,18 @@
   function getCanonicalUrl(rawUrl) {
     if (!rawUrl) return window.location.href;
     try {
-      return new URL(rawUrl, window.location.origin).href;
+      const u = new URL(rawUrl, window.location.origin);
+      if (u.pathname.includes('/watch')) {
+        const v = u.searchParams.get('v');
+        if (v) return 'https://www.youtube.com/watch?v=' + v;
+      } else if (u.pathname.includes('/shorts/')) {
+        const parts = u.pathname.split('/shorts/');
+        if (parts[1]) {
+          const shortId = parts[1].split('/')[0].split('?')[0];
+          return 'https://www.youtube.com/shorts/' + shortId;
+        }
+      }
+      return u.href;
     } catch (e) {
       return window.location.href;
     }
@@ -43,12 +54,14 @@
       if (res && res.success && res.formats && res.formats.length > 0) {
         ytDlpCache[url].status = 'done';
         ytDlpCache[url].data = res;
+        ytDlpCache[url].callbacks.forEach(cb => cb(res));
+        ytDlpCache[url].callbacks = [];
       } else {
+        ytDlpCache[url].status = 'error';
+        const cbs = ytDlpCache[url].callbacks || [];
         delete ytDlpCache[url];
+        cbs.forEach(cb => cb(res));
       }
-
-      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [callback];
-      cbs.forEach(cb => cb(res));
     });
   }
 
@@ -517,7 +530,7 @@
 
       popover.classList.add('active');
 
-      chrome.runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: currentVideoUrl }, (res) => {
+      fetchYtDlpFormats(currentVideoUrl, (res) => {
         if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, currentVideoUrl, popover);
         } else {

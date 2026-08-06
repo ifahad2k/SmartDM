@@ -8,6 +8,7 @@ public record StartMediaDownloadRequest(
     @JsonProperty("audioUrl") String audioUrl,
     @JsonProperty("formatId") String formatId,
     @JsonProperty("fileName") String fileName,
+    @JsonProperty("title") String title,
     @JsonProperty("referer") String referer,
     @JsonProperty("userAgent") String userAgent,
     @JsonProperty("cookies") String cookies

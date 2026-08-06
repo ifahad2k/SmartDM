@@ -118,7 +118,7 @@ namespace SmartDM.Launcher
 
                 WebRequest request = WebRequest.Create("http://127.0.0.1:" + port + "/api/browser");
                 request.Method = "POST";
-                request.Timeout = 3000;
+                request.Timeout = 60000; // Allow up to 60 seconds for yt-dlp to extract formats
                 request.Headers.Add("Authorization", "Bearer " + token);
                 request.ContentType = "application/json";
                 request.ContentLength = payload.Length;

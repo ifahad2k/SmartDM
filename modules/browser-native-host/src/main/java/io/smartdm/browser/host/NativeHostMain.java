@@ -3,8 +3,7 @@ package io.smartdm.browser.host;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smartdm.browser.protocol.NativeMessage;
 
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,6 +17,14 @@ public class NativeHostMain {
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+    private static PrintWriter log;
+
+    static {
+        try {
+            log = new PrintWriter(new FileWriter(Paths.get(System.getProperty("user.home"), ".smartdm", "native_host.log").toFile(), true), true);
+            log.println("NativeHostMain started.");
+        } catch (Exception e) {}
+    }
 
     public static void main(String[] args) {
         try {
@@ -28,6 +35,7 @@ public class NativeHostMain {
                 byte[] lengthBytes = new byte[4];
                 int read = in.read(lengthBytes);
                 if (read == -1) {
+                    log.println("EOF reached on STDIN.");
                     break;
                 }
 
@@ -36,8 +44,10 @@ public class NativeHostMain {
                         ((lengthBytes[2] & 0xFF) << 16) |
                         ((lengthBytes[3] & 0xFF) << 24);
 
+                log.println("Received message length: " + length);
+
                 if (length < 0 || length > 10 * 1024 * 1024) {
-                    System.err.println("Invalid message length: " + length);
+                    log.println("Invalid length!");
                     break;
                 }
 
@@ -48,23 +58,19 @@ public class NativeHostMain {
                     if (r == -1) break;
                     totalRead += r;
                 }
-                if (totalRead != length) {
-                    break;
-                }
 
                 String responseJson;
                 try {
-                    // Parse message to validate it
                     NativeMessage message = MAPPER.readValue(messageBytes, NativeMessage.class);
-
-                    // Forward to SmartDM IPC server
+                    log.println("Forwarding message: " + message.getClass().getSimpleName());
                     responseJson = forwardToSmartDM(messageBytes);
                     if (responseJson == null) {
-                        responseJson = "{\"status\":\"error\", \"message\": \"Could not connect to SmartDM. Ensure app is running.\"}";
+                        responseJson = "{\"status\":\"error\", \"message\": \"Could not connect to SmartDM.\"}";
                     }
+                    log.println("Got response from SmartDM, length: " + responseJson.length());
                 } catch (Exception ex) {
-                    ex.printStackTrace(System.err);
-                    responseJson = "{\"status\":\"error\", \"message\": \"" + ex.getMessage().replace("\"", "'") + "\"}";
+                    log.println("Error processing message: " + ex);
+                    responseJson = "{\"status\":\"error\", \"message\": \"" + ex.getMessage() + "\"}";
                 }
 
                 byte[] responseBytes = responseJson.getBytes(StandardCharsets.UTF_8);
@@ -77,21 +83,18 @@ public class NativeHostMain {
                 out.write(outLengthBytes);
                 out.write(responseBytes);
                 out.flush();
+                log.println("Wrote response to STDOUT.");
             }
         } catch (Exception e) {
-            e.printStackTrace(System.err);
+            log.println("Fatal error: " + e);
         }
+        log.println("NativeHostMain exiting.");
     }
 
     private static String forwardToSmartDM(byte[] payload) {
         try {
-            // Read port and token from IPC file
             Path ipcFile = Paths.get(System.getProperty("user.home"), ".smartdm", "ipc.info");
-            if (!Files.exists(ipcFile)) {
-                // If SmartDM is not running, we could try to launch it here
-                // For now, return error
-                return null;
-            }
+            if (!Files.exists(ipcFile)) return null;
 
             String[] lines = Files.readAllLines(ipcFile).toArray(new String[0]);
             if (lines.length < 2) return null;
@@ -106,10 +109,12 @@ public class NativeHostMain {
                     .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
                     .build();
 
+            log.println("Sending HTTP request to 127.0.0.1:" + port);
             HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            log.println("HTTP request completed with status: " + response.statusCode());
             return response.body();
         } catch (Exception e) {
-            e.printStackTrace(System.err);
+            log.println("HTTP request failed: " + e);
             return null;
         }
     }
