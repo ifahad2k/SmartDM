@@ -1,0 +1,55 @@
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  checks: write
+  contents: read
+  deployments: write
+  pull-requests: write
+
+jobs:
+  audit-build-deploy:
+    name: Free-Tier Audit, Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Execute Free-Tier Governance Audit
+        run: node scripts/free-tier-audit.mjs
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Deploy PR Preview to Firebase Hosting
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SMARTDM_PROD }}'
+          projectId: smartdm-prod
+
+      - name: Deploy Production Live to Firebase Hosting
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SMARTDM_PROD }}'
+          channelId: live
+          projectId: smartdm-prod

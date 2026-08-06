@@ -1,0 +1,17 @@
+# Node modules & build outputs
+node_modules/
+dist/
+.vite/
+*.local
+
+# Firebase logs
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Service account keys
+*.json
+!package.json
+!firebase.json
+!.firebaserc
+!tsconfig.json
