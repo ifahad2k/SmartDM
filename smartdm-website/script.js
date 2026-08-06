@@ -183,7 +183,7 @@
   };
 
   // Dynamic Latest Release Resolution System
-  const applyReleaseData = (tag, assets) => {
+  const applyReleaseData = async (tag, assets) => {
     if (!tag) return;
     const cleanVer = tag.replace(/^v/, "");
     
@@ -207,6 +207,24 @@
 
     const verifyBtn = document.querySelector(".verify-copy-button");
     if (verifyBtn) verifyBtn.dataset.copy = `Get-FileHash -Algorithm SHA256 ${winFilename}`;
+
+    // Fetch SHA256SUMS.txt manifest automatically if attached to release
+    const shaAsset = assets?.find(a => a.name === "SHA256SUMS.txt" || a.name.includes("SHA256"));
+    if (shaAsset && shaAsset.browser_download_url) {
+      try {
+        const shaRes = await fetch(shaAsset.browser_download_url);
+        if (shaRes.ok) {
+          const shaText = await shaRes.text();
+          const match = shaText.match(/([a-fA-F0-9]{64})\s+.*SmartDM-Setup/i) || shaText.match(/([a-fA-F0-9]{64})/);
+          if (match && match[1]) {
+            const shaHash = match[1].toUpperCase();
+            setText(".sha-value", shaHash);
+            const shaCopyBtn = document.querySelector(".copy-sha-button");
+            if (shaCopyBtn) shaCopyBtn.dataset.copy = shaHash;
+          }
+        }
+      } catch (e) {}
+    }
   };
 
   const fetchLatestRelease = async () => {
@@ -215,7 +233,7 @@
       try {
         const cached = JSON.parse(cachedStr);
         if (Date.now() - cached.time < 300000) { // 5 minutes TTL
-          applyReleaseData(cached.tag, cached.assets);
+          await applyReleaseData(cached.tag, cached.assets);
           return;
         }
       } catch (e) {}
@@ -231,7 +249,7 @@
         const tag = data.tag_name;
         const assets = data.assets || [];
         sessionStorage.setItem("smartdm_latest_release_cache", JSON.stringify({ tag, assets, time: Date.now() }));
-        applyReleaseData(tag, assets);
+        await applyReleaseData(tag, assets);
       }
     } catch {
       // Graceful fallback to static config values
