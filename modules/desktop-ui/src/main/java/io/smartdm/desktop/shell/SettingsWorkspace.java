@@ -298,25 +298,66 @@ public class SettingsWorkspace extends VBox {
             appSettings.saveToDisk();
         });
 
-        Label statusResultLabel = new Label("Current Version: v1.0.1 (Up to date)");
+        Label statusResultLabel = new Label("Current Version: " + UpdateCheckerService.CURRENT_VERSION + " (Up to date)");
         statusResultLabel.setStyle("-fx-text-fill: #CBD5E1; -fx-font-size: 12px;");
+
+        ProgressBar updateProgress = new ProgressBar(0);
+        updateProgress.setPrefWidth(300);
+        updateProgress.setVisible(false);
+        updateProgress.setManaged(false);
+
+        Button downloadInstallBtn = new Button("🚀 Download & Install Update");
+        downloadInstallBtn.setStyle("-fx-background-color: #22C55E; -fx-text-fill: #0F172A; -fx-font-weight: bold; -fx-background-radius: 6; -fx-padding: 8 16; -fx-cursor: hand;");
+        downloadInstallBtn.setVisible(false);
+        downloadInstallBtn.setManaged(false);
 
         Button checkNowBtn = new Button("Check for Updates Now");
         checkNowBtn.setStyle("-fx-background-color: #38BDF8; -fx-text-fill: #0F172A; -fx-font-weight: bold; -fx-background-radius: 6; -fx-padding: 8 16; -fx-cursor: hand;");
+        
         checkNowBtn.setOnAction(e -> {
             statusResultLabel.setText("Checking GitHub Releases...");
+            downloadInstallBtn.setVisible(false);
+            downloadInstallBtn.setManaged(false);
             UpdateCheckerService.checkForUpdatesAsync().thenAccept(res -> Platform.runLater(() -> {
                 if (res.error() != null) {
-                    statusResultLabel.setText("Update Check: " + res.error());
+                    statusResultLabel.setText("Update Check Error: " + res.error());
                 } else if (res.updateAvailable()) {
                     statusResultLabel.setText("🎉 New version available: " + res.latestVersion());
+                    downloadInstallBtn.setVisible(true);
+                    downloadInstallBtn.setManaged(true);
+                    downloadInstallBtn.setOnAction(ev -> {
+                        downloadInstallBtn.setDisable(true);
+                        checkNowBtn.setDisable(true);
+                        updateProgress.setVisible(true);
+                        updateProgress.setManaged(true);
+                        statusResultLabel.setText("Downloading update installer...");
+                        
+                        UpdateCheckerService.downloadAndInstallUpdateAsync(res.downloadUrl(), prog -> Platform.runLater(() -> {
+                            updateProgress.setProgress(prog);
+                            int pct = (int) (prog * 100);
+                            statusResultLabel.setText("Downloading update installer... " + pct + "%");
+                            if (pct >= 100) {
+                                statusResultLabel.setText("Launching installer and restarting SmartDM...");
+                            }
+                        })).exceptionally(err -> {
+                            Platform.runLater(() -> {
+                                statusResultLabel.setText("Download failed: " + err.getMessage());
+                                downloadInstallBtn.setDisable(false);
+                                checkNowBtn.setDisable(false);
+                            });
+                            return null;
+                        });
+                    });
                 } else {
-                    statusResultLabel.setText("✅ You are running the latest version of SmartDM (v1.0.1).");
+                    statusResultLabel.setText("✅ You are running the latest version of SmartDM (" + UpdateCheckerService.CURRENT_VERSION + ").");
                 }
             }));
         });
 
-        card.getChildren().addAll(sectionTitle, autoCheckCb, statusResultLabel, checkNowBtn);
+        HBox btnBox = new HBox(10, checkNowBtn, downloadInstallBtn);
+        btnBox.setAlignment(Pos.CENTER_LEFT);
+
+        card.getChildren().addAll(sectionTitle, autoCheckCb, statusResultLabel, updateProgress, btnBox);
         return card;
     }
 
