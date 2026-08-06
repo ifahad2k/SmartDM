@@ -135,12 +135,21 @@ public class UpdateCheckerService {
 
                 if (progressCallback != null) progressCallback.accept(1.0);
 
-                // Launch downloaded setup installer
-                ProcessBuilder pb = new ProcessBuilder(targetPath.toAbsolutePath().toString());
+                // Verify file validity
+                if (!Files.exists(targetPath) || Files.size(targetPath) < 100000) {
+                    throw new IllegalStateException("Downloaded update file is invalid or incomplete (" + (Files.exists(targetPath) ? Files.size(targetPath) : 0) + " bytes)");
+                }
+
+                // Brief pause for Windows Defender file scan lock to release
+                try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+
+                // Launch downloaded setup installer via cmd start
+                ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", "start", "\"SmartDM Update\"", targetPath.toAbsolutePath().toString());
                 pb.start();
 
                 // Terminate current app cleanly so installer can overwrite files
                 javafx.application.Platform.runLater(() -> {
+                    try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
                     javafx.application.Platform.exit();
                     System.exit(0);
                 });

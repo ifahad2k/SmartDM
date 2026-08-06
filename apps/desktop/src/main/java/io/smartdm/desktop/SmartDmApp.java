@@ -128,7 +128,8 @@ public class SmartDmApp extends Application {
 
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .connectTimeout(java.time.Duration.ofSeconds(15))
                 .proxy(proxySelector)
                 .build();
         HttpProbeClient probeClient = new HttpProbeClient(httpClient);

@@ -37,100 +37,112 @@ public class SegmentWorker implements Callable<Void> {
 
     @Override
     public Void call() throws Exception {
-        try {
-        if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) {
-            return null; // Already finished
-        }
+        int maxRetries = 8;
+        int attempt = 0;
+        Exception lastException = null;
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder(baseRequest.uri());
-        
-        // Copy original headers if any (simplified here)
-        baseRequest.headers().map().forEach((k, v) -> {
-            for (String val : v) {
-                builder.header(k, val);
+        while (attempt < maxRetries && !Thread.currentThread().isInterrupted() && !paused) {
+            if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) {
+                return null; // Already finished
             }
-        });
 
-        boolean isRangeRequest = false;
-        if (segment.endOffset() >= 0) {
-            builder.header("Range", "bytes=" + segment.currentOffset() + "-" + segment.endOffset());
-            isRangeRequest = true;
-        } else if (segment.startOffset() > 0) {
-            builder.header("Range", "bytes=" + segment.currentOffset() + "-");
-            isRangeRequest = true;
-        }
-        
-        // ETag and Last-Modified are already validated during the probe phase in SingleDownloadCoordinator.
-        // Some servers (e.g. YouTube) reject If-Range headers with 400 or 412, so we omit it here.
-        
-        HttpRequest request = builder.GET().build();
+            try {
+                HttpRequest.Builder builder = HttpRequest.newBuilder(baseRequest.uri());
+                
+                baseRequest.headers().map().forEach((k, v) -> {
+                    for (String val : v) {
+                        builder.header(k, val);
+                    }
+                });
 
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() >= 300) {
-            throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
-        }
-        if (isRangeRequest && response.statusCode() != 206) {
-            if (response.statusCode() == 200) {
-                if (segment.startOffset() > 0) {
-                    throw new RuntimeException("Expected 206 Partial Content but got 200 OK for range starting at " + segment.startOffset());
+                boolean isRangeRequest = false;
+                if (segment.endOffset() >= 0) {
+                    builder.header("Range", "bytes=" + segment.currentOffset() + "-" + segment.endOffset());
+                    isRangeRequest = true;
+                } else if (segment.startOffset() > 0 || segment.currentOffset() > 0) {
+                    builder.header("Range", "bytes=" + segment.currentOffset() + "-");
+                    isRangeRequest = true;
                 }
-                if (segment.currentOffset() > 0) {
-                    segment.updateOffset(0);
-                    channel.truncate(0);
+
+                builder.timeout(Duration.ofSeconds(30));
+                HttpRequest request = builder.GET().build();
+
+                HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                
+                if (response.statusCode() == 416) {
+                    // Range Not Satisfiable - offset reached segment boundary
+                    return null;
                 }
-            } else {
-                throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
-            }
-        } else if (isRangeRequest && response.statusCode() == 206) {
-            String contentRange = response.headers().firstValue("Content-Range").orElse(null);
-            if (contentRange != null) {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("bytes (\\d+)-.*").matcher(contentRange);
-                if (m.matches()) {
-                    long rangeStart = Long.parseLong(m.group(1));
-                    if (rangeStart != segment.currentOffset()) {
-                        throw new RuntimeException("Content-Range start (" + rangeStart + ") does not match requested offset (" + segment.currentOffset() + ")");
+
+                if (response.statusCode() >= 300) {
+                    throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
+                }
+
+                if (isRangeRequest && response.statusCode() != 206) {
+                    if (response.statusCode() == 200) {
+                        if (segment.startOffset() > 0 || segment.currentOffset() > 0) {
+                            if (segment.currentOffset() > 0) {
+                                segment.updateOffset(0);
+                                channel.truncate(0);
+                            }
+                        }
+                    } else {
+                        throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
+                    }
+                }
+
+                long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
+
+                try (InputStream is = response.body()) {
+                    byte[] buffer = new byte[16384];
+                    int read;
+                    while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
+                        int toRead = (int) Math.min(buffer.length, bytesRemaining);
+                        read = is.read(buffer, 0, toRead);
+                        if (read == -1) break;
+
+                        if (rateLimiter != null) {
+                            rateLimiter.acquire(read);
+                        }
+                        channel.writeAt(segment.currentOffset(), buffer, read);
+                        segment.updateOffset(segment.currentOffset() + read);
+                        bytesRemaining -= read;
+                        if (progressCallback != null) {
+                            progressCallback.onProgress(segment, read);
+                        }
+                    }
+                }
+
+                if (segment.endOffset() < 0 || segment.currentOffset() > segment.endOffset()) {
+                    return null; // Completed segment successfully
+                }
+
+                if (Thread.currentThread().isInterrupted() || paused) {
+                    return null;
+                }
+
+            } catch (Exception e) {
+                lastException = e;
+                attempt++;
+                if (Thread.currentThread().isInterrupted() || paused) {
+                    return null;
+                }
+                if (attempt < maxRetries) {
+                    try {
+                        Thread.sleep(1000L * attempt); // Exponential backoff (1s, 2s, 3s...)
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
                     }
                 }
             }
         }
 
-        long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
-
-        try (InputStream is = response.body()) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
-                int toRead = (int) Math.min(buffer.length, bytesRemaining);
-                read = is.read(buffer, 0, toRead);
-                if (read == -1) break;
-
-                if (rateLimiter != null) {
-                    rateLimiter.acquire(read);
-                }
-                channel.writeAt(segment.currentOffset(), buffer, read);
-                segment.updateOffset(segment.currentOffset() + read);
-                bytesRemaining -= read;
-                if (progressCallback != null) {
-                    progressCallback.onProgress(segment, read);
-                }
-            }
-        }
-
-        if (Thread.currentThread().isInterrupted() || paused) {
-            // Task was interrupted/paused, not a failure, but we didn't finish.
-            // Coordinator will handle this.
+        if (lastException != null && !paused && !Thread.currentThread().isInterrupted()) {
+            throw lastException;
         }
 
         return null;
-    } catch (Exception e) {
-        try {
-            java.nio.file.Files.writeString(
-                java.nio.file.Path.of("e:/skill/projects/smartdm/smartdm_worker_crash.txt"), 
-                "Worker Failed: " + e.getMessage() + "\n" + java.util.Arrays.toString(e.getStackTrace())
-            );
-        } catch (Exception ignored) {}
-        throw e;
-    }
     }
 
     public void pause() {
