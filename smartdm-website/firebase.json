@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "smartdm",
     "public": "dist",
     "ignore": [
       "firebase.json",
