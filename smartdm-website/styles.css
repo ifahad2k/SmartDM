@@ -95,10 +95,10 @@ body:hover .cursor-glow { opacity: 1; }
 .site-header { position: fixed; inset: 0 0 auto; z-index: 90; transition: background .3s, border .3s, backdrop-filter .3s; }
 .site-header.scrolled { background: rgba(7,9,22,.76); border-bottom: 1px solid var(--line); backdrop-filter: blur(20px); }
 .nav-wrap { height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
-.brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 850; letter-spacing: -.035em; font-size: 1.2rem; }
-.brand-logo-img { height: 42px; width: auto; max-width: 220px; object-fit: contain; display: block; filter: drop-shadow(0 0 12px rgba(46,231,255,.25)); }
-.footer-logo-img { height: 48px; width: auto; max-width: 240px; object-fit: contain; display: block; filter: drop-shadow(0 0 14px rgba(46,231,255,.25)); }
-.cta-logo-img { width: 72px; height: 72px; object-fit: contain; display: block; filter: drop-shadow(0 0 18px rgba(46,231,255,.4)); }
+.brand { display: inline-flex; align-items: center; gap: 12px; }
+.brand-logo-img { height: 48px; width: auto; max-width: 260px; object-fit: contain; display: block; filter: drop-shadow(0 0 14px rgba(46,231,255,.35)); }
+.footer-logo-img { height: 56px; width: auto; max-width: 280px; object-fit: contain; display: block; filter: drop-shadow(0 0 16px rgba(46,231,255,.35)); }
+.cta-logo-img { width: 90px; height: 90px; object-fit: contain; display: block; filter: drop-shadow(0 0 24px rgba(46,231,255,.45)); }
 .desktop-nav { display: flex; align-items: center; gap: 30px; color: #b7c1dc; font-size: .92rem; }
 .desktop-nav a { transition: color .2s; }
 .desktop-nav a:hover { color: var(--text); }
