@@ -43,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const syncUserProfileToFirestore = async (fbUser: FirebaseUser, adminClaim: boolean) => {
     try {
+      if (!db) return;
       const userDocRef = doc(db, 'users', fbUser.uid);
       const profileData = {
         uid: fbUser.uid,
