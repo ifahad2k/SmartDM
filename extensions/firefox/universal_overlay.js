@@ -526,6 +526,16 @@
       }, true);
     });
 
+    const resolvedUrl = resolveCurrentMediaUrl(mediaEl);
+    
+    // Auto-prefetch immediately ONLY if this is the main video of the page
+    // (e.g. /watch, /reel, or the exact URL matches) to save yt-dlp instances on feeds
+    const currentPath = window.location.pathname;
+    if (resolvedUrl === window.location.href || 
+        (currentPath.includes('/watch') || currentPath.includes('/reel/') || currentPath.includes('/status/') || currentPath.includes('/video/'))) {
+      prefetchYtDlpFormats(resolvedUrl);
+    }
+
     bannerBtn.addEventListener('mouseenter', () => {
       prefetchYtDlpFormats(resolveCurrentMediaUrl(mediaEl));
     });
