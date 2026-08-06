@@ -4,6 +4,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Lightbulb } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { CustomSelect } from '../components/ui/CustomSelect';
 
 export const NewFeaturePage: React.FC = () => {
   const { user } = useAuth();
@@ -90,17 +91,29 @@ export const NewFeaturePage: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Platform</label>
-              <select 
-                className="input" 
+              <CustomSelect 
                 value={formData.platform}
-                onChange={e => setFormData({...formData, platform: e.target.value})}
-              >
-                <option value="windows">Windows</option>
-                <option value="linux">Linux</option>
-                <option value="browser_extension">Browser Extension</option>
-                <option value="website">Website</option>
-                <option value="other">Other / All</option>
-              </select>
+                onChange={val => setFormData({...formData, platform: val})}
+                options={[
+                  { value: 'windows', label: 'Windows' },
+                  { value: 'linux', label: 'Linux' },
+                  { value: 'browser_extension', label: 'Browser Extension' },
+                  { value: 'website', label: 'Website' },
+                  { value: 'other', label: 'Other / All' }
+                ]}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Priority Level</label>
+              <CustomSelect 
+                value={formData.priority}
+                onChange={val => setFormData({...formData, priority: val})}
+                options={[
+                  { value: 'nice_to_have', label: 'Nice to have' },
+                  { value: 'important', label: 'Important' },
+                  { value: 'must_have', label: 'Must have (Critical)' }
+                ]}
+              />
             </div>
           </div>
 

@@ -85,12 +85,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setFirebaseUser(currentFirebaseUser);
 
       if (currentFirebaseUser) {
+        
+        // HARDCODED FALLBACK FOR OWNER
+        const isOwner = currentFirebaseUser.email === 'ifahad2k@gmail.com';
+        
         try {
           const profileData = await syncUserProfileToFirestore(currentFirebaseUser);
           
           if (profileData) {
-            setUser(profileData as UserProfile);
-            setIsAdmin(profileData.isAdmin);
+            // Apply hardcoded override on top of DB data
+            const finalProfile = { ...profileData, isAdmin: profileData.isAdmin || isOwner, role: isOwner ? 'Admin' : profileData.role };
+            setUser(finalProfile as UserProfile);
+            setIsAdmin(finalProfile.isAdmin);
           } else {
             // Fallback if DB is unavailable
             const profile: UserProfile = {
@@ -98,12 +104,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: currentFirebaseUser.email,
               displayName: currentFirebaseUser.displayName || (currentFirebaseUser.email ? currentFirebaseUser.email.split('@')[0] : 'User'),
               photoURL: currentFirebaseUser.photoURL,
-              isAdmin: false,
+              isAdmin: isOwner,
               emailVerified: currentFirebaseUser.emailVerified,
-              role: 'User',
+              role: isOwner ? 'Admin' : 'User',
             };
             setUser(profile);
-            setIsAdmin(false);
+            setIsAdmin(isOwner);
           }
         } catch (err: any) {
           console.warn('Auth state processing error:', err);
@@ -112,12 +118,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email: currentFirebaseUser.email,
             displayName: currentFirebaseUser.displayName || (currentFirebaseUser.email ? currentFirebaseUser.email.split('@')[0] : 'User'),
             photoURL: currentFirebaseUser.photoURL,
-            isAdmin: false,
+            isAdmin: isOwner,
             emailVerified: currentFirebaseUser.emailVerified,
-            role: 'User',
+            role: isOwner ? 'Admin' : 'User',
           };
           setUser(profile);
-          setIsAdmin(false);
+          setIsAdmin(isOwner);
         }
       } else {
         setUser(null);

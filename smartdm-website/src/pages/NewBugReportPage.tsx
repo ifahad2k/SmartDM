@@ -4,6 +4,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Bug } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { CustomSelect } from '../components/ui/CustomSelect';
 
 export const NewBugReportPage: React.FC = () => {
   const { user } = useAuth();
@@ -91,16 +92,16 @@ export const NewBugReportPage: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Platform</label>
-              <select 
-                className="input" 
+              <CustomSelect 
                 value={formData.platform}
-                onChange={e => setFormData({...formData, platform: e.target.value})}
-              >
-                <option value="windows">Windows</option>
-                <option value="linux">Linux</option>
-                <option value="browser_extension">Browser Extension</option>
-                <option value="website">Website</option>
-              </select>
+                onChange={val => setFormData({...formData, platform: val})}
+                options={[
+                  { value: 'windows', label: 'Windows' },
+                  { value: 'linux', label: 'Linux' },
+                  { value: 'browser_extension', label: 'Browser Extension' },
+                  { value: 'website', label: 'Website' }
+                ]}
+              />
             </div>
           </div>
 

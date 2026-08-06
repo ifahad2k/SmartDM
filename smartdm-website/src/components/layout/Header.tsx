@@ -43,6 +43,10 @@ export const Header: React.FC = () => {
 
   return (
     <header className={`site-header ${scrolled ? 'scrolled' : ''}`}>
+      {/* DEBUG OVERLAY */}
+      <div style={{ position: 'absolute', top: 0, left: 0, background: 'red', color: 'white', zIndex: 9999, fontSize: '10px', padding: '2px' }}>
+        DEBUG UID: {user?.uid} | IS_ADMIN: {user?.isAdmin ? 'YES' : 'NO'}
+      </div>
       <div className="container nav-wrap">
         <Link to="/" className="brand" aria-label="SmartDM Home">
           <img src="/assets/logo-full.png" alt="SmartDM Logo" className="brand-logo-img" />

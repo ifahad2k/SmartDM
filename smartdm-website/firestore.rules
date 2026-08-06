@@ -53,7 +53,7 @@ service cloud.firestore {
     // - Users cannot escalate their own privileges (cannot modify isAdmin or role) unless they are already an Admin
     // - Deletion is denied
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId);
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) && (
         (request.resource.data.get('isAdmin', resource.data.isAdmin) == resource.data.isAdmin &&
