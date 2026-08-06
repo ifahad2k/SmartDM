@@ -21,7 +21,7 @@ public class UpdateCheckerService {
 
     private static final String REPO_API = "https://api.github.com/repos/ifahad2k/SmartDM/releases/latest";
     private static final String REPO_LATEST_HTML = "https://github.com/ifahad2k/SmartDM/releases/latest";
-    public static final String CURRENT_VERSION = "v1.0.1";
+    public static final String CURRENT_VERSION = VersionInfo.FULL_VERSION;
     
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
         .followRedirects(HttpClient.Redirect.ALWAYS)

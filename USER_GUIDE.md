@@ -24,20 +24,6 @@ SmartDM is designed to provide an Internet Download Manager (IDM) level experien
 * **🤖 AI Assistant Support**: Built-in support for Gemini and Ollama AI to assist with file categorization and organization.
 * **🔒 Privacy & Safety First**: Real-time safety checks, RTLO spoofing protection, and local cryptographic checksum validation.
 
----
-
-## 📦 Installation Guide
-
-Installing SmartDM takes less than 30 seconds:
-
-1. Download **`SmartDM-Setup-v1.0.0.exe`** from the official GitHub Releases page.
-2. Double-click **`SmartDM-Setup-v1.0.0.exe`** to run the standalone installer.
-3. The installer automatically:
-   - Sets up the SmartDM desktop application.
-   - Bundles native media extraction tools (`yt-dlp` and `ffmpeg`).
-   - Bundles pre-packaged browser extensions.
-   - Registers the Native Messaging host in your Windows Registry.
-4. Launch **SmartDM** from your Start Menu or Desktop shortcut!
 
 ---
 

@@ -625,6 +625,14 @@ public class SmartDmApp extends Application {
         scene.getStylesheets().add(getClass().getResource("/io/smartdm/desktop/theme/dialog.css").toExternalForm());
         scene.getStylesheets().add(getClass().getResource("/io/smartdm/desktop/theme/main.css").toExternalForm());
 
+        scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == javafx.scene.input.KeyCode.PRINTSCREEN) {
+                try {
+                    new ProcessBuilder("cmd.exe", "/c", "start", "ms-screenclip:").start();
+                } catch (Exception ignored) {}
+            }
+        });
+
         primaryStage.setTitle("SmartDM");
         try {
             java.io.InputStream iconStream = getClass().getResourceAsStream("/io/smartdm/desktop/theme/logo.png");
