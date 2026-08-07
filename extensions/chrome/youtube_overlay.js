@@ -200,7 +200,86 @@
     });
   }
 
-  function fetchYtDlpFormats(url, callback) {
+  function extractFormatsFromJson(playerResponse) {
+    if (playerResponse && playerResponse.streamingData) {
+      const videoDetails = playerResponse.videoDetails || {};
+      const title = videoDetails.title || 'YouTube Video';
+      const streamingData = playerResponse.streamingData;
+      const formats = [];
+
+      const combined = streamingData.formats || [];
+      combined.forEach(f => {
+        formats.push({
+          formatId: String(f.itag || ('fmt_' + formats.length)),
+          resolution: f.qualityLabel || f.quality || '360p',
+          ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+          formatNote: 'Direct Video + Audio',
+          fileSize: parseInt(f.contentLength || 0, 10),
+          fps: f.fps || 30,
+          isAudioOnly: false,
+          title: title
+        });
+      });
+
+      const adaptive = streamingData.adaptiveFormats || [];
+      adaptive.forEach(f => {
+        const mime = (f.mimeType || '').toLowerCase();
+        const isAudio = mime.startsWith('audio/');
+        const isVideo = mime.startsWith('video/');
+        const kbps = Math.round((f.bitrate || 0) / 1000);
+        formats.push({
+          formatId: String(f.itag || ('fmt_' + formats.length)),
+          resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
+          ext: (mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4')),
+          formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+          fileSize: parseInt(f.contentLength || 0, 10),
+          tbr: kbps,
+          fps: f.fps || 0,
+          isAudioOnly: isAudio,
+          isVideoOnly: isVideo,
+          title: title
+        });
+      });
+
+      if (formats.length > 1) {
+        return { success: true, status: 'ok', title: title, formats: formats };
+      }
+    }
+    return null;
+  }
+
+  function extractYtInitialPlayerResponse(text) {
+    let idx = text.indexOf('ytInitialPlayerResponse = {');
+    if (idx < 0) idx = text.indexOf('ytInitialPlayerResponse={');
+    if (idx < 0) idx = text.indexOf('"ytInitialPlayerResponse": {');
+    if (idx >= 0) {
+      let firstBrace = text.indexOf('{', idx);
+      if (firstBrace >= 0) {
+        let openCount = 0, lastBrace = -1, inString = false, escape = false;
+        for (let i = firstBrace; i < text.length; i++) {
+          let c = text.charAt(i);
+          if (inString) {
+            if (escape) escape = false;
+            else if (c === '\\') escape = true;
+            else if (c === '"') inString = false;
+          } else {
+            if (c === '"') inString = true;
+            else if (c === '{') openCount++;
+            else if (c === '}') {
+              openCount--;
+              if (openCount === 0) { lastBrace = i; break; }
+            }
+          }
+        }
+        if (lastBrace > firstBrace) {
+          try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch(e) {}
+        }
+      }
+    }
+    return null;
+  }
+
+  async function fetchYtDlpFormats(url, callback) {
     if (!url) return;
     if (ytDlpCache[url] && ytDlpCache[url].status === 'done' && ytDlpCache[url].data && ytDlpCache[url].data.formats && ytDlpCache[url].data.formats.length > 1) {
       if (callback) callback(ytDlpCache[url].data);
@@ -224,6 +303,20 @@
 
     const initialCallbacks = callback ? [callback] : [];
     ytDlpCache[url] = { status: 'loading', callbacks: initialCallbacks };
+
+    // Flawless Direct HTML Extraction (Bypasses Service Worker & Bot Detection)
+    try {
+      const htmlRes = await fetch(url, { credentials: 'include' });
+      const htmlText = await htmlRes.text();
+      const playerRes = extractYtInitialPlayerResponse(htmlText);
+      const parsedHTML = extractFormatsFromJson(playerRes);
+      if (parsedHTML && parsedHTML.formats && parsedHTML.formats.length > 1) {
+        ytDlpCache[url] = { status: 'done', data: parsedHTML, callbacks: [] };
+        const pendingCallbacks = ytDlpCache[url] ? (ytDlpCache[url].callbacks || []) : initialCallbacks;
+        pendingCallbacks.forEach(cb => { try { cb(parsedHTML); } catch (e) {} });
+        return;
+      }
+    } catch (e) {}
 
     const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
