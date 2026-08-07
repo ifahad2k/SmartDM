@@ -130,63 +130,87 @@
   }
 
   function findTopPlayerContainer(mediaEl) {
-    // Always attach to document.body with fixed viewport positioning to guarantee staying on top of all invisible player overlays
-    return document.body;
+    const hostDomain = window.location.hostname.toLowerCase();
+    if (hostDomain.includes('instagram.com') || hostDomain.includes('facebook.com') || hostDomain.includes('tiktok.com') || hostDomain.includes('twitter.com') || hostDomain.includes('x.com')) {
+      return document.body;
+    }
+
+    let current = mediaEl;
+    let container = mediaEl.parentElement || mediaEl;
+    let depth = 0;
+
+    // Look for common video player wrapper classes
+    while (current && current.parentElement && current.parentElement !== document.body && depth < 8) {
+      current = current.parentElement;
+      const tag = current.tagName.toLowerCase();
+      const cls = (current.className || '').toString().toLowerCase();
+      
+      if (tag === 'article' || current.getAttribute('role') === 'dialog' || current.getAttribute('role') === 'region') {
+        container = current;
+        break;
+      }
+
+      if (cls.includes('player') || cls.includes('video-wrapper') || cls.includes('vjs-') || cls.includes('plyr') || cls.includes('html5-video-container')) {
+          container = current;
+      }
+      depth++;
+    }
+
+    if (window.getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
+
+    return container;
   }
 
   function attachUniversalBanner(mediaEl) {
-    if (!mediaEl || mediaEl.getAttribute(PLAYER_PROCESSED_ATTR)) return;
-    
-    // Check if host already exists for this video
-    const existingHosts = document.querySelectorAll('.smartdm-universal-host');
-    for (let h of existingHosts) {
-      if (h._targetMedia === mediaEl) return;
-    }
-    
+    const container = findTopPlayerContainer(mediaEl);
+    if (container !== document.body && container.querySelector('.smartdm-universal-host')) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
-    host._targetMedia = mediaEl;
     
-    host.style.setProperty('position', 'fixed', 'important');
-    host.style.setProperty('z-index', '2147483647', 'important');
-    host.style.setProperty('pointer-events', 'auto', 'important');
-    
-    const syncPos = () => {
-      if (!mediaEl || !mediaEl.isConnected) {
-        if (host.parentNode) host.parentNode.removeChild(host);
-        return;
-      }
-      let targetEl = mediaEl;
-      let rect = targetEl.getBoundingClientRect();
-      if ((rect.width === 0 || rect.height === 0) && mediaEl.parentElement) {
-        targetEl = mediaEl.parentElement;
-        rect = targetEl.getBoundingClientRect();
-      }
+    if (container === document.body) {
+      host.style.setProperty('position', 'fixed', 'important');
+      host.style.setProperty('z-index', '2147483647', 'important');
+      host.style.setProperty('pointer-events', 'auto', 'important');
       
-      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
-        host.style.display = 'none';
-      } else {
-        host.style.display = 'block';
-        host.style.opacity = '1';
-        host.style.pointerEvents = 'auto';
-        host.style.top = Math.max(16, rect.top + 16) + 'px';
-        const bannerWidth = host.offsetWidth || 160;
-        host.style.left = Math.max(16, rect.right - bannerWidth - 16) + 'px';
-      }
-    };
-    
-    window.addEventListener('scroll', syncPos, true);
-    window.addEventListener('resize', syncPos);
-    const syncInterval = setInterval(syncPos, 100);
-    setTimeout(syncPos, 50);
-
-    ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(evtName => {
-      host.addEventListener(evtName, (e) => {
-        e.stopPropagation();
-      });
-    });
+      const syncPos = () => {
+        if (!mediaEl || !mediaEl.isConnected) {
+          if (host.parentNode) host.parentNode.removeChild(host);
+          return;
+        }
+        let targetEl = mediaEl;
+        let rect = targetEl.getBoundingClientRect();
+        if ((rect.width === 0 || rect.height === 0) && mediaEl.parentElement) {
+          targetEl = mediaEl.parentElement;
+          rect = targetEl.getBoundingClientRect();
+        }
+        
+        if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
+          host.style.display = 'none';
+        } else {
+          host.style.display = 'block';
+          host.style.opacity = '1';
+          host.style.pointerEvents = 'auto';
+          host.style.top = Math.max(16, rect.top + 16) + 'px';
+          const bannerWidth = host.offsetWidth || 160;
+          host.style.left = Math.max(16, rect.right - bannerWidth - 16) + 'px';
+        }
+      };
+      
+      window.addEventListener('scroll', syncPos, true);
+      window.addEventListener('resize', syncPos);
+      setInterval(syncPos, 100);
+      setTimeout(syncPos, 50);
+    } else {
+      host.style.setProperty('position', 'absolute', 'important');
+      host.style.setProperty('top', '16px', 'important');
+      host.style.setProperty('right', '16px', 'important');
+      host.style.setProperty('z-index', '2147483647', 'important');
+      host.style.setProperty('pointer-events', 'auto', 'important');
+    }
 
     const shadow = host.attachShadow({ mode: 'open' });
 
@@ -546,18 +570,31 @@
 
       let hasFound = false;
 
-      // 1. Show animated searching spinner immediately
-      content.innerHTML = `
-        <div class="spinner-container">
-          <div class="spinner"></div>
-          <span class="status-text" style="padding:0;">Searching for video formats...</span>
-        </div>
-      `;
+      // 1. Instant 0ms Feed: Check network streams & render immediately
+      chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        let netMedia = (netRes && netRes.media) ? netRes.media : [];
+        netMedia = netMedia.filter(m => {
+          const urlLower = m.url.toLowerCase();
+          return !urlLower.includes('.ts') && !urlLower.includes('manifest.webmanifest');
+        });
+
+        if (netMedia.length > 0 && !hasFound) {
+          renderUniversalFormats(content, [], netMedia, pageUrl, popover);
+        } else if (!hasFound) {
+          content.innerHTML = `
+            <div class="spinner-container">
+              <div class="spinner"></div>
+              <span class="status-text" style="padding:0;">Searching for video formats...</span>
+            </div>
+          `;
+        }
+      });
 
       // 2. High-Speed Extractor Pipeline (Native Direct Extractor + yt-dlp)
       getCachedYtDlpFormats(pageUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
+          if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
         } else if (!hasFound) {
           chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
@@ -566,9 +603,14 @@
               const urlLower = m.url.toLowerCase();
               return !urlLower.includes('.ts') && !urlLower.includes('manifest.webmanifest');
             });
+
             if (netMedia.length > 0) {
+              hasFound = true;
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
               renderUniversalFormats(content, [], netMedia, pageUrl, popover);
             } else if (directSrc && directSrc.startsWith('http')) {
+              hasFound = true;
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
               const fallbackFormats = [{
                 format_id: 'direct_stream',
                 format_note: 'Direct Media Stream',
@@ -579,14 +621,34 @@
               }];
               renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
             } else {
-              content.innerHTML = '<div class="status-text" style="color:#ef4444;">No downloadable media formats found.</div>';
+              if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
+              content.innerHTML = '<div class="status-text">No media formats detected.</div>';
             }
           });
         }
       });
+
+      formatSearchTimeout = setTimeout(() => {
+        if (!hasFound) {
+          if (directSrc && directSrc.startsWith('http')) {
+            hasFound = true;
+            const fallbackFormats = [{
+              format_id: 'direct_stream',
+              format_note: 'Direct Media Stream',
+              ext: directSrc.includes('.webm') ? 'webm' : 'mp4',
+              resolution: 'Direct Video Stream (HD)',
+              filesize: 0,
+              url: directSrc
+            }];
+            renderUniversalFormats(content, fallbackFormats, [], pageUrl, popover);
+          } else {
+            content.innerHTML = '<div class="status-text">No media formats detected. Timeout.</div>';
+          }
+        }
+      }, 40000);
     });
 
-    document.body.appendChild(host);
+    container.appendChild(host);
   }
 
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
@@ -725,18 +787,8 @@
                 
                 let basename = '';
                 try {
-                  let rawName = new URL(hrefStr).pathname.split('/').pop();
-                  if (rawName) {
-                    basename = decodeURIComponent(rawName);
-                  }
+                  basename = new URL(hrefStr).pathname.split('/').pop();
                 } catch(err) {}
-
-                if (el.textContent && el.textContent.trim().length > 0) {
-                  let textName = el.textContent.trim();
-                  if (textName.match(/\.(mkv|mp4|avi|zip|rar|7z|exe|msi|iso|bin|mp3|flac|wav|pdf|epub|apk|tar|gz)$/i)) {
-                    basename = textName;
-                  }
-                }
                 
                 const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
                 runtime.sendMessage({
