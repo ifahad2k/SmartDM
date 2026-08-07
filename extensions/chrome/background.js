@@ -371,12 +371,10 @@ function getYouTubeCookiesHeader() {
 }
 
 function extractYtInitialPlayerResponse(text) {
-  let idx = text.indexOf('ytInitialPlayerResponse = {');
-  if (idx < 0) idx = text.indexOf('ytInitialPlayerResponse={');
-  if (idx < 0) idx = text.indexOf('"ytInitialPlayerResponse": {');
+  let idx = text.indexOf('ytInitialPlayerResponse');
   if (idx >= 0) {
     let firstBrace = text.indexOf('{', idx);
-    if (firstBrace >= 0) {
+    if (firstBrace > idx && firstBrace < idx + 100) {
       let openCount = 0, lastBrace = -1, inString = false, escape = false;
       for (let i = firstBrace; i < text.length; i++) {
         let c = text.charAt(i);
