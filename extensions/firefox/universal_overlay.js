@@ -570,34 +570,23 @@
 
       let hasFound = false;
 
-      // 1. Instant 0ms Feed: Check network streams & render immediately
-      chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-        let netMedia = (netRes && netRes.media) ? netRes.media : [];
-        netMedia = netMedia.filter(m => {
-          const urlLower = m.url.toLowerCase();
-          return !urlLower.includes('.ts') && !urlLower.includes('manifest.webmanifest');
-        });
+      // Show searching spinner initially
+      content.innerHTML = `
+        <div class="spinner-container">
+          <div class="spinner"></div>
+          <span class="status-text" style="padding:0;">Searching for video formats...</span>
+        </div>
+      `;
 
-        if (netMedia.length > 0 && !hasFound) {
-          renderUniversalFormats(content, [], netMedia, pageUrl, popover);
-        } else if (!hasFound) {
-          content.innerHTML = `
-            <div class="spinner-container">
-              <div class="spinner"></div>
-              <span class="status-text" style="padding:0;">Searching for video formats...</span>
-            </div>
-          `;
-        }
-      });
-
-      // 2. High-Speed Extractor Pipeline (Native Direct Extractor + yt-dlp)
+      // High-Speed Extractor Pipeline (Native Direct Extractor + yt-dlp)
       getCachedYtDlpFormats(pageUrl, (res) => {
         if (res && res.success && res.formats && res.formats.length > 0) {
           hasFound = true;
           if (formatSearchTimeout) clearTimeout(formatSearchTimeout);
           renderUniversalFormats(content, res.formats, [], pageUrl, popover);
         } else if (!hasFound) {
-          chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+          const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+          runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
             let netMedia = (netRes && netRes.media) ? netRes.media : [];
             netMedia = netMedia.filter(m => {
               const urlLower = m.url.toLowerCase();
