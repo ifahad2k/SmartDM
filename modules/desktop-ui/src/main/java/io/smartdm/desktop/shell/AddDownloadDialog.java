@@ -322,7 +322,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 }
             }
         } catch (Exception ignored) {}
-        return "video.mp4";
+        return "download.bin";
     }
     
     private boolean isDestinationActive(Path path) {

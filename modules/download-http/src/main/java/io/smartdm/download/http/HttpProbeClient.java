@@ -244,16 +244,14 @@ public class HttpProbeClient {
                             }
                         }
                         
-                        if (contentLength == -1) {
-                            contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
-                        }
-                        
                         String mimeType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
                         String etag = response.headers().firstValue("ETag").orElse(null);
                         String lastMod = response.headers().firstValue("Last-Modified").orElse(null);
                         boolean acceptsRanges = response.statusCode() == 206 || contentRange != null;
+                        String cdHeader = response.headers().firstValue("Content-Disposition").orElse(null);
+                        String dispositionFilename = parseContentDispositionFilename(cdHeader);
                         
-                        return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges);
+                        return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges, dispositionFilename);
                     } catch (UnauthorizedException e) {
                         throw e;
                     } catch (Exception e) {

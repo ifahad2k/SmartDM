@@ -14,7 +14,7 @@ namespace SmartDM.Launcher
         {
             try
             {
-                if (args.Length > 0 && (args[0].Contains("chrome-extension://") || args[0].Contains("moz-extension://") || args[0].Contains("smartdm@smartdm.io") || args[0].Contains("smartdm-extension@smartdm.io") || args[0].Contains("extension")))
+                if (args.Length > 0 && (args[0].Contains("smartdm") || args[0].Contains("host") || args[0].Contains("json") || args[0].Contains("extension") || args[0].Contains("chrome-extension") || args[0].Contains("moz-extension")))
                 {
                     RunNativeHost();
                     return;
