@@ -508,20 +508,29 @@ public class SmartDmApp extends Application {
                     System.out.println(">>> [IPC] GET_MEDIA_FORMATS for url: " + req.url());
                     System.out.println(">>> [IPC] Cookies received: " + (req.cookies() != null ? req.cookies().length() + " chars" : "null"));
                     io.smartdm.media.ytdlp.LocalMediaToolManager toolMgr = new io.smartdm.media.ytdlp.LocalMediaToolManager();
-                    if (toolMgr.isAvailable()) {
-                        io.smartdm.media.api.MediaExtractor extractor = (req.url() != null && req.url().toLowerCase().contains("tiktok.com"))
-                            ? new io.smartdm.media.ytdlp.TikTokExtractor(toolMgr)
-                            : new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
-                        io.smartdm.media.api.MediaMetadata meta = extractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(45, java.util.concurrent.TimeUnit.SECONDS);
-                        if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
-                            metadataCache.put(req.url(), meta);
-                            com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                            java.util.Map<String, Object> resp = new java.util.HashMap<>();
-                            resp.put("success", true);
-                            resp.put("title", meta.title());
-                            resp.put("formats", meta.formats());
-                            return jsonMapper.writeValueAsString(resp);
+                    io.smartdm.media.api.MediaMetadata meta = null;
+                    try {
+                        io.smartdm.media.api.MediaExtractor directExtractor = new io.smartdm.media.ytdlp.NativeDirectExtractor();
+                        meta = directExtractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(3, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception ignored) {}
+
+                    if (meta == null || meta.formats() == null || meta.formats().isEmpty()) {
+                        if (toolMgr.isAvailable()) {
+                            io.smartdm.media.api.MediaExtractor extractor = (req.url() != null && req.url().toLowerCase().contains("tiktok.com"))
+                                ? new io.smartdm.media.ytdlp.TikTokExtractor(toolMgr)
+                                : new io.smartdm.media.ytdlp.YtDlpExtractor(toolMgr);
+                            meta = extractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(45, java.util.concurrent.TimeUnit.SECONDS);
                         }
+                    }
+
+                    if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
+                        metadataCache.put(req.url(), meta);
+                        com.fasterxml.jackson.databind.ObjectMapper jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                        java.util.Map<String, Object> resp = new java.util.HashMap<>();
+                        resp.put("success", true);
+                        resp.put("title", meta.title());
+                        resp.put("formats", meta.formats());
+                        return jsonMapper.writeValueAsString(resp);
                     }
                 } catch (Exception ex) {
                     System.err.println("IPC format extraction error: " + ex.getMessage());

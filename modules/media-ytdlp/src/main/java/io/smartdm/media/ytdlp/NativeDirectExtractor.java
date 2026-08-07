@@ -22,10 +22,14 @@ import java.util.regex.Pattern;
  * Resolves media formats via direct HTTP/2 requests and JSON parsing in ~150ms,
  * bypassing yt-dlp process invocation entirely for high-speed performance.
  */
-public class NativeDirectExtractor {
+public class NativeDirectExtractor implements io.smartdm.media.api.MediaExtractor {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+
+    public NativeDirectExtractor() {
+        this(new ObjectMapper());
+    }
 
     public NativeDirectExtractor(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -33,6 +37,16 @@ public class NativeDirectExtractor {
                 .connectTimeout(Duration.ofSeconds(4))
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .build();
+    }
+
+    @Override
+    public java.util.concurrent.CompletableFuture<MediaMetadata> extractMetadataAsync(String url, String cookies) {
+        return extractMetadataAsync(url, cookies, null);
+    }
+
+    @Override
+    public java.util.concurrent.CompletableFuture<MediaMetadata> extractMetadataAsync(String url, String cookies, String userAgent) {
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> tryExtract(url, cookies, userAgent).orElse(null));
     }
 
     public Optional<MediaMetadata> tryExtract(String url, String cookies, String userAgent) {
