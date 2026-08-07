@@ -141,7 +141,7 @@
             videoId: videoId,
             contentCheckOk: true,
             racyCheckOk: true,
-            context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00' } }
+            context: { client: { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 } }
           })
         })
         .then(r => r.json())
