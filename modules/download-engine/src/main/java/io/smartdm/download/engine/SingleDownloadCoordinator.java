@@ -269,7 +269,8 @@ public class SingleDownloadCoordinator {
 
             for (DownloadSegment segment : download.segments()) {
                 if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) continue;
-                SegmentWorker worker = new SegmentWorker(httpClient, baseRequest, segment, channel, rateLimiter, callback, download.etag(), download.lastModified());
+                boolean acceptsRanges = download.segments().size() > 1 || (download.totalBytes() != null && download.totalBytes().value() > 0);
+                SegmentWorker worker = new SegmentWorker(httpClient, baseRequest, segment, channel, rateLimiter, callback, download.etag(), download.lastModified(), acceptsRanges);
                 session.workers.add(worker);
                 session.futures.add(segmentExecutor.submit(worker));
             }

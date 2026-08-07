@@ -20,11 +20,13 @@ public class SegmentWorker implements Callable<Void> {
     private final String lastModified;
     private volatile boolean paused = false;
 
+    private final boolean acceptsRanges;
+
     public interface ProgressCallback {
         void onProgress(DownloadSegment segment, long bytesRead);
     }
 
-    public SegmentWorker(HttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback, String etag, String lastModified) {
+    public SegmentWorker(HttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback, String etag, String lastModified, boolean acceptsRanges) {
         this.httpClient = httpClient;
         this.baseRequest = baseRequest;
         this.segment = segment;
@@ -33,6 +35,11 @@ public class SegmentWorker implements Callable<Void> {
         this.progressCallback = progressCallback;
         this.etag = etag;
         this.lastModified = lastModified;
+        this.acceptsRanges = acceptsRanges;
+    }
+
+    public SegmentWorker(HttpClient httpClient, HttpRequest baseRequest, DownloadSegment segment, SegmentedFileChannel channel, io.smartdm.download.engine.limit.TokenBucketRateLimiter rateLimiter, ProgressCallback progressCallback, String etag, String lastModified) {
+        this(httpClient, baseRequest, segment, channel, rateLimiter, progressCallback, etag, lastModified, true);
     }
 
     @Override
@@ -56,12 +63,14 @@ public class SegmentWorker implements Callable<Void> {
                 });
 
                 boolean isRangeRequest = false;
-                if (segment.endOffset() >= 0) {
-                    builder.header("Range", "bytes=" + segment.currentOffset() + "-" + segment.endOffset());
-                    isRangeRequest = true;
-                } else if (segment.startOffset() > 0 || segment.currentOffset() > 0) {
-                    builder.header("Range", "bytes=" + segment.currentOffset() + "-");
-                    isRangeRequest = true;
+                if (acceptsRanges) {
+                    if (segment.endOffset() >= 0) {
+                        builder.header("Range", "bytes=" + segment.currentOffset() + "-" + segment.endOffset());
+                        isRangeRequest = true;
+                    } else if (segment.startOffset() > 0 || segment.currentOffset() > 0) {
+                        builder.header("Range", "bytes=" + segment.currentOffset() + "-");
+                        isRangeRequest = true;
+                    }
                 }
 
                 builder.timeout(Duration.ofSeconds(30));

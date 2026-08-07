@@ -591,84 +591,50 @@ if (chrome.downloads && chrome.downloads.onCreated) {
       return;
     }
 
-    function processDownload(item, resolvedFilename) {
-      if (bypassedDownloads.has(item.id) || bypassedDownloads.has(item.url)) return;
-      
-      chrome.downloads.cancel(item.id, () => {
-        if (chrome.downloads.erase) {
-          chrome.downloads.erase({ id: item.id }, () => {});
-        }
-      });
-
-      let finalName = resolvedFilename || (item.filename ? item.filename.split(/[\\/]/).pop() : '');
-      if (finalName) {
-        const lower = finalName.toLowerCase();
-        if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
-            lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
-            lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
-          finalName = null;
-        }
+    // Cancel and erase browser download IMMEDIATELY to prevent browser history/UI pollution
+    chrome.downloads.cancel(downloadItem.id, () => {
+      if (chrome.downloads.erase) {
+        chrome.downloads.erase({ id: downloadItem.id }, () => {});
       }
-
-      const message = {
-        type: 'ADD_DOWNLOAD',
-        url: item.finalUrl || item.url,
-        fileName: finalName || null,
-        referer: item.referrer || null,
-        userAgent: navigator.userAgent
-      };
-
-      appendCookiesAndSend(message, (response) => {
-        if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
-          console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
-          bypassedDownloads.add(item.url);
-          let dlOptions = { url: item.url, saveAs: true };
-          if (finalName) dlOptions.filename = finalName;
-          chrome.downloads.download(dlOptions);
-          setTimeout(() => bypassedDownloads.delete(item.url), 15000);
-        }
-      });
+    });
+    if (chrome.downloads.erase) {
+      chrome.downloads.erase({ id: downloadItem.id }, () => {});
     }
 
     let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
-    let isGeneric = false;
-    if (!basename) {
-      isGeneric = true;
-    } else {
+    if (basename) {
       const lower = basename.toLowerCase();
       if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
           lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
           lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
-        isGeneric = true;
+        basename = null;
       }
     }
 
-    if (isGeneric && chrome.downloads.onChanged) {
-      let handled = false;
-      const changeListener = (delta) => {
-        if (delta.id === downloadItem.id) {
-          let newName = (delta.filename && delta.filename.current) ? delta.filename.current.split(/[\\/]/).pop() : null;
-          if (newName && !handled) {
-            const lower = newName.toLowerCase();
-            if (!lower.startsWith('unconfirmed') && !lower.endsWith('.crdownload') && !lower.endsWith('.tmp')) {
-              handled = true;
-              chrome.downloads.onChanged.removeListener(changeListener);
-              processDownload(downloadItem, newName);
-            }
-          }
-        }
-      };
-      chrome.downloads.onChanged.addListener(changeListener);
+    const message = {
+      type: 'ADD_DOWNLOAD',
+      url: downloadItem.finalUrl || downloadItem.url,
+      fileName: basename || null,
+      referer: downloadItem.referrer || null,
+      userAgent: navigator.userAgent
+    };
 
-      setTimeout(() => {
-        if (!handled) {
-          handled = true;
-          chrome.downloads.onChanged.removeListener(changeListener);
-          processDownload(downloadItem, null);
+    appendCookiesAndSend(message, (response) => {
+      if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
+        console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
+        bypassedDownloads.add(downloadItem.url);
+        
+        let dlOptions = {
+          url: downloadItem.url,
+          saveAs: true
+        };
+        if (basename && basename.length > 0) {
+            dlOptions.filename = basename;
         }
-      }, 400);
-    } else {
-      processDownload(downloadItem, basename);
-    }
+        chrome.downloads.download(dlOptions);
+        
+        setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+      }
+    });
   });
 }
