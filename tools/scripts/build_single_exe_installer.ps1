@@ -106,8 +106,8 @@ $PayloadZip = "$StagingDir\payload.zip"
 Write-Host "Compressing payload zip..." -ForegroundColor Yellow
 Compress-Archive -Path "$AppImageDir\*" -DestinationPath $PayloadZip -Force
 
-# 6. Compile Installer.cs into SmartDM-Setup-v1.0.3.exe
-$AppVersion = "1.0.4"
+# 6. Compile Installer.cs into SmartDM-Setup-v1.0.5.exe
+$AppVersion = "1.0.5"
 Write-Host "`n[6/6] Compiling Single-EXE Installer (SmartDM-Setup-v$AppVersion.exe)..." -ForegroundColor Yellow
 $InstallerCs = "$ProjectRoot\tools\scripts\Installer.cs"
 $TargetExe = "$ReleaseDir\SmartDM-Setup-v$AppVersion.exe"
