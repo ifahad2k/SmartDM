@@ -353,6 +353,23 @@ async function appendCookiesAndSend(request, sendResponse) {
   });
 }
 
+function getYouTubeCookiesHeader() {
+  return new Promise((resolve) => {
+    if (typeof chrome !== 'undefined' && chrome.cookies) {
+      chrome.cookies.getAll({ domain: 'youtube.com' }, (cookies) => {
+        if (cookies && cookies.length > 0) {
+          const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+          resolve(cookieString);
+        } else {
+          resolve('');
+        }
+      });
+    } else {
+      resolve('');
+    }
+  });
+}
+
 async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
   try {
     if (!videoUrl) return null;
@@ -367,61 +384,76 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
     }
     if (!videoId || videoId.length < 5) return null;
 
-    const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        videoId: videoId,
-        contentCheckOk: true,
-        racyCheckOk: true,
-        context: { client: { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 } }
-      })
-    });
+    const cookieHeader = await getYouTubeCookiesHeader();
 
-    const data = await res.json();
-    if (data && data.streamingData) {
-      const videoDetails = data.videoDetails || {};
-      const title = videoDetails.title || 'YouTube Video';
-      const streamingData = data.streamingData;
-      const formats = [];
+    const clients = [
+      { clientName: 'WEB', clientVersion: '2.20240101.00.00' },
+      { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 },
+      { clientName: 'ANDROID', clientVersion: '19.11.38' }
+    ];
 
-      const combined = streamingData.formats || [];
-      combined.forEach(f => {
-        formats.push({
-          formatId: String(f.itag || ('fmt_' + formats.length)),
-          resolution: f.qualityLabel || f.quality || '360p',
-          ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
-          formatNote: 'Direct Video + Audio',
-          fileSize: parseInt(f.contentLength || 0, 10),
-          fps: f.fps || 30,
-          isAudioOnly: false,
-          title: title
+    for (const clientObj of clients) {
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+        const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            videoId: videoId,
+            contentCheckOk: true,
+            racyCheckOk: true,
+            context: { client: clientObj }
+          })
         });
-      });
 
-      const adaptive = streamingData.adaptiveFormats || [];
-      adaptive.forEach(f => {
-        const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
-        const isAudio = mime.startsWith('audio/');
-        const isVideo = mime.startsWith('video/');
-        const kbps = Math.round((f.bitrate || 0) / 1000);
-        formats.push({
-          formatId: String(f.itag || ('fmt_' + formats.length)),
-          resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
-          ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
-          formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
-          fileSize: parseInt(f.contentLength || 0, 10),
-          tbr: kbps,
-          fps: f.fps || 0,
-          isAudioOnly: isAudio,
-          isVideoOnly: isVideo,
-          title: title
-        });
-      });
+        const data = await res.json();
+        if (data && data.streamingData) {
+          const videoDetails = data.videoDetails || {};
+          const title = videoDetails.title || 'YouTube Video';
+          const streamingData = data.streamingData;
+          const formats = [];
 
-      if (formats.length > 0) {
-        return { success: true, status: 'ok', title: title, formats: formats };
-      }
+          const combined = streamingData.formats || [];
+          combined.forEach(f => {
+            formats.push({
+              formatId: String(f.itag || ('fmt_' + formats.length)),
+              resolution: f.qualityLabel || f.quality || '360p',
+              ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+              formatNote: 'Direct Video + Audio',
+              fileSize: parseInt(f.contentLength || 0, 10),
+              fps: f.fps || 30,
+              isAudioOnly: false,
+              title: title
+            });
+          });
+
+          const adaptive = streamingData.adaptiveFormats || [];
+          adaptive.forEach(f => {
+            const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
+            const isAudio = mime.startsWith('audio/');
+            const isVideo = mime.startsWith('video/');
+            const kbps = Math.round((f.bitrate || 0) / 1000);
+            formats.push({
+              formatId: String(f.itag || ('fmt_' + formats.length)),
+              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
+              ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+              formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+              fileSize: parseInt(f.contentLength || 0, 10),
+              tbr: kbps,
+              fps: f.fps || 0,
+              isAudioOnly: isAudio,
+              isVideoOnly: isVideo,
+              title: title
+            });
+          });
+
+          if (formats.length > 1) {
+            return { success: true, status: 'ok', title: title, formats: formats };
+          }
+        }
+      } catch (e) {}
     }
   } catch (e) {
     console.warn('Service worker YouTube fetch error:', e);
