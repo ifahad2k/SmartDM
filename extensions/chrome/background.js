@@ -353,6 +353,79 @@ async function appendCookiesAndSend(request, sendResponse) {
   });
 }
 
+async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
+  try {
+    let videoId = null;
+    if (videoUrl.includes('/watch?v=')) {
+      const u = new URL(videoUrl);
+      videoId = u.searchParams.get('v');
+    } else if (videoUrl.includes('/shorts/')) {
+      videoId = videoUrl.split('/shorts/')[1].split('/')[0].split('?')[0];
+    }
+    if (!videoId) return null;
+
+    const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: videoId,
+        contentCheckOk: true,
+        racyCheckOk: true,
+        context: { client: { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 } }
+      })
+    });
+
+    const data = await res.json();
+    if (data && data.streamingData) {
+      const videoDetails = data.videoDetails || {};
+      const title = videoDetails.title || 'YouTube Video';
+      const streamingData = data.streamingData;
+      const formats = [];
+
+      const combined = streamingData.formats || [];
+      combined.forEach(f => {
+        formats.push({
+          formatId: String(f.itag || ('fmt_' + formats.length)),
+          resolution: f.qualityLabel || f.quality || '360p',
+          ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+          formatNote: 'Direct Video + Audio',
+          fileSize: parseInt(f.contentLength || 0, 10),
+          fps: f.fps || 30,
+          isAudioOnly: false,
+          title: title
+        });
+      });
+
+      const adaptive = streamingData.adaptiveFormats || [];
+      adaptive.forEach(f => {
+        const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
+        const isAudio = mime.startsWith('audio/');
+        const isVideo = mime.startsWith('video/');
+        const kbps = Math.round((f.bitrate || 0) / 1000);
+        formats.push({
+          formatId: String(f.itag || ('fmt_' + formats.length)),
+          resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
+          ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+          formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+          fileSize: parseInt(f.contentLength || 0, 10),
+          tbr: kbps,
+          fps: f.fps || 0,
+          isAudioOnly: isAudio,
+          isVideoOnly: isVideo,
+          title: title
+        });
+      });
+
+      if (formats.length > 0) {
+        return { success: true, status: 'ok', title: title, formats: formats };
+      }
+    }
+  } catch (e) {
+    console.warn('Service worker YouTube fetch error:', e);
+  }
+  return null;
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
@@ -361,10 +434,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
-    if (request.action === 'extractMediaInfo') {
-      request.type = 'GET_MEDIA_FORMATS';
+  if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo') {
+    const url = request.url;
+    if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
+      fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
+        if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
+          sendResponse(ytRes);
+        } else {
+          appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, sendResponse);
+        }
+      });
+      return true; // Async response
     }
+
+    request.type = 'GET_MEDIA_FORMATS';
+    appendCookiesAndSend(request, sendResponse);
+    return true; // Async response
+  }
+
+  if (request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
     appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
