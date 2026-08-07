@@ -361,7 +361,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  if (request.type === 'GET_MEDIA_FORMATS' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
+  if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo' || request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
+    if (request.action === 'extractMediaInfo') {
+      request.type = 'GET_MEDIA_FORMATS';
+    }
     appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
