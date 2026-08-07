@@ -303,18 +303,18 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
 
         try {
-            String pathPart = java.net.URI.create(urlStr.trim()).getPath();
-            if (pathPart != null) {
-                int lastSlash = pathPart.lastIndexOf('/');
-                if (lastSlash >= 0 && lastSlash < pathPart.length() - 1) {
-                    String raw = pathPart.substring(lastSlash + 1);
-                    try {
-                        raw = java.net.URLDecoder.decode(raw, java.nio.charset.StandardCharsets.UTF_8);
-                    } catch (Exception ignored) {}
-                    raw = raw.replaceAll("[\\\\/:*?\"<>|\0]", "_").trim();
-                    if (!raw.isEmpty() && raw.contains(".") && !raw.endsWith(".bin")) {
-                        return raw;
-                    }
+            String pathPart = urlStr.trim();
+            int qIdx = pathPart.indexOf('?');
+            if (qIdx >= 0) pathPart = pathPart.substring(0, qIdx);
+            int hashIdx = pathPart.indexOf('#');
+            if (hashIdx >= 0) pathPart = pathPart.substring(0, hashIdx);
+
+            int lastSlash = pathPart.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < pathPart.length() - 1) {
+                String raw = pathPart.substring(lastSlash + 1);
+                String decoded = decodeAndSanitizeFileName(raw);
+                if (!decoded.isEmpty() && decoded.contains(".") && !decoded.endsWith(".bin")) {
+                    return decoded;
                 }
             }
         } catch (Exception ignored) {}
@@ -372,9 +372,20 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
     }
 
+    public static String decodeAndSanitizeFileName(String name) {
+        if (name == null || name.isBlank()) return "download.bin";
+        try {
+            if (name.contains("%")) {
+                name = java.net.URLDecoder.decode(name, java.nio.charset.StandardCharsets.UTF_8);
+            }
+        } catch (Exception ignored) {}
+        name = name.replaceAll("[\\\\/:*?\"<>|\0]", "_").trim();
+        return name.isEmpty() ? "download.bin" : name;
+    }
+
     public void setFileName(String fileName) {
         if (nameField != null && fileName != null && !fileName.isBlank()) {
-            nameField.setText(fileName);
+            nameField.setText(decodeAndSanitizeFileName(fileName));
         }
     }
 

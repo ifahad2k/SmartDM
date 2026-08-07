@@ -5,6 +5,14 @@ plugins {
 
 application {
     mainClass.set("io.smartdm.desktop.Launcher")
+    applicationDefaultJvmArgs = listOf(
+        "-Xms32m",
+        "-Xmx256m",
+        "-XX:+UseG1GC",
+        "-XX:G1HeapRegionSize=1m",
+        "-XX:MaxGCPauseMillis=50",
+        "-XX:+UseStringDeduplication"
+    )
 }
 
 dependencies {

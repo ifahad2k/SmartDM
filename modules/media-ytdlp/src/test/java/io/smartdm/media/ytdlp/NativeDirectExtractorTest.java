@@ -10,7 +10,7 @@ public class NativeDirectExtractorTest {
 
     @Test
     public void testYouTubeExtraction() {
-        NativeDirectExtractor extractor = new NativeDirectExtractor();
+        NativeDirectExtractor extractor = new NativeDirectExtractor(new com.fasterxml.jackson.databind.ObjectMapper());
         Optional<MediaMetadata> result = extractor.tryExtract("https://www.youtube.com/watch?v=dQw4w9WgXcQ", null, null);
         assertTrue(result.isPresent(), "Result should be present");
         MediaMetadata meta = result.get();

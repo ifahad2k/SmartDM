@@ -16,7 +16,13 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "smartdm-extension@smartdm.io",
+      "strict_min_version": "109.0"
+    }
   },
   "action": {
     "default_title": "Download with SmartDM"

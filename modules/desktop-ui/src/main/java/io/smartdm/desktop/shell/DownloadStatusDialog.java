@@ -280,26 +280,35 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
             DownloadState st = updated.state();
             if (st == DownloadState.DOWNLOADING || st == DownloadState.PROBING) {
                 pauseResumeBtn.setText("Pause");
+                pauseResumeBtn.setStyle(null);
                 pauseResumeBtn.getStyleClass().removeAll("btn-primary");
                 if (!pauseResumeBtn.getStyleClass().contains("btn-secondary")) {
                     pauseResumeBtn.getStyleClass().add("btn-secondary");
                 }
                 pauseResumeBtn.setDisable(false);
+                cancelBtn.setText("Cancel");
+                progressFill.setStyle("-fx-background-color: linear-gradient(to right, #38BDF8, #818CF8); -fx-background-radius: 6; -fx-min-height: 12;");
+                progressText.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
             } else if (st == DownloadState.COMPLETED) {
                 pauseResumeBtn.setText("Open File");
                 pauseResumeBtn.getStyleClass().removeAll("btn-secondary");
-                if (!pauseResumeBtn.getStyleClass().contains("btn-primary")) {
-                    pauseResumeBtn.getStyleClass().add("btn-primary");
-                }
+                pauseResumeBtn.setStyle("-fx-background-color: linear-gradient(to right, #10b981, #059669); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 6; -fx-effect: dropshadow(three-pass-box, rgba(16,185,129,0.4), 8, 0, 0, 2);");
                 pauseResumeBtn.setDisable(false);
+                cancelBtn.setText("Close");
+                progressFill.setStyle("-fx-background-color: linear-gradient(to right, #10b981, #059669); -fx-background-radius: 6; -fx-min-height: 12;");
+                progressText.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #10b981;");
                 handleCompletionAction(updated);
             } else {
                 pauseResumeBtn.setText("Resume");
+                pauseResumeBtn.setStyle(null);
                 pauseResumeBtn.getStyleClass().removeAll("btn-secondary");
                 if (!pauseResumeBtn.getStyleClass().contains("btn-primary")) {
                     pauseResumeBtn.getStyleClass().add("btn-primary");
                 }
                 pauseResumeBtn.setDisable(false);
+                cancelBtn.setText("Cancel");
+                progressFill.setStyle("-fx-background-color: linear-gradient(to right, #38BDF8, #818CF8); -fx-background-radius: 6; -fx-min-height: 12;");
+                progressText.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
             }
 
             // Segments details update

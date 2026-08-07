@@ -658,6 +658,7 @@ public class SmartDmApp extends Application {
             if (settings.isCloseToTray()) {
                 event.consume();
                 primaryStage.hide();
+                System.gc();
             } else {
                 javafx.application.Platform.exit();
                 System.exit(0);
@@ -775,7 +776,15 @@ public class SmartDmApp extends Application {
         if (url == null || url.isBlank()) return false;
         
         String lower = url.toLowerCase();
-        
+
+        // Exclude archives, torrents, executables, and documents BEFORE checking media patterns
+        if (lower.contains(".torrent") || lower.contains(".rar") || lower.contains(".zip") ||
+            lower.contains(".7z") || lower.contains(".tar") || lower.contains(".gz") ||
+            lower.contains(".iso") || lower.contains(".exe") || lower.contains(".msi") ||
+            lower.contains(".pdf") || lower.contains(".apk") || lower.contains(".dmg")) {
+            return false;
+        }
+
         // Check direct video/audio extensions FIRST
         if (lower.contains(".mp4") || lower.contains(".m3u8") || lower.contains(".mpd") ||
             lower.contains(".webm") || lower.contains(".m4a") || lower.contains(".mp3") ||
@@ -927,7 +936,7 @@ public class SmartDmApp extends Application {
                         bringStageToFrontAndFocus(dlg);
                     });
                 } else {
-                    // Direct media stream (TikTok, Facebook, direct MP4) - Open standard IDM-style AddDownloadDialog directly!
+                    // Direct media stream (TikTok, Facebook, direct MP4) or standard file (torrent, rar, zip) - Open standard IDM-style AddDownloadDialog directly!
                     javafx.application.Platform.runLater(() -> {
                         io.smartdm.desktop.shell.AddDownloadDialog dlg = new io.smartdm.desktop.shell.AddDownloadDialog(
                             null,
@@ -935,10 +944,27 @@ public class SmartDmApp extends Application {
                             smartFolderService
                         );
                         dlg.setCookiesAndUserAgent(cookies, userAgent);
+                        String fileNameToSet = null;
                         if (reqFileName != null && !reqFileName.isBlank()) {
-                            dlg.setFileName(reqFileName);
-                        } else if (reqTitle != null && !reqTitle.isBlank()) {
-                            dlg.setFileName(reqTitle + ".mp4");
+                            fileNameToSet = reqFileName;
+                        } else if (reqTitle != null && !reqTitle.isBlank() && !reqTitle.contains("Video") && !reqTitle.equals("Media Video")) {
+                            fileNameToSet = reqTitle;
+                        }
+                        if (fileNameToSet == null || fileNameToSet.isBlank()) {
+                            try {
+                                String path = url;
+                                int qIdx = path.indexOf('?');
+                                if (qIdx >= 0) path = path.substring(0, qIdx);
+                                int hashIdx = path.indexOf('#');
+                                if (hashIdx >= 0) path = path.substring(0, hashIdx);
+                                int lastSlash = path.lastIndexOf('/');
+                                if (lastSlash >= 0 && lastSlash < path.length() - 1) {
+                                    fileNameToSet = path.substring(lastSlash + 1);
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        if (fileNameToSet != null && !fileNameToSet.isBlank()) {
+                            dlg.setFileName(fileNameToSet);
                         }
                         dlg.setOnDownloadAdded(dl -> {
                             repository.save(dl);

@@ -155,14 +155,18 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         return;
       }
 
-      // Exclude web assets, images, scripts, stylesheets, fonts
+      // Exclude web assets, images, scripts, stylesheets, fonts, archives, torrents, executables
       if (contentType.includes('image/')) return;
       const isNonMediaAsset = url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
                               url.includes('.html') || url.includes('.ico') || url.includes('.webmanifest') ||
-                              url.includes('manifest.');
+                              url.includes('manifest.') || url.includes('.torrent') || url.includes('.rar') ||
+                              url.includes('.zip') || url.includes('.7z') || url.includes('.tar') ||
+                              url.includes('.gz') || url.includes('.iso') || url.includes('.exe') ||
+                              url.includes('.msi') || url.includes('.pdf') || contentType.includes('bittorrent') ||
+                              contentType.includes('zip') || contentType.includes('x-rar');
       if (isNonMediaAsset) return;
 
       // Ignore small UI sound effects (< 300KB or audio files named success/failure/no_input/open)

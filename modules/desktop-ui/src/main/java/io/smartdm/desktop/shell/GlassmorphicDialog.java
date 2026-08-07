@@ -36,6 +36,13 @@ public abstract class GlassmorphicDialog extends Stage {
         }
         initStyle(StageStyle.TRANSPARENT); // Undecorated and transparent for drop shadow
 
+        try {
+            var iconUrl = getClass().getResource("/io/smartdm/desktop/theme/logo.png");
+            if (iconUrl != null) {
+                getIcons().add(new javafx.scene.image.Image(iconUrl.toExternalForm()));
+            }
+        } catch (Exception ignored) {}
+
         root = new BorderPane();
         root.getStyleClass().add("os-window");
 
