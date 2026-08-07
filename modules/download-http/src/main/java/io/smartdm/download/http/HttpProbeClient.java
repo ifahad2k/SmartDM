@@ -121,6 +121,8 @@ public class HttpProbeClient {
             builder.header("Referer", "https://www.facebook.com/");
         } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
             builder.header("Referer", "https://www.instagram.com/");
+        } else if (uri.value().getHost() != null) {
+            builder.header("Referer", uri.value().getScheme() + "://" + uri.value().getHost() + "/");
         }
                 
         if (credential != null) {
@@ -210,6 +212,8 @@ public class HttpProbeClient {
             builder.header("Referer", "https://www.facebook.com/");
         } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
             builder.header("Referer", "https://www.instagram.com/");
+        } else if (uri.value().getHost() != null) {
+            builder.header("Referer", uri.value().getScheme() + "://" + uri.value().getHost() + "/");
         }
                 
         if (credential != null) {

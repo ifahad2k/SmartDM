@@ -591,43 +591,80 @@ if (chrome.downloads && chrome.downloads.onCreated) {
       return;
     }
 
-    // Cancel browser download
-    chrome.downloads.cancel(downloadItem.id);
-    
+    function processDownload(item, resolvedFilename) {
+      if (bypassedDownloads.has(item.id) || bypassedDownloads.has(item.url)) return;
+      
+      chrome.downloads.cancel(item.id);
+
+      let finalName = resolvedFilename || (item.filename ? item.filename.split(/[\\/]/).pop() : '');
+      if (finalName) {
+        const lower = finalName.toLowerCase();
+        if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
+            lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
+            lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
+          finalName = null;
+        }
+      }
+
+      const message = {
+        type: 'ADD_DOWNLOAD',
+        url: item.finalUrl || item.url,
+        fileName: finalName || null,
+        referer: item.referrer || null,
+        userAgent: navigator.userAgent
+      };
+
+      appendCookiesAndSend(message, (response) => {
+        if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
+          console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
+          bypassedDownloads.add(item.url);
+          let dlOptions = { url: item.url, saveAs: true };
+          if (finalName) dlOptions.filename = finalName;
+          chrome.downloads.download(dlOptions);
+          setTimeout(() => bypassedDownloads.delete(item.url), 15000);
+        }
+      });
+    }
+
     let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
-    if (basename) {
+    let isGeneric = false;
+    if (!basename) {
+      isGeneric = true;
+    } else {
       const lower = basename.toLowerCase();
       if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
           lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
           lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
-        basename = null;
+        isGeneric = true;
       }
     }
 
-    const message = {
-      type: 'ADD_DOWNLOAD',
-      url: downloadItem.finalUrl || downloadItem.url,
-      fileName: basename || null,
-      referer: downloadItem.referrer || null,
-      userAgent: navigator.userAgent
-    };
-
-    appendCookiesAndSend(message, (response) => {
-      if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
-        console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
-        bypassedDownloads.add(downloadItem.url);
-        
-        let dlOptions = {
-          url: downloadItem.url,
-          saveAs: true
-        };
-        if (basename && basename.length > 0) {
-            dlOptions.filename = basename;
+    if (isGeneric && chrome.downloads.onChanged) {
+      let handled = false;
+      const changeListener = (delta) => {
+        if (delta.id === downloadItem.id) {
+          let newName = (delta.filename && delta.filename.current) ? delta.filename.current.split(/[\\/]/).pop() : null;
+          if (newName && !handled) {
+            const lower = newName.toLowerCase();
+            if (!lower.startsWith('unconfirmed') && !lower.endsWith('.crdownload') && !lower.endsWith('.tmp')) {
+              handled = true;
+              chrome.downloads.onChanged.removeListener(changeListener);
+              processDownload(downloadItem, newName);
+            }
+          }
         }
-        chrome.downloads.download(dlOptions);
-        
-        setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
-      }
-    });
+      };
+      chrome.downloads.onChanged.addListener(changeListener);
+
+      setTimeout(() => {
+        if (!handled) {
+          handled = true;
+          chrome.downloads.onChanged.removeListener(changeListener);
+          processDownload(downloadItem, null);
+        }
+      }, 400);
+    } else {
+      processDownload(downloadItem, basename);
+    }
   });
 }
