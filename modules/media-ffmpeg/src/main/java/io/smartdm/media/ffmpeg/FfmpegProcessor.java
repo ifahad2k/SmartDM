@@ -18,6 +18,7 @@ public class FfmpegProcessor {
             Path ffmpeg = toolManager.getFfmpegPath().orElseThrow(() -> 
                 new IllegalStateException("FFmpeg executable not found on system."));
 
+            Process process = null;
             try {
                 ProcessBuilder pb = new ProcessBuilder(
                     ffmpeg.toString(),
@@ -27,14 +28,19 @@ public class FfmpegProcessor {
                     "-c", "copy",
                     outputPath.toString()
                 );
+                pb.redirectErrorStream(true);
 
-                Process process = pb.start();
+                process = pb.start();
+                try (java.io.InputStream is = process.getInputStream()) {
+                    is.readAllBytes();
+                }
                 int exitCode = process.waitFor();
                 if (exitCode != 0) {
                     throw new RuntimeException("FFmpeg merge failed with exit code " + exitCode);
                 }
                 return outputPath;
             } catch (Exception ex) {
+                if (process != null && process.isAlive()) process.destroyForcibly();
                 throw new RuntimeException("Failed to merge media files: " + ex.getMessage(), ex);
             }
         });
@@ -45,6 +51,7 @@ public class FfmpegProcessor {
             Path ffmpeg = toolManager.getFfmpegPath().orElseThrow(() -> 
                 new IllegalStateException("FFmpeg executable not found on system."));
 
+            Process process = null;
             try {
                 ProcessBuilder pb = new ProcessBuilder(
                     ffmpeg.toString(),
@@ -54,14 +61,19 @@ public class FfmpegProcessor {
                     "-acodec", "copy",
                     outputPath.toString()
                 );
+                pb.redirectErrorStream(true);
 
-                Process process = pb.start();
+                process = pb.start();
+                try (java.io.InputStream is = process.getInputStream()) {
+                    is.readAllBytes();
+                }
                 int exitCode = process.waitFor();
                 if (exitCode != 0) {
                     throw new RuntimeException("FFmpeg audio extraction failed with exit code " + exitCode);
                 }
                 return outputPath;
             } catch (Exception ex) {
+                if (process != null && process.isAlive()) process.destroyForcibly();
                 throw new RuntimeException("Failed to extract audio: " + ex.getMessage(), ex);
             }
         });

@@ -59,9 +59,10 @@ public class NativeDirectExtractor {
 
         HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
-                .timeout(Duration.ofSeconds(4))
+                .timeout(Duration.ofSeconds(2))
                 .header("User-Agent", ua)
                 .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Accept-Encoding", "identity")
                 .GET();
 
         if (cookies != null && !cookies.isBlank()) {
@@ -72,12 +73,43 @@ public class NativeDirectExtractor {
         if (response.statusCode() != 200) return Optional.empty();
 
         String html = response.body();
-        Pattern pattern = Pattern.compile("ytInitialPlayerResponse\\s*=\\s*(\\{.+?\\});", Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(html);
+        int startIndex = html.indexOf("ytInitialPlayerResponse");
+        if (startIndex < 0) return Optional.empty();
+        int firstBrace = html.indexOf('{', startIndex);
+        if (firstBrace < 0) return Optional.empty();
 
-        if (!matcher.find()) return Optional.empty();
+        int openCount = 0;
+        int lastBrace = -1;
+        boolean inString = false;
+        boolean escape = false;
 
-        String jsonStr = matcher.group(1);
+        for (int i = firstBrace; i < html.length(); i++) {
+            char c = html.charAt(i);
+            if (inString) {
+                if (escape) {
+                    escape = false;
+                } else if (c == '\\') {
+                    escape = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else {
+                if (c == '"') {
+                    inString = true;
+                } else if (c == '{') {
+                    openCount++;
+                } else if (c == '}') {
+                    openCount--;
+                    if (openCount == 0) {
+                        lastBrace = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (lastBrace <= firstBrace) return Optional.empty();
+        String jsonStr = html.substring(firstBrace, lastBrace + 1);
         JsonNode root = objectMapper.readTree(jsonStr);
 
         JsonNode videoDetails = root.path("videoDetails");
@@ -179,14 +211,14 @@ public class NativeDirectExtractor {
         if (hdUrl != null) {
             String cleanHd = unescapeJson(hdUrl);
             formats.add(new MediaFormat(
-                    "hd", "mp4", "HD Quality (720p/1080p)", "Facebook HD Stream", 0,
+                    cleanHd, "mp4", "HD Quality (720p/1080p)", "Facebook HD Stream", 0,
                     "h264", "aac", 0, 30, false, false
             ));
         }
         if (sdUrl != null) {
             String cleanSd = unescapeJson(sdUrl);
             formats.add(new MediaFormat(
-                    "sd", "mp4", "SD Quality (480p)", "Facebook SD Stream", 0,
+                    cleanSd, "mp4", "SD Quality (480p)", "Facebook SD Stream", 0,
                     "h264", "aac", 0, 30, false, false
             ));
         }

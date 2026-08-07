@@ -326,15 +326,15 @@ async function appendCookiesAndSend(request, sendResponse) {
       });
       
       if (cookies && cookies.length > 0) {
-        let cookieStr = '# Netscape HTTP Cookie File\\n';
+        let cookieStr = '# Netscape HTTP Cookie File\n';
         cookieStr += cookies.map(c => {
           const domain = c.domain;
           const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
           const path = c.path;
           const secure = c.secure ? 'TRUE' : 'FALSE';
           const expiry = c.expirationDate ? Math.floor(c.expirationDate) : 0;
-          return `${domain}\\t${includeSubdomains}\\t${path}\\t${secure}\\t${expiry}\\t${c.name}\\t${c.value}`;
-        }).join('\\n') + '\\n';
+          return `${domain}\t${includeSubdomains}\t${path}\t${secure}\t${expiry}\t${c.name}\t${c.value}`;
+        }).join('\n') + '\n';
         request.cookies = cookieStr;
       }
     }

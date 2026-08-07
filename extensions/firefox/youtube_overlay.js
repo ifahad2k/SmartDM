@@ -36,6 +36,93 @@
 
   const ytDlpCache = {};
 
+  function parseYtInitialPlayerResponseFromDOM() {
+    try {
+      let playerResponse = null;
+      if (window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.streamingData) {
+        playerResponse = window.ytInitialPlayerResponse;
+      } else {
+        const scripts = document.querySelectorAll('script');
+        for (let s of scripts) {
+          if (s.textContent && s.textContent.includes('ytInitialPlayerResponse')) {
+            let text = s.textContent;
+            let idx = text.indexOf('ytInitialPlayerResponse');
+            if (idx >= 0) {
+              let firstBrace = text.indexOf('{', idx);
+              if (firstBrace >= 0) {
+                let openCount = 0, lastBrace = -1, inString = false, escape = false;
+                for (let i = firstBrace; i < text.length; i++) {
+                  let c = text.charAt(i);
+                  if (inString) {
+                    if (escape) escape = false;
+                    else if (c === '\\') escape = true;
+                    else if (c === '"') inString = false;
+                  } else {
+                    if (c === '"') inString = true;
+                    else if (c === '{') openCount++;
+                    else if (c === '}') {
+                      openCount--;
+                      if (openCount === 0) { lastBrace = i; break; }
+                    }
+                  }
+                }
+                if (lastBrace > firstBrace) {
+                  playerResponse = JSON.parse(text.substring(firstBrace, lastBrace + 1));
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (playerResponse && playerResponse.streamingData) {
+        const videoDetails = playerResponse.videoDetails || {};
+        const title = videoDetails.title || 'YouTube Video';
+        const streamingData = playerResponse.streamingData;
+        const formats = [];
+
+        const combined = streamingData.formats || [];
+        combined.forEach(f => {
+          formats.push({
+            formatId: String(f.itag || ('fmt_' + formats.length)),
+            resolution: f.qualityLabel || f.quality || 'HD',
+            ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+            formatNote: 'Direct Video + Audio',
+            fileSize: parseInt(f.contentLength || 0, 10),
+            fps: f.fps || 30,
+            isAudioOnly: false,
+            title: title
+          });
+        });
+
+        const adaptive = streamingData.adaptiveFormats || [];
+        adaptive.forEach(f => {
+          const mime = (f.mimeType || '').toLowerCase();
+          const isAudio = mime.startsWith('audio/');
+          const isVideo = mime.startsWith('video/');
+          formats.push({
+            formatId: String(f.itag || ('fmt_' + formats.length)),
+            resolution: isAudio ? ('Audio Only (' + (f.audioBitrate || 128) + 'k)') : (f.qualityLabel || 'High Res'),
+            ext: (mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4')),
+            formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+            fileSize: parseInt(f.contentLength || 0, 10),
+            tbr: Math.round((f.bitrate || 0) / 1000),
+            fps: f.fps || 0,
+            isAudioOnly: isAudio,
+            isVideoOnly: isVideo,
+            title: title
+          });
+        });
+
+        if (formats.length > 0) {
+          return { success: true, status: 'ok', formats: formats };
+        }
+      }
+    } catch(err) {}
+    return null;
+  }
+
   function fetchYtDlpFormats(url, callback) {
     if (!url) return;
     if (ytDlpCache[url] && ytDlpCache[url].status === 'done') {
@@ -47,6 +134,16 @@
       return;
     }
 
+    // Fast-path 0ms DOM extraction on watch pages
+    if (window.location.pathname.startsWith('/watch') || window.location.pathname.startsWith('/shorts')) {
+      const domResult = parseYtInitialPlayerResponseFromDOM();
+      if (domResult && domResult.formats.length > 0) {
+        ytDlpCache[url] = { status: 'done', data: domResult, callbacks: [] };
+        callback(domResult);
+        return;
+      }
+    }
+
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
 
     const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
@@ -54,12 +151,14 @@
       if (res && res.success && res.formats && res.formats.length > 0) {
         ytDlpCache[url].status = 'done';
         ytDlpCache[url].data = res;
+        ytDlpCache[url].callbacks.forEach(cb => cb(res));
+        ytDlpCache[url].callbacks = [];
       } else {
+        ytDlpCache[url].status = 'error';
+        const cbs = ytDlpCache[url].callbacks || [];
         delete ytDlpCache[url];
+        cbs.forEach(cb => cb(res));
       }
-
-      const cbs = ytDlpCache[url] ? ytDlpCache[url].callbacks : [callback];
-      cbs.forEach(cb => cb(res));
     });
   }
 
@@ -281,6 +380,8 @@
       }
     });
 
+    fetchYtDlpFormats(videoUrl, () => {});
+
     bannerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -335,6 +436,12 @@
         thumbAnchor = container;
       }
       if (thumbAnchor && !thumbAnchor.closest('#player, #movie_player, .html5-video-player')) {
+        const rawUrl = thumbAnchor.getAttribute('href') || thumbAnchor.href;
+        if (rawUrl && (rawUrl.includes('/watch?v=') || rawUrl.includes('/shorts/'))) {
+          container.addEventListener('mouseenter', () => {
+            fetchYtDlpFormats(getCanonicalUrl(rawUrl), () => {});
+          }, { once: true });
+        }
         attachBadge(thumbAnchor);
       }
     });
@@ -505,6 +612,13 @@
       }
     });
 
+    btn.addEventListener('mouseenter', () => {
+      const rawUrl = anchor.getAttribute('href') || anchor.href || window.location.href;
+      if (rawUrl && (rawUrl.includes('/watch?v=') || rawUrl.includes('/shorts/'))) {
+        fetchYtDlpFormats(getCanonicalUrl(rawUrl), () => {});
+      }
+    });
+
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -528,43 +642,25 @@
 
       popover.classList.add('active');
 
+      content.innerHTML = `
+        <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
+          <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+          <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
+        </div>
+      `;
+
       fetchYtDlpFormats(currentVideoUrl, (res) => {
         if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
           renderFormatItems(content, res.formats, currentVideoUrl, popover);
+        } else if (res && (res.status === 'error' || res.success === false)) {
+          const errMsg = (res.message && res.message.includes("not connect")) 
+            ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
+            : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry.</span>";
+          content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
         } else {
-          chrome.runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-            let netMedia = (netRes && netRes.media) ? netRes.media : [];
-            netMedia = netMedia.filter(m => !m.url.toLowerCase().includes('.ts'));
-
-            if (netMedia.length > 0) {
-              const synthFormats = netMedia.map((m, idx) => ({
-                formatId: 'net_' + idx,
-                resolution: m.customTitle || m.filename || 'Direct Stream',
-                ext: 'mp4',
-                fileSize: m.contentLength || 0,
-                videoUrl: m.url
-              }));
-              renderFormatItems(content, synthFormats, currentVideoUrl, popover);
-            } else if (res && (res.status === 'error' || res.success === false)) {
-              const errMsg = (res.message && res.message.includes("not connect")) 
-                ? "SmartDM App is not running.<br><span style='font-size:10px; color:#94a3b8;'>Please launch SmartDM desktop app.</span>" 
-                : "Could not extract formats.<br><span style='font-size:10px; color:#94a3b8;'>Click to retry.</span>";
-              content.innerHTML = '<div class="status-text" style="color:#f87171; font-weight:600; padding:6px 0;">' + errMsg + '</div>';
-            } else {
-              content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
-            }
-          });
+          content.innerHTML = '<div class="status-text" style="padding:6px 0; color:#94a3b8;">No media formats detected.</div>';
         }
       });
-
-      if (!ytDlpCache[currentVideoUrl] || ytDlpCache[currentVideoUrl].status !== 'done') {
-        content.innerHTML = `
-          <div class="spinner-container" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0;">
-            <div class="spinner" style="width:14px; height:14px; border:2px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-            <span class="status-text" style="font-size:11px; color:#94a3b8; padding:0;">Searching for video formats...</span>
-          </div>
-        `;
-      }
     });
 
     if (anchor.style.position === 'static' || !anchor.style.position) {

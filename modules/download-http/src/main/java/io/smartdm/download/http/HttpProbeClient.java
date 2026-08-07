@@ -22,19 +22,28 @@ public class HttpProbeClient {
             netscapeCookies = netscapeCookies.replace("\\n", "\n").replace("\\t", "\t");
         }
         
-        if (!netscapeCookies.contains("# Netscape")) return netscapeCookies.replaceAll("[\\r\\n]+", "");
-        
         StringBuilder sb = new StringBuilder();
         String[] lines = netscapeCookies.split("\\r?\\n");
         for (String line : lines) {
             line = line.trim();
-            if (line.isEmpty() || line.startsWith("#")) continue;
-            String[] parts = line.split("\\t");
+            if (line.isEmpty()) continue;
+            if (line.startsWith("#HttpOnly_")) {
+                line = line.substring("#HttpOnly_".length()).trim();
+            } else if (line.startsWith("#")) {
+                continue;
+            }
+            
+            String[] parts = line.split("\\t", -1);
             if (parts.length >= 7) {
                 String name = parts[5];
                 String value = parts[6];
+                if (name != null && !name.isBlank()) {
+                    if (sb.length() > 0) sb.append("; ");
+                    sb.append(name).append("=").append(value);
+                }
+            } else if (line.contains("=") && !line.contains("\t")) {
                 if (sb.length() > 0) sb.append("; ");
-                sb.append(name).append("=").append(value);
+                sb.append(line);
             }
         }
         return sb.toString();

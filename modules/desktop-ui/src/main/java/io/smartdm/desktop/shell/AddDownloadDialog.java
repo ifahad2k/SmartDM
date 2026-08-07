@@ -180,17 +180,6 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             }
         });
         
-        nameField.textProperty().addListener((obs, oldV, newV) -> {
-            if (newV != null && !newV.isBlank()) {
-                io.smartdm.desktop.util.SystemIconExtractor.getFileIconAsync(newV)
-                    .thenAccept(img -> Platform.runLater(() -> {
-                        if (img != null) {
-                            fileIcon.setImage(img);
-                        }
-                    }));
-            }
-        });
-        
         // Footer
         HBox footer = new HBox();
         footer.getStyleClass().add("dialog-foot");
@@ -319,6 +308,9 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
                 int lastSlash = pathPart.lastIndexOf('/');
                 if (lastSlash >= 0 && lastSlash < pathPart.length() - 1) {
                     String raw = pathPart.substring(lastSlash + 1);
+                    try {
+                        raw = java.net.URLDecoder.decode(raw, java.nio.charset.StandardCharsets.UTF_8);
+                    } catch (Exception ignored) {}
                     raw = raw.replaceAll("[\\\\/:*?\"<>|\0]", "_").trim();
                     if (!raw.isEmpty() && raw.contains(".") && !raw.endsWith(".bin")) {
                         return raw;

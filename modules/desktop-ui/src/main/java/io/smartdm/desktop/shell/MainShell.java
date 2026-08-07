@@ -131,6 +131,8 @@ public final class MainShell extends VBox {
                 resizeStart[1] = event.getScreenY();
                 resizeStart[2] = stage.getWidth();
                 resizeStart[3] = stage.getHeight();
+                resizeStart[4] = stage.getX();
+                resizeStart[5] = stage.getY();
             }
         });
 
@@ -149,14 +151,14 @@ public final class MainShell extends VBox {
             if (c == javafx.scene.Cursor.SW_RESIZE || c == javafx.scene.Cursor.W_RESIZE || c == javafx.scene.Cursor.NW_RESIZE) {
                 double newW = Math.max(stage.getMinWidth(), resizeStart[2] - dx);
                 if (newW > stage.getMinWidth()) {
-                    stage.setX(resizeStart[0] + dx);
+                    stage.setX(resizeStart[4] + dx);
                     stage.setWidth(newW);
                 }
             }
             if (c == javafx.scene.Cursor.NE_RESIZE || c == javafx.scene.Cursor.N_RESIZE || c == javafx.scene.Cursor.NW_RESIZE) {
                 double newH = Math.max(stage.getMinHeight(), resizeStart[3] - dy);
                 if (newH > stage.getMinHeight()) {
-                    stage.setY(resizeStart[1] + dy);
+                    stage.setY(resizeStart[5] + dy);
                     stage.setHeight(newH);
                 }
             }
