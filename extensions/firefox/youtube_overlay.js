@@ -202,7 +202,7 @@
 
   function fetchYtDlpFormats(url, callback) {
     if (!url) return;
-    if (ytDlpCache[url] && ytDlpCache[url].status === 'done') {
+    if (ytDlpCache[url] && ytDlpCache[url].status === 'done' && ytDlpCache[url].data && ytDlpCache[url].data.formats && ytDlpCache[url].data.formats.length > 1) {
       callback(ytDlpCache[url].data);
       return;
     }
@@ -214,7 +214,7 @@
     // Fast-path 0ms DOM extraction on watch pages
     if (window.location.pathname.startsWith('/watch') || window.location.pathname.startsWith('/shorts')) {
       const domResult = parseYtInitialPlayerResponseFromDOM();
-      if (domResult && domResult.formats.length > 0) {
+      if (domResult && domResult.formats && domResult.formats.length > 1) {
         ytDlpCache[url] = { status: 'done', data: domResult, callbacks: [] };
         callback(domResult);
         return;
@@ -226,15 +226,15 @@
     const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
       if (res && res.success && res.formats && res.formats.length > 0) {
-        ytDlpCache[url].status = 'done';
-        ytDlpCache[url].data = res;
-        ytDlpCache[url].callbacks.forEach(cb => cb(res));
-        ytDlpCache[url].callbacks = [];
+        if (res.formats.length > 1) {
+          ytDlpCache[url] = { status: 'done', data: res, callbacks: [] };
+        } else {
+          delete ytDlpCache[url];
+        }
+        callback(res);
       } else {
-        ytDlpCache[url].status = 'error';
-        const cbs = ytDlpCache[url].callbacks || [];
         delete ytDlpCache[url];
-        cbs.forEach(cb => cb(res));
+        callback(res);
       }
     });
   }
