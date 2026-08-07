@@ -58,7 +58,7 @@ public class HttpProbeClient {
     public HttpProbeClient() {
         this(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.ALWAYS)
                 .build());
     }
 
@@ -154,6 +154,17 @@ public class HttpProbeClient {
                     boolean acceptsRanges = response.headers().firstValue("Accept-Ranges").map(val -> val.contains("bytes")).orElse(false);
                     String cdHeader = response.headers().firstValue("Content-Disposition").orElse(null);
                     String dispositionFilename = parseContentDispositionFilename(cdHeader);
+                    if (dispositionFilename == null || dispositionFilename.isBlank()) {
+                        try {
+                            String finalPath = response.uri().getPath();
+                            if (finalPath != null && finalPath.contains("/")) {
+                                String seg = finalPath.substring(finalPath.lastIndexOf('/') + 1);
+                                if (seg.contains(".") && !seg.endsWith(".php") && !seg.endsWith(".asp") && !seg.endsWith(".aspx") && !seg.endsWith(".bin")) {
+                                    dispositionFilename = java.net.URLDecoder.decode(seg, java.nio.charset.StandardCharsets.UTF_8);
+                                }
+                            }
+                        } catch (Exception ignored) {}
+                    }
                     
                     return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges, dispositionFilename);
                 })
@@ -250,6 +261,17 @@ public class HttpProbeClient {
                         boolean acceptsRanges = response.statusCode() == 206 || contentRange != null;
                         String cdHeader = response.headers().firstValue("Content-Disposition").orElse(null);
                         String dispositionFilename = parseContentDispositionFilename(cdHeader);
+                        if (dispositionFilename == null || dispositionFilename.isBlank()) {
+                            try {
+                                String finalPath = response.uri().getPath();
+                                if (finalPath != null && finalPath.contains("/")) {
+                                    String seg = finalPath.substring(finalPath.lastIndexOf('/') + 1);
+                                    if (seg.contains(".") && !seg.endsWith(".php") && !seg.endsWith(".asp") && !seg.endsWith(".aspx") && !seg.endsWith(".bin")) {
+                                        dispositionFilename = java.net.URLDecoder.decode(seg, java.nio.charset.StandardCharsets.UTF_8);
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                        }
                         
                         return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges, dispositionFilename);
                     } catch (UnauthorizedException e) {

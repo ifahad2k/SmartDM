@@ -320,13 +320,22 @@ async function appendCookiesAndSend(request, sendResponse) {
     
     if (targetUrl && chrome.cookies) {
       let cookieDomainUrl = targetUrl;
+      let domainHost = '';
       try {
         const parsed = new URL(targetUrl);
         cookieDomainUrl = parsed.protocol + '//' + parsed.hostname + '/';
+        domainHost = parsed.hostname.replace(/^www\./, '');
       } catch (e) {}
 
       const cookies = await new Promise(resolve => {
-        chrome.cookies.getAll({ url: cookieDomainUrl }, (c) => resolve(c || []));
+        if (domainHost) {
+          chrome.cookies.getAll({ domain: domainHost }, (c) => {
+            if (c && c.length > 0) return resolve(c);
+            chrome.cookies.getAll({ url: cookieDomainUrl }, (c2) => resolve(c2 || []));
+          });
+        } else {
+          chrome.cookies.getAll({ url: cookieDomainUrl }, (c) => resolve(c || []));
+        }
       });
       
       if (cookies && cookies.length > 0) {
