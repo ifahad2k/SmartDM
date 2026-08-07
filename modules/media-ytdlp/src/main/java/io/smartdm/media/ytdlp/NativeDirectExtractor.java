@@ -59,10 +59,9 @@ public class NativeDirectExtractor {
 
         HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
-                .timeout(Duration.ofSeconds(2))
+                .timeout(Duration.ofSeconds(4))
                 .header("User-Agent", ua)
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Accept-Encoding", "identity")
                 .GET();
 
         if (cookies != null && !cookies.isBlank()) {

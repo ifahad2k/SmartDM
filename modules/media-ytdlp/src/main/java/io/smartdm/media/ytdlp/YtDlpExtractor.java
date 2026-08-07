@@ -219,7 +219,8 @@ public class YtDlpExtractor implements MediaExtractor {
         List<MediaFormat> formatsList = new ArrayList<>();
 
         // If root object has a direct URL (common for Instagram, Twitter, Direct Videos)
-        if (root.has("url") && !root.path("url").asText().isBlank()) {
+        boolean isYouTube = originalUrl != null && (originalUrl.contains("youtube.com") || originalUrl.contains("youtu.be"));
+        if (!isYouTube && root.has("url") && !root.path("url").asText().isBlank()) {
             String res = root.path("resolution").asText("");
             if (res.isBlank() && root.has("height") && root.get("height").asInt() > 0) {
                 res = root.get("height").asInt() + "p";
