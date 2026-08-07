@@ -376,6 +376,15 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
         }
     }
 
+    public static boolean isGenericFileName(String name) {
+        if (name == null || name.isBlank()) return true;
+        String lower = name.trim().toLowerCase();
+        return lower.equals("video.mp4") || lower.equals("download.php") || lower.equals("download.asp") ||
+               lower.equals("download.aspx") || lower.equals("file.php") || lower.equals("index.php") ||
+               lower.equals("download.bin") || lower.startsWith("unconfirmed") || lower.endsWith(".crdownload") ||
+               lower.endsWith(".tmp");
+    }
+
     public static String decodeAndSanitizeFileName(String name) {
         if (name == null || name.isBlank()) return "download.bin";
         try {
@@ -388,7 +397,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     }
 
     public void setFileName(String fileName) {
-        if (nameField != null && fileName != null && !fileName.isBlank()) {
+        if (nameField != null && fileName != null && !fileName.isBlank() && !isGenericFileName(fileName)) {
             nameField.setText(decodeAndSanitizeFileName(fileName));
         }
     }

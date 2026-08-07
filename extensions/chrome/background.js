@@ -586,10 +586,19 @@ if (chrome.downloads && chrome.downloads.onCreated) {
     chrome.downloads.cancel(downloadItem.id);
     
     let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
+    if (basename) {
+      const lower = basename.toLowerCase();
+      if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
+          lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
+          lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
+        basename = null;
+      }
+    }
+
     const message = {
       type: 'ADD_DOWNLOAD',
       url: downloadItem.finalUrl || downloadItem.url,
-      fileName: basename,
+      fileName: basename || null,
       referer: downloadItem.referrer || null,
       userAgent: navigator.userAgent
     };

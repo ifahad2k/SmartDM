@@ -375,12 +375,14 @@ function getYouTubeCookiesHeader() {
 }
 
 function extractYtInitialPlayerResponse(text) {
-  let idx = text.indexOf('ytInitialPlayerResponse = {');
-  if (idx < 0) idx = text.indexOf('ytInitialPlayerResponse={');
-  if (idx < 0) idx = text.indexOf('"ytInitialPlayerResponse": {');
-  if (idx >= 0) {
+  let searchStart = 0;
+  while (true) {
+    let idx = text.indexOf('ytInitialPlayerResponse', searchStart);
+    if (idx < 0) break;
+    searchStart = idx + 20;
+    
     let firstBrace = text.indexOf('{', idx);
-    if (firstBrace >= 0) {
+    if (firstBrace > idx && firstBrace < idx + 100) {
       let openCount = 0, lastBrace = -1, inString = false, escape = false;
       for (let i = firstBrace; i < text.length; i++) {
         let c = text.charAt(i);
@@ -399,7 +401,8 @@ function extractYtInitialPlayerResponse(text) {
       }
       if (lastBrace > firstBrace) {
         try {
-          return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+          let parsed = JSON.parse(text.substring(firstBrace, lastBrace + 1));
+          if (parsed && parsed.streamingData) return parsed;
         } catch(e) {}
       }
     }
@@ -583,10 +586,19 @@ if (chrome.downloads && chrome.downloads.onCreated) {
     chrome.downloads.cancel(downloadItem.id);
     
     let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
+    if (basename) {
+      const lower = basename.toLowerCase();
+      if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
+          lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
+          lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
+        basename = null;
+      }
+    }
+
     const message = {
       type: 'ADD_DOWNLOAD',
       url: downloadItem.finalUrl || downloadItem.url,
-      fileName: basename,
+      fileName: basename || null,
       referer: downloadItem.referrer || null,
       userAgent: navigator.userAgent
     };

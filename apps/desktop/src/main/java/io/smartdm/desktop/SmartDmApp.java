@@ -849,6 +849,15 @@ public class SmartDmApp extends Application {
         return "Media Video";
     }
 
+    private static boolean isGenericFileName(String name) {
+        if (name == null || name.isBlank()) return true;
+        String lower = name.trim().toLowerCase();
+        return lower.equals("video.mp4") || lower.equals("download.php") || lower.equals("download.asp") ||
+               lower.equals("download.aspx") || lower.equals("file.php") || lower.equals("index.php") ||
+               lower.equals("download.bin") || lower.startsWith("unconfirmed") || lower.endsWith(".crdownload") ||
+               lower.endsWith(".tmp");
+    }
+
     private static void openMediaOrStandardDialog(
         String url,
         String videoUrl,
@@ -945,9 +954,9 @@ public class SmartDmApp extends Application {
                         );
                         dlg.setCookiesAndUserAgent(cookies, userAgent);
                         String fileNameToSet = null;
-                        if (reqFileName != null && !reqFileName.isBlank()) {
+                        if (reqFileName != null && !reqFileName.isBlank() && !isGenericFileName(reqFileName)) {
                             fileNameToSet = reqFileName;
-                        } else if (reqTitle != null && !reqTitle.isBlank() && !reqTitle.contains("Video") && !reqTitle.equals("Media Video")) {
+                        } else if (reqTitle != null && !reqTitle.isBlank() && !reqTitle.contains("Video") && !reqTitle.equals("Media Video") && !isGenericFileName(reqTitle)) {
                             fileNameToSet = reqTitle;
                         }
                         if (fileNameToSet == null || fileNameToSet.isBlank()) {
@@ -959,7 +968,10 @@ public class SmartDmApp extends Application {
                                 if (hashIdx >= 0) path = path.substring(0, hashIdx);
                                 int lastSlash = path.lastIndexOf('/');
                                 if (lastSlash >= 0 && lastSlash < path.length() - 1) {
-                                    fileNameToSet = path.substring(lastSlash + 1);
+                                    String candidate = path.substring(lastSlash + 1);
+                                    if (!isGenericFileName(candidate)) {
+                                        fileNameToSet = candidate;
+                                    }
                                 }
                             } catch (Exception ignored) {}
                         }
