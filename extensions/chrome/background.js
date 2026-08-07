@@ -370,22 +370,109 @@ function getYouTubeCookiesHeader() {
   });
 }
 
+function extractYtInitialPlayerResponse(text) {
+  let idx = text.indexOf('ytInitialPlayerResponse = {');
+  if (idx < 0) idx = text.indexOf('ytInitialPlayerResponse={');
+  if (idx < 0) idx = text.indexOf('"ytInitialPlayerResponse": {');
+  if (idx >= 0) {
+    let firstBrace = text.indexOf('{', idx);
+    if (firstBrace >= 0) {
+      let openCount = 0, lastBrace = -1, inString = false, escape = false;
+      for (let i = firstBrace; i < text.length; i++) {
+        let c = text.charAt(i);
+        if (inString) {
+          if (escape) escape = false;
+          else if (c === '\\') escape = true;
+          else if (c === '"') inString = false;
+        } else {
+          if (c === '"') inString = true;
+          else if (c === '{') openCount++;
+          else if (c === '}') {
+            openCount--;
+            if (openCount === 0) { lastBrace = i; break; }
+          }
+        }
+      }
+      if (lastBrace > firstBrace) {
+        try {
+          return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+        } catch(e) {}
+      }
+    }
+  }
+  return null;
+}
+
 async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
   try {
     if (!videoUrl) return null;
     let videoId = null;
+    let canonicalUrl = videoUrl;
     if (videoUrl.includes('/watch?v=')) {
       const parts = videoUrl.split('/watch?v=')[1];
       videoId = parts.split('&')[0].split('#')[0];
+      canonicalUrl = 'https://www.youtube.com/watch?v=' + videoId;
     } else if (videoUrl.includes('/shorts/')) {
       videoId = videoUrl.split('/shorts/')[1].split('/')[0].split('?')[0].split('#')[0];
+      canonicalUrl = 'https://www.youtube.com/shorts/' + videoId;
     } else if (videoUrl.includes('youtu.be/')) {
       videoId = videoUrl.split('youtu.be/')[1].split('?')[0].split('#')[0];
+      canonicalUrl = 'https://www.youtube.com/watch?v=' + videoId;
     }
     if (!videoId || videoId.length < 5) return null;
 
     const cookieHeader = await getYouTubeCookiesHeader();
+    const headers = { 'Content-Type': 'application/json' };
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
 
+    const parseFormats = (data) => {
+      if (data && data.streamingData) {
+        const videoDetails = data.videoDetails || {};
+        const title = videoDetails.title || 'YouTube Video';
+        const streamingData = data.streamingData;
+        const formats = [];
+
+        const combined = streamingData.formats || [];
+        combined.forEach(f => {
+          formats.push({
+            formatId: String(f.itag || ('fmt_' + formats.length)),
+            resolution: f.qualityLabel || f.quality || '360p',
+            ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+            formatNote: 'Direct Video + Audio',
+            fileSize: parseInt(f.contentLength || 0, 10),
+            fps: f.fps || 30,
+            isAudioOnly: false,
+            title: title
+          });
+        });
+
+        const adaptive = streamingData.adaptiveFormats || [];
+        adaptive.forEach(f => {
+          const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
+          const isAudio = mime.startsWith('audio/');
+          const isVideo = mime.startsWith('video/');
+          const kbps = Math.round((f.bitrate || 0) / 1000);
+          formats.push({
+            formatId: String(f.itag || ('fmt_' + formats.length)),
+            resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
+            ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+            formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+            fileSize: parseInt(f.contentLength || 0, 10),
+            tbr: kbps,
+            fps: f.fps || 0,
+            isAudioOnly: isAudio,
+            isVideoOnly: isVideo,
+            title: title
+          });
+        });
+        if (formats.length > 1) {
+          return { success: true, status: 'ok', title: title, formats: formats };
+        }
+      }
+      return null;
+    };
+
+    // 1. First try: Direct API Clients
     const clients = [
       { clientName: 'WEB', clientVersion: '2.20240101.00.00' },
       { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 },
@@ -394,9 +481,6 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
 
     for (const clientObj of clients) {
       try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (cookieHeader) headers['Cookie'] = cookieHeader;
-
         const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
           method: 'POST',
           headers: headers,
@@ -407,54 +491,26 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
             context: { client: clientObj }
           })
         });
-
         const data = await res.json();
-        if (data && data.streamingData) {
-          const videoDetails = data.videoDetails || {};
-          const title = videoDetails.title || 'YouTube Video';
-          const streamingData = data.streamingData;
-          const formats = [];
-
-          const combined = streamingData.formats || [];
-          combined.forEach(f => {
-            formats.push({
-              formatId: String(f.itag || ('fmt_' + formats.length)),
-              resolution: f.qualityLabel || f.quality || '360p',
-              ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
-              formatNote: 'Direct Video + Audio',
-              fileSize: parseInt(f.contentLength || 0, 10),
-              fps: f.fps || 30,
-              isAudioOnly: false,
-              title: title
-            });
-          });
-
-          const adaptive = streamingData.adaptiveFormats || [];
-          adaptive.forEach(f => {
-            const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
-            const isAudio = mime.startsWith('audio/');
-            const isVideo = mime.startsWith('video/');
-            const kbps = Math.round((f.bitrate || 0) / 1000);
-            formats.push({
-              formatId: String(f.itag || ('fmt_' + formats.length)),
-              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
-              ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
-              formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
-              fileSize: parseInt(f.contentLength || 0, 10),
-              tbr: kbps,
-              fps: f.fps || 0,
-              isAudioOnly: isAudio,
-              isVideoOnly: isVideo,
-              title: title
-            });
-          });
-
-          if (formats.length > 1) {
-            return { success: true, status: 'ok', title: title, formats: formats };
-          }
-        }
+        const parsed = parseFormats(data);
+        if (parsed) return parsed;
       } catch (e) {}
     }
+
+    // 2. Fallback: Fetch Watch Page HTML (100% Reliable as it mimics browser)
+    try {
+      const htmlHeaders = {
+        'User-Agent': navigator.userAgent,
+        'Accept-Language': 'en-US,en;q=0.9',
+      };
+      if (cookieHeader) htmlHeaders['Cookie'] = cookieHeader;
+      const htmlRes = await fetch(canonicalUrl, { headers: htmlHeaders });
+      const htmlText = await htmlRes.text();
+      const playerRes = extractYtInitialPlayerResponse(htmlText);
+      const parsedHTML = parseFormats(playerRes);
+      if (parsedHTML) return parsedHTML;
+    } catch(e) {}
+
   } catch (e) {
     console.warn('Service worker YouTube fetch error:', e);
   }
