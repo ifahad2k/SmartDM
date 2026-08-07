@@ -223,31 +223,19 @@
 
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
 
-    // Try browser-native fetch directly from YouTube site inside browser context
-    fetchYouTubeFormatsInBrowser(url).then(browserResult => {
-      if (browserResult && browserResult.formats && browserResult.formats.length > 0) {
+    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+      if (res && res.success && res.formats && res.formats.length > 0) {
         ytDlpCache[url].status = 'done';
-        ytDlpCache[url].data = browserResult;
-        ytDlpCache[url].callbacks.forEach(cb => cb(browserResult));
+        ytDlpCache[url].data = res;
+        ytDlpCache[url].callbacks.forEach(cb => cb(res));
         ytDlpCache[url].callbacks = [];
-        return;
+      } else {
+        ytDlpCache[url].status = 'error';
+        const cbs = ytDlpCache[url].callbacks || [];
+        delete ytDlpCache[url];
+        cbs.forEach(cb => cb(res));
       }
-
-      // Fallback to Native Messaging IPC call to Desktop App
-      const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-      runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-        if (res && res.success && res.formats && res.formats.length > 0) {
-          ytDlpCache[url].status = 'done';
-          ytDlpCache[url].data = res;
-          ytDlpCache[url].callbacks.forEach(cb => cb(res));
-          ytDlpCache[url].callbacks = [];
-        } else {
-          ytDlpCache[url].status = 'error';
-          const cbs = ytDlpCache[url].callbacks || [];
-          delete ytDlpCache[url];
-          cbs.forEach(cb => cb(res));
-        }
-      });
     });
   }
 
