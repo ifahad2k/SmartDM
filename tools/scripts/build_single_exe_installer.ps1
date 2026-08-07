@@ -106,15 +106,21 @@ $PayloadZip = "$StagingDir\payload.zip"
 Write-Host "Compressing payload zip..." -ForegroundColor Yellow
 Compress-Archive -Path "$AppImageDir\*" -DestinationPath $PayloadZip -Force
 
-# 6. Compile Installer.cs into SmartDM-Setup-v1.0.5.exe
-$AppVersion = "1.0.5"
+# 6. Compile Installer.cs into Single-EXE Installer
+$VersionProps = Get-Content "$ProjectRoot\modules\domain\src\main\resources\smartdm-version.properties" | ConvertFrom-StringData
+$AppVersion = $VersionProps.version.Trim()
 Write-Host "`n[6/6] Compiling Single-EXE Installer (SmartDM-Setup-v$AppVersion.exe)..." -ForegroundColor Yellow
-$InstallerCs = "$ProjectRoot\tools\scripts\Installer.cs"
+
+$InstallerCsRaw = Get-Content "$ProjectRoot\tools\scripts\Installer.cs" -Raw
+$InstallerCsGen = $InstallerCsRaw -replace '__APP_VERSION__', $AppVersion
+$GenCsFile = "$StagingDir\Installer_generated.cs"
+Set-Content -Path $GenCsFile -Value $InstallerCsGen -Encoding UTF8
+
 $TargetExe = "$ReleaseDir\SmartDM-Setup-v$AppVersion.exe"
 $ManifestPath = "$ProjectRoot\tools\scripts\app.manifest"
 $SetupIcon = "$ProjectRoot\tools\scripts\setup.ico"
 
-& $CscPath /target:winexe /out:$TargetExe /win32icon:$SetupIcon /resource:$PayloadZip,payload.zip /win32manifest:$ManifestPath /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $InstallerCs
+& $CscPath /target:winexe /out:$TargetExe /win32icon:$SetupIcon /resource:$PayloadZip,payload.zip /win32manifest:$ManifestPath /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $GenCsFile
 if ($LASTEXITCODE -ne 0) { throw "Installer C# compilation failed!" }
 
 # Generate SHA256SUMS.txt

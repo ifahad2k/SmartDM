@@ -38,7 +38,12 @@ namespace SmartDM.Installer
 
         private void InitializeComponent()
         {
-            this.Text = "SmartDM v1.0.2 Setup";
+            this.Text = "SmartDM v__APP_VERSION__ Setup";
+            try
+            {
+                this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            }
+            catch {}
             this.Size = new Size(540, 390);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
