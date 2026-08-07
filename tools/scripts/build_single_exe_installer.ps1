@@ -90,7 +90,7 @@ echo   "description": "SmartDM Browser Native Host", >> "%~dp0io.smartdm.host.fi
 echo   "path": "%APP_DIR%SmartDM.exe", >> "%~dp0io.smartdm.host.firefox.json"
 echo   "type": "stdio", >> "%~dp0io.smartdm.host.firefox.json"
 echo   "allowed_extensions": [ >> "%~dp0io.smartdm.host.firefox.json"
-echo     "smartdm@smartdm.io" >> "%~dp0io.smartdm.host.firefox.json"
+echo     "smartdm-extension@smartdm.io" >> "%~dp0io.smartdm.host.firefox.json"
 echo   ] >> "%~dp0io.smartdm.host.firefox.json"
 echo } >> "%~dp0io.smartdm.host.firefox.json"
 

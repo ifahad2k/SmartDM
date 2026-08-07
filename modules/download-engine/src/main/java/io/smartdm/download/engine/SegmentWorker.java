@@ -94,7 +94,7 @@ public class SegmentWorker implements Callable<Void> {
                 long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
 
                 try (InputStream is = response.body()) {
-                    byte[] buffer = new byte[16384];
+                    byte[] buffer = new byte[65536];
                     int read;
                     while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
                         int toRead = (int) Math.min(buffer.length, bytesRemaining);

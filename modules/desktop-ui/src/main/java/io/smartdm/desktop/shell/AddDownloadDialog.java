@@ -216,6 +216,10 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
             }
             prober.probeAsync(source, cred).thenAccept(result -> {
                 Platform.runLater(() -> {
+                    if (result.contentDispositionFilename() != null && !result.contentDispositionFilename().isBlank()) {
+                        String realName = decodeAndSanitizeFileName(result.contentDispositionFilename());
+                        nameField.setText(realName);
+                    }
                     long size = result.size().value();
                     if (size > 0) {
                         fileSizeLabel.setText(formatSize(size));

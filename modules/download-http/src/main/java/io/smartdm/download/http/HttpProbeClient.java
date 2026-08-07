@@ -62,7 +62,36 @@ public class HttpProbeClient {
                 .build());
     }
 
-    public record ProbeResult(ByteCount size, String mimeType, String etag, String lastModified, boolean acceptsRanges) {}
+    public record ProbeResult(ByteCount size, String mimeType, String etag, String lastModified, boolean acceptsRanges, String contentDispositionFilename) {
+        public ProbeResult(ByteCount size, String mimeType, String etag, String lastModified, boolean acceptsRanges) {
+            this(size, mimeType, etag, lastModified, acceptsRanges, null);
+        }
+    }
+
+    public static String parseContentDispositionFilename(String header) {
+        if (header == null || header.isBlank()) return null;
+        try {
+            String lower = header.toLowerCase();
+            if (lower.contains("filename*=utf-8''")) {
+                String sub = header.substring(lower.indexOf("filename*=utf-8''") + 17);
+                int semi = sub.indexOf(';');
+                if (semi > 0) sub = sub.substring(0, semi);
+                sub = sub.trim();
+                try { return java.net.URLDecoder.decode(sub, java.nio.charset.StandardCharsets.UTF_8); } catch (Exception ignored) {}
+            }
+            if (lower.contains("filename=")) {
+                String sub = header.substring(lower.indexOf("filename=") + 9);
+                int semi = sub.indexOf(';');
+                if (semi > 0) sub = sub.substring(0, semi);
+                sub = sub.replace("\"", "").trim();
+                if (!sub.isEmpty()) {
+                    try { sub = java.net.URLDecoder.decode(sub, java.nio.charset.StandardCharsets.UTF_8); } catch (Exception ignored) {}
+                    return sub;
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
 
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri) {
         return probeAsync(uri, null);
@@ -123,8 +152,10 @@ public class HttpProbeClient {
                     String etag = response.headers().firstValue("ETag").orElse(null);
                     String lastMod = response.headers().firstValue("Last-Modified").orElse(null);
                     boolean acceptsRanges = response.headers().firstValue("Accept-Ranges").map(val -> val.contains("bytes")).orElse(false);
+                    String cdHeader = response.headers().firstValue("Content-Disposition").orElse(null);
+                    String dispositionFilename = parseContentDispositionFilename(cdHeader);
                     
-                    return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges);
+                    return new ProbeResult(ByteCount.of(contentLength), mimeType, etag, lastMod, acceptsRanges, dispositionFilename);
                 })
                 .handle((result, ex) -> {
                     if (ex == null) {

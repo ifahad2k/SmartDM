@@ -236,7 +236,9 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
         cancelBtn.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(cancelBtn, Priority.ALWAYS);
         cancelBtn.setOnAction(e -> {
-            if (activeDownload != null && listener != null) listener.onCancel(activeDownload);
+            if (activeDownload != null && activeDownload.state() != DownloadState.COMPLETED && listener != null) {
+                listener.onCancel(activeDownload);
+            }
             close();
         });
 
