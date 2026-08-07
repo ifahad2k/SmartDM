@@ -594,7 +594,11 @@ if (chrome.downloads && chrome.downloads.onCreated) {
     function processDownload(item, resolvedFilename) {
       if (bypassedDownloads.has(item.id) || bypassedDownloads.has(item.url)) return;
       
-      chrome.downloads.cancel(item.id);
+      chrome.downloads.cancel(item.id, () => {
+        if (chrome.downloads.erase) {
+          chrome.downloads.erase({ id: item.id }, () => {});
+        }
+      });
 
       let finalName = resolvedFilename || (item.filename ? item.filename.split(/[\\/]/).pop() : '');
       if (finalName) {

@@ -233,6 +233,8 @@ public class SingleDownloadCoordinator {
                 reqBuilder.header("Referer", "https://www.facebook.com/");
             } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
                 reqBuilder.header("Referer", "https://www.instagram.com/");
+            } else if (download.source().value().getHost() != null) {
+                reqBuilder.header("Referer", download.source().value().getScheme() + "://" + download.source().value().getHost() + "/");
             }
             
             if (download.credential() != null) {
