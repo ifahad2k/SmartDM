@@ -123,6 +123,83 @@
     return null;
   }
 
+  function fetchYouTubeFormatsInBrowser(videoUrl) {
+    return new Promise((resolve) => {
+      try {
+        let videoId = null;
+        if (videoUrl.includes('/watch?v=')) {
+          videoId = new URL(videoUrl).searchParams.get('v');
+        } else if (videoUrl.includes('/shorts/')) {
+          videoId = videoUrl.split('/shorts/')[1].split('/')[0].split('?')[0];
+        }
+        if (!videoId) { resolve(null); return; }
+
+        fetch('https://www.youtube.com/youtubei/v1/player', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId: videoId,
+            contentCheckOk: true,
+            racyCheckOk: true,
+            context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00' } }
+          })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.streamingData) {
+            const videoDetails = data.videoDetails || {};
+            const title = videoDetails.title || 'YouTube Video';
+            const streamingData = data.streamingData;
+            const formats = [];
+
+            const combined = streamingData.formats || [];
+            combined.forEach(f => {
+              formats.push({
+                formatId: String(f.itag || ('fmt_' + formats.length)),
+                resolution: f.qualityLabel || f.quality || '360p',
+                ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+                formatNote: 'Direct Video + Audio',
+                fileSize: parseInt(f.contentLength || 0, 10),
+                fps: f.fps || 30,
+                isAudioOnly: false,
+                title: title
+              });
+            });
+
+            const adaptive = streamingData.adaptiveFormats || [];
+            adaptive.forEach(f => {
+              const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
+              const isAudio = mime.startsWith('audio/');
+              const isVideo = mime.startsWith('video/');
+              const kbps = Math.round((f.bitrate || 0) / 1000);
+              formats.push({
+                formatId: String(f.itag || ('fmt_' + formats.length)),
+                resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
+                ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+                formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+                fileSize: parseInt(f.contentLength || 0, 10),
+                tbr: kbps,
+                fps: f.fps || 0,
+                isAudioOnly: isAudio,
+                isVideoOnly: isVideo,
+                title: title
+              });
+            });
+
+            if (formats.length > 0) {
+              resolve({ success: true, status: 'ok', formats: formats });
+              return;
+            }
+          }
+          resolve(null);
+        })
+        .catch(() => resolve(null));
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
   function fetchYtDlpFormats(url, callback) {
     if (!url) return;
     if (ytDlpCache[url] && ytDlpCache[url].status === 'done') {
@@ -146,19 +223,31 @@
 
     ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
 
-    const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
-    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-      if (res && res.success && res.formats && res.formats.length > 0) {
+    // Try browser-native fetch directly from YouTube site inside browser context
+    fetchYouTubeFormatsInBrowser(url).then(browserResult => {
+      if (browserResult && browserResult.formats && browserResult.formats.length > 0) {
         ytDlpCache[url].status = 'done';
-        ytDlpCache[url].data = res;
-        ytDlpCache[url].callbacks.forEach(cb => cb(res));
+        ytDlpCache[url].data = browserResult;
+        ytDlpCache[url].callbacks.forEach(cb => cb(browserResult));
         ytDlpCache[url].callbacks = [];
-      } else {
-        ytDlpCache[url].status = 'error';
-        const cbs = ytDlpCache[url].callbacks || [];
-        delete ytDlpCache[url];
-        cbs.forEach(cb => cb(res));
+        return;
       }
+
+      // Fallback to Native Messaging IPC call to Desktop App
+      const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+      runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
+        if (res && res.success && res.formats && res.formats.length > 0) {
+          ytDlpCache[url].status = 'done';
+          ytDlpCache[url].data = res;
+          ytDlpCache[url].callbacks.forEach(cb => cb(res));
+          ytDlpCache[url].callbacks = [];
+        } else {
+          ytDlpCache[url].status = 'error';
+          const cbs = ytDlpCache[url].callbacks || [];
+          delete ytDlpCache[url];
+          cbs.forEach(cb => cb(res));
+        }
+      });
     });
   }
 
