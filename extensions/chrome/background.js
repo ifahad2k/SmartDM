@@ -371,8 +371,12 @@ function getYouTubeCookiesHeader() {
 }
 
 function extractYtInitialPlayerResponse(text) {
-  let idx = text.indexOf('ytInitialPlayerResponse');
-  if (idx >= 0) {
+  let searchStart = 0;
+  while (true) {
+    let idx = text.indexOf('ytInitialPlayerResponse', searchStart);
+    if (idx < 0) break;
+    searchStart = idx + 20;
+    
     let firstBrace = text.indexOf('{', idx);
     if (firstBrace > idx && firstBrace < idx + 100) {
       let openCount = 0, lastBrace = -1, inString = false, escape = false;
@@ -393,7 +397,8 @@ function extractYtInitialPlayerResponse(text) {
       }
       if (lastBrace > firstBrace) {
         try {
-          return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+          let parsed = JSON.parse(text.substring(firstBrace, lastBrace + 1));
+          if (parsed && parsed.streamingData) return parsed;
         } catch(e) {}
       }
     }

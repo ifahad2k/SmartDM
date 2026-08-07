@@ -249,8 +249,12 @@
   }
 
   function extractYtInitialPlayerResponse(text) {
-    let idx = text.indexOf('ytInitialPlayerResponse');
-    if (idx >= 0) {
+    let searchStart = 0;
+    while (true) {
+      let idx = text.indexOf('ytInitialPlayerResponse', searchStart);
+      if (idx < 0) break;
+      searchStart = idx + 20; // prevent infinite loop
+      
       let firstBrace = text.indexOf('{', idx);
       if (firstBrace > idx && firstBrace < idx + 100) {
         let openCount = 0, lastBrace = -1, inString = false, escape = false;
@@ -270,7 +274,10 @@
           }
         }
         if (lastBrace > firstBrace) {
-          try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch(e) {}
+          try { 
+            let parsed = JSON.parse(text.substring(firstBrace, lastBrace + 1));
+            if (parsed && parsed.streamingData) return parsed;
+          } catch(e) {}
         }
       }
     }
@@ -366,7 +373,8 @@
             type: 'START_MEDIA_DOWNLOAD',
             url: videoUrl,
             formatId: fmt.formatId,
-            fileName: fmt.title ? fmt.title + '.' + fmt.ext : null
+            fileName: fmt.title ? fmt.title + '.' + fmt.ext : null,
+            formatsJson: ytDlpCache[videoUrl] && ytDlpCache[videoUrl].data ? JSON.stringify(ytDlpCache[videoUrl].data.formats || []) : '[]'
           },
           () => {
             setTimeout(() => popover.classList.remove('active'), 800);
