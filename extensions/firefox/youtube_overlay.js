@@ -427,9 +427,9 @@
   function scanThumbnails() {
     const thumbnailElements = document.querySelectorAll('ytd-thumbnail, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, a#thumbnail, yt-lockup-view-model, a.yt-lockup-view-model__content-image');
     thumbnailElements.forEach((el) => {
-      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, yt-lockup-view-model, a#thumbnail, a.yt-lockup-view-model__content-image') || el;
-      if (container.getAttribute(PROCESSED_ATTR)) return;
-      container.setAttribute(PROCESSED_ATTR, 'true');
+      const container = el.closest('ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-grid-playlist-renderer, ytd-thumbnail, yt-lockup-view-model') || el;
+      if (container.getAttribute('data-smartdm-scanned')) return;
+      container.setAttribute('data-smartdm-scanned', 'true');
 
       let thumbAnchor = container.querySelector('a#thumbnail, a.ytd-thumbnail, a.yt-lockup-view-model__content-image, a[href*="/watch?v="], a[href*="/shorts/"]');
       if (!thumbAnchor && container.tagName === 'A') {
@@ -440,7 +440,7 @@
         if (rawUrl && (rawUrl.includes('/watch?v=') || rawUrl.includes('/shorts/'))) {
           container.addEventListener('mouseenter', () => {
             fetchYtDlpFormats(getCanonicalUrl(rawUrl), () => {});
-          }, { once: true });
+          });
         }
         attachBadge(thumbAnchor);
       }
