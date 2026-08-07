@@ -511,7 +511,7 @@ public class SmartDmApp extends Application {
                     io.smartdm.media.api.MediaMetadata meta = null;
                     try {
                         io.smartdm.media.api.MediaExtractor directExtractor = new io.smartdm.media.ytdlp.NativeDirectExtractor();
-                        meta = directExtractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(3, java.util.concurrent.TimeUnit.SECONDS);
+                        meta = directExtractor.extractMetadataAsync(req.url(), req.cookies(), req.userAgent()).get(10, java.util.concurrent.TimeUnit.SECONDS);
                     } catch (Exception ignored) {}
 
                     if (meta == null || meta.formats() == null || meta.formats().isEmpty()) {

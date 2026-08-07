@@ -355,14 +355,17 @@ async function appendCookiesAndSend(request, sendResponse) {
 
 async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
   try {
+    if (!videoUrl) return null;
     let videoId = null;
     if (videoUrl.includes('/watch?v=')) {
-      const u = new URL(videoUrl);
-      videoId = u.searchParams.get('v');
+      const parts = videoUrl.split('/watch?v=')[1];
+      videoId = parts.split('&')[0].split('#')[0];
     } else if (videoUrl.includes('/shorts/')) {
-      videoId = videoUrl.split('/shorts/')[1].split('/')[0].split('?')[0];
+      videoId = videoUrl.split('/shorts/')[1].split('/')[0].split('?')[0].split('#')[0];
+    } else if (videoUrl.includes('youtu.be/')) {
+      videoId = videoUrl.split('youtu.be/')[1].split('?')[0].split('#')[0];
     }
-    if (!videoId) return null;
+    if (!videoId || videoId.length < 5) return null;
 
     const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
       method: 'POST',
