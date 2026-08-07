@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -52,17 +53,26 @@ public class NativeDirectExtractor {
         String videoId = extractYouTubeVideoId(url);
         if (videoId == null) return Optional.empty();
 
-        String targetUrl = "https://www.youtube.com/watch?v=" + videoId + "&bpctr=9999999999&has_verified=1";
-        String ua = (userAgent != null && !userAgent.isBlank())
-                ? userAgent
-                : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+        String apiUrl = "https://www.youtube.com/youtubei/v1/player";
+        String jsonPayload = objectMapper.writeValueAsString(Map.of(
+            "videoId", videoId,
+            "contentCheckOk", true,
+            "racyCheckOk", true,
+            "context", Map.of(
+                "client", Map.of(
+                    "clientName", "ANDROID_VR",
+                    "clientVersion", "1.56.21",
+                    "androidSdkVersion", 32
+                )
+            )
+        ));
 
         HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(targetUrl))
+                .uri(URI.create(apiUrl))
                 .timeout(Duration.ofSeconds(4))
-                .header("User-Agent", ua)
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .GET();
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "com.google.android.apps.youtube.vr/1.56.21 (Linux; U; Android 12)")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonPayload));
 
         if (cookies != null && !cookies.isBlank()) {
             reqBuilder.header("Cookie", formatCookieHeader(cookies));
@@ -71,46 +81,7 @@ public class NativeDirectExtractor {
         HttpResponse<String> response = httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) return Optional.empty();
 
-        String html = response.body();
-        int startIndex = html.indexOf("ytInitialPlayerResponse");
-        if (startIndex < 0) return Optional.empty();
-        int firstBrace = html.indexOf('{', startIndex);
-        if (firstBrace < 0) return Optional.empty();
-
-        int openCount = 0;
-        int lastBrace = -1;
-        boolean inString = false;
-        boolean escape = false;
-
-        for (int i = firstBrace; i < html.length(); i++) {
-            char c = html.charAt(i);
-            if (inString) {
-                if (escape) {
-                    escape = false;
-                } else if (c == '\\') {
-                    escape = true;
-                } else if (c == '"') {
-                    inString = false;
-                }
-            } else {
-                if (c == '"') {
-                    inString = true;
-                } else if (c == '{') {
-                    openCount++;
-                } else if (c == '}') {
-                    openCount--;
-                    if (openCount == 0) {
-                        lastBrace = i;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (lastBrace <= firstBrace) return Optional.empty();
-        String jsonStr = html.substring(firstBrace, lastBrace + 1);
-        JsonNode root = objectMapper.readTree(jsonStr);
-
+        JsonNode root = objectMapper.readTree(response.body());
         JsonNode videoDetails = root.path("videoDetails");
         String title = videoDetails.path("title").asText("YouTube Video");
         long duration = videoDetails.path("lengthSeconds").asLong(0);
@@ -128,7 +99,7 @@ public class NativeDirectExtractor {
         if (combinedFormats.isArray()) {
             for (JsonNode f : combinedFormats) {
                 String formatId = f.path("itag").asText("fmt_" + formats.size());
-                String quality = f.path("qualityLabel").asText(f.path("quality").asText("HD"));
+                String quality = f.path("qualityLabel").asText(f.path("quality").asText("360p"));
                 String mimeType = f.path("mimeType").asText("");
                 String ext = mimeType.contains("webm") ? "webm" : "mp4";
                 long fileSize = f.path("contentLength").asLong(0);
@@ -149,7 +120,7 @@ public class NativeDirectExtractor {
                 boolean isVideo = mimeType.startsWith("video/");
 
                 String formatId = f.path("itag").asText("fmt_" + formats.size());
-                String quality = isAudio ? "Audio Only (" + f.path("audioBitrate").asText("128k") + ")" : f.path("qualityLabel").asText("High Res");
+                String quality = isAudio ? "Audio Only (" + (f.path("bitrate").asInt(0)/1000) + "k)" : f.path("qualityLabel").asText("High Res");
                 String ext = mimeType.contains("webm") ? (isAudio ? "webm" : "webm") : (isAudio ? "m4a" : "mp4");
                 long fileSize = f.path("contentLength").asLong(0);
                 double tbr = f.path("bitrate").asDouble(0) / 1000.0;
@@ -163,7 +134,7 @@ public class NativeDirectExtractor {
 
         if (formats.isEmpty()) return Optional.empty();
 
-        return Optional.of(new MediaMetadata(videoId, title, duration, targetUrl, thumbnail, formats, List.of()));
+        return Optional.of(new MediaMetadata(videoId, title, duration, url, thumbnail, formats, List.of()));
     }
 
     private Optional<MediaMetadata> extractFacebookDirect(String url, String cookies, String userAgent) throws Exception {
