@@ -203,11 +203,12 @@
   function fetchYtDlpFormats(url, callback) {
     if (!url) return;
     if (ytDlpCache[url] && ytDlpCache[url].status === 'done' && ytDlpCache[url].data && ytDlpCache[url].data.formats && ytDlpCache[url].data.formats.length > 1) {
-      callback(ytDlpCache[url].data);
+      if (callback) callback(ytDlpCache[url].data);
       return;
     }
+
     if (ytDlpCache[url] && ytDlpCache[url].status === 'loading') {
-      ytDlpCache[url].callbacks.push(callback);
+      if (callback) ytDlpCache[url].callbacks.push(callback);
       return;
     }
 
@@ -216,26 +217,30 @@
       const domResult = parseYtInitialPlayerResponseFromDOM();
       if (domResult && domResult.formats && domResult.formats.length > 1) {
         ytDlpCache[url] = { status: 'done', data: domResult, callbacks: [] };
-        callback(domResult);
+        if (callback) callback(domResult);
         return;
       }
     }
 
-    ytDlpCache[url] = { status: 'loading', callbacks: [callback] };
+    const initialCallbacks = callback ? [callback] : [];
+    ytDlpCache[url] = { status: 'loading', callbacks: initialCallbacks };
 
     const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: url }, (res) => {
-      if (res && res.success && res.formats && res.formats.length > 0) {
+      const pendingCallbacks = ytDlpCache[url] ? (ytDlpCache[url].callbacks || []) : initialCallbacks;
+      if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
         if (res.formats.length > 1) {
           ytDlpCache[url] = { status: 'done', data: res, callbacks: [] };
         } else {
           delete ytDlpCache[url];
         }
-        callback(res);
       } else {
         delete ytDlpCache[url];
-        callback(res);
       }
+
+      pendingCallbacks.forEach(cb => {
+        try { cb(res); } catch (e) {}
+      });
     });
   }
 
