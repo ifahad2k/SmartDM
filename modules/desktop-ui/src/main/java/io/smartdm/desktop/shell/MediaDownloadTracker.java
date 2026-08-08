@@ -207,13 +207,14 @@ public final class MediaDownloadTracker {
                 commandList.add(persistentCacheDir.toAbsolutePath().toString());
                 commandList.add("--no-mtime");
                 commandList.add("--socket-timeout");
-                commandList.add("10");
+                commandList.add("15");
                 commandList.add("--buffer-size");
                 commandList.add("64k");
-                commandList.add("--http-chunk-size");
-                commandList.add("10M");
+                commandList.add("--fragment-retries");
+                commandList.add("10");
+                commandList.add("--hls-use-mpegts");
                 commandList.add("-N");
-                commandList.add("16");
+                commandList.add("8");
                 commandList.add("--paths");
                 commandList.add("temp:" + appTempDir.toString());
                 commandList.add("--paths");
