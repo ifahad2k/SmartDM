@@ -44,13 +44,13 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         VBox guideCard = new VBox(6);
         guideCard.setPadding(new Insets(10));
         guideCard.setStyle("-fx-background-color: rgba(56, 189, 248, 0.08); -fx-border-color: rgba(56, 189, 248, 0.25); -fx-border-radius: 6px; -fx-background-radius: 6px;");
-        Label guideHeader = new Label("💡 How to activate extension in Google Chrome / Edge / Brave:");
+        Label guideHeader = new Label("💡 Chrome / Edge / Brave Extension Activation:");
         guideHeader.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
-        Label guideStep1 = new Label("1️⃣ Click 'Open Chrome Extensions' button below to open browser extensions page.");
+        Label guideStep1 = new Label("1. Select your browser profile below and click 'Apply Selected Integration'.");
         guideStep1.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
-        Label guideStep2 = new Label("2️⃣ Toggle 'Developer mode' ON in top-right corner & click 'Load unpacked'.");
+        Label guideStep2 = new Label("2. Open chrome://extensions, toggle 'Developer mode' ON in top-right.");
         guideStep2.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
-        Label guideStep3 = new Label("3️⃣ Select the SmartDM extension folder (click 'Extension Folder' button below to view).");
+        Label guideStep3 = new Label("3. Click 'Load unpacked' and select the SmartDM extension folder (opened via button below).");
         guideStep3.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
         guideCard.getChildren().addAll(guideHeader, guideStep1, guideStep2, guideStep3);
 
@@ -183,25 +183,12 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     pRow.setAlignment(Pos.CENTER_LEFT);
 
                     CheckBox cb = new CheckBox(p.profileName());
-                    cb.setSelected(p.isIntegrated());
+                    cb.setSelected(false); // NO profiles pre-selected by default
                     cb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-size: 12px;");
 
-                    boolean devOn = "firefox".equalsIgnoreCase(p.browserType()) || BrowserScannerService.isDeveloperModeEnabled(p.profilePath());
-                    String badgeText;
-                    String badgeStyle;
-                    if (p.isIntegrated() && devOn) {
-                        badgeText = "🟢 Integrated";
-                        badgeStyle = "-fx-background-color: rgba(52, 211, 153, 0.15); -fx-text-fill: #34D399;";
-                    } else if (!devOn && !"firefox".equalsIgnoreCase(p.browserType())) {
-                        badgeText = "⚠️ Dev Mode OFF";
-                        badgeStyle = "-fx-background-color: rgba(251, 191, 36, 0.15); -fx-text-fill: #FBBF24;";
-                    } else {
-                        badgeText = "⚪ Ready";
-                        badgeStyle = "-fx-background-color: rgba(148, 163, 184, 0.15); -fx-text-fill: #94A3B8;";
-                    }
-
-                    Label badge = new Label(badgeText);
-                    badge.setStyle("-fx-font-size: 10px; -fx-padding: 2 6; -fx-border-radius: 4px; -fx-background-radius: 4px; " + badgeStyle);
+                    Label badge = new Label(p.isIntegrated() ? "🟢 Integrated" : "⚪ Ready");
+                    badge.setStyle("-fx-font-size: 10px; -fx-padding: 2 6; -fx-border-radius: 4px; -fx-background-radius: 4px; " +
+                        (p.isIntegrated() ? "-fx-background-color: rgba(52, 211, 153, 0.15); -fx-text-fill: #34D399;" : "-fx-background-color: rgba(148, 163, 184, 0.15); -fx-text-fill: #94A3B8;"));
 
                     profileCheckBoxMap.put(p, cb);
                     pRow.getChildren().addAll(cb, badge);
@@ -228,28 +215,6 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
             return;
         }
 
-        // Check if any selected Chromium profile has Developer mode disabled
-        List<BrowserProfile> devDisabledList = new ArrayList<>();
-        for (BrowserProfile p : selectedProfiles) {
-            if (!"firefox".equalsIgnoreCase(p.browserType())) {
-                boolean devOn = BrowserScannerService.isDeveloperModeEnabled(p.profilePath());
-                if (!devOn) {
-                    devDisabledList.add(p);
-                }
-            }
-        }
-
-        if (!devDisabledList.isEmpty()) {
-            BrowserProfile target = devDisabledList.get(0);
-            statusLabel.setText("⚠️ Developer mode is OFF for " + target.browserName() + " (" + target.profileName() + ")!\n" +
-                "Please turn ON 'Developer mode' toggle in top-right of Chrome extensions, then click Apply again.");
-            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
-
-            // Open chrome://extensions page automatically
-            openChromeExtensionsPage();
-            return;
-        }
-
         statusLabel.setText("⏳ Applying SmartDM integration to " + selectedProfiles.size() + " profile(s)...");
         statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
@@ -265,7 +230,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         applyTask.setOnSucceeded(e -> {
             boolean ok = applyTask.getValue();
             if (ok) {
-                statusLabel.setText("🎉 Developer mode verified! SmartDM integration successfully applied.");
+                statusLabel.setText("🎉 Successfully applied integration to selected profile(s)!");
                 statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
                 populateProfiles();
             } else {

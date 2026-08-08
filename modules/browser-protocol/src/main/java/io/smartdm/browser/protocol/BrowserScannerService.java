@@ -133,28 +133,18 @@ public class BrowserScannerService {
     }
 
     private static boolean checkChromiumIntegrated(String browserType, Path profileDir) {
-        Path extDir = profileDir.resolve("Extensions").resolve("knldjnnmkkebefogdbmggjijknmjeaoh");
-        if (Files.exists(extDir)) return true;
+        Path securePref = profileDir.resolve("Secure Preferences");
+        Path pref = profileDir.resolve("Preferences");
 
-        Path extDir2 = profileDir.resolve("Extensions");
-        if (Files.exists(extDir2)) {
-            File[] subFiles = extDir2.toFile().listFiles();
-            if (subFiles != null) {
-                for (File f : subFiles) {
-                    if (f.getName().toLowerCase().contains("smartdm")) return true;
-                }
-            }
-        }
+        return checkExtInFile(securePref) || checkExtInFile(pref);
+    }
 
-        Path extFile = profileDir.resolve("Preferences");
-        if (Files.exists(extFile)) {
-            try {
-                String content = Files.readString(extFile);
-                if (content.contains("knldjnnmkkebefogdbmggjijknmjeaoh") || content.contains("smartdm")) {
-                    return true;
-                }
-            } catch (Exception ignored) {}
-        }
+    private static boolean checkExtInFile(Path file) {
+        if (!Files.exists(file)) return false;
+        try {
+            String content = Files.readString(file);
+            return content.contains("knldjnnmkkebefogdbmggjijknmjeaoh");
+        } catch (Exception ignored) {}
         return false;
     }
 
