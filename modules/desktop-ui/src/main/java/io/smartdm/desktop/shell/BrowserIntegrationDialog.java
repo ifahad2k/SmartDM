@@ -186,9 +186,22 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     cb.setSelected(p.isIntegrated());
                     cb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-size: 12px;");
 
-                    Label badge = new Label(p.isIntegrated() ? "🟢 Integrated" : "⚪ Ready");
-                    badge.setStyle("-fx-font-size: 10px; -fx-padding: 2 6; -fx-border-radius: 4px; -fx-background-radius: 4px; " +
-                        (p.isIntegrated() ? "-fx-background-color: rgba(52, 211, 153, 0.15); -fx-text-fill: #34D399;" : "-fx-background-color: rgba(148, 163, 184, 0.15); -fx-text-fill: #94A3B8;"));
+                    boolean devOn = "firefox".equalsIgnoreCase(p.browserType()) || BrowserScannerService.isDeveloperModeEnabled(p.profilePath());
+                    String badgeText;
+                    String badgeStyle;
+                    if (p.isIntegrated() && devOn) {
+                        badgeText = "🟢 Integrated";
+                        badgeStyle = "-fx-background-color: rgba(52, 211, 153, 0.15); -fx-text-fill: #34D399;";
+                    } else if (!devOn && !"firefox".equalsIgnoreCase(p.browserType())) {
+                        badgeText = "⚠️ Dev Mode OFF";
+                        badgeStyle = "-fx-background-color: rgba(251, 191, 36, 0.15); -fx-text-fill: #FBBF24;";
+                    } else {
+                        badgeText = "⚪ Ready";
+                        badgeStyle = "-fx-background-color: rgba(148, 163, 184, 0.15); -fx-text-fill: #94A3B8;";
+                    }
+
+                    Label badge = new Label(badgeText);
+                    badge.setStyle("-fx-font-size: 10px; -fx-padding: 2 6; -fx-border-radius: 4px; -fx-background-radius: 4px; " + badgeStyle);
 
                     profileCheckBoxMap.put(p, cb);
                     pRow.getChildren().addAll(cb, badge);
@@ -207,16 +220,33 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
     }
 
     private void applySelectedIntegration() {
-        List<BrowserProfile> selectedProfiles = new ArrayList<>();
-        profileCheckBoxMap.forEach((profile, cb) -> {
-            if (cb.isSelected()) {
-                selectedProfiles.add(profile);
-            }
-        });
+        List<BrowserProfile> selectedProfiles = getSelectedProfiles();
 
         if (selectedProfiles.isEmpty()) {
             statusLabel.setText("⚠️ Please select at least one browser profile to integrate.");
             statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
+            return;
+        }
+
+        // Check if any selected Chromium profile has Developer mode disabled
+        List<BrowserProfile> devDisabledList = new ArrayList<>();
+        for (BrowserProfile p : selectedProfiles) {
+            if (!"firefox".equalsIgnoreCase(p.browserType())) {
+                boolean devOn = BrowserScannerService.isDeveloperModeEnabled(p.profilePath());
+                if (!devOn) {
+                    devDisabledList.add(p);
+                }
+            }
+        }
+
+        if (!devDisabledList.isEmpty()) {
+            BrowserProfile target = devDisabledList.get(0);
+            statusLabel.setText("⚠️ Developer mode is OFF for " + target.browserName() + " (" + target.profileName() + ")!\n" +
+                "Please turn ON 'Developer mode' toggle in top-right of Chrome extensions, then click Apply again.");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
+
+            // Open chrome://extensions page automatically
+            openChromeExtensionsPage();
             return;
         }
 
@@ -235,16 +265,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         applyTask.setOnSucceeded(e -> {
             boolean ok = applyTask.getValue();
             if (ok) {
-                // Copy profile extension path to Clipboard for quick pasting
-                try {
-                    Path extBase = findExtensionBaseDir();
-                    Path chromeExtDir = extBase.resolve("chrome");
-                    ClipboardContent content = new ClipboardContent();
-                    content.putString(chromeExtDir.toAbsolutePath().toString());
-                    Clipboard.getSystemClipboard().setContent(content);
-                } catch (Exception ignored) {}
-
-                statusLabel.setText("🎉 Applied! Path copied to clipboard. In Chrome (chrome://extensions), turn ON Developer mode & click 'Load unpacked'.");
+                statusLabel.setText("🎉 Developer mode verified! SmartDM integration successfully applied.");
                 statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
                 populateProfiles();
             } else {
@@ -281,6 +302,16 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         if (name.contains("opera")) return "🔴";
         if (name.contains("vivaldi")) return "🔴";
         return "🌐";
+    }
+
+    private void openChromeExtensionsPage() {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                new ProcessBuilder("cmd", "/c", "start", "chrome", "chrome://extensions").start();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
     }
 
     private void launchBrowserWithExtension() {
