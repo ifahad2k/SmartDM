@@ -64,17 +64,21 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         scrollPane.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8px;");
 
         // Action Buttons
-        HBox btnBox = new HBox(10);
+        HBox btnBox = new HBox(8);
         btnBox.setAlignment(Pos.CENTER_RIGHT);
+
+        Button launchBtn = new Button("🚀 Launch Browser");
+        launchBtn.getStyleClass().addAll("btn");
+        launchBtn.setStyle("-fx-background-color: rgba(52, 211, 153, 0.2); -fx-text-fill: #34D399; -fx-border-color: #34D399;");
+        launchBtn.setOnAction(e -> launchBrowserWithExtension());
+
+        Button createShortcutBtn = new Button("📌 Create Shortcut");
+        createShortcutBtn.getStyleClass().add("btn");
+        createShortcutBtn.setOnAction(e -> createSelectedShortcut());
 
         Button rescanBtn = new Button("🔄 Rescan");
         rescanBtn.getStyleClass().add("btn");
         rescanBtn.setOnAction(e -> populateProfiles());
-
-        Button openChromePageBtn = new Button("🌐 Open Chrome Extensions");
-        openChromePageBtn.getStyleClass().addAll("btn");
-        openChromePageBtn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.2); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8;");
-        openChromePageBtn.setOnAction(e -> openChromeExtensionsPage());
 
         Button openExtFolderBtn = new Button("📁 Extension Folder");
         openExtFolderBtn.getStyleClass().add("btn");
@@ -91,7 +95,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        btnBox.getChildren().addAll(rescanBtn, openChromePageBtn, openExtFolderBtn, spacer, applyBtn, closeBtn);
+        btnBox.getChildren().addAll(launchBtn, createShortcutBtn, rescanBtn, openExtFolderBtn, spacer, applyBtn, closeBtn);
 
         dialogBody.getChildren().addAll(subtitle, guideCard, scrollPane, statusLabel, btnBox);
 
@@ -279,14 +283,65 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         return "🌐";
     }
 
-    private void openChromeExtensionsPage() {
+    private void launchBrowserWithExtension() {
+        List<BrowserProfile> selectedProfiles = getSelectedProfiles();
+        if (selectedProfiles.isEmpty()) {
+            statusLabel.setText("⚠️ Please select a profile to launch.");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
+            return;
+        }
+
+        BrowserProfile target = selectedProfiles.get(0);
+        Path extBase = findExtensionBaseDir();
+        Path chromeExtDir = extBase.resolve("chrome");
+
+        BrowserIntegrationInstallerService.applyIntegration(Collections.singletonList(target), extBase);
+
+        statusLabel.setText("🚀 Launching " + target.browserName() + " (" + target.profileName() + ") with SmartDM...");
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
-                new ProcessBuilder("cmd", "/c", "start", "chrome", "chrome://extensions").start();
+                String exe = switch (target.browserType().toLowerCase()) {
+                    case "edge" -> "msedge.exe";
+                    case "brave" -> "brave.exe";
+                    default -> "chrome.exe";
+                };
+                new ProcessBuilder("cmd", "/c", "start", exe, "--profile-directory=\"" + target.profileId() + "\"", "--load-extension=\"" + chromeExtDir.toAbsolutePath().toString() + "\"").start();
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
         });
+    }
+
+    private void createSelectedShortcut() {
+        List<BrowserProfile> selectedProfiles = getSelectedProfiles();
+        if (selectedProfiles.isEmpty()) {
+            statusLabel.setText("⚠️ Please select a profile to create desktop shortcut.");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
+            return;
+        }
+
+        BrowserProfile target = selectedProfiles.get(0);
+        Path extBase = findExtensionBaseDir();
+        Path chromeExtDir = extBase.resolve("chrome");
+
+        boolean ok = BrowserIntegrationInstallerService.createDesktopShortcut(target, chromeExtDir);
+        if (ok) {
+            statusLabel.setText("📌 Shortcut created on Desktop for " + target.browserName() + " (" + target.profileName() + ")!");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+        } else {
+            statusLabel.setText("❌ Failed to create shortcut.");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
+        }
+    }
+
+    private List<BrowserProfile> getSelectedProfiles() {
+        List<BrowserProfile> list = new ArrayList<>();
+        profileCheckBoxMap.forEach((p, cb) -> {
+            if (cb.isSelected()) list.add(p);
+        });
+        return list;
     }
 
     private void openExtensionFolder() {

@@ -138,6 +138,33 @@ public class BrowserIntegrationInstallerService {
         runCmd("reg", "add", "HKCU\\Software\\Policies\\Mozilla\\Firefox\\ExtensionSettings\\smartdm-extension@smartdm.io", "/v", "install_url", "/t", "REG_SZ", "/d", "file:///" + firefoxExtDir.resolve("manifest.json").toAbsolutePath().toString().replace('\\', '/'), "/f");
     }
 
+    public static boolean createDesktopShortcut(BrowserProfile profile, Path chromeExtDir) {
+        try {
+            String userHome = System.getProperty("user.home");
+            Path desktop = Paths.get(userHome, "Desktop");
+            String shortcutName = "SmartDM " + profile.browserName() + " (" + profile.profileId() + ").lnk";
+            Path shortcutPath = desktop.resolve(shortcutName);
+
+            String exe = switch (profile.browserType().toLowerCase()) {
+                case "edge" -> "msedge.exe";
+                case "brave" -> "brave.exe";
+                default -> "chrome.exe";
+            };
+
+            String args = "--profile-directory=" + profile.profileId() + " --load-extension=\"" + chromeExtDir.toAbsolutePath().toString() + "\"";
+
+            String psCmd = "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('" +
+                shortcutPath.toAbsolutePath().toString().replace("'", "''") + "'); $s.TargetPath = '" + exe + "'; $s.Arguments = '" +
+                args.replace("'", "''") + "'; $s.Save()";
+
+            runCmd("powershell", "-Command", psCmd);
+            return true;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return false;
+        }
+    }
+
     private static void runCmd(String... args) {
         try {
             ProcessBuilder pb = new ProcessBuilder(args);
