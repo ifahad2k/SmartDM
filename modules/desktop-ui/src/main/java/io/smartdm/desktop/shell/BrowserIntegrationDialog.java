@@ -213,7 +213,16 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         applyTask.setOnSucceeded(e -> {
             boolean ok = applyTask.getValue();
             if (ok) {
-                statusLabel.setText("🎉 Successfully applied SmartDM integration to " + selectedProfiles.size() + " profile(s)!");
+                // Copy profile extension path to Clipboard for quick pasting
+                try {
+                    Path extBase = findExtensionBaseDir();
+                    Path chromeExtDir = extBase.resolve("chrome");
+                    ClipboardContent content = new ClipboardContent();
+                    content.putString(chromeExtDir.toAbsolutePath().toString());
+                    Clipboard.getSystemClipboard().setContent(content);
+                } catch (Exception ignored) {}
+
+                statusLabel.setText("🎉 Applied! Path copied to clipboard. In Chrome (chrome://extensions), turn ON Developer mode & click 'Load unpacked'.");
                 statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
                 populateProfiles();
             } else {

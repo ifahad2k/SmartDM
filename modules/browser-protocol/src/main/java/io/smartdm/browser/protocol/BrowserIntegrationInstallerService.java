@@ -49,13 +49,38 @@ public class BrowserIntegrationInstallerService {
         Files.createDirectories(profileExtDir);
         copyDirectory(chromeExtDir, profileExtDir);
 
-        // 3. External Extension Directory Injection for Profile
+        // 3. Register Browser Registry Extension path
+        String extRegPath = switch (profile.browserType().toLowerCase()) {
+            case "edge" -> "HKCU\\Software\\Microsoft\\Edge\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
+            case "brave" -> "HKCU\\Software\\BraveSoftware\\Brave-Browser\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
+            default -> "HKCU\\Software\\Google\\Chrome\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
+        };
+        runCmd("reg", "add", extRegPath, "/v", "path", "/t", "REG_SZ", "/d", profileExtDir.toAbsolutePath().toString(), "/f");
+        runCmd("reg", "add", extRegPath, "/v", "version", "/t", "REG_SZ", "/d", "1.0.6", "/f");
+
+        // 4. External Extension Directory Injection for Profile
         Path userData = profile.profilePath().getParent();
         if (userData != null) {
             Path extFolder = userData.resolve("External Extensions");
             Files.createDirectories(extFolder);
             String jsonContent = "{\n  \"external_crx\": \"" + profileExtDir.toAbsolutePath().toString().replace('\\', '/') + "\",\n  \"external_version\": \"1.0.6\"\n}";
             Files.writeString(extFolder.resolve("knldjnnmkkebefogdbmggjijknmjeaoh.json"), jsonContent);
+        }
+
+        // 5. Inject Preferences setting if possible
+        Path prefFile = profile.profilePath().resolve("Preferences");
+        if (Files.exists(prefFile)) {
+            try {
+                String content = Files.readString(prefFile);
+                if (!content.contains("knldjnnmkkebefogdbmggjijknmjeaoh")) {
+                    String settingSnippet = "\"knldjnnmkkebefogdbmggjijknmjeaoh\":{\"location\":5,\"path\":\"" +
+                        profileExtDir.toAbsolutePath().toString().replace('\\', '/') + "\",\"state\":1}";
+                    if (content.contains("\"settings\":{")) {
+                        content = content.replace("\"settings\":{", "\"settings\":{" + settingSnippet + ",");
+                        Files.writeString(prefFile, content);
+                    }
+                }
+            } catch (Exception ignored) {}
         }
     }
 
