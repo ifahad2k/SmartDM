@@ -215,6 +215,27 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
             return;
         }
 
+        // Developer mode check: Prompt and stop if Developer Mode is OFF
+        List<BrowserProfile> devDisabledList = new ArrayList<>();
+        for (BrowserProfile p : selectedProfiles) {
+            if (!"firefox".equalsIgnoreCase(p.browserType())) {
+                boolean devOn = BrowserScannerService.isDeveloperModeEnabled(p.profilePath());
+                if (!devOn) {
+                    devDisabledList.add(p);
+                }
+            }
+        }
+
+        if (!devDisabledList.isEmpty()) {
+            BrowserProfile target = devDisabledList.get(0);
+            statusLabel.setText("⚠️ Developer Mode is OFF for " + target.browserName() + " (" + target.profileName() + ")!\n" +
+                "Please turn ON 'Developer mode' toggle in top-right of Chrome extensions, then click Apply again.");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
+
+            openChromeExtensionsPage();
+            return;
+        }
+
         statusLabel.setText("⏳ Applying SmartDM integration to " + selectedProfiles.size() + " profile(s)...");
         statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 

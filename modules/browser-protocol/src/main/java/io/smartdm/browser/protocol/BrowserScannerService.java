@@ -134,15 +134,9 @@ public class BrowserScannerService {
 
     private static boolean checkChromiumIntegrated(String browserType, Path profileDir) {
         Path securePref = profileDir.resolve("Secure Preferences");
-        Path pref = profileDir.resolve("Preferences");
-
-        return checkExtInFile(securePref) || checkExtInFile(pref);
-    }
-
-    private static boolean checkExtInFile(Path file) {
-        if (!Files.exists(file)) return false;
+        if (!Files.exists(securePref)) return false;
         try {
-            String content = Files.readString(file);
+            String content = Files.readString(securePref);
             return content.contains("knldjnnmkkebefogdbmggjijknmjeaoh");
         } catch (Exception ignored) {}
         return false;
@@ -160,10 +154,7 @@ public class BrowserScannerService {
         if (!Files.exists(file)) return false;
         try {
             String content = Files.readString(file);
-            return content.contains("\"developer_mode\":true") ||
-                   content.contains("\"developer_mode\": true") ||
-                   content.contains("\"developer_mode\":\"") ||
-                   content.contains("developer_mode_encrypted_hash");
+            return content.contains("\"developer_mode\":true") || content.contains("\"developer_mode\": true");
         } catch (Exception ignored) {}
         return false;
     }
