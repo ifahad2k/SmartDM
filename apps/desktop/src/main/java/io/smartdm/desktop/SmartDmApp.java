@@ -892,21 +892,17 @@ public class SmartDmApp extends Application {
                 }
 
                 if (meta == null && url != null && (url.contains("youtube.com") || url.contains("youtu.be"))) {
-                    final String err = extractionError;
-                    javafx.application.Platform.runLater(() -> {
-                        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
-                        alert.setTitle("YouTube Extraction Failed");
-                        alert.setHeaderText("YouTube Bot Protection / Rate Limit");
-                        if (err != null && err.contains("429")) {
-                            alert.setContentText("YouTube has temporarily blocked your IP (HTTP Error 429: Too Many Requests). Please wait a few minutes before trying again, or use a VPN.");
-                        } else if (err != null && err.contains("PO Token")) {
-                            alert.setContentText("YouTube is blocking yt-dlp (PO Token required). Wait for a yt-dlp update or try again later.");
-                        } else {
-                            alert.setContentText("Failed to extract video formats from YouTube. They may have updated their bot protection.\n\nError: " + (err != null ? err : "Unknown Error"));
-                        }
-                        alert.showAndWait();
-                    });
-                    return; // Abort opening the dialog
+                    String fallbackTitle = (reqTitle != null && !reqTitle.isBlank()) ? reqTitle : ((reqFileName != null && !reqFileName.isBlank()) ? reqFileName : deriveTitleFromUrl(url));
+                    if (fallbackTitle.endsWith(".mp4") || fallbackTitle.endsWith(".webm") || fallbackTitle.endsWith(".m4a")) {
+                        fallbackTitle = fallbackTitle.substring(0, fallbackTitle.lastIndexOf('.'));
+                    }
+                    String fmtId = (preferredFormatId != null && !preferredFormatId.isBlank()) ? preferredFormatId : "best";
+                    io.smartdm.media.api.MediaFormat dummyFmt = new io.smartdm.media.api.MediaFormat(
+                        fmtId, "mp4", "720p", "Direct Stream", 0L, "h264", "aac", 0.0, 30, false, false
+                    );
+                    meta = new io.smartdm.media.api.MediaMetadata(
+                        url, fallbackTitle, 0, url, null, java.util.List.of(dummyFmt), java.util.List.of()
+                    );
                 }
 
                 if (meta != null && meta.formats() != null && !meta.formats().isEmpty()) {
