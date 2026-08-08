@@ -195,10 +195,16 @@ public final class MediaDownloadTracker {
                 commandList.add("--no-warnings");
                 commandList.add("--ignore-config");
                 commandList.add("--no-playlist");
+                commandList.add("--no-cache-dir");
+                commandList.add("--no-mtime");
                 commandList.add("--socket-timeout");
                 commandList.add("10");
+                commandList.add("--buffer-size");
+                commandList.add("64k");
+                commandList.add("--http-chunk-size");
+                commandList.add("10M");
                 commandList.add("-N");
-                commandList.add("8");
+                commandList.add("16");
                 commandList.add("--paths");
                 commandList.add("temp:" + appTempDir.toString());
                 commandList.add("--paths");
@@ -214,7 +220,7 @@ public final class MediaDownloadTracker {
 
                 if (info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"))) {
                     commandList.add("--extractor-args");
-                    commandList.add("youtube:player_client=mweb,android,web");
+                    commandList.add("youtube:player_client=mweb,android");
                 } else if (info.webpageUrl() != null && info.webpageUrl().contains("instagram.com")) {
                     commandList.add("--referer");
                     commandList.add("https://www.instagram.com/");
@@ -252,6 +258,14 @@ public final class MediaDownloadTracker {
 
                 Process p = pb.start();
                 activeProcesses.put(info.download().id(), p);
+
+                // Publish immediate initial progress event so UI progress bar activates instantly (<50ms)
+                Platform.runLater(() -> {
+                    if (eventPublisher != null) {
+                        eventPublisher.publish(new DownloadEvent.ProgressUpdated(
+                            info.download().id(), ByteCount.of(0), ByteCount.of(100_000_000L), info.download()));
+                    }
+                });
 
                 Pattern progressPattern = Pattern.compile("\\[download\\]\\s+([\\d\\.]+)%");
                 Pattern sizePattern = Pattern.compile("of\\s+~?\\s*([\\d\\.]+)\\s*([a-zA-Z]+)");
