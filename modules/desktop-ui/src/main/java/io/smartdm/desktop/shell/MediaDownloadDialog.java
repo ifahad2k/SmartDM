@@ -323,12 +323,12 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
                 }
                 if (height > 0) {
                     if (fid != null && fid.matches("\\d+")) {
-                        formatArg = fid + "+ba/bestvideo[height<=" + height + "]+bestaudio";
+                        formatArg = fid + "+ba/" + fid + "+bestaudio/bestvideo[height<=" + height + "]+bestaudio/bestvideo+bestaudio/b/best";
                     } else {
-                        formatArg = "bestvideo[height<=" + height + "]+bestaudio";
+                        formatArg = "bestvideo[height<=" + height + "]+bestaudio/bestvideo+bestaudio/b/best";
                     }
                 } else if (fid != null && !fid.isBlank()) {
-                    formatArg = fid;
+                    formatArg = fid + "+ba/" + fid + "/bv*+ba/b/best";
                 }
             }
             String streamUrl = (selectedFormat != null && selectedFormat.url() != null && !selectedFormat.url().isBlank()) ? selectedFormat.url() : null;

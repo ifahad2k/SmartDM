@@ -229,7 +229,7 @@ public final class MediaDownloadTracker {
 
                 if (info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"))) {
                     commandList.add("--extractor-args");
-                    commandList.add("youtube:player_client=android,mweb");
+                    commandList.add("youtube:player_client=web,mweb,android,default");
                 } else if (info.webpageUrl() != null && info.webpageUrl().contains("instagram.com")) {
                     commandList.add("--referer");
                     commandList.add("https://www.instagram.com/");
