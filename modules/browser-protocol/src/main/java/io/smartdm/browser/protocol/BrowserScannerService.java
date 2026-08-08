@@ -45,7 +45,7 @@ public class BrowserScannerService {
         // 5. Opera
         Path operaData = Paths.get(appData, "Opera Software", "Opera Stable");
         if (Files.exists(operaData)) {
-            profiles.add(new BrowserProfile("Opera", "opera", "Default", "Default Profile", operaData, checkOperaIntegrated(operaData)));
+            profiles.add(new BrowserProfile("Opera", "opera", "Default", "Default Profile", operaData, checkChromiumIntegrated("opera", operaData)));
         }
 
         // 6. Mozilla Firefox
@@ -158,8 +158,15 @@ public class BrowserScannerService {
         return false;
     }
 
-    private static boolean checkOperaIntegrated(Path profileDir) {
-        return checkChromiumIntegrated("opera", profileDir);
+    public static boolean isDeveloperModeEnabled(Path profileDir) {
+        if (profileDir == null) return false;
+        Path prefFile = profileDir.resolve("Preferences");
+        if (!Files.exists(prefFile)) return false;
+        try {
+            String content = Files.readString(prefFile);
+            return content.contains("\"developer_mode\":true") || content.contains("\"developer_mode\": true");
+        } catch (Exception ignored) {}
+        return false;
     }
 
     private static boolean checkFirefoxIntegrated(Path profileDir) {

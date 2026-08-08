@@ -67,19 +67,24 @@ public class BrowserIntegrationInstallerService {
             Files.writeString(extFolder.resolve("knldjnnmkkebefogdbmggjijknmjeaoh.json"), jsonContent);
         }
 
-        // 5. Inject Preferences setting if possible
+        // 5. Inject Preferences setting & enable developer_mode if possible
         Path prefFile = profile.profilePath().resolve("Preferences");
         if (Files.exists(prefFile)) {
             try {
                 String content = Files.readString(prefFile);
+                if (content.contains("\"developer_mode\":false")) {
+                    content = content.replace("\"developer_mode\":false", "\"developer_mode\":true");
+                } else if (content.contains("\"developer_mode\": false")) {
+                    content = content.replace("\"developer_mode\": false", "\"developer_mode\": true");
+                }
                 if (!content.contains("knldjnnmkkebefogdbmggjijknmjeaoh")) {
                     String settingSnippet = "\"knldjnnmkkebefogdbmggjijknmjeaoh\":{\"location\":5,\"path\":\"" +
                         profileExtDir.toAbsolutePath().toString().replace('\\', '/') + "\",\"state\":1}";
                     if (content.contains("\"settings\":{")) {
                         content = content.replace("\"settings\":{", "\"settings\":{" + settingSnippet + ",");
-                        Files.writeString(prefFile, content);
                     }
                 }
+                Files.writeString(prefFile, content);
             } catch (Exception ignored) {}
         }
     }
