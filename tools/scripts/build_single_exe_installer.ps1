@@ -95,7 +95,12 @@ echo   ] >> "%~dp0io.smartdm.host.firefox.json"
 echo } >> "%~dp0io.smartdm.host.firefox.json"
 
 reg add "HKCU\Software\Google\Chrome\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.json" /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Edge\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.json" /f >nul 2>&1
+reg add "HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.json" /f >nul 2>&1
 reg add "HKCU\Software\Mozilla\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.firefox.json" /f >nul 2>&1
+
+reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
+reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
 
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "installation_mode" /t REG_SZ /d "normal_installed" /f >nul 2>&1
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "install_url" /t REG_SZ /d "file:///%APP_DIR%extensions/firefox/manifest.json" /f >nul 2>&1
