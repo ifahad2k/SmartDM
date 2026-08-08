@@ -42,6 +42,8 @@ public class BrowserIntegrationInstallerService {
         };
 
         Path hostJsonPath = chromeExtDir.resolve("host").resolve("io.smartdm.host.json");
+        ensureHostJsonHasAbsolutePath(hostJsonPath);
+
         runCmd("reg", "add", regPath, "/ve", "/t", "REG_SZ", "/d", hostJsonPath.toAbsolutePath().toString(), "/f");
 
         // 2. Install extension directly into Profile's Extensions directory
@@ -171,6 +173,28 @@ public class BrowserIntegrationInstallerService {
         } catch (Exception ex) {
             ex.printStackTrace();
             return false;
+        }
+    }
+
+    private static void ensureHostJsonHasAbsolutePath(Path hostJsonPath) {
+        try {
+            Path hostBatPath = hostJsonPath.getParent().resolve("host.bat").toAbsolutePath();
+            String absPathStr = hostBatPath.toString().replace('\\', '/');
+
+            String jsonContent = "{\n" +
+                "  \"name\": \"io.smartdm.host\",\n" +
+                "  \"description\": \"SmartDM Native Messaging Host\",\n" +
+                "  \"path\": \"" + absPathStr + "\",\n" +
+                "  \"type\": \"stdio\",\n" +
+                "  \"allowed_origins\": [\n" +
+                "    \"chrome-extension://knldjnnmkkebefogdbmggjijknmjeaoh/\",\n" +
+                "    \"chrome-extension://lkbiimagmeaefiedjigomffpophipmck/\"\n" +
+                "  ]\n" +
+                "}";
+
+            Files.writeString(hostJsonPath, jsonContent);
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
     }
 
