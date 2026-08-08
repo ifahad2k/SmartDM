@@ -67,24 +67,21 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         HBox btnBox = new HBox(8);
         btnBox.setAlignment(Pos.CENTER_RIGHT);
 
-        Button launchBtn = new Button("🚀 Launch Browser");
-        launchBtn.getStyleClass().addAll("btn");
-        launchBtn.setStyle("-fx-background-color: rgba(52, 211, 153, 0.2); -fx-text-fill: #34D399; -fx-border-color: #34D399;");
-        launchBtn.setOnAction(e -> launchBrowserWithExtension());
+        Button openChromeBtn = new Button("🌐 1. Open chrome://extensions");
+        openChromeBtn.getStyleClass().addAll("btn");
+        openChromeBtn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.15); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8;");
+        openChromeBtn.setOnAction(e -> openChromeExtensionsPage());
 
-        Button createShortcutBtn = new Button("📌 Create Shortcut");
-        createShortcutBtn.getStyleClass().add("btn");
-        createShortcutBtn.setOnAction(e -> createSelectedShortcut());
+        Button openExtFolderBtn = new Button("📁 2. Copy Path & Open Folder");
+        openExtFolderBtn.getStyleClass().add("btn");
+        openExtFolderBtn.setStyle("-fx-background-color: rgba(52, 211, 153, 0.15); -fx-text-fill: #34D399; -fx-border-color: #34D399;");
+        openExtFolderBtn.setOnAction(e -> openExtensionFolder());
 
         Button rescanBtn = new Button("🔄 Rescan");
         rescanBtn.getStyleClass().add("btn");
         rescanBtn.setOnAction(e -> populateProfiles());
 
-        Button openExtFolderBtn = new Button("📁 Extension Folder");
-        openExtFolderBtn.getStyleClass().add("btn");
-        openExtFolderBtn.setOnAction(e -> openExtensionFolder());
-
-        Button applyBtn = new Button("⚡ Apply Selected Integration");
+        Button applyBtn = new Button("⚡ Apply Host Registration");
         applyBtn.getStyleClass().addAll("btn", "btn-primary");
         applyBtn.setOnAction(e -> applySelectedIntegration());
 
@@ -95,7 +92,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        btnBox.getChildren().addAll(launchBtn, createShortcutBtn, rescanBtn, openExtFolderBtn, spacer, applyBtn, closeBtn);
+        btnBox.getChildren().addAll(openChromeBtn, openExtFolderBtn, rescanBtn, spacer, applyBtn, closeBtn);
 
         dialogBody.getChildren().addAll(subtitle, guideCard, scrollPane, statusLabel, btnBox);
 
@@ -397,6 +394,15 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
             base = findExtensionBaseDir();
         }
         final Path targetDir = base;
+
+        try {
+            ClipboardContent content = new ClipboardContent();
+            content.putString(targetDir.toAbsolutePath().toString());
+            Clipboard.getSystemClipboard().setContent(content);
+            statusLabel.setText("📋 Copied path & opened Explorer! In Chrome (chrome://extensions), click 'Load unpacked' & select folder.");
+            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+        } catch (Exception ignored) {}
+
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
                 String os = System.getProperty("os.name", "").toLowerCase();
