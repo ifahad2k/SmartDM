@@ -78,26 +78,35 @@ public class BrowserIntegrationInstallerService {
             Files.writeString(extFolder.resolve("knldjnnmkkebefogdbmggjijknmjeaoh.json"), jsonContent);
         }
 
-        // 5. Inject Preferences setting & enable developer_mode if possible
+        // 5. Inject extension entry directly into Secure Preferences and Preferences
+        Path securePref = profile.profilePath().resolve("Secure Preferences");
         Path prefFile = profile.profilePath().resolve("Preferences");
-        if (Files.exists(prefFile)) {
-            try {
-                String content = Files.readString(prefFile);
-                if (content.contains("\"developer_mode\":false")) {
-                    content = content.replace("\"developer_mode\":false", "\"developer_mode\":true");
-                } else if (content.contains("\"developer_mode\": false")) {
-                    content = content.replace("\"developer_mode\": false", "\"developer_mode\": true");
+
+        injectExtensionIntoProfileJson(securePref, profileExtDir);
+        injectExtensionIntoProfileJson(prefFile, profileExtDir);
+    }
+
+    private static void injectExtensionIntoProfileJson(Path prefFile, Path profileExtDir) {
+        if (!Files.exists(prefFile)) return;
+        try {
+            String content = Files.readString(prefFile);
+            String extPathStr = profileExtDir.toAbsolutePath().toString().replace('\\', '/');
+
+            if (content.contains("\"developer_mode\":false")) {
+                content = content.replace("\"developer_mode\":false", "\"developer_mode\":true");
+            } else if (content.contains("\"developer_mode\": false")) {
+                content = content.replace("\"developer_mode\": false", "\"developer_mode\": true");
+            }
+
+            if (!content.contains("knldjnnmkkebefogdbmggjijknmjeaoh")) {
+                String settingSnippet = "\"knldjnnmkkebefogdbmggjijknmjeaoh\":{\"active_bit\":true,\"location\":4,\"path\":\"" +
+                    extPathStr + "\",\"state\":1,\"was_installed_by_default\":false,\"was_installed_by_oem\":false}";
+                if (content.contains("\"settings\":{")) {
+                    content = content.replace("\"settings\":{", "\"settings\":{" + settingSnippet + ",");
                 }
-                if (!content.contains("knldjnnmkkebefogdbmggjijknmjeaoh")) {
-                    String settingSnippet = "\"knldjnnmkkebefogdbmggjijknmjeaoh\":{\"location\":5,\"path\":\"" +
-                        profileExtDir.toAbsolutePath().toString().replace('\\', '/') + "\",\"state\":1}";
-                    if (content.contains("\"settings\":{")) {
-                        content = content.replace("\"settings\":{", "\"settings\":{" + settingSnippet + ",");
-                    }
-                }
-                Files.writeString(prefFile, content);
-            } catch (Exception ignored) {}
-        }
+            }
+            Files.writeString(prefFile, content);
+        } catch (Exception ignored) {}
     }
 
     private static void copyDirectory(Path source, Path target) {
