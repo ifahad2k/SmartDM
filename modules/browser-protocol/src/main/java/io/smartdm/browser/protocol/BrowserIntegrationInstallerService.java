@@ -44,14 +44,35 @@ public class BrowserIntegrationInstallerService {
         Path hostJsonPath = chromeExtDir.resolve("host").resolve("io.smartdm.host.json");
         runCmd("reg", "add", regPath, "/ve", "/t", "REG_SZ", "/d", hostJsonPath.toAbsolutePath().toString(), "/f");
 
-        // 2. External Extension Directory Injection for Profile
+        // 2. Install extension directly into Profile's Extensions directory
+        Path profileExtDir = profile.profilePath().resolve("Extensions").resolve("knldjnnmkkebefogdbmggjijknmjeaoh").resolve("1.0.6_0");
+        Files.createDirectories(profileExtDir);
+        copyDirectory(chromeExtDir, profileExtDir);
+
+        // 3. External Extension Directory Injection for Profile
         Path userData = profile.profilePath().getParent();
         if (userData != null) {
             Path extFolder = userData.resolve("External Extensions");
             Files.createDirectories(extFolder);
-            String jsonContent = "{\n  \"external_crx\": \"" + chromeExtDir.toAbsolutePath().toString().replace('\\', '/') + "\",\n  \"external_version\": \"1.0.6\"\n}";
+            String jsonContent = "{\n  \"external_crx\": \"" + profileExtDir.toAbsolutePath().toString().replace('\\', '/') + "\",\n  \"external_version\": \"1.0.6\"\n}";
             Files.writeString(extFolder.resolve("knldjnnmkkebefogdbmggjijknmjeaoh.json"), jsonContent);
         }
+    }
+
+    private static void copyDirectory(Path source, Path target) {
+        if (!Files.exists(source)) return;
+        try {
+            Files.walk(source).forEach(src -> {
+                try {
+                    Path dest = target.resolve(source.relativize(src));
+                    if (Files.isDirectory(src)) {
+                        Files.createDirectories(dest);
+                    } else {
+                        Files.copy(src, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
     }
 
     private static void installFirefoxProfile(BrowserProfile profile, Path firefoxExtDir) throws Exception {

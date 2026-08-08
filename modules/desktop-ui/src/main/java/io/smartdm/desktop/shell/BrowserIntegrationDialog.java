@@ -161,7 +161,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     pRow.setAlignment(Pos.CENTER_LEFT);
 
                     CheckBox cb = new CheckBox(p.profileName());
-                    cb.setSelected(true); // Default to selected for convenience
+                    cb.setSelected(p.isIntegrated());
                     cb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-size: 12px;");
 
                     Label badge = new Label(p.isIntegrated() ? "🟢 Integrated" : "⚪ Ready");

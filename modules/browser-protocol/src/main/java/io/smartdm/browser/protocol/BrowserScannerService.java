@@ -133,6 +133,19 @@ public class BrowserScannerService {
     }
 
     private static boolean checkChromiumIntegrated(String browserType, Path profileDir) {
+        Path extDir = profileDir.resolve("Extensions").resolve("knldjnnmkkebefogdbmggjijknmjeaoh");
+        if (Files.exists(extDir)) return true;
+
+        Path extDir2 = profileDir.resolve("Extensions");
+        if (Files.exists(extDir2)) {
+            File[] subFiles = extDir2.toFile().listFiles();
+            if (subFiles != null) {
+                for (File f : subFiles) {
+                    if (f.getName().toLowerCase().contains("smartdm")) return true;
+                }
+            }
+        }
+
         Path extFile = profileDir.resolve("Preferences");
         if (Files.exists(extFile)) {
             try {
