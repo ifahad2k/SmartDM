@@ -194,8 +194,11 @@ public final class MediaDownloadTracker {
                 commandList.add("--no-check-certificates");
                 commandList.add("--no-warnings");
                 commandList.add("--ignore-config");
+                commandList.add("--no-playlist");
+                commandList.add("--socket-timeout");
+                commandList.add("10");
                 commandList.add("-N");
-                commandList.add("4");
+                commandList.add("8");
                 commandList.add("--paths");
                 commandList.add("temp:" + appTempDir.toString());
                 commandList.add("--paths");
@@ -211,7 +214,7 @@ public final class MediaDownloadTracker {
 
                 if (info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"))) {
                     commandList.add("--extractor-args");
-                    commandList.add("youtube:player_client=web,default");
+                    commandList.add("youtube:player_client=mweb,android,web");
                 } else if (info.webpageUrl() != null && info.webpageUrl().contains("instagram.com")) {
                     commandList.add("--referer");
                     commandList.add("https://www.instagram.com/");
