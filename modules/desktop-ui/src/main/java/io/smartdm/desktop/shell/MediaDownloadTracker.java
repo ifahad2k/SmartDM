@@ -187,6 +187,9 @@ public final class MediaDownloadTracker {
 
                 Path tempOutputFile = appTempDir.resolve(info.targetPath().getFileName());
 
+                Path persistentCacheDir = java.nio.file.Paths.get(System.getProperty("user.home"), ".smartdm", "cache", "ytdlp");
+                try { java.nio.file.Files.createDirectories(persistentCacheDir); } catch (Exception ignored) {}
+
                 List<String> commandList = new ArrayList<>();
                 commandList.add(ytDlp.toString());
                 commandList.add("--newline");
@@ -195,7 +198,8 @@ public final class MediaDownloadTracker {
                 commandList.add("--no-warnings");
                 commandList.add("--ignore-config");
                 commandList.add("--no-playlist");
-                commandList.add("--no-cache-dir");
+                commandList.add("--cache-dir");
+                commandList.add(persistentCacheDir.toAbsolutePath().toString());
                 commandList.add("--no-mtime");
                 commandList.add("--socket-timeout");
                 commandList.add("10");
@@ -220,7 +224,7 @@ public final class MediaDownloadTracker {
 
                 if (info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"))) {
                     commandList.add("--extractor-args");
-                    commandList.add("youtube:player_client=mweb,android");
+                    commandList.add("youtube:player_client=android,mweb");
                 } else if (info.webpageUrl() != null && info.webpageUrl().contains("instagram.com")) {
                     commandList.add("--referer");
                     commandList.add("https://www.instagram.com/");
