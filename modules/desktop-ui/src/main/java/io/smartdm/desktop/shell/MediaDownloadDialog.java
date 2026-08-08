@@ -310,7 +310,27 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
                 onDownloadAdded.accept(download);
             }
 
-            String formatArg = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
+            String formatArg = "b";
+            if (selectedFormat != null) {
+                String res = selectedFormat.resolution();
+                String fid = selectedFormat.formatId();
+                int height = 0;
+                if (res != null) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d{3,4})p").matcher(res);
+                    if (m.find()) {
+                        try { height = Integer.parseInt(m.group(1)); } catch (Exception ignored) {}
+                    }
+                }
+                if (height > 0) {
+                    if (fid != null && fid.matches("\\d+")) {
+                        formatArg = fid + "+ba/bestvideo[height<=" + height + "]+bestaudio";
+                    } else {
+                        formatArg = "bestvideo[height<=" + height + "]+bestaudio";
+                    }
+                } else if (fid != null && !fid.isBlank()) {
+                    formatArg = fid;
+                }
+            }
             String streamUrl = (selectedFormat != null && selectedFormat.url() != null && !selectedFormat.url().isBlank()) ? selectedFormat.url() : null;
             MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), streamUrl, formatArg, cookies);
             close();

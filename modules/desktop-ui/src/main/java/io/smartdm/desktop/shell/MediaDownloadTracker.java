@@ -247,6 +247,8 @@ public final class MediaDownloadTracker {
                 String fArg;
                 if (formatArg == null || formatArg.isBlank() || "best".equalsIgnoreCase(formatArg) || "b".equalsIgnoreCase(formatArg)) {
                     fArg = "bv*+ba/b/best";
+                } else if (formatArg.contains("bestvideo") || formatArg.contains("+")) {
+                    fArg = formatArg;
                 } else if (formatArg.startsWith("audio_") || formatArg.toLowerCase().contains("audio") || "ba".equalsIgnoreCase(formatArg) || "bestaudio".equalsIgnoreCase(formatArg)) {
                     fArg = formatArg;
                 } else {
