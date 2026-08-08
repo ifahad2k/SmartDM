@@ -23,6 +23,8 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
     
     // Labels & UI controls
     private final Label urlText;
+    private final Label valFileName;
+    private final Label valSaveTo;
     private final Label valFileSize;
     private final Label valDownloaded;
     private final Label valSpeed;
@@ -86,6 +88,18 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
         grid.setVgap(8);
         grid.setPadding(new Insets(8, 0, 8, 0));
 
+        String initFn = download.destination().value().getFileName().toString();
+        valFileName = createValueLabel(initFn);
+        valFileName.setStyle("-fx-text-fill: #38BDF8; -fx-font-family: 'JetBrains Mono', monospace; -fx-font-size: 12px; -fx-font-weight: bold;");
+        valFileName.setMaxWidth(380);
+        valFileName.setTooltip(new Tooltip(initFn));
+
+        String initPath = download.destination().value().toString();
+        valSaveTo = createValueLabel(initPath);
+        valSaveTo.setStyle("-fx-text-fill: #94A3B8; -fx-font-family: 'JetBrains Mono', monospace; -fx-font-size: 11px;");
+        valSaveTo.setMaxWidth(380);
+        valSaveTo.setTooltip(new Tooltip(initPath));
+
         valHost = createValueLabel(extractHost(download.source().value().toString()));
         valFileSize = createValueLabel("0 B");
         valDownloaded = createValueLabel("0 B");
@@ -93,12 +107,20 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
         valEta = createValueLabel("Unknown");
         valResume = createValueLabel("Yes");
 
-        grid.add(createFieldBox("URL / Host:", valHost), 0, 0);
-        grid.add(createFieldBox("File size:", valFileSize), 1, 0);
-        grid.add(createFieldBox("Downloaded:", valDownloaded), 0, 1);
-        grid.add(createFieldBox("Transfer rate:", valSpeed), 1, 1);
-        grid.add(createFieldBox("Time left:", valEta), 0, 2);
-        grid.add(createFieldBox("Resume capability:", valResume), 1, 2);
+        VBox fnBox = createFieldBox("File Name:", valFileName);
+        GridPane.setColumnSpan(fnBox, 2);
+        grid.add(fnBox, 0, 0);
+
+        VBox stBox = createFieldBox("Save Path:", valSaveTo);
+        GridPane.setColumnSpan(stBox, 2);
+        grid.add(stBox, 0, 1);
+
+        grid.add(createFieldBox("URL / Host:", valHost), 0, 2);
+        grid.add(createFieldBox("File size:", valFileSize), 1, 2);
+        grid.add(createFieldBox("Downloaded:", valDownloaded), 0, 3);
+        grid.add(createFieldBox("Transfer rate:", valSpeed), 1, 3);
+        grid.add(createFieldBox("Time left:", valEta), 0, 4);
+        grid.add(createFieldBox("Resume capability:", valResume), 1, 4);
 
         urlText = valHost;
 
@@ -259,6 +281,14 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
         if (updated == null) return;
         this.activeDownload = updated;
         Platform.runLater(() -> {
+            String updatedFn = updated.destination().value().getFileName().toString();
+            valFileName.setText(updatedFn);
+            valFileName.setTooltip(new Tooltip(updatedFn));
+
+            String updatedPath = updated.destination().value().toString();
+            valSaveTo.setText(updatedPath);
+            valSaveTo.setTooltip(new Tooltip(updatedPath));
+
             long currentBytes = updated.downloadedBytes() != null ? updated.downloadedBytes().value() : 0;
             long totalBytes = updated.totalBytes() != null ? updated.totalBytes().value() : -1;
 
