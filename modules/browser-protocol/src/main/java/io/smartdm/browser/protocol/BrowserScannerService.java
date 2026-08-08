@@ -160,11 +160,20 @@ public class BrowserScannerService {
 
     public static boolean isDeveloperModeEnabled(Path profileDir) {
         if (profileDir == null) return false;
-        Path prefFile = profileDir.resolve("Preferences");
-        if (!Files.exists(prefFile)) return false;
+        Path securePref = profileDir.resolve("Secure Preferences");
+        Path pref = profileDir.resolve("Preferences");
+
+        return checkDevModeInFile(securePref) || checkDevModeInFile(pref);
+    }
+
+    private static boolean checkDevModeInFile(Path file) {
+        if (!Files.exists(file)) return false;
         try {
-            String content = Files.readString(prefFile);
-            return content.contains("\"developer_mode\":true") || content.contains("\"developer_mode\": true");
+            String content = Files.readString(file);
+            return content.contains("\"developer_mode\":true") ||
+                   content.contains("\"developer_mode\": true") ||
+                   content.contains("\"developer_mode\":\"") ||
+                   content.contains("developer_mode_encrypted_hash");
         } catch (Exception ignored) {}
         return false;
     }
