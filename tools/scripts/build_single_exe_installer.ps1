@@ -96,6 +96,25 @@ echo } >> "%~dp0io.smartdm.host.firefox.json"
 
 reg add "HKCU\Software\Google\Chrome\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.json" /f >nul 2>&1
 reg add "HKCU\Software\Mozilla\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.firefox.json" /f >nul 2>&1
+
+reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "installation_mode" /t REG_SZ /d "normal_installed" /f >nul 2>&1
+reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "install_url" /t REG_SZ /d "file:///%APP_DIR%extensions/firefox/manifest.json" /f >nul 2>&1
+
+if exist "%ProgramFiles%\Mozilla Firefox\" (
+    if not exist "%ProgramFiles%\Mozilla Firefox\distribution" mkdir "%ProgramFiles%\Mozilla Firefox\distribution" >nul 2>&1
+    (
+        echo {
+        echo   "policies": {
+        echo     "ExtensionSettings": {
+        echo       "smartdm-extension@smartdm.io": {
+        echo         "installation_mode": "normal_installed",
+        echo         "install_url": "file:///%APP_DIR%extensions/firefox/manifest.json"
+        echo       }
+        echo     }
+        echo   }
+        echo }
+    ) > "%ProgramFiles%\Mozilla Firefox\distribution\policies.json" 2>nul
+)
 exit /b 0
 "@
 
