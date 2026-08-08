@@ -36,10 +36,23 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
 
         Label subtitle = new Label(
             "Select specific browsers and profiles to enable SmartDM integration.\n" +
-            "You have full control over where the extension operates!"
+            "Native Messaging Host bridges are registered automatically for your selections."
         );
         subtitle.setWrapText(true);
         subtitle.setStyle("-fx-font-size: 13px; -fx-text-fill: #94A3B8; -fx-line-spacing: 3px;");
+
+        VBox guideCard = new VBox(6);
+        guideCard.setPadding(new Insets(10));
+        guideCard.setStyle("-fx-background-color: rgba(56, 189, 248, 0.08); -fx-border-color: rgba(56, 189, 248, 0.25); -fx-border-radius: 6px; -fx-background-radius: 6px;");
+        Label guideHeader = new Label("💡 How to activate extension in Google Chrome / Edge / Brave:");
+        guideHeader.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
+        Label guideStep1 = new Label("1️⃣ Click 'Open Chrome Extensions' button below to open browser extensions page.");
+        guideStep1.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        Label guideStep2 = new Label("2️⃣ Toggle 'Developer mode' ON in top-right corner & click 'Load unpacked'.");
+        guideStep2.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        Label guideStep3 = new Label("3️⃣ Select the SmartDM extension folder (click 'Extension Folder' button below to view).");
+        guideStep3.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        guideCard.getChildren().addAll(guideHeader, guideStep1, guideStep2, guideStep3);
 
         statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
@@ -47,24 +60,29 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
 
         ScrollPane scrollPane = new ScrollPane(profileListContainer);
         scrollPane.setFitToWidth(true);
-        scrollPane.setPrefHeight(320);
+        scrollPane.setPrefHeight(260);
         scrollPane.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8px;");
 
         // Action Buttons
         HBox btnBox = new HBox(10);
         btnBox.setAlignment(Pos.CENTER_RIGHT);
 
-        Button rescanBtn = new Button("🔄 Rescan Browsers");
+        Button rescanBtn = new Button("🔄 Rescan");
         rescanBtn.getStyleClass().add("btn");
         rescanBtn.setOnAction(e -> populateProfiles());
 
-        Button applyBtn = new Button("⚡ Apply Selected Integration");
-        applyBtn.getStyleClass().addAll("btn", "btn-primary");
-        applyBtn.setOnAction(e -> applySelectedIntegration());
+        Button openChromePageBtn = new Button("🌐 Open Chrome Extensions");
+        openChromePageBtn.getStyleClass().addAll("btn");
+        openChromePageBtn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.2); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8;");
+        openChromePageBtn.setOnAction(e -> openChromeExtensionsPage());
 
         Button openExtFolderBtn = new Button("📁 Extension Folder");
         openExtFolderBtn.getStyleClass().add("btn");
         openExtFolderBtn.setOnAction(e -> openExtensionFolder());
+
+        Button applyBtn = new Button("⚡ Apply Selected Integration");
+        applyBtn.getStyleClass().addAll("btn", "btn-primary");
+        applyBtn.setOnAction(e -> applySelectedIntegration());
 
         Button closeBtn = new Button("Close");
         closeBtn.getStyleClass().add("btn");
@@ -73,9 +91,9 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        btnBox.getChildren().addAll(rescanBtn, openExtFolderBtn, spacer, applyBtn, closeBtn);
+        btnBox.getChildren().addAll(rescanBtn, openChromePageBtn, openExtFolderBtn, spacer, applyBtn, closeBtn);
 
-        dialogBody.getChildren().addAll(subtitle, scrollPane, statusLabel, btnBox);
+        dialogBody.getChildren().addAll(subtitle, guideCard, scrollPane, statusLabel, btnBox);
 
         // Initial Scanning
         populateProfiles();
@@ -261,15 +279,29 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         return "🌐";
     }
 
+    private void openChromeExtensionsPage() {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                new ProcessBuilder("cmd", "/c", "start", "chrome", "chrome://extensions").start();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+    }
+
     private void openExtensionFolder() {
-        Path base = findExtensionBaseDir();
+        Path base = findExtensionBaseDir().resolve("chrome");
+        if (!java.nio.file.Files.exists(base)) {
+            base = findExtensionBaseDir();
+        }
+        final Path targetDir = base;
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
                 String os = System.getProperty("os.name", "").toLowerCase();
                 if (os.contains("win")) {
-                    new ProcessBuilder("explorer.exe", base.toString()).start();
+                    new ProcessBuilder("explorer.exe", targetDir.toString()).start();
                 } else {
-                    new ProcessBuilder("xdg-open", base.toString()).start();
+                    new ProcessBuilder("xdg-open", targetDir.toString()).start();
                 }
             } catch (Exception ex) {
                 ex.printStackTrace();
