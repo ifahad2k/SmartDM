@@ -253,11 +253,11 @@ public final class MediaDownloadTracker {
                     fArg = formatArg + "+ba/" + formatArg + "+bestaudio/" + formatArg + "/bv*+ba/b/best";
                 }
 
-                String targetUrl = (info.directStreamUrl() != null && !info.directStreamUrl().isBlank()) ? info.directStreamUrl() : info.webpageUrl();
-                if (info.directStreamUrl() == null || info.directStreamUrl().isBlank()) {
-                    commandList.add("-f");
-                    commandList.add(fArg);
-                }
+                boolean isYouTube = info.webpageUrl() != null && (info.webpageUrl().contains("youtube.com") || info.webpageUrl().contains("youtu.be"));
+                String targetUrl = (!isYouTube && info.directStreamUrl() != null && !info.directStreamUrl().isBlank()) ? info.directStreamUrl() : info.webpageUrl();
+
+                commandList.add("-f");
+                commandList.add(fArg);
                 commandList.add("--merge-output-format");
                 commandList.add("mp4");
                 commandList.add("-o");
