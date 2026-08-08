@@ -251,7 +251,22 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         applyTask.setOnSucceeded(e -> {
             boolean ok = applyTask.getValue();
             if (ok) {
-                statusLabel.setText("🎉 Successfully applied integration to selected profile(s)!");
+                // Copy extension folder path to Clipboard
+                try {
+                    Path chromeExtDir = extBaseDir.resolve("chrome");
+                    ClipboardContent content = new ClipboardContent();
+                    content.putString(chromeExtDir.toAbsolutePath().toString());
+                    Clipboard.getSystemClipboard().setContent(content);
+                } catch (Exception ignored) {}
+
+                // Auto-launch selected Chromium browser profiles with --load-extension
+                for (BrowserProfile p : selectedProfiles) {
+                    if (!"firefox".equalsIgnoreCase(p.browserType())) {
+                        launchBrowserProfile(p, extBaseDir.resolve("chrome"));
+                    }
+                }
+
+                statusLabel.setText("🎉 Applied! SmartDM extension launched into " + selectedProfiles.size() + " profile(s). Extension path copied to Clipboard.");
                 statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
                 populateProfiles();
             } else {
@@ -261,6 +276,21 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         });
 
         new Thread(applyTask).start();
+    }
+
+    private void launchBrowserProfile(BrowserProfile p, Path chromeExtDir) {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                String exe = switch (p.browserType().toLowerCase()) {
+                    case "edge" -> "msedge.exe";
+                    case "brave" -> "brave.exe";
+                    default -> "chrome.exe";
+                };
+                new ProcessBuilder("cmd", "/c", "start", exe, "--profile-directory=\"" + p.profileId() + "\"", "--load-extension=\"" + chromeExtDir.toAbsolutePath().toString() + "\"").start();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
     }
 
     private Path findExtensionBaseDir() {
