@@ -220,9 +220,9 @@ public class SingleDownloadCoordinator {
                     .header("User-Agent", userAgent)
                     .header("Accept", "*/*")
                     .header("Accept-Language", "en-US,en;q=0.9")
-                    .header("Sec-Fetch-Dest", "video")
-                    .header("Sec-Fetch-Mode", "no-cors")
-                    .header("Sec-Fetch-Site", "cross-site")
+                    .header("Sec-Fetch-Dest", "document")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Site", "same-origin")
                     .header("Accept-Encoding", "identity")
                     .GET();
 
@@ -252,10 +252,14 @@ public class SingleDownloadCoordinator {
             HttpRequest baseRequest = reqBuilder.build();
 
             long[] lastSaveTime = {System.currentTimeMillis()};
+            long[] lastProgressPublishTime = {0};
             SegmentWorker.ProgressCallback callback = (segment, read) -> {
-                eventPublisher.publish(new DownloadEvent.ProgressUpdated(
-                        download.id(), download.downloadedBytes(), download.totalBytes(), download));
                 long now = System.currentTimeMillis();
+                if (now - lastProgressPublishTime[0] >= 100) {
+                    lastProgressPublishTime[0] = now;
+                    eventPublisher.publish(new DownloadEvent.ProgressUpdated(
+                            download.id(), download.downloadedBytes(), download.totalBytes(), download));
+                }
                 if (now - lastSaveTime[0] > 5000) {
                     synchronized (lastSaveTime) {
                         if (now - lastSaveTime[0] > 5000) {

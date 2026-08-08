@@ -180,21 +180,13 @@ public class SmartDmApp extends Application {
                 Download updated = event.download();
                 if (updated != null) {
                     boolean stateChanged = event instanceof DownloadEvent.StateChanged;
-                    
-                    if (stateChanged || updatePending.compareAndSet(false, true)) {
-                        Platform.runLater(() -> {
-                            if (!stateChanged) {
-                                updatePending.set(false);
-                            }
-                            
-                            workspaceRef[0].updateDownload(updated);
-                            
-                            if (stateChanged) {
-                                if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
-                                if (schedulerWorkspaceRef.get() != null) schedulerWorkspaceRef.get().refreshList();
-                            }
-                        });
-                    }
+                    Platform.runLater(() -> {
+                        workspaceRef[0].updateDownload(updated);
+                        if (stateChanged) {
+                            if (queueWorkspaceRef.get() != null) queueWorkspaceRef.get().refreshList();
+                            if (schedulerWorkspaceRef.get() != null) schedulerWorkspaceRef.get().refreshList();
+                        }
+                    });
                 }
             }
         };
