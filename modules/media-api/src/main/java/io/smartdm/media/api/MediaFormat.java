@@ -11,8 +11,12 @@ public record MediaFormat(
     double tbr,
     int fps,
     boolean isAudioOnly,
-    boolean isVideoOnly
+    boolean isVideoOnly,
+    String url
 ) {
+    public MediaFormat(String formatId, String ext, String resolution, String formatNote, long fileSize, String vcodec, String acodec, double tbr, int fps, boolean isAudioOnly, boolean isVideoOnly) {
+        this(formatId, ext, resolution, formatNote, fileSize, vcodec, acodec, tbr, fps, isAudioOnly, isVideoOnly, null);
+    }
     public String getFormattedSize() {
         if (fileSize > 0) {
             if (fileSize < 1024) return fileSize + " B";

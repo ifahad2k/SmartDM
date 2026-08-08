@@ -102,9 +102,10 @@ public class NativeDirectExtractor {
                 String ext = mimeType.contains("webm") ? "webm" : "mp4";
                 long fileSize = f.path("contentLength").asLong(0);
 
+                String streamUrl = f.path("url").asText(null);
                 formats.add(new MediaFormat(
                         formatId, ext, quality, "Direct Video + Audio", fileSize,
-                        "h264", "aac", 0, f.path("fps").asInt(30), false, false
+                        "h264", "aac", 0, f.path("fps").asInt(30), false, false, streamUrl
                 ));
             }
         }
@@ -122,10 +123,11 @@ public class NativeDirectExtractor {
                 String ext = mimeType.contains("webm") ? (isAudio ? "webm" : "webm") : (isAudio ? "m4a" : "mp4");
                 long fileSize = f.path("contentLength").asLong(0);
                 double tbr = f.path("bitrate").asDouble(0) / 1000.0;
+                String streamUrl = f.path("url").asText(null);
 
                 formats.add(new MediaFormat(
                         formatId, ext, quality, isAudio ? "Audio Only Stream" : "High Res Video", fileSize,
-                        isVideo ? "avc1" : "none", isAudio ? "mp4a" : "none", tbr, f.path("fps").asInt(0), isAudio, isVideo
+                        isVideo ? "avc1" : "none", isAudio ? "mp4a" : "none", tbr, f.path("fps").asInt(0), isAudio, isVideo, streamUrl
                 ));
             }
         }

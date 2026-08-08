@@ -25,6 +25,7 @@ public final class MediaDownloadTracker {
         Download download,
         Path targetPath,
         String webpageUrl,
+        String directStreamUrl,
         String formatArg,
         String cookies
     ) {}
@@ -48,11 +49,15 @@ public final class MediaDownloadTracker {
     }
 
     public static void startDownload(Download download, Path targetPath, String webpageUrl, String formatArg) {
-        startDownload(download, targetPath, webpageUrl, formatArg, null);
+        startDownload(download, targetPath, webpageUrl, null, formatArg, null);
     }
 
     public static void startDownload(Download download, Path targetPath, String webpageUrl, String formatArg, String cookies) {
-        TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, formatArg, cookies);
+        startDownload(download, targetPath, webpageUrl, null, formatArg, cookies);
+    }
+
+    public static void startDownload(Download download, Path targetPath, String webpageUrl, String directStreamUrl, String formatArg, String cookies) {
+        TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, directStreamUrl, formatArg, cookies);
         taskRegistry.put(download.id(), info);
         runYtDlp(info);
     }
@@ -248,14 +253,17 @@ public final class MediaDownloadTracker {
                     fArg = formatArg + "+ba/" + formatArg + "+bestaudio/" + formatArg + "/bv*+ba/b/best";
                 }
 
-                commandList.add("-f");
-                commandList.add(fArg);
+                String targetUrl = (info.directStreamUrl() != null && !info.directStreamUrl().isBlank()) ? info.directStreamUrl() : info.webpageUrl();
+                if (info.directStreamUrl() == null || info.directStreamUrl().isBlank()) {
+                    commandList.add("-f");
+                    commandList.add(fArg);
+                }
                 commandList.add("--merge-output-format");
                 commandList.add("mp4");
                 commandList.add("-o");
                 commandList.add(tempOutputFile.toString());
                 commandList.add("--force-ipv4");
-                commandList.add(info.webpageUrl());
+                commandList.add(targetUrl);
 
                 ProcessBuilder pb = new ProcessBuilder(commandList);
                 pb.redirectErrorStream(true);

@@ -162,7 +162,8 @@
                 fileSize: parseInt(f.contentLength || 0, 10),
                 fps: f.fps || 30,
                 isAudioOnly: false,
-                title: title
+                title: title,
+                url: f.url || null
               });
             });
 
@@ -182,7 +183,8 @@
                 fps: f.fps || 0,
                 isAudioOnly: isAudio,
                 isVideoOnly: isVideo,
-                title: title
+                title: title,
+                url: f.url || null
               });
             });
 

@@ -311,7 +311,8 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
             }
 
             String formatArg = (selectedFormat != null && selectedFormat.formatId() != null) ? selectedFormat.formatId() : "b";
-            MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), formatArg, cookies);
+            String streamUrl = (selectedFormat != null && selectedFormat.url() != null && !selectedFormat.url().isBlank()) ? selectedFormat.url() : null;
+            MediaDownloadTracker.startDownload(download, targetPath, metadata.webpageUrl(), streamUrl, formatArg, cookies);
             close();
         } catch (Exception ex) {
             System.err.println("Failed to start media download: " + ex.getMessage());
