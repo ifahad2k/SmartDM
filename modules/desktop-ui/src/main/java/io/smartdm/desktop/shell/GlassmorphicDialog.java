@@ -22,6 +22,15 @@ public abstract class GlassmorphicDialog extends Stage {
 
     protected final BorderPane root;
     protected final VBox dialogBody;
+    protected final Label titleLabel;
+
+    public void updateDialogTitle(String title) {
+        super.setTitle(title);
+        if (titleLabel != null) {
+            titleLabel.setText(title);
+            titleLabel.setTooltip(new javafx.scene.control.Tooltip(title));
+        }
+    }
 
     @SuppressWarnings("this-escape")
     public GlassmorphicDialog(Stage owner, String title) {
@@ -53,7 +62,7 @@ public abstract class GlassmorphicDialog extends Stage {
         Region appIcon = new Region();
         appIcon.getStyleClass().add("app-icon");
         
-        Label titleLabel = new Label(title);
+        titleLabel = new Label(title);
         titleLabel.getStyleClass().add("app-title");
         titleLabel.setMaxWidth(500);
         

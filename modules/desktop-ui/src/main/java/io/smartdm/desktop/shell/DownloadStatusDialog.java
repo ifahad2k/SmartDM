@@ -58,7 +58,7 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
 
     @SuppressWarnings("this-escape")
     public DownloadStatusDialog(Stage owner, Download download, DownloadActionListener listener) {
-        super(owner, "SmartDM — Download status", Modality.NONE);
+        super(owner, download.destination().value().getFileName().toString(), Modality.NONE);
         this.download = download;
         this.activeDownload = download;
         this.listener = listener;
@@ -67,7 +67,7 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
         setAlwaysOnTop(false);
 
         String fileName = download.destination().value().getFileName().toString();
-        setTitle("SmartDM — " + fileName);
+        updateDialogTitle(fileName);
 
         // --- TABS BAR ---
         HBox tabs = new HBox(8);
@@ -282,6 +282,7 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
         this.activeDownload = updated;
         Platform.runLater(() -> {
             String updatedFn = updated.destination().value().getFileName().toString();
+            updateDialogTitle(updatedFn);
             valFileName.setText(updatedFn);
             valFileName.setTooltip(new Tooltip(updatedFn));
 
