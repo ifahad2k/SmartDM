@@ -49,7 +49,7 @@ public class BrowserIntegrationInstallerService {
         Files.createDirectories(profileExtDir);
         copyDirectory(chromeExtDir, profileExtDir);
 
-        // 3. Register Browser Registry Extension path & Policy
+        // 3. Register Browser Registry Extension path (HKCU & HKLM System-Wide)
         String extRegPath = switch (profile.browserType().toLowerCase()) {
             case "edge" -> "HKCU\\Software\\Microsoft\\Edge\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
             case "brave" -> "HKCU\\Software\\BraveSoftware\\Brave-Browser\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
@@ -58,12 +58,16 @@ public class BrowserIntegrationInstallerService {
         runCmd("reg", "add", extRegPath, "/v", "path", "/t", "REG_SZ", "/d", profileExtDir.toAbsolutePath().toString(), "/f");
         runCmd("reg", "add", extRegPath, "/v", "version", "/t", "REG_SZ", "/d", "1.0.6", "/f");
 
-        String forceRegPath = switch (profile.browserType().toLowerCase()) {
-            case "edge" -> "HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist";
-            case "brave" -> "HKCU\\Software\\Policies\\BraveSoftware\\Brave-Browser\\ExtensionInstallForcelist";
-            default -> "HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist";
+        String hklmPath = switch (profile.browserType().toLowerCase()) {
+            case "edge" -> "HKLM\\Software\\Microsoft\\Edge\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
+            default -> "HKLM\\Software\\Google\\Chrome\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh";
         };
-        runCmd("reg", "add", forceRegPath, "/v", "99", "/t", "REG_SZ", "/d", "knldjnnmkkebefogdbmggjijknmjeaoh;file:///" + profileExtDir.resolve("manifest.json").toAbsolutePath().toString().replace('\\', '/'), "/f");
+        runCmd("reg", "add", hklmPath, "/v", "path", "/t", "REG_SZ", "/d", profileExtDir.toAbsolutePath().toString(), "/f");
+        runCmd("reg", "add", hklmPath, "/v", "version", "/t", "REG_SZ", "/d", "1.0.6", "/f");
+        if (!"edge".equalsIgnoreCase(profile.browserType())) {
+            runCmd("reg", "add", "HKLM\\Software\\WOW6432Node\\Google\\Chrome\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh", "/v", "path", "/t", "REG_SZ", "/d", profileExtDir.toAbsolutePath().toString(), "/f");
+            runCmd("reg", "add", "HKLM\\Software\\WOW6432Node\\Google\\Chrome\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh", "/v", "version", "/t", "REG_SZ", "/d", "1.0.6", "/f");
+        }
 
         // 4. External Extension Directory Injection for Profile
         Path userData = profile.profilePath().getParent();

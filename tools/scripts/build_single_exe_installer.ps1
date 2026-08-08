@@ -102,8 +102,13 @@ reg add "HKCU\Software\Mozilla\NativeMessagingHosts\io.smartdm.host" /ve /t REG_
 reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
 reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
 
-reg add "HKCU\Software\Policies\Google\Chrome\ExtensionInstallForcelist" /v "99" /t REG_SZ /d "knldjnnmkkebefogdbmggjijknmjeaoh;file:///%APP_DIR%extensions/chrome/manifest.json" /f >nul 2>&1
-reg add "HKCU\Software\Policies\Microsoft\Edge\ExtensionInstallForcelist" /v "99" /t REG_SZ /d "knldjnnmkkebefogdbmggjijknmjeaoh;file:///%APP_DIR%extensions/chrome/manifest.json" /f >nul 2>&1
+reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
+reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
+reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
+reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
+
+reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
+reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
 
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "installation_mode" /t REG_SZ /d "normal_installed" /f >nul 2>&1
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "install_url" /t REG_SZ /d "file:///%APP_DIR%extensions/firefox/manifest.json" /f >nul 2>&1
