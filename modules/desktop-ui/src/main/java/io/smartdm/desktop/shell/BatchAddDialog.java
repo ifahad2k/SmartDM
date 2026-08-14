@@ -9,6 +9,7 @@ import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 import java.util.List;
@@ -26,7 +27,7 @@ public final class BatchAddDialog extends GlassmorphicDialog {
     private boolean downloadNowRequested = false;
 
     public BatchAddDialog(Stage owner) {
-        super(owner, "SmartDM — Batch Add");
+        super(null, "SmartDM — Batch Add", Modality.NONE);
 
         // Header
         Label headerTitle = new Label("Add multiple links");

@@ -47,7 +47,7 @@ public final class AddDownloadDialog extends GlassmorphicDialog {
     }
 
     public AddDownloadDialog(Stage owner, java.util.List<io.smartdm.domain.Download> existingDownloads, io.smartdm.organization.SmartFolderService smartFolderService) {
-        super(owner, "Download File Info", Modality.NONE);
+        super(null, "Download File Info", Modality.NONE);
         this.existingDownloads = existingDownloads;
         this.smartFolderService = smartFolderService;
         this.prober = new HttpProbeClient();

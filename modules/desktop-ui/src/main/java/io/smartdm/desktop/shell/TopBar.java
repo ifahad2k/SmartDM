@@ -75,7 +75,7 @@ public final class TopBar extends HBox {
             ClipboardMonitor clipboardMonitor = new ClipboardMonitor();
             List<String> newUrls = clipboardMonitor.checkClipboardOnFocus();
             if (newUrls.size() > 1) {
-                BatchAddDialog bd = new BatchAddDialog((javafx.stage.Stage) getScene().getWindow());
+                BatchAddDialog bd = new BatchAddDialog(null);
                 bd.setInputText(String.join("\n", newUrls));
                 bd.showAndWait();
                 if (bd.isResultConfirmed() && bd.getBatchUrls() != null) {
@@ -94,7 +94,7 @@ public final class TopBar extends HBox {
                     }
                 }
             } else {
-                EnterUrlDialog d = new EnterUrlDialog((javafx.stage.Stage) getScene().getWindow(), existingDownloadsProvider.get(), onDownloadAdded, smartFolderService);
+                EnterUrlDialog d = new EnterUrlDialog(null, existingDownloadsProvider.get(), onDownloadAdded, smartFolderService);
                 d.show();
             }
         });

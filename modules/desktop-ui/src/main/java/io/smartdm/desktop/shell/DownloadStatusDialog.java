@@ -58,7 +58,7 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
 
     @SuppressWarnings("this-escape")
     public DownloadStatusDialog(Stage owner, Download download, DownloadActionListener listener) {
-        super(owner, download.destination().value().getFileName().toString(), Modality.NONE);
+        super(null, download.destination().value().getFileName().toString(), Modality.NONE);
         this.download = download;
         this.activeDownload = download;
         this.listener = listener;

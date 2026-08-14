@@ -64,7 +64,7 @@ public final class MediaDownloadDialog extends GlassmorphicDialog {
     }
 
     public MediaDownloadDialog(Stage owner, MediaMetadata metadata, String preferredFormatId, String cookies, Consumer<Download> onDownloadAdded, io.smartdm.organization.SmartFolderService smartFolderService, io.smartdm.domain.repository.DownloadRepository repository) {
-        super(owner, "Media Download - " + metadata.title(), Modality.NONE);
+        super(null, "Media Download - " + metadata.title(), Modality.NONE);
         this.metadata = metadata;
         this.cookies = cookies;
         this.onDownloadAdded = onDownloadAdded;

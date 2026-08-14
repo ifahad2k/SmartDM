@@ -757,7 +757,7 @@ public class SmartDmApp extends Application {
         } else if (message instanceof io.smartdm.browser.protocol.AddDownloadRequest req) {
             System.out.println(">>> [IPC] Received ADD_DOWNLOAD request for URL: " + req.url());
             javafx.application.Platform.runLater(() -> {
-                io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(primaryStage, dbCtx.repository().findAll(), smartFolderService);
+                io.smartdm.desktop.shell.AddDownloadDialog d = new io.smartdm.desktop.shell.AddDownloadDialog(null, dbCtx.repository().findAll(), smartFolderService);
                 d.setCookiesAndUserAgent(req.cookies(), req.userAgent());
                 d.setOnDownloadAdded(dl -> {
                     dbCtx.repository().save(dl);
@@ -781,7 +781,7 @@ public class SmartDmApp extends Application {
             return "{\"status\":\"ok\",\"version\":\"1.0\"}";
         } else if (message instanceof io.smartdm.browser.protocol.AddBatchRequest req) {
             javafx.application.Platform.runLater(() -> {
-                io.smartdm.desktop.shell.BatchAddDialog d = new io.smartdm.desktop.shell.BatchAddDialog(primaryStage);
+                io.smartdm.desktop.shell.BatchAddDialog d = new io.smartdm.desktop.shell.BatchAddDialog(null);
                 d.setInputText(String.join("\n", req.urls()));
                 d.showAndWait();
                 if (d.isResultConfirmed() && d.getBatchUrls() != null) {
@@ -816,7 +816,7 @@ public class SmartDmApp extends Application {
         } else if (message instanceof io.smartdm.browser.protocol.AddMediaBatchRequest req) {
             javafx.application.Platform.runLater(() -> {
                 io.smartdm.desktop.shell.MediaBatchAddDialog d = new io.smartdm.desktop.shell.MediaBatchAddDialog(
-                    primaryStage, 
+                    null, 
                     req.urls(), 
                     enginePool, 
                     dl -> {
