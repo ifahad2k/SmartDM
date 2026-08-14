@@ -493,7 +493,13 @@
 
       if (hasCustomPosition) {
         if (e && e.preventDefault) e.preventDefault();
+        
+        if (host.parentElement !== document.body) {
+          document.body.appendChild(host);
+        }
+
         host.style.setProperty('position', 'fixed', 'important');
+        host.style.setProperty('z-index', '2147483647', 'important');
         host.style.setProperty('top', Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px', 'important');
         host.style.setProperty('left', Math.max(0, Math.min(window.innerWidth - 100, initialLeft + dx)) + 'px', 'important');
         host.style.setProperty('right', 'auto', 'important');

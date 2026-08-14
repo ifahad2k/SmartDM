@@ -405,7 +405,7 @@
     host.style.position = 'absolute';
     host.style.top = '12px';
     host.style.right = '12px';
-    host.style.zIndex = '99999';
+    host.style.zIndex = '2147483647';
     host.style.pointerEvents = 'auto';
 
     const shadow = host.attachShadow({ mode: 'open' });
@@ -622,12 +622,21 @@
         dragMoved = true;
       }
 
-      if (e && e.preventDefault) e.preventDefault();
-      host.style.setProperty('position', 'fixed', 'important');
-      host.style.setProperty('top', Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px', 'important');
-      host.style.setProperty('left', Math.max(0, Math.min(window.innerWidth - 100, initialLeft + dx)) + 'px', 'important');
-      host.style.setProperty('right', 'auto', 'important');
-      host.style.setProperty('transform', 'none', 'important');
+      if (dragMoved) {
+        if (e && e.preventDefault) e.preventDefault();
+        
+        // Reparent host to document.body so it is top-level and never occluded by #masthead or video player stacking contexts
+        if (host.parentElement !== document.body) {
+          document.body.appendChild(host);
+        }
+
+        host.style.setProperty('position', 'fixed', 'important');
+        host.style.setProperty('z-index', '2147483647', 'important');
+        host.style.setProperty('top', Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px', 'important');
+        host.style.setProperty('left', Math.max(0, Math.min(window.innerWidth - 100, initialLeft + dx)) + 'px', 'important');
+        host.style.setProperty('right', 'auto', 'important');
+        host.style.setProperty('transform', 'none', 'important');
+      }
     };
 
     const stopDrag = () => {
