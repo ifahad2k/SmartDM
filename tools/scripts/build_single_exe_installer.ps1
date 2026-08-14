@@ -16,9 +16,9 @@ $StagingDir = "$ProjectRoot\build\installer-staging"
 $AppImageDir = "$StagingDir\SmartDM"
 $CscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
-if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
-if (Test-Path $ReleaseDir) { Remove-Item -Recurse -Force $ReleaseDir }
-if (Test-Path "$ProjectRoot\apps\desktop\build\distributions") { Remove-Item -Recurse -Force "$ProjectRoot\apps\desktop\build\distributions\*" }
+if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir -ErrorAction SilentlyContinue }
+if (Test-Path $ReleaseDir) { Get-ChildItem $ReleaseDir -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path "$ProjectRoot\apps\desktop\build\distributions") { Remove-Item -Recurse -Force "$ProjectRoot\apps\desktop\build\distributions\*" -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Path $ReleaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $AppImageDir -Force | Out-Null
 
@@ -100,15 +100,15 @@ reg add "HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\io.smart
 reg add "HKCU\Software\Mozilla\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.firefox.json" /f >nul 2>&1
 
 reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
+reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
 
 reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
+reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
 reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
+reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
 
 reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.6" /f >nul 2>&1
+reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
 
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "installation_mode" /t REG_SZ /d "normal_installed" /f >nul 2>&1
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "install_url" /t REG_SZ /d "file:///%APP_DIR%extensions/firefox/manifest.json" /f >nul 2>&1
