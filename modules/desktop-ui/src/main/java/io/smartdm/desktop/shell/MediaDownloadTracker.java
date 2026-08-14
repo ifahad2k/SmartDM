@@ -48,6 +48,19 @@ public final class MediaDownloadTracker {
         return taskRegistry.containsKey(id);
     }
 
+    public static boolean isValidHttpUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url.trim());
+            String scheme = uri.getScheme();
+            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public static void startDownload(Download download, Path targetPath, String webpageUrl, String formatArg) {
         startDownload(download, targetPath, webpageUrl, null, formatArg, null);
     }
@@ -57,6 +70,14 @@ public final class MediaDownloadTracker {
     }
 
     public static void startDownload(Download download, Path targetPath, String webpageUrl, String directStreamUrl, String formatArg, String cookies) {
+        if (!isValidHttpUrl(webpageUrl) && !isValidHttpUrl(directStreamUrl)) {
+            if (download != null) {
+                download.updateState(DownloadState.FAILED);
+                if (repository != null) repository.save(download);
+                if (eventPublisher != null) eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), DownloadState.FAILED, download));
+            }
+            return;
+        }
         TaskInfo info = new TaskInfo(download, targetPath, webpageUrl, directStreamUrl, formatArg, cookies);
         taskRegistry.put(download.id(), info);
         runYtDlp(info);
@@ -199,7 +220,6 @@ public final class MediaDownloadTracker {
                 commandList.add(ytDlp.toString());
                 commandList.add("--newline");
                 commandList.add("--continue");
-                commandList.add("--no-check-certificates");
                 commandList.add("--no-warnings");
                 commandList.add("--ignore-config");
                 commandList.add("--no-playlist");
@@ -266,6 +286,7 @@ public final class MediaDownloadTracker {
                 commandList.add("-o");
                 commandList.add(tempOutputFile.toString());
                 commandList.add("--force-ipv4");
+                commandList.add("--");
                 commandList.add(targetUrl);
 
                 ProcessBuilder pb = new ProcessBuilder(commandList);

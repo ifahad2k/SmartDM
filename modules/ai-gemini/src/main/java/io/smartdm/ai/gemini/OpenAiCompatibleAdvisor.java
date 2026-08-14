@@ -90,8 +90,10 @@ public class OpenAiCompatibleAdvisor implements OptionalAiAdvisor {
                 return parseOpenAiResponse(response.body());
 
             } catch (Exception ex) {
-                String safeKey = (config.apiKey() != null && !config.apiKey().isBlank()) ? config.apiKey() : "";
-                String safeMsg = ex.getMessage() != null ? ex.getMessage().replaceAll(safeKey, "[REDACTED]") : "Connection exception";
+                String rawMsg = ex.getMessage() != null ? ex.getMessage() : "Connection exception";
+                String safeMsg = (config.apiKey() != null && !config.apiKey().isBlank())
+                    ? rawMsg.replace(config.apiKey(), "[REDACTED]")
+                    : rawMsg;
                 return AiSuggestion.failure("Local AI request failed: " + safeMsg + "—using local result");
             }
         });

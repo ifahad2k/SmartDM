@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Download, Star, Menu, X, ShieldCheck, UserCheck, LogOut, ChevronDown, User } from 'lucide-react';
+import { Download, Star, Menu, X, ShieldCheck, LogOut, ChevronDown, User } from 'lucide-react';
 import { GithubIcon as Github } from '../GithubIcon';
 import { smartdmConfig } from '../../config/smartdmConfig';
 import { useAuth } from '../../context/AuthContext';
@@ -12,7 +12,7 @@ export const Header: React.FC = () => {
   const [starCount, setStarCount] = useState<string>('Star');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
-  const { user, loginAsAdmin, loginAsUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
 
   useEffect(() => {
@@ -36,9 +36,9 @@ export const Header: React.FC = () => {
   const navLinks = [
     { name: 'Features', path: '/#features' },
     { name: 'Download', path: '/#download' },
+    { name: 'Ideas & Upvotes', path: '/community/ideas' },
     { name: 'Documentation', path: '/docs/install' },
     { name: 'Security', path: '/docs/security' },
-    { name: 'Community', path: '/#community' },
   ];
 
   return (
@@ -116,6 +116,38 @@ export const Header: React.FC = () => {
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <Link 
+                        to="/feedback/bug" 
+                        className="button button-small button-secondary"
+                        onClick={() => setUserDropdownOpen(false)}
+                        style={{ fontSize: '0.75rem', justifyContent: 'flex-start', color: 'var(--danger)' }}
+                      >
+                        <User size={14} /> Report a Bug
+                      </Link>
+                      <Link 
+                        to="/feedback/feature" 
+                        className="button button-small button-secondary"
+                        onClick={() => setUserDropdownOpen(false)}
+                        style={{ fontSize: '0.75rem', justifyContent: 'flex-start', color: 'var(--primary)' }}
+                      >
+                        <User size={14} /> Propose an Idea
+                      </Link>
+                      <Link 
+                        to="/account/submissions" 
+                        className="button button-small button-secondary"
+                        onClick={() => setUserDropdownOpen(false)}
+                        style={{ fontSize: '0.75rem', justifyContent: 'flex-start' }}
+                      >
+                        <User size={14} /> My Submissions & Status
+                      </Link>
+                      <Link 
+                        to="/account/profile" 
+                        className="button button-small button-secondary"
+                        onClick={() => setUserDropdownOpen(false)}
+                        style={{ fontSize: '0.75rem', justifyContent: 'flex-start' }}
+                      >
+                        <User size={14} /> Account Settings
+                      </Link>
                       {user.isAdmin && (
                         <Link 
                           to="/admin" 

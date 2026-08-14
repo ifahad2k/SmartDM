@@ -78,31 +78,32 @@ public class SegmentWorker implements Callable<Void> {
 
                 HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
                 
-                if (response.statusCode() == 416) {
-                    // Range Not Satisfiable - offset reached segment boundary
-                    return null;
-                }
+                try (InputStream is = response.body()) {
+                    if (response.statusCode() == 416) {
+                        // Range Not Satisfiable - offset reached segment boundary
+                        return null;
+                    }
 
-                if (response.statusCode() >= 300) {
-                    throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
-                }
+                    if (response.statusCode() >= 300) {
+                        throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
+                    }
 
-                if (isRangeRequest && response.statusCode() != 206) {
-                    if (response.statusCode() == 200) {
-                        if (segment.startOffset() > 0 || segment.currentOffset() > 0) {
+                    if (isRangeRequest && response.statusCode() != 206) {
+                        if (response.statusCode() == 200) {
+                            if (segment.index() > 0) {
+                                return null;
+                            }
                             if (segment.currentOffset() > 0) {
                                 segment.updateOffset(0);
                                 channel.truncate(0);
                             }
+                        } else {
+                            throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
                         }
-                    } else {
-                        throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
                     }
-                }
 
-                long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
+                    long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
 
-                try (InputStream is = response.body()) {
                     byte[] buffer = new byte[65536];
                     int read;
                     while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
@@ -138,7 +139,9 @@ public class SegmentWorker implements Callable<Void> {
                 }
                 if (attempt < maxRetries) {
                     try {
-                        Thread.sleep(1000L * attempt); // Exponential backoff (1s, 2s, 3s...)
+                        long baseDelay = 1000L * (1L << Math.min(attempt, 5));
+                        long jitter = (long)(Math.random() * baseDelay * 0.3);
+                        Thread.sleep(baseDelay + jitter);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         return null;

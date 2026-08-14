@@ -26,6 +26,10 @@ public record AiProviderConfig(
         return new AiProviderConfig(true, AiProviderType.OPENAI_COMPATIBLE, "", "http://localhost:11434/v1", model, 1000);
     }
 
+    public static AiProviderConfig openAi(String apiKey, String modelName) {
+        return new AiProviderConfig(true, AiProviderType.OPENAI_COMPATIBLE, apiKey, "https://api.openai.com/v1", modelName != null ? modelName : "gpt-4o-mini", 100);
+    }
+
     public static AiProviderConfig openAiCompatible(String apiKey, String baseUrl, String modelName) {
         return new AiProviderConfig(true, AiProviderType.OPENAI_COMPATIBLE, apiKey, baseUrl, modelName, 100);
     }

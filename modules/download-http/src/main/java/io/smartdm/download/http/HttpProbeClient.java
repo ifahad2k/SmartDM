@@ -5,6 +5,7 @@ import io.smartdm.domain.ByteCount;
 import io.smartdm.domain.SourceUri;
 
 import java.util.Base64;
+import java.nio.charset.StandardCharsets;
 
 import java.io.InputStream;
 import java.net.http.HttpClient;
@@ -58,7 +59,7 @@ public class HttpProbeClient {
     public HttpProbeClient() {
         this(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build());
     }
 
@@ -98,47 +99,16 @@ public class HttpProbeClient {
     }
 
     public CompletableFuture<ProbeResult> probeAsync(SourceUri uri, AuthCredential credential) {
-        String userAgent = (credential != null && credential.userAgent() != null && !credential.userAgent().isEmpty()) 
-                           ? credential.userAgent() 
-                           : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-        
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(uri.value())
-                .header("User-Agent", userAgent)
-                .header("Accept", "*/*")
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Sec-Fetch-Dest", "document")
-                .header("Sec-Fetch-Mode", "navigate")
-                .header("Sec-Fetch-Site", "same-origin")
-                .header("Accept-Encoding", "identity")
+        String scheme = uri.value().getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+            return CompletableFuture.failedFuture(
+                new IllegalArgumentException("Only HTTP/HTTPS URLs are supported, got: " + scheme));
+        }
+
+        HttpRequest request = HttpRequestFactory.createBuilder(uri, credential)
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                .timeout(Duration.ofSeconds(10));
-
-        String urlStr = uri.value().toString().toLowerCase();
-        if (urlStr.contains("tiktok.com") || urlStr.contains("tiktokcdn.com")) {
-            builder.header("Referer", "https://www.tiktok.com/");
-        } else if (urlStr.contains("facebook.com") || urlStr.contains("fbcdn.net")) {
-            builder.header("Referer", "https://www.facebook.com/");
-        } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
-            builder.header("Referer", "https://www.instagram.com/");
-        } else if (uri.value().getHost() != null) {
-            builder.header("Referer", uri.value().getScheme() + "://" + uri.value().getHost() + "/");
-        }
-                
-        if (credential != null) {
-            if (credential.username() != null && !credential.username().isEmpty()) {
-                String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
-                builder.header("Authorization", "Basic " + basicAuth);
-            }
-            if (credential.cookies() != null && !credential.cookies().isEmpty()) {
-                String cookieHeader = parseNetscapeCookies(credential.cookies());
-                if (!cookieHeader.isEmpty()) {
-                    builder.header("Cookie", cookieHeader);
-                }
-            }
-        }
-
-        HttpRequest request = builder.build();
+                .timeout(Duration.ofSeconds(10))
+                .build();
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
                 .thenApply(response -> {
@@ -188,48 +158,11 @@ public class HttpProbeClient {
     }
 
     private CompletableFuture<ProbeResult> probeViaGetRange(SourceUri uri, AuthCredential credential) {
-        String userAgent = (credential != null && credential.userAgent() != null && !credential.userAgent().isEmpty()) 
-                           ? credential.userAgent() 
-                           : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(uri.value())
-                .header("User-Agent", userAgent)
-                .header("Accept", "*/*")
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Sec-Fetch-Dest", "document")
-                .header("Sec-Fetch-Mode", "navigate")
-                .header("Sec-Fetch-Site", "same-origin")
-                .header("Accept-Encoding", "identity")
+        HttpRequest request = HttpRequestFactory.createBuilder(uri, credential)
                 .header("Range", "bytes=0-8191")
                 .GET()
-                .timeout(Duration.ofSeconds(10));
-
-        String urlStr = uri.value().toString().toLowerCase();
-        if (urlStr.contains("tiktok.com") || urlStr.contains("tiktokcdn.com")) {
-            builder.header("Referer", "https://www.tiktok.com/");
-        } else if (urlStr.contains("facebook.com") || urlStr.contains("fbcdn.net")) {
-            builder.header("Referer", "https://www.facebook.com/");
-        } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
-            builder.header("Referer", "https://www.instagram.com/");
-        } else if (uri.value().getHost() != null) {
-            builder.header("Referer", uri.value().getScheme() + "://" + uri.value().getHost() + "/");
-        }
-                
-        if (credential != null) {
-            if (credential.username() != null && !credential.username().isEmpty()) {
-                String basicAuth = Base64.getEncoder().encodeToString((credential.username() + ":" + credential.password()).getBytes());
-                builder.header("Authorization", "Basic " + basicAuth);
-            }
-            if (credential.cookies() != null && !credential.cookies().isEmpty()) {
-                String cookieHeader = parseNetscapeCookies(credential.cookies());
-                if (!cookieHeader.isEmpty()) {
-                    builder.header("Cookie", cookieHeader);
-                }
-            }
-        }
-
-        HttpRequest request = builder.build();
+                .timeout(Duration.ofSeconds(10))
+                .build();
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
                 .thenApply(response -> {

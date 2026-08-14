@@ -66,8 +66,8 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
           </div>
 
           {/* Linux AppImage Download Card */}
-          <div className={`download-card ${detectedOs === 'linux' ? 'recommended' : ''}`}>
-            {detectedOs === 'linux' && <span className="recommend-badge">Your Platform</span>}
+          <div className="download-card">
+            <span className="coming-soon-badge">Coming Soon</span>
             <div className="os-icon">
               <Monitor size={28} />
             </div>
@@ -77,22 +77,19 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
               <p>Standalone executable for Ubuntu, Fedora, Arch, Debian, and all glibc 2.29+ distros.</p>
             </div>
             <div className="download-meta">
-              <span>v{smartdmConfig.version}</span>
-              <span>{smartdmConfig.releaseAssets.appImage.architecture}</span>
-              <span>{smartdmConfig.releaseAssets.appImage.size}</span>
+              <span>In Development</span>
+              <span>x86_64</span>
             </div>
-            <a
-              className="button button-secondary"
-              href={getDownloadUrl('appImage')}
-            >
+            <button className="button button-disabled" disabled>
               <Download size={18} />
-              <span>Download .AppImage</span>
-            </a>
-            <div className="asset-name">{smartdmConfig.releaseAssets.appImage.filename}</div>
+              <span>Coming Soon</span>
+            </button>
+            <div className="asset-name">Linux release in active development</div>
           </div>
 
           {/* Debian / Ubuntu .deb Download Card */}
           <div className="download-card">
+            <span className="coming-soon-badge">Coming Soon</span>
             <div className="os-icon">
               <Monitor size={28} />
             </div>
@@ -102,18 +99,14 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
               <p>Native .deb package with apt desktop integration and systemd service scripts.</p>
             </div>
             <div className="download-meta">
-              <span>v{smartdmConfig.version}</span>
-              <span>{smartdmConfig.releaseAssets.deb.architecture}</span>
-              <span>{smartdmConfig.releaseAssets.deb.size}</span>
+              <span>In Development</span>
+              <span>amd64</span>
             </div>
-            <a
-              className="button button-secondary"
-              href={getDownloadUrl('deb')}
-            >
+            <button className="button button-disabled" disabled>
               <Download size={18} />
-              <span>Download .DEB</span>
-            </a>
-            <div className="asset-name">{smartdmConfig.releaseAssets.deb.filename}</div>
+              <span>Coming Soon</span>
+            </button>
+            <div className="asset-name">Debian/Ubuntu release in active development</div>
           </div>
         </div>
 

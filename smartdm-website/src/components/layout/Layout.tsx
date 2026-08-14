@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { Footer } from './Footer';
+import { CookieBanner } from '../ui/CookieBanner';
 import { Check } from 'lucide-react';
 
 interface LayoutProps {
@@ -61,10 +62,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <Header />
 
       <main id="main-content">
-        {children}
+        {React.Children.map(children, child => {
+          if (React.isValidElement(child)) {
+            return React.cloneElement(child, { triggerToast } as any);
+          }
+          return child;
+        })}
       </main>
 
       <Footer />
+
+      <CookieBanner />
 
       <div className={`toast ${toastMessage ? 'show' : ''}`} role="status">
         <Check size={18} />

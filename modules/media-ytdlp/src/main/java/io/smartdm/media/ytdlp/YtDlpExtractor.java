@@ -13,18 +13,41 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class YtDlpExtractor implements MediaExtractor {
+
+    private static final Logger log = LoggerFactory.getLogger(YtDlpExtractor.class);
 
     private final MediaToolManager toolManager;
     private final ObjectMapper mapper;
     private final NativeDirectExtractor nativeDirectExtractor;
-    private final java.util.Map<String, MediaMetadata> metadataCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, MediaMetadata> metadataCache = 
+        java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(64, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(java.util.Map.Entry<String, MediaMetadata> eldest) {
+                return size() > 100;
+            }
+        });
 
     public YtDlpExtractor(MediaToolManager toolManager) {
         this.toolManager = toolManager;
         this.mapper = new ObjectMapper();
         this.nativeDirectExtractor = new NativeDirectExtractor(this.mapper);
+    }
+
+    private static boolean isValidHttpUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url.trim());
+            String scheme = uri.getScheme();
+            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override
@@ -34,6 +57,10 @@ public class YtDlpExtractor implements MediaExtractor {
 
     @Override
     public CompletableFuture<MediaMetadata> extractMetadataAsync(String urlInput, String cookies, String userAgent) {
+        if (!isValidHttpUrl(urlInput)) {
+            log.warn("Invalid media URL provided (scheme must be http/https): {}", urlInput);
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             String url = urlInput;
             if (url != null && url.contains("instagram.com")) {
@@ -45,14 +72,14 @@ public class YtDlpExtractor implements MediaExtractor {
 
             // 1. Check in-memory cache
             if (url != null && metadataCache.containsKey(url)) {
-                System.out.println("Serving media metadata from memory cache for: " + url);
+                log.info("Serving media metadata from memory cache for: {}", url);
                 return metadataCache.get(url);
             }
 
             // 2. Fast-Path: Try NativeDirectExtractor (sub-200ms) for YouTube & Facebook
             java.util.Optional<MediaMetadata> directMeta = nativeDirectExtractor.tryExtract(url, cookies, userAgent);
             if (directMeta.isPresent()) {
-                System.out.println("Fast-Path NativeDirectExtractor succeeded for: " + url);
+                log.info("Fast-Path NativeDirectExtractor succeeded for: {}", url);
                 metadataCache.put(url, directMeta.get());
                 return directMeta.get();
             }
@@ -65,8 +92,12 @@ public class YtDlpExtractor implements MediaExtractor {
                 if (cookies != null && !cookies.isBlank()) {
                     String cleanCookies = cookies.replace("\\n", "\n").replace("\\t", "\t");
                     cookieFile = java.nio.file.Files.createTempFile("smartdm_cookies_", ".txt");
-                    if (System.getProperty("os.name").toLowerCase().contains("linux") || System.getProperty("os.name").toLowerCase().contains("mac")) {
-                        java.nio.file.Files.setPosixFilePermissions(cookieFile, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+                    cookieFile.toFile().deleteOnExit();
+                    try {
+                        java.nio.file.Files.setPosixFilePermissions(cookieFile,
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+                    } catch (UnsupportedOperationException e) {
+                        // POSIX file permissions not supported on Windows/certain filesystems
                     }
                     java.nio.file.Files.writeString(cookieFile, cleanCookies, StandardCharsets.UTF_8);
                 }
@@ -79,7 +110,6 @@ public class YtDlpExtractor implements MediaExtractor {
                         "--no-playlist",
                         "--no-warnings",
                         "--ignore-config",
-                        "--no-check-certificates",
                         "--force-ipv4",
                         "--user-agent",
                         ua,
@@ -102,6 +132,7 @@ public class YtDlpExtractor implements MediaExtractor {
                         cmd.add("--cookies");
                         cmd.add(cookieFile.toAbsolutePath().toString());
                     }
+                    cmd.add("--");
                     cmd.add(url);
 
                     ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -114,7 +145,7 @@ public class YtDlpExtractor implements MediaExtractor {
 
                     int exitCode = process.waitFor();
                     if (exitCode != 0 || combinedOutput.isBlank() || (!combinedOutput.contains("{") && !combinedOutput.contains("}"))) {
-                        System.err.println("yt-dlp standard dump failed: " + combinedOutput + ". Attempting fallback player_client...");
+                        log.warn("yt-dlp standard dump failed: {}. Attempting fallback player_client...", combinedOutput);
                         
                         List<String> fallbackCmd = new ArrayList<>(List.of(
                             ytDlp.toString(),
@@ -122,7 +153,6 @@ public class YtDlpExtractor implements MediaExtractor {
                             "--no-playlist",
                             "--no-warnings",
                             "--ignore-config",
-                            "--no-check-certificates",
                             "--force-ipv4",
                             "--user-agent",
                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -144,6 +174,7 @@ public class YtDlpExtractor implements MediaExtractor {
                             fallbackCmd.add("--cookies");
                             fallbackCmd.add(cookieFile.toAbsolutePath().toString());
                         }
+                        fallbackCmd.add("--");
                         fallbackCmd.add(url);
                         
                         ProcessBuilder pbCookies = new ProcessBuilder(fallbackCmd);
@@ -173,13 +204,13 @@ public class YtDlpExtractor implements MediaExtractor {
                         try {
                             java.nio.file.Files.deleteIfExists(cookieFile);
                         } catch (Exception e) {
-                            System.err.println("Failed to delete temp cookie file: " + e.getMessage());
+                            log.warn("Failed to delete temp cookie file: {}", e.getMessage());
                         }
                     }
                 }
             } catch (Exception ex) {
                 if (ex instanceof RuntimeException) throw (RuntimeException) ex;
-                System.err.println("YtDlpExtractor error for URL [" + url + "]: " + ex.getMessage());
+                log.error("YtDlpExtractor error for URL [{}]: {}", url, ex.getMessage(), ex);
             }
 
             return null;

@@ -109,6 +109,9 @@ export interface UserFeedbackItem {
   category?: string;
   createdAt: string;
   updatedAt: string;
+  upvotes?: number;
+  upvotedBy?: string[];
+  adminResponse?: string;
   adminResponses?: AdminResponse[];
 }
 

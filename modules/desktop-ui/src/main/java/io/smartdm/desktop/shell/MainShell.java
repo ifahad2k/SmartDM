@@ -8,6 +8,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.control.Label;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 import javafx.geometry.Pos;
 
 
@@ -74,7 +75,7 @@ public final class MainShell extends VBox {
 
         javafx.scene.layout.StackPane closeBtn = new javafx.scene.layout.StackPane();
         closeBtn.getStyleClass().addAll("cap-btn", "close");
-        closeBtn.setOnMouseClicked(e -> stage.close());
+        closeBtn.setOnMouseClicked(e -> stage.fireEvent(new WindowEvent(stage, WindowEvent.WINDOW_CLOSE_REQUEST)));
         SVGPath closeIcon = new SVGPath();
         closeIcon.setContent("M18 6 L6 18 M6 6 L18 18");
         closeIcon.setStyle("-fx-stroke: #A6ADC4; -fx-stroke-width: 2; -fx-fill: transparent;");

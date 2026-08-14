@@ -45,6 +45,7 @@ public class TokenBucketRateLimiter {
         }
         
         while (permits > 0) {
+            // Fast-path double-check pattern: volatile read avoids locking overhead when limit is disabled.
             if (bytesPerSecondLimit == null) {
                 return;
             }

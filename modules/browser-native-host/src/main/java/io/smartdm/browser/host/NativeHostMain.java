@@ -17,6 +17,10 @@ public class NativeHostMain {
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+    /**
+     * Process-lifetime log writer. Kept open intentionally for the duration of the native host process
+     * to record diagnostic output, auto-flushing entries to disk and closing upon JVM termination.
+     */
     private static PrintWriter log;
 
     static {
@@ -32,10 +36,9 @@ public class NativeHostMain {
             OutputStream out = System.out;
 
             while (true) {
-                byte[] lengthBytes = new byte[4];
-                int read = in.read(lengthBytes);
-                if (read == -1) {
-                    log.println("EOF reached on STDIN.");
+                byte[] lengthBytes = in.readNBytes(4);
+                if (lengthBytes.length < 4) {
+                    log.println("EOF or insufficient data reading length header (read " + lengthBytes.length + " bytes).");
                     break;
                 }
 
@@ -46,17 +49,15 @@ public class NativeHostMain {
 
                 log.println("Received message length: " + length);
 
-                if (length < 0 || length > 10 * 1024 * 1024) {
-                    log.println("Invalid length!");
+                if (length < 0 || length > 1024 * 1024) {
+                    log.println("Invalid message length: " + length + " (max allowed is " + (1024 * 1024) + " bytes)");
                     break;
                 }
 
-                byte[] messageBytes = new byte[length];
-                int totalRead = 0;
-                while (totalRead < length) {
-                    int r = in.read(messageBytes, totalRead, length - totalRead);
-                    if (r == -1) break;
-                    totalRead += r;
+                byte[] messageBytes = in.readNBytes(length);
+                if (messageBytes.length < length) {
+                    log.println("EOF or insufficient data reading message payload (read " + messageBytes.length + " of " + length + " bytes).");
+                    break;
                 }
 
                 String responseJson;
@@ -70,7 +71,13 @@ public class NativeHostMain {
                     log.println("Got response from SmartDM, length: " + responseJson.length());
                 } catch (Exception ex) {
                     log.println("Error processing message: " + ex);
-                    responseJson = "{\"status\":\"error\", \"message\": \"" + ex.getMessage() + "\"}";
+                    try {
+                        responseJson = MAPPER.writeValueAsString(
+                                java.util.Map.of("status", "error", "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Unknown error"));
+                    } catch (Exception jsonEx) {
+                        responseJson = "{\"status\":\"error\",\"message\":\"Internal error\"}";
+                    }
                 }
 
                 byte[] responseBytes = responseJson.getBytes(StandardCharsets.UTF_8);
@@ -106,6 +113,7 @@ public class NativeHostMain {
                     .uri(URI.create("http://127.0.0.1:" + port + "/api/browser"))
                     .header("Authorization", "Bearer " + token)
                     .header("Content-Type", "application/json")
+                    .timeout(java.time.Duration.ofSeconds(15))
                     .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
                     .build();
 

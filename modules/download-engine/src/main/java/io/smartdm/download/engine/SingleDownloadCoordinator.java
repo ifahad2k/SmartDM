@@ -11,8 +11,10 @@ import io.smartdm.domain.repository.CategoryRepository;
 import io.smartdm.domain.Category;
 import io.smartdm.domain.CategoryRule;
 import io.smartdm.download.http.HttpProbeClient;
+import io.smartdm.download.http.HttpRequestFactory;
 import io.smartdm.download.http.UnauthorizedException;
 import java.util.Base64;
+import java.nio.charset.StandardCharsets;
 
 import java.io.EOFException;
 import java.io.IOException;
@@ -79,7 +81,7 @@ public class SingleDownloadCoordinator {
         this.eventPublisher = eventPublisher;
         this.tempDir = tempDir;
         this.rateLimiter = rateLimiter;
-        this.segmentExecutor = Executors.newCachedThreadPool();
+        this.segmentExecutor = new java.util.concurrent.ThreadPoolExecutor(4, 32, 60L, TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(256), r -> { Thread t = new Thread(r, "segment-worker"); t.setDaemon(true); return t; }, new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     public void execute(Download download) {
@@ -211,45 +213,9 @@ public class SingleDownloadCoordinator {
             channel = new SegmentedFileChannel(download.destination(), tempDir, download.id().value() + ".part");
             session.channel = channel;
 
-            String userAgent = (download.credential() != null && download.credential().userAgent() != null && !download.credential().userAgent().isEmpty()) 
-                               ? download.credential().userAgent() 
-                               : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
-                    .uri(download.source().value())
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "*/*")
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .header("Sec-Fetch-Dest", "document")
-                    .header("Sec-Fetch-Mode", "navigate")
-                    .header("Sec-Fetch-Site", "same-origin")
-                    .header("Accept-Encoding", "identity")
-                    .GET();
-
-            String urlStr = download.source().value().toString().toLowerCase();
-            if (urlStr.contains("tiktok.com") || urlStr.contains("tiktokcdn.com")) {
-                reqBuilder.header("Referer", "https://www.tiktok.com/");
-            } else if (urlStr.contains("facebook.com") || urlStr.contains("fbcdn.net")) {
-                reqBuilder.header("Referer", "https://www.facebook.com/");
-            } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
-                reqBuilder.header("Referer", "https://www.instagram.com/");
-            } else if (download.source().value().getHost() != null) {
-                reqBuilder.header("Referer", download.source().value().getScheme() + "://" + download.source().value().getHost() + "/");
-            }
-            
-            if (download.credential() != null) {
-                if (download.credential().username() != null && !download.credential().username().isEmpty()) {
-                    String basicAuth = Base64.getEncoder().encodeToString((download.credential().username() + ":" + download.credential().password()).getBytes());
-                    reqBuilder.header("Authorization", "Basic " + basicAuth);
-                }
-                if (download.credential().cookies() != null && !download.credential().cookies().isEmpty()) {
-                    String cookieHeader = HttpProbeClient.parseNetscapeCookies(download.credential().cookies());
-                    if (!cookieHeader.isEmpty()) {
-                        reqBuilder.header("Cookie", cookieHeader);
-                    }
-                }
-            }
-            HttpRequest baseRequest = reqBuilder.build();
+            HttpRequest baseRequest = HttpRequestFactory.createBuilder(download.source(), download.credential())
+                    .GET()
+                    .build();
 
             long[] lastSaveTime = {System.currentTimeMillis()};
             long[] lastProgressPublishTime = {0};
@@ -332,18 +298,14 @@ public class SingleDownloadCoordinator {
                 try {
                     java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
                     try (java.io.InputStream is = java.nio.file.Files.newInputStream(channel.getTempFile())) {
-                        byte[] buffer = new byte[8192];
+                        byte[] buffer = new byte[65536];
                         int read;
                         while ((read = is.read(buffer)) != -1) {
                             digest.update(buffer, 0, read);
                         }
                     }
                     byte[] hashBytes = digest.digest();
-                    StringBuilder sb = new StringBuilder();
-                    for (byte b : hashBytes) {
-                        sb.append(String.format("%02x", b));
-                    }
-                    String actualHash = sb.toString();
+                    String actualHash = java.util.HexFormat.of().formatHex(hashBytes);
                     if (!actualHash.equalsIgnoreCase(download.expectedHash().trim())) {
                         throw new RuntimeException("Hash verification failed. Expected: " + download.expectedHash() + ", Actual: " + actualHash);
                     }
@@ -361,19 +323,6 @@ public class SingleDownloadCoordinator {
 
         } catch (Exception e) {
             log.error("Execution failed for download {}", download.id().value(), e);
-            try {
-                StringBuilder sb = new StringBuilder();
-                sb.append("Download Failed: ").append(e.getMessage()).append("\n");
-                Throwable cause = e.getCause();
-                while (cause != null) {
-                    sb.append("Caused by: ").append(cause.getMessage()).append("\n");
-                    cause = cause.getCause();
-                }
-                java.nio.file.Files.writeString(
-                    java.nio.file.Path.of("e:/skill/projects/smartdm/smartdm_crash.txt"), 
-                    sb.toString()
-                );
-            } catch (Exception ignored) {}
             download.updateState(DownloadState.FAILED);
             repository.save(download);
             eventPublisher.publish(new DownloadEvent.StateChanged(download.id(), download.state(), download));
@@ -488,6 +437,12 @@ public class SingleDownloadCoordinator {
     }
 
     private boolean isAcceptableEndOfStream(Exception e) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        if (cause instanceof EOFException) return true;
+        if (cause instanceof java.net.SocketException) {
+            String msg = cause.getMessage();
+            return msg != null && (msg.contains("Connection reset") || msg.contains("Broken pipe"));
+        }
         return false;
     }
 }

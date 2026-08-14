@@ -13,12 +13,10 @@ import java.util.Properties;
 public class SqlCipherDatabase {
 
     private final String url;
-    private final byte[] key;
     private final SQLiteDataSource dataSource;
 
     public SqlCipherDatabase(Path dbFile, byte[] key) {
         this.url = "jdbc:sqlite:" + dbFile.toAbsolutePath();
-        this.key = key;
         
         SQLiteConfig config = new SQLiteConfig();
         
@@ -26,6 +24,8 @@ public class SqlCipherDatabase {
         String encodedKey = Base64.getEncoder().encodeToString(key);
         config.setPragma(SQLiteConfig.Pragma.PASSWORD, encodedKey);
         config.enforceForeignKeys(true);
+        config.setJournalMode(SQLiteConfig.JournalMode.WAL);
+        config.setBusyTimeout(5000);
         
         this.dataSource = new SQLiteDataSource(config);
         this.dataSource.setUrl(url);

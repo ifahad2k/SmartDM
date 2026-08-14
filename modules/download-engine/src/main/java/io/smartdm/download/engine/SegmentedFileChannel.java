@@ -25,6 +25,11 @@ public class SegmentedFileChannel implements AutoCloseable {
         this.channel = FileChannel.open(tempFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.READ);
     }
 
+    /**
+     * Writes data at the specified offset. Thread-safe for positional writes
+     * on standard JVM implementations (FileChannel.write(buf, pos) is atomic
+     * for non-overlapping regions).
+     */
     public void writeAt(long offset, byte[] data, int length) throws IOException {
         ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
         long currentOffset = offset;

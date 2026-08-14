@@ -1,7 +1,9 @@
 package io.smartdm.desktop.shell;
 
 import io.smartdm.ai.api.AiProviderType;
-import io.smartdm.ai.gemini.*;
+import io.smartdm.ai.gemini.AiProviderConfig;
+import io.smartdm.ai.gemini.HardwareCapabilityChecker;
+import io.smartdm.ai.gemini.OpenAiCompatibleAdvisor;
 import io.smartdm.desktop.shell.settings.*;
 import javafx.application.Platform;
 import javafx.geometry.Insets;

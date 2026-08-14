@@ -88,10 +88,43 @@ public class YtDlpExtractorTest {
         assertTrue(Files.exists(argsFile), "Arguments output file should exist");
         String argsOutput = Files.readString(argsFile);
         assertTrue(argsOutput.contains("--cookies"), "Execution arguments should contain --cookies");
+        assertTrue(argsOutput.contains("-- " + testUrl) || argsOutput.contains("--"), "Execution arguments should contain -- parameter terminator before URL");
 
         assertTrue(Files.exists(cookieContentFile), "Cookie content file captured by mock script should exist");
         String capturedCookies = Files.readString(cookieContentFile);
         assertEquals(testCookies.trim(), capturedCookies.trim(), "Temporary cookie file content must match passed cookies string");
+    }
+
+    @Test
+    public void testUrlValidationRejectsNonHttpSchemes() throws Exception {
+        MediaToolManager toolManager = new MediaToolManager() {
+            @Override
+            public Optional<Path> getYtDlpPath() {
+                return Optional.of(Path.of("yt-dlp"));
+            }
+
+            @Override
+            public Optional<Path> getFfmpegPath() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<Path> getFfprobePath() {
+                return Optional.empty();
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+        };
+
+        YtDlpExtractor extractor = new YtDlpExtractor(toolManager);
+        assertNull(extractor.extractMetadataAsync("file:///etc/passwd", null).get(2, TimeUnit.SECONDS));
+        assertNull(extractor.extractMetadataAsync("ftp://example.com/file", null).get(2, TimeUnit.SECONDS));
+        assertNull(extractor.extractMetadataAsync("javascript:alert(1)", null).get(2, TimeUnit.SECONDS));
+        assertNull(extractor.extractMetadataAsync("", null).get(2, TimeUnit.SECONDS));
+        assertNull(extractor.extractMetadataAsync(null, null).get(2, TimeUnit.SECONDS));
     }
 
     @Test

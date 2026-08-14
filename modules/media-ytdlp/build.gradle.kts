@@ -6,4 +6,5 @@ plugins {
 dependencies {
     implementation(project(":modules:media-api"))
     implementation(libs.jackson.databind)
+    implementation(libs.slf4j.api)
 }

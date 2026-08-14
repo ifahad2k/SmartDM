@@ -1,6 +1,37 @@
+# Build
 .gradle/
 build/
+**/build/
+out/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# App artifacts
 *.part
+*.log
+*.patch
+out*.txt
+
+# Gradle
 !gradle/wrapper/gradle-wrapper.jar
 !gradle-wrapper.properties
-**/build/
+
+# Temp/test files at root
+test*.js
+test*.json
+bad_cookies*.txt
+smartdm_crash.txt
+smartdm_worker_crash.txt
+scratch/

@@ -130,6 +130,7 @@ public class BrowserIntegrationInstallerService {
     private static void installFirefoxProfile(BrowserProfile profile, Path firefoxExtDir) throws Exception {
         // 1. Native Messaging Host Registration for Firefox
         Path hostJsonPath = firefoxExtDir.resolve("host").resolve("io.smartdm.host.firefox.json");
+        ensureFirefoxHostJsonHasAbsolutePath(hostJsonPath);
         runCmd("reg", "add", "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\io.smartdm.host", "/ve", "/t", "REG_SZ", "/d", hostJsonPath.toAbsolutePath().toString(), "/f");
 
         // 2. Profile user.js tweak for persistent unsigned extension support
@@ -198,6 +199,27 @@ public class BrowserIntegrationInstallerService {
         }
     }
 
+    private static void ensureFirefoxHostJsonHasAbsolutePath(Path hostJsonPath) {
+        try {
+            Path hostBatPath = hostJsonPath.getParent().resolve("host.bat").toAbsolutePath();
+            String absPathStr = hostBatPath.toString().replace('\\', '/');
+
+            String jsonContent = "{\n" +
+                "  \"name\": \"io.smartdm.host\",\n" +
+                "  \"description\": \"SmartDM Native Messaging Host\",\n" +
+                "  \"path\": \"" + absPathStr + "\",\n" +
+                "  \"type\": \"stdio\",\n" +
+                "  \"allowed_extensions\": [\n" +
+                "    \"smartdm-extension@smartdm.io\"\n" +
+                "  ]\n" +
+                "}";
+
+            Files.writeString(hostJsonPath, jsonContent);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
     public static boolean registerChromiumHost(Path chromeExtDir) {
         try {
             Path hostJsonPath = chromeExtDir.resolve("host").resolve("io.smartdm.host.json");
@@ -222,6 +244,7 @@ public class BrowserIntegrationInstallerService {
     public static boolean registerFirefoxHost(Path firefoxExtDir) {
         try {
             Path hostJsonPath = firefoxExtDir.resolve("host").resolve("io.smartdm.host.firefox.json");
+            ensureFirefoxHostJsonHasAbsolutePath(hostJsonPath);
             runCmd("reg", "add", "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\io.smartdm.host", "/ve", "/t", "REG_SZ", "/d", hostJsonPath.toAbsolutePath().toString(), "/f");
             runCmd("reg", "add", "HKCU\\Software\\Policies\\Mozilla\\Firefox\\ExtensionSettings\\smartdm-extension@smartdm.io", "/v", "installation_mode", "/t", "REG_SZ", "/d", "normal_installed", "/f");
             runCmd("reg", "add", "HKCU\\Software\\Policies\\Mozilla\\Firefox\\ExtensionSettings\\smartdm-extension@smartdm.io", "/v", "install_url", "/t", "REG_SZ", "/d", "file:///" + firefoxExtDir.resolve("manifest.json").toAbsolutePath().toString().replace('\\', '/'), "/f");

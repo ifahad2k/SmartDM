@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Ultra-fast Native Direct Extractor for YouTube and Facebook.
@@ -23,6 +25,8 @@ import java.util.regex.Pattern;
  */
 public class NativeDirectExtractor {
 
+    private static final Logger log = LoggerFactory.getLogger(NativeDirectExtractor.class);
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
@@ -30,20 +34,28 @@ public class NativeDirectExtractor {
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(4))
-                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
     public Optional<MediaMetadata> tryExtract(String url, String cookies, String userAgent) {
         if (url == null || url.isBlank()) return Optional.empty();
         try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equals("http") && !scheme.equals("https"))) {
+                return Optional.empty();
+            }
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) return Optional.empty();
+
             if (url.contains("youtube.com") || url.contains("youtu.be")) {
                 return extractYouTubeDirect(url, cookies, userAgent);
             } else if (url.contains("facebook.com") || url.contains("fb.watch")) {
                 return extractFacebookDirect(url, cookies, userAgent);
             }
         } catch (Exception e) {
-            System.err.println("NativeDirectExtractor fast-path skipped for " + url + ": " + e.getMessage());
+            log.warn("NativeDirectExtractor fast-path skipped for {}: {}", url, e.getMessage());
         }
         return Optional.empty();
     }
@@ -120,7 +132,7 @@ public class NativeDirectExtractor {
 
                 String formatId = f.path("itag").asText("fmt_" + formats.size());
                 String quality = isAudio ? "Audio Only (" + f.path("audioBitrate").asText("128k") + ")" : f.path("qualityLabel").asText("High Res");
-                String ext = mimeType.contains("webm") ? (isAudio ? "webm" : "webm") : (isAudio ? "m4a" : "mp4");
+                String ext = mimeType.contains("webm") ? "webm" : (isAudio ? "m4a" : "mp4");
                 long fileSize = f.path("contentLength").asLong(0);
                 double tbr = f.path("bitrate").asDouble(0) / 1000.0;
                 String streamUrl = f.path("url").asText(null);
@@ -138,6 +150,11 @@ public class NativeDirectExtractor {
     }
 
     private Optional<MediaMetadata> extractFacebookDirect(String url, String cookies, String userAgent) throws Exception {
+        URI parsedUri = URI.create(url);
+        String host = parsedUri.getHost();
+        if (host == null || !(host.endsWith("facebook.com") || host.endsWith("fb.watch"))) {
+            return Optional.empty(); // Prevent SSRF
+        }
         String ua = (userAgent != null && !userAgent.isBlank())
                 ? userAgent
                 : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
@@ -182,14 +199,14 @@ public class NativeDirectExtractor {
             String cleanHd = unescapeJson(hdUrl);
             formats.add(new MediaFormat(
                     "hd", "mp4", "HD Quality (720p/1080p)", "Facebook HD Stream", 0,
-                    "h264", "aac", 0, 30, false, false
+                    "h264", "aac", 0, 30, false, false, cleanHd
             ));
         }
         if (sdUrl != null) {
             String cleanSd = unescapeJson(sdUrl);
             formats.add(new MediaFormat(
                     "sd", "mp4", "SD Quality (480p)", "Facebook SD Stream", 0,
-                    "h264", "aac", 0, 30, false, false
+                    "h264", "aac", 0, 30, false, false, cleanSd
             ));
         }
 

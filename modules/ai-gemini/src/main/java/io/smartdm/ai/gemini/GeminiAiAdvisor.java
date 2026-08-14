@@ -54,8 +54,8 @@ public class GeminiAiAdvisor implements OptionalAiAdvisor {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 String model = (config.modelName() == null || config.modelName().isBlank()) ? "gemini-1.5-flash" : config.modelName();
-                String endpoint = String.format("%s/v1beta/models/%s:generateContent?key=%s",
-                    config.baseUrl(), model, config.apiKey());
+                String endpoint = String.format("%s/v1beta/models/%s:generateContent",
+                    config.baseUrl(), model);
 
                 String promptText = buildPromptText(task, payload);
 
@@ -68,6 +68,7 @@ public class GeminiAiAdvisor implements OptionalAiAdvisor {
                 HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
                     .header("Content-Type", "application/json")
+                    .header("x-goog-api-key", config.apiKey())
                     .timeout(Duration.ofSeconds(10))
                     .POST(HttpRequest.BodyPublishers.ofString(jsonRequestBody))
                     .build();
@@ -86,7 +87,10 @@ public class GeminiAiAdvisor implements OptionalAiAdvisor {
 
             } catch (Exception ex) {
                 // Secret Redaction: Ensure API key is never printed in log/exception message
-                String safeMsg = ex.getMessage() != null ? ex.getMessage().replaceAll(config.apiKey(), "[REDACTED]") : "Network exception";
+                String rawMsg = ex.getMessage() != null ? ex.getMessage() : "Network exception";
+                String safeMsg = (config.apiKey() != null && !config.apiKey().isBlank())
+                    ? rawMsg.replace(config.apiKey(), "[REDACTED]")
+                    : rawMsg;
                 return AiSuggestion.failure("Gemini request failed: " + safeMsg + "—using local result");
             }
         });

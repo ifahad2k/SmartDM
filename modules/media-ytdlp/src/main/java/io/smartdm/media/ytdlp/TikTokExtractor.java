@@ -25,6 +25,19 @@ public class TikTokExtractor implements MediaExtractor {
         this.mapper = new ObjectMapper();
     }
 
+    private static boolean isValidHttpUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url.trim());
+            String scheme = uri.getScheme();
+            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Override
     public CompletableFuture<MediaMetadata> extractMetadataAsync(String urlInput, String cookies) {
         return extractMetadataAsync(urlInput, cookies, null);
@@ -32,6 +45,10 @@ public class TikTokExtractor implements MediaExtractor {
 
     @Override
     public CompletableFuture<MediaMetadata> extractMetadataAsync(String urlInput, String cookies, String userAgent) {
+        if (!isValidHttpUrl(urlInput)) {
+            System.err.println("TikTokExtractor: Invalid URL provided (scheme must be http/https): " + urlInput);
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             Path cookieFile = null;
             try {
@@ -45,7 +62,6 @@ public class TikTokExtractor implements MediaExtractor {
                     ytDlp.toString(),
                     "--dump-json",
                     "--no-playlist",
-                    "--no-check-certificates",
                     "--user-agent",
                     ua
                 ));
@@ -62,6 +78,7 @@ public class TikTokExtractor implements MediaExtractor {
                     cmd.add(cookieFile.toAbsolutePath().toString());
                 }
 
+                cmd.add("--");
                 cmd.add(urlInput);
 
                 ProcessBuilder pb = new ProcessBuilder(cmd);

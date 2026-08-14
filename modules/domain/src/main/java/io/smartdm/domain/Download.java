@@ -3,6 +3,7 @@ package io.smartdm.domain;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Download {
     private final DownloadId id;
@@ -18,7 +19,7 @@ public class Download {
     private volatile CategoryId categoryId;
     private volatile AuthCredential credential;
     private volatile java.time.Instant createdAt;
-    private final List<DownloadSegment> segments = new ArrayList<>();
+    private final List<DownloadSegment> segments = new CopyOnWriteArrayList<>();
 
     public Download(DownloadId id, SourceUri source, Destination destination) {
         this.id = Objects.requireNonNull(id);

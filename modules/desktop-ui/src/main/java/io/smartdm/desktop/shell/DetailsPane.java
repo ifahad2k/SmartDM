@@ -118,14 +118,22 @@ public final class DetailsPane extends VBox {
                     }
                     io.smartdm.safety.rules.RiskDecisionEngine.SafetyDecision decision = new io.smartdm.safety.rules.RiskDecisionEngine().evaluate(evidences);
                     String sha256 = "N/A";
-                    try {
-                        byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
-                        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-                        byte[] digest = md.digest(bytes);
-                        StringBuilder sb = new StringBuilder();
-                        for (byte b : digest) sb.append(String.format("%02x", b));
-                        sha256 = sb.toString();
-                    } catch (Exception ignored) {}
+                    if (file.exists()) {
+                        try {
+                            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                            try (java.io.InputStream fis = java.nio.file.Files.newInputStream(file.toPath());
+                                 java.security.DigestInputStream dis = new java.security.DigestInputStream(fis, md)) {
+                                byte[] buffer = new byte[65536];
+                                while (dis.read(buffer) != -1) {
+                                    // streaming read into digest
+                                }
+                            }
+                            byte[] digest = md.digest();
+                            StringBuilder sb = new StringBuilder();
+                            for (byte b : digest) sb.append(String.format("%02x", b));
+                            sha256 = sb.toString();
+                        } catch (Exception ignored) {}
+                    }
                     final String finalSha256 = sha256;
                     javafx.application.Platform.runLater(() -> {
                         SafetyCenterDialog dialog = new SafetyCenterDialog(

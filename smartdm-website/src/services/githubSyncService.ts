@@ -1,3 +1,6 @@
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
+
 export interface GitHubSyncData {
   version: string;
   stargazersCount: number;
@@ -37,6 +40,21 @@ export const fetchGitHubRepositoryData = async (): Promise<GitHubSyncData> => {
   let stargazersCount = DEFAULT_SYNC_DATA.stargazersCount;
   let starText = DEFAULT_SYNC_DATA.starText;
 
+  // 0. Check Firestore publicConfig/main for live release updates
+  try {
+    if (db) {
+      const snap = await getDoc(doc(db, 'publicConfig', 'main'));
+      if (snap.exists()) {
+        const liveData = snap.data();
+        if (liveData.version) {
+          version = liveData.version;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore publicConfig lookup note:', err);
+  }
+
   // 1. Resolve Latest Version via GitHub REST API (CORS enabled)
   try {
     const releaseRes = await fetch('https://api.github.com/repos/ifahad2k/SmartDM/releases/latest');
@@ -44,7 +62,7 @@ export const fetchGitHubRepositoryData = async (): Promise<GitHubSyncData> => {
       const releaseData = await releaseRes.json();
       const tagName = releaseData.tag_name || '';
       const match = tagName.match(/v?([0-9]+\.[0-9]+\.[0-9]+)/i);
-      if (match && match[1]) {
+      if (match && match[1] && !version) {
         version = match[1];
       }
     }

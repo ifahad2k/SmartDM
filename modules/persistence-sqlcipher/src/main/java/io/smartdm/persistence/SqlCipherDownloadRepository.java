@@ -16,7 +16,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class SqlCipherDownloadRepository implements DownloadRepository {
@@ -138,19 +140,30 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
 
     @Override
     public List<Download> findAll() {
-        String sql = "SELECT * FROM download";
-        List<Download> results = new ArrayList<>();
+        String sql = "SELECT d.*, s.segment_index, s.start_offset, s.current_offset, s.end_offset " +
+                     "FROM download d LEFT JOIN download_segment s ON d.id = s.download_id " +
+                     "ORDER BY d.id, s.segment_index ASC";
+        Map<String, Download> downloadMap = new LinkedHashMap<>();
         try (Connection conn = database.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql);
              ResultSet rs = stmt.executeQuery()) {
              
             while (rs.next()) {
-                results.add(mapRow(rs, conn));
+                String id = rs.getString("id");
+                Download d = downloadMap.computeIfAbsent(id, k -> mapRowWithoutSegments(rs));
+                if (rs.getObject("segment_index") != null) {
+                    d.segments().add(new DownloadSegment(
+                        rs.getInt("segment_index"),
+                        rs.getLong("start_offset"),
+                        rs.getLong("current_offset"),
+                        rs.getLong("end_offset")
+                    ));
+                }
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to find all downloads", e);
         }
-        return results;
+        return new ArrayList<>(downloadMap.values());
     }
 
     @Override
@@ -219,46 +232,55 @@ public class SqlCipherDownloadRepository implements DownloadRepository {
         }
     }
     
-    private Download mapRow(ResultSet rs, Connection conn) throws SQLException {
-        DownloadId id = new DownloadId(rs.getString("id"));
-        SourceUri source = SourceUri.of(rs.getString("source_uri"));
-        Destination dest = Destination.of(Path.of(rs.getString("destination_path")));
-        DownloadState state = DownloadState.valueOf(rs.getString("state"));
-        ByteCount total = ByteCount.of(rs.getLong("total_bytes"));
-        ByteCount downloaded = ByteCount.of(rs.getLong("downloaded_bytes"));
-        String etag = rs.getString("etag");
-        String lastModified = rs.getString("last_modified");
-        
-        Long scheduledStartTime = rs.getLong("scheduled_start_time");
-        if (rs.wasNull()) {
-            scheduledStartTime = null;
-        }
-        String expectedHash = rs.getString("expected_hash");
-        String categoryIdStr = rs.getString("category_id");
-        String createdAtStr = rs.getString("created_at");
-        
-        Download d = new Download(id, source, dest);
-        d.updateState(state);
-        d.updateProgress(downloaded, total);
-        d.updateIdentity(etag, lastModified);
-        d.updateScheduledStartTime(scheduledStartTime);
-        d.updateExpectedHash(expectedHash);
-        if (categoryIdStr != null) {
-            d.updateCategoryId(CategoryId.of(categoryIdStr));
-        }
-        if (createdAtStr != null) {
-            try {
-                d.setCreatedAt(java.time.Instant.parse(createdAtStr));
-            } catch (Exception e) {
-                // Ignore parse errors, fallback to default
+    private Download mapRowWithoutSegments(ResultSet rs) {
+        try {
+            DownloadId id = new DownloadId(rs.getString("id"));
+            SourceUri source = SourceUri.of(rs.getString("source_uri"));
+            Destination dest = Destination.of(Path.of(rs.getString("destination_path")));
+            DownloadState state = DownloadState.valueOf(rs.getString("state"));
+            ByteCount total = ByteCount.of(rs.getLong("total_bytes"));
+            ByteCount downloaded = ByteCount.of(rs.getLong("downloaded_bytes"));
+            String etag = rs.getString("etag");
+            String lastModified = rs.getString("last_modified");
+            
+            Long scheduledStartTime = rs.getLong("scheduled_start_time");
+            if (rs.wasNull()) {
+                scheduledStartTime = null;
             }
+            String expectedHash = rs.getString("expected_hash");
+            String categoryIdStr = rs.getString("category_id");
+            String createdAtStr = rs.getString("created_at");
+            
+            Download d = new Download(id, source, dest);
+            d.updateState(state);
+            d.updateProgress(downloaded, total);
+            d.updateIdentity(etag, lastModified);
+            d.updateScheduledStartTime(scheduledStartTime);
+            d.updateExpectedHash(expectedHash);
+            if (categoryIdStr != null) {
+                d.updateCategoryId(CategoryId.of(categoryIdStr));
+            }
+            if (createdAtStr != null) {
+                try {
+                    d.setCreatedAt(java.time.Instant.parse(createdAtStr));
+                } catch (Exception e) {
+                    // Ignore parse errors, fallback to default
+                }
+            }
+            return d;
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to map download row", e);
         }
+    }
+
+    private Download mapRow(ResultSet rs, Connection conn) throws SQLException {
+        Download d = mapRowWithoutSegments(rs);
         
         // Load segments
         List<DownloadSegment> segments = new ArrayList<>();
         String segmentSql = "SELECT * FROM download_segment WHERE download_id = ? ORDER BY segment_index ASC";
         try (PreparedStatement stmt = conn.prepareStatement(segmentSql)) {
-            stmt.setString(1, id.value());
+            stmt.setString(1, d.id().value());
             try (ResultSet segmentRs = stmt.executeQuery()) {
                 while (segmentRs.next()) {
                     segments.add(new DownloadSegment(

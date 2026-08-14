@@ -148,7 +148,19 @@ public class LocalQuarantineManager implements QuarantineService {
         QuarantineRecord record = metaData.toRecord();
         Files.createDirectories(targetDirectory);
 
-        Path restoreDestination = targetDirectory.resolve(record.originalFilename());
+        String origFilename = record.originalFilename() != null ? record.originalFilename() : "";
+        String safeFilename = origFilename
+                .replace("..", "")
+                .replaceAll("[/\\\\]", "_");
+        if (safeFilename.isBlank()) {
+            safeFilename = "restored_" + quarantineId;
+        }
+
+        Path normalizedTarget = targetDirectory.normalize();
+        Path restoreDestination = targetDirectory.resolve(safeFilename).normalize();
+        if (!restoreDestination.startsWith(normalizedTarget)) {
+            throw new SecurityException("Path traversal detected in quarantine restore: " + record.originalFilename());
+        }
 
         try {
             Files.move(dataPath, restoreDestination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

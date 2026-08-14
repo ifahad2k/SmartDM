@@ -75,6 +75,13 @@ class SingleDownloadCoordinatorTest {
                 new io.smartdm.download.engine.limit.TokenBucketRateLimiter(Long.MAX_VALUE, null));
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        if (coordinator != null) {
+            coordinator.shutdown();
+        }
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // 1. Normal known-length response
     // ────────────────────────────────────────────────────────────────────

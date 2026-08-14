@@ -38,4 +38,32 @@ class GeminiAiAdvisorTest {
         assertFalse(suggestion.success());
         assertFalse(suggestion.errorMessage().contains(secretKey), "API secret key MUST be redacted from exception message");
     }
+
+    @Test
+    void testSecretRedactionWithRegexSpecialChars() throws Exception {
+        String secretKey = "AIzaSySecret+Key*With$Special(Chars)";
+        AiProviderConfig config = AiProviderConfig.gemini(secretKey);
+        GeminiAiAdvisor advisor = new GeminiAiAdvisor(config);
+
+        ApprovedPayload payload = new ApprovedPayload(AiTask.QUERY_PARSING, "invalid host test", List.of(), "Test");
+        CompletionStage<AiSuggestion> stage = advisor.request(AiTask.QUERY_PARSING, payload, null);
+        AiSuggestion suggestion = stage.toCompletableFuture().get();
+
+        assertFalse(suggestion.success());
+        assertFalse(suggestion.errorMessage().contains(secretKey));
+    }
+
+    @Test
+    void testOpenAiCompatibleAdvisorRedactsSecret() throws Exception {
+        String secretKey = "sk-test123456+special$chars*";
+        AiProviderConfig config = AiProviderConfig.openAi(secretKey, "gpt-4o-mini");
+        OpenAiCompatibleAdvisor advisor = new OpenAiCompatibleAdvisor(config);
+
+        ApprovedPayload payload = new ApprovedPayload(AiTask.QUERY_PARSING, "invalid host test", List.of(), "Test");
+        CompletionStage<AiSuggestion> stage = advisor.request(AiTask.QUERY_PARSING, payload, null);
+        AiSuggestion suggestion = stage.toCompletableFuture().get();
+
+        assertFalse(suggestion.success());
+        assertFalse(suggestion.errorMessage().contains(secretKey));
+    }
 }

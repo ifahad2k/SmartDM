@@ -27,6 +27,7 @@ interface AuthContextType {
   signOutUser: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   resendVerificationEmail: () => Promise<void>;
+  updateUserProfileName: (displayName: string) => Promise<void>;
   loginAsAdmin: () => void;
   loginAsUser: () => void;
   logout: () => void;
@@ -336,6 +337,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateUserProfileName = async (displayName: string) => {
+    setError(null);
+    if (!displayName || displayName.trim().length === 0) {
+      throw new Error('Display name cannot be empty.');
+    }
+    if (user?.uid) {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, { displayName: displayName.trim() }, { merge: true });
+        setUser(prev => prev ? { ...prev, displayName: displayName.trim() } : null);
+      } catch (err: any) {
+        console.warn('Failed to update Firestore profile name:', err);
+      }
+    }
+  };
+
   const loginAsAdmin = () => {
     const adminUser: UserProfile = {
       uid: 'admin-001',
@@ -384,6 +401,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOutUser,
         resetPassword,
         resendVerificationEmail,
+        updateUserProfileName,
         loginAsAdmin,
         loginAsUser,
         logout,

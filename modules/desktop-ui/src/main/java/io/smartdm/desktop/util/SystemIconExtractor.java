@@ -7,13 +7,13 @@ import javax.swing.Icon;
 import javax.swing.filechooser.FileSystemView;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class SystemIconExtractor {
 
-    private static final Map<String, Image> iconCache = new HashMap<>();
+    private static final Map<String, Image> iconCache = new ConcurrentHashMap<>();
     private static final boolean IS_LINUX = System.getProperty("os.name", "").toLowerCase().contains("linux");
 
     public static Image getFileIcon(String filename) {

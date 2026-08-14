@@ -3,7 +3,7 @@
   "description": "SmartDM Native Messaging Host",
   "path": "host.bat",
   "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://lkbiimagmeaefiedjigomffpophipmck/"
+  "allowed_extensions": [
+    "smartdm-extension@smartdm.io"
   ]
 }

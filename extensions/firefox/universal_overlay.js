@@ -179,14 +179,26 @@
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
     let hasCustomPosition = false;
+    let syncInterval = null;
+    let cleanupSync = null;
     
     if (container === document.body) {
       host.style.setProperty('position', 'fixed', 'important');
       host.style.setProperty('z-index', '2147483647', 'important');
       host.style.setProperty('pointer-events', 'auto', 'important');
       
+      cleanupSync = () => {
+        if (syncInterval) {
+          clearInterval(syncInterval);
+          syncInterval = null;
+        }
+        window.removeEventListener('scroll', syncPos, true);
+        window.removeEventListener('resize', syncPos);
+      };
+
       const syncPos = () => {
-        if (!mediaEl || !mediaEl.isConnected) {
+        if (!mediaEl || !mediaEl.isConnected || !host.isConnected) {
+          if (cleanupSync) cleanupSync();
           if (host.parentNode) host.parentNode.removeChild(host);
           return;
         }
@@ -223,7 +235,7 @@
       
       window.addEventListener('scroll', syncPos, true);
       window.addEventListener('resize', syncPos);
-      setInterval(syncPos, 100);
+      syncInterval = setInterval(syncPos, 100);
       setTimeout(syncPos, 50);
     } else {
       host.style.setProperty('position', 'absolute', 'important');
@@ -448,6 +460,7 @@
       closeBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (cleanupSync) cleanupSync();
         host.style.display = 'none';
         if (host.parentNode) host.parentNode.removeChild(host);
       });
@@ -818,12 +831,22 @@
     allItems.forEach(item => {
       const div = document.createElement('div');
       div.className = 'format-item';
-      div.innerHTML = `
-        <div class="format-info">
-          <span class="format-title" title="${item.title}">${item.title}</span>
-        </div>
-        <span class="format-badge">${item.badge}</span>
-      `;
+
+      const formatInfo = document.createElement('div');
+      formatInfo.className = 'format-info';
+
+      const formatTitle = document.createElement('span');
+      formatTitle.className = 'format-title';
+      formatTitle.textContent = item.title;
+      formatTitle.title = item.title;
+      formatInfo.appendChild(formatTitle);
+
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = item.badge;
+
+      div.appendChild(formatInfo);
+      div.appendChild(formatBadge);
 
       div.addEventListener('click', (ev) => {
         ev.preventDefault();
@@ -1284,12 +1307,22 @@
     items.forEach(item => {
       const div = document.createElement('div');
       div.className = 'format-item';
-      div.innerHTML = `
-        <div class="format-info">
-          <span class="format-title">${item.title}</span>
-        </div>
-        <span class="format-badge">${item.badge}</span>
-      `;
+
+      const formatInfo = document.createElement('div');
+      formatInfo.className = 'format-info';
+
+      const formatTitle = document.createElement('span');
+      formatTitle.className = 'format-title';
+      formatTitle.textContent = item.title;
+      formatTitle.title = item.title;
+      formatInfo.appendChild(formatTitle);
+
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = item.badge;
+
+      div.appendChild(formatInfo);
+      div.appendChild(formatBadge);
 
       div.addEventListener('click', (ev) => {
         ev.preventDefault();

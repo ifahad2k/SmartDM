@@ -80,14 +80,6 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         this.listener = listener;
         this.provider = provider;
         
-        if (provider instanceof DownloadsWorkspace) {
-            ((DownloadsWorkspace) provider).latestUpdateProperty().addListener((obs, oldV, newV) -> {
-                if (newV != null && getItem() != null && newV.id().equals(getItem())) {
-                    refreshUI(newV);
-                }
-            });
-        }
-        
         getStyleClass().add("download-cell");
         
         root.getStyleClass().add("row");
@@ -327,9 +319,15 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
                     String sha256 = "N/A";
                     if (file.exists()) {
                         try {
-                            byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
                             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-                            byte[] digest = md.digest(bytes);
+                            try (java.io.InputStream fis = java.nio.file.Files.newInputStream(file.toPath());
+                                 java.security.DigestInputStream dis = new java.security.DigestInputStream(fis, md)) {
+                                byte[] buffer = new byte[65536];
+                                while (dis.read(buffer) != -1) {
+                                    // streaming read into digest
+                                }
+                            }
+                            byte[] digest = md.digest();
                             StringBuilder sb = new StringBuilder();
                             for (byte b : digest) sb.append(String.format("%02x", b));
                             sha256 = sb.toString();
@@ -517,14 +515,6 @@ public class DownloadListCell extends ListCell<io.smartdm.domain.DownloadId> {
         });
         
         setContextMenu(ctxMenu);
-
-        if (provider.getLatestUpdate() != null) {
-            provider.getLatestUpdate().addListener((obs, oldVal, newVal) -> {
-                if (newVal != null && getItem() != null && newVal.id().equals(getItem())) {
-                    refreshUI(newVal);
-                }
-            });
-        }
     }
 
     private void clearAnimations() {

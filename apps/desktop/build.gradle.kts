@@ -45,5 +45,6 @@ dependencies {
     implementation(project(":modules:platform-linux"))
 
     // Logging runtime
+    implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)
 }

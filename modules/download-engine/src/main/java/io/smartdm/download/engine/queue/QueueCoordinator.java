@@ -4,6 +4,7 @@ import io.smartdm.domain.DownloadId;
 import io.smartdm.domain.DownloadQueue;
 import io.smartdm.domain.QueueItem;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +29,7 @@ public class QueueCoordinator {
     private final Map<String, List<QueueItem>> queueItems = new ConcurrentHashMap<>();
     private final Map<String, Set<DownloadId>> activeDownloadsPerQueue = new ConcurrentHashMap<>();
     private final AtomicBoolean coordinationRunning = new AtomicBoolean(false);
+    private final AtomicBoolean needsCoordination = new AtomicBoolean(false);
 
     public QueueCoordinator(DownloadStarter starter) {
         this.starter = starter;
@@ -59,9 +61,12 @@ public class QueueCoordinator {
     }
 
     private void triggerCoordination() {
+        needsCoordination.set(true);
         if (coordinationRunning.compareAndSet(false, true)) {
             try {
-                coordinate();
+                while (needsCoordination.getAndSet(false)) {
+                    coordinate();
+                }
             } finally {
                 coordinationRunning.set(false);
             }
@@ -78,7 +83,8 @@ public class QueueCoordinator {
 
             if (queue.getStatus() == DownloadQueue.Status.PAUSED) {
                 // Pause all active in this queue
-                for (DownloadId activeId : activeInQueue) {
+                List<DownloadId> toPause = new ArrayList<>(activeInQueue);
+                for (DownloadId activeId : toPause) {
                     starter.pauseDownload(activeId);
                     activeInQueue.remove(activeId);
                 }

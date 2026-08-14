@@ -124,6 +124,27 @@ public class WindowsDefenderScanner implements FileScanner {
     }
 
     public static Path findExecutablePath() {
+        String programData = System.getenv("ProgramData");
+        String platformBase = (programData != null && !programData.isBlank()) ? programData : "C:\\ProgramData";
+        Path platformDir = Path.of(platformBase, "Microsoft", "Windows Defender", "Platform");
+        if (Files.isDirectory(platformDir)) {
+            Path directExe = platformDir.resolve("MpCmdRun.exe");
+            if (Files.exists(directExe)) {
+                return directExe;
+            }
+            try (var stream = Files.list(platformDir)) {
+                java.util.Optional<Path> platformExe = stream
+                    .filter(Files::isDirectory)
+                    .sorted(java.util.Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
+                    .map(sub -> sub.resolve("MpCmdRun.exe"))
+                    .filter(Files::exists)
+                    .findFirst();
+                if (platformExe.isPresent()) {
+                    return platformExe.get();
+                }
+            } catch (Exception ignored) {}
+        }
+
         String programFiles = System.getenv("ProgramFiles");
         if (programFiles != null && !programFiles.isBlank()) {
             Path path = Path.of(programFiles, "Windows Defender", "MpCmdRun.exe");
@@ -160,22 +181,34 @@ public class WindowsDefenderScanner implements FileScanner {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
-            StringBuilder outputBuilder = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    outputBuilder.append(line).append(System.lineSeparator());
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
+                StringBuilder outputBuilder = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputBuilder.append(line).append(System.lineSeparator());
+                    }
+                } catch (Exception ignored) {
                 }
-            }
+                return outputBuilder.toString().trim();
+            });
 
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
+                outputFuture.cancel(true);
                 throw new IllegalStateException("Process timed out after " + timeoutSeconds + " seconds.");
             }
 
-            return new ProcessResult(process.exitValue(), outputBuilder.toString().trim());
+            String output;
+            try {
+                output = outputFuture.get(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                output = "";
+            }
+
+            return new ProcessResult(process.exitValue(), output);
         };
     }
 }

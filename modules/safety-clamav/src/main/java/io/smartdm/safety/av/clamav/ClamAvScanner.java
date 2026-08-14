@@ -175,22 +175,34 @@ public class ClamAvScanner implements FileScanner {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
-            StringBuilder outputBuilder = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    outputBuilder.append(line).append(System.lineSeparator());
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
+                StringBuilder outputBuilder = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputBuilder.append(line).append(System.lineSeparator());
+                    }
+                } catch (Exception ignored) {
                 }
-            }
+                return outputBuilder.toString().trim();
+            });
 
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
+                outputFuture.cancel(true);
                 throw new IllegalStateException("Process timed out after " + timeoutSeconds + " seconds.");
             }
 
-            return new ProcessResult(process.exitValue(), outputBuilder.toString().trim());
+            String output;
+            try {
+                output = outputFuture.get(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                output = "";
+            }
+
+            return new ProcessResult(process.exitValue(), output);
         };
     }
 }

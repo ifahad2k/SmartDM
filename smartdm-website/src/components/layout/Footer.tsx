@@ -35,8 +35,8 @@ export const Footer: React.FC = () => {
           <div>
             <h4>Community & Open Source</h4>
             <a href={smartdmConfig.links.discussions} target="_blank" rel="noreferrer">Discussions</a>
-            <a href={smartdmConfig.links.issuesBug} target="_blank" rel="noreferrer">Report a Bug</a>
-            <a href={smartdmConfig.links.issuesFeature} target="_blank" rel="noreferrer">Feature Request</a>
+            <Link to="/feedback/bug">Report a Bug</Link>
+            <Link to="/feedback/feature">Propose Feature</Link>
             <a href={smartdmConfig.links.contributing} target="_blank" rel="noreferrer">Contributing</a>
             <a href={smartdmConfig.links.license} target="_blank" rel="noreferrer">GPL-3.0 License</a>
           </div>

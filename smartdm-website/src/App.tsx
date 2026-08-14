@@ -13,6 +13,9 @@ import { ProtectedRoute, AdminRoute } from './components/auth/RouteGuards';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { NewBugReportPage } from './pages/NewBugReportPage';
 import { NewFeaturePage } from './pages/NewFeaturePage';
+import { MySubmissionsPage } from './pages/MySubmissionsPage';
+import { UserProfilePage } from './pages/UserProfilePage';
+import { CommunityIdeasPage } from './pages/CommunityIdeasPage';
 
 export const App: React.FC = () => {
   return (
@@ -23,6 +26,9 @@ export const App: React.FC = () => {
           <Route path="/login" element={<AuthPage />} />
           <Route path="/account/sign-in" element={<Navigate to="/login" replace />} />
           <Route path="/account/sign-up" element={<Navigate to="/login" replace />} />
+          <Route path="/account/submissions" element={<ProtectedRoute><MySubmissionsPage /></ProtectedRoute>} />
+          <Route path="/account/profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
+          <Route path="/community/ideas" element={<CommunityIdeasPage />} />
 
           <Route path="/feedback/bug" element={<ProtectedRoute><NewBugReportPage /></ProtectedRoute>} />
           <Route path="/feedback/feature" element={<ProtectedRoute><NewFeaturePage /></ProtectedRoute>} />

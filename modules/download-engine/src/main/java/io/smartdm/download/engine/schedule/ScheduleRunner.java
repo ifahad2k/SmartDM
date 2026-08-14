@@ -32,7 +32,7 @@ public class ScheduleRunner {
     
     public void start() {
         executor = Executors.newSingleThreadScheduledExecutor();
-        executor.scheduleAtFixedRate(this::evaluateSchedules, 0, 1, TimeUnit.SECONDS);
+        executor.scheduleAtFixedRate(this::evaluateSchedules, 0, 30, TimeUnit.SECONDS);
     }
     
     public void stop() {

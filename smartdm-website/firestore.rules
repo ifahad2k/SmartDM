@@ -17,9 +17,13 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // Checks if the user has isAdmin set to true in their Firestore document
+    // Checks if the user is an admin or owner (by email or Firestore role)
     function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+      return isSignedIn() && (
+        request.auth.token.email == "ifahad2k@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)
+      );
     }
 
     // Checks if the authenticated user matches the specified user ID
@@ -73,16 +77,20 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.status == "new";
 
-      allow read: if isOwner(resource.data.createdBy) || isAdmin();
+      // Allow public/user read for feature requests (upvoting list), or owner/admin for bugs
+      allow read: if resource.data.type == "feature" || isOwner(resource.data.createdBy) || isAdmin();
 
+      // Upvoting feature requests or updating owned feedback
       allow update: if (
+        isVerifiedUser() && resource.data.type == "feature"
+      ) || (
         isOwner(resource.data.createdBy)
         && resource.data.status == "new"
         && request.resource.data.status == "new"
         && request.resource.data.createdBy == resource.data.createdBy
       ) || isAdmin();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // 4. Audit Logs (auditLogs/{id})

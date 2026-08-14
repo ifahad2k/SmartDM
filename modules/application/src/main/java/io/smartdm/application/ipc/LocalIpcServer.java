@@ -72,6 +72,18 @@ public class LocalIpcServer {
         Files.createDirectories(ipcFile.getParent());
         Files.writeString(ipcFile, port + "\n" + token + "\n");
         ipcFile.toFile().deleteOnExit();
+
+        if (System.getProperty("os.name").toLowerCase().contains("win")) {
+            try {
+                new ProcessBuilder("icacls", ipcFile.toString(), "/inheritance:r",
+                        "/grant:r", System.getProperty("user.name") + ":F").start().waitFor();
+            } catch (Exception ignored) {}
+        } else {
+            try {
+                Files.setPosixFilePermissions(ipcFile,
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            } catch (Exception ignored) {}
+        }
     }
     
     public void stop() {

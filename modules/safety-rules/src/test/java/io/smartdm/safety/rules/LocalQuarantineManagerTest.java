@@ -106,4 +106,19 @@ class LocalQuarantineManagerTest {
         assertThat(Files.exists(quarantineDir.resolve(record.quarantineId() + ".json"))).isFalse();
         assertThat(quarantineManager.getRecord(record.quarantineId())).isEmpty();
     }
+
+    @Test
+    void testRestoreQuarantinedFileWithPathTraversal(@TempDir Path tempDir) throws IOException {
+        Path sourceFile = tempDir.resolve("traversal_file.txt");
+        Files.writeString(sourceFile, "dangerous payload");
+
+        QuarantineRecord record = quarantineManager.quarantine(sourceFile, "../../etc/passwd");
+
+        Path restoreDir = tempDir.resolve("restored_folder");
+        boolean restored = quarantineManager.restore(record.quarantineId(), restoreDir);
+
+        assertThat(restored).isTrue();
+        Path expectedFile = restoreDir.resolve("__etc_passwd");
+        assertThat(Files.exists(expectedFile)).isTrue();
+    }
 }
