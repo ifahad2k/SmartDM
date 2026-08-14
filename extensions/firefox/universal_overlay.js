@@ -178,6 +178,7 @@
 
     const host = document.createElement('div');
     host.className = 'smartdm-universal-host';
+    let hasCustomPosition = false;
     
     if (container === document.body) {
       host.style.setProperty('position', 'fixed', 'important');
@@ -212,9 +213,11 @@
           host.style.display = 'block';
           host.style.opacity = '1';
           host.style.pointerEvents = 'auto';
-          host.style.top = Math.max(12, rect.top + 12) + 'px';
-          const bannerWidth = host.offsetWidth || 140;
-          host.style.left = Math.max(12, rect.right - bannerWidth - 12) + 'px';
+          if (!hasCustomPosition) {
+            host.style.setProperty('top', Math.max(12, rect.top + 12) + 'px', 'important');
+            const bannerWidth = host.offsetWidth || 140;
+            host.style.setProperty('left', Math.max(12, rect.right - bannerWidth - 12) + 'px', 'important');
+          }
         }
       };
       
@@ -460,36 +463,49 @@
       }
     });
 
-    // Draggable logic
+    // Draggable logic for big player overlay button
     let isDragging = false;
-    let initialX, initialY, currentX, currentY;
-    let xOffset = 0, yOffset = 0;
-    let dragStartX = 0, dragStartY = 0;
+    let dragMoved = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
 
     bannerBtn.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      initialX = e.clientX - xOffset;
-      initialY = e.clientY - yOffset;
+      if (e.target.classList && e.target.classList.contains('close-btn')) return;
       isDragging = true;
-    });
+      dragMoved = false;
+      startX = e.clientX;
+      startY = e.clientY;
 
-    document.addEventListener('mouseup', () => {
-      initialX = currentX;
-      initialY = currentY;
-      isDragging = false;
+      const rect = host.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+
+      e.stopPropagation();
     });
 
     document.addEventListener('mousemove', (e) => {
-      if (isDragging) {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        dragMoved = true;
+        hasCustomPosition = true;
+      }
+
+      if (hasCustomPosition) {
         e.preventDefault();
-        currentX = e.clientX - initialX;
-        currentY = e.clientY - initialY;
-        xOffset = currentX;
-        yOffset = currentY;
-        host.style.transform = "translate3d(" + currentX + "px, " + currentY + "px, 0)";
+        host.style.setProperty('position', 'fixed', 'important');
+        host.style.setProperty('top', Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px', 'important');
+        host.style.setProperty('left', Math.max(0, Math.min(window.innerWidth - 100, initialLeft + dx)) + 'px', 'important');
+        host.style.setProperty('right', 'auto', 'important');
+        host.style.setProperty('transform', 'none', 'important');
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
       }
     });
 
@@ -584,7 +600,6 @@
     const resolvedUrl = resolveCurrentMediaUrl(mediaEl);
     
     // Auto-prefetch immediately ONLY if this is the main video of the page
-    // (e.g. /watch, /reel, or the exact URL matches) to save yt-dlp instances on feeds
     const currentPath = window.location.pathname;
     if (resolvedUrl === window.location.href || 
         (currentPath.includes('/watch') || currentPath.includes('/reel/') || currentPath.includes('/status/') || currentPath.includes('/video/'))) {
@@ -599,6 +614,13 @@
     let formatSearchTimeout = null;
 
     bannerBtn.addEventListener('click', (e) => {
+      if (dragMoved) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        dragMoved = false;
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
