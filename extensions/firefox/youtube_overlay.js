@@ -595,9 +595,87 @@
       }
     });
 
+    // Draggable logic for YouTube player overlay button
+    let isDragging = false;
+    let dragMoved = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
+
+    const startDrag = (clientX, clientY, target) => {
+      if (target && target.classList && target.classList.contains('close-btn')) return;
+      isDragging = true;
+      dragMoved = false;
+      startX = clientX;
+      startY = clientY;
+
+      const rect = host.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+    };
+
+    const moveDrag = (clientX, clientY, e) => {
+      if (!isDragging) return;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        dragMoved = true;
+      }
+
+      if (e && e.preventDefault) e.preventDefault();
+      host.style.setProperty('position', 'fixed', 'important');
+      host.style.setProperty('top', Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px', 'important');
+      host.style.setProperty('left', Math.max(0, Math.min(window.innerWidth - 100, initialLeft + dx)) + 'px', 'important');
+      host.style.setProperty('right', 'auto', 'important');
+      host.style.setProperty('transform', 'none', 'important');
+    };
+
+    const stopDrag = () => {
+      if (isDragging) {
+        isDragging = false;
+      }
+    };
+
+    bannerBtn.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // Left-click drag only
+      startDrag(e.clientX, e.clientY, e.target);
+      e.stopPropagation();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      moveDrag(e.clientX, e.clientY, e);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      stopDrag();
+    });
+
+    bannerBtn.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches[0]) {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY, e.target);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches && e.touches[0]) {
+        moveDrag(e.touches[0].clientX, e.touches[0].clientY, e);
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => {
+      stopDrag();
+    });
+
     fetchYtDlpFormats(videoUrl, () => {});
 
     bannerBtn.addEventListener('click', (e) => {
+      if (dragMoved) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        dragMoved = false;
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
 
