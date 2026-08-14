@@ -164,6 +164,22 @@
   }
 
   function attachUniversalBanner(mediaEl) {
+    if (!mediaEl) return;
+
+    const hostname = window.location.hostname.toLowerCase();
+    const isFacebook = hostname.includes('facebook.com');
+
+    // Filter out non-video Facebook sound effects or header elements
+    if (isFacebook) {
+      if (mediaEl.tagName === 'AUDIO') return;
+      if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 120 && mediaEl.offsetHeight < 120) return;
+      if (mediaEl.closest('header, nav, [role="navigation"], #pagelet_bluebar, [aria-label="Facebook"]')) return;
+    }
+
+    // Ignore tiny audio elements or navbar elements on all sites
+    if (mediaEl.tagName === 'AUDIO' && (mediaEl.offsetWidth < 20 || mediaEl.offsetHeight < 20)) return;
+    if (mediaEl.closest('header, nav, [role="navigation"]')) return;
+
     const container = findTopPlayerContainer(mediaEl);
     if (container !== document.body && container.querySelector('.smartdm-universal-host')) return;
     mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
@@ -181,22 +197,32 @@
           if (host.parentNode) host.parentNode.removeChild(host);
           return;
         }
+
+        if (isFacebook && mediaEl.closest('header, nav, [role="navigation"], #pagelet_bluebar')) {
+          host.style.display = 'none';
+          return;
+        }
+
         let targetEl = mediaEl;
         let rect = targetEl.getBoundingClientRect();
         if ((rect.width === 0 || rect.height === 0) && mediaEl.parentElement) {
+          if (isFacebook || mediaEl.parentElement.closest('header, nav, [role="navigation"]')) {
+            host.style.display = 'none';
+            return;
+          }
           targetEl = mediaEl.parentElement;
           rect = targetEl.getBoundingClientRect();
         }
         
-        if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
+        if (rect.width < 50 || rect.height < 50 || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
           host.style.display = 'none';
         } else {
           host.style.display = 'block';
           host.style.opacity = '1';
           host.style.pointerEvents = 'auto';
-          host.style.top = Math.max(16, rect.top + 16) + 'px';
-          const bannerWidth = host.offsetWidth || 160;
-          host.style.left = Math.max(16, rect.right - bannerWidth - 16) + 'px';
+          host.style.top = Math.max(12, rect.top + 12) + 'px';
+          const bannerWidth = host.offsetWidth || 140;
+          host.style.left = Math.max(12, rect.right - bannerWidth - 12) + 'px';
         }
       };
       
@@ -206,8 +232,8 @@
       setTimeout(syncPos, 50);
     } else {
       host.style.setProperty('position', 'absolute', 'important');
-      host.style.setProperty('top', '16px', 'important');
-      host.style.setProperty('right', '16px', 'important');
+      host.style.setProperty('top', '12px', 'important');
+      host.style.setProperty('right', '12px', 'important');
       host.style.setProperty('z-index', '2147483647', 'important');
       host.style.setProperty('pointer-events', 'auto', 'important');
     }
@@ -221,22 +247,22 @@
           pointer-events: auto !important;
         }
         .idm-banner {
-          background: rgba(15, 23, 42, 0.5) !important;
+          background: rgba(15, 23, 42, 0.65) !important;
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
-          color: rgba(248, 250, 252, 0.85);
-          border: 1px solid rgba(56, 189, 248, 0.35);
-          border-radius: 6px;
-          padding: 6px 12px;
+          color: rgba(248, 250, 252, 0.9);
+          border: 1px solid rgba(56, 189, 248, 0.4);
+          border-radius: 5px;
+          padding: 4px 8px !important;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 12px;
+          font-size: 11px !important;
           font-weight: 700;
           cursor: pointer !important;
           display: flex;
           align-items: center;
-          gap: 6px;
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-          opacity: 0.5;
+          gap: 5px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+          opacity: 0.7;
           transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
           user-select: none;
           pointer-events: auto !important;
@@ -251,13 +277,39 @@
           background: rgba(15, 23, 42, 0.95) !important;
           border-color: #38bdf8 !important;
           color: #ffffff !important;
-          box-shadow: 0 6px 22px rgba(56, 189, 248, 0.6) !important;
+          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.6) !important;
           transform: translateY(-1px);
         }
         .icon {
+          width: 12px;
+          height: 12px;
+          fill: none;
+          stroke: #38bdf8;
+          stroke-width: 2.5;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        .close-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           width: 14px;
           height: 14px;
-          fill: none;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.15);
+          color: rgba(248, 250, 252, 0.7);
+          font-size: 10px;
+          font-weight: bold;
+          line-height: 1;
+          margin-left: 3px;
+          cursor: pointer !important;
+          transition: background 0.15s, color 0.15s, transform 0.15s;
+        }
+        .close-btn:hover {
+          background: #ef4444 !important;
+          color: #ffffff !important;
+          transform: scale(1.15);
+        }
           stroke: #38bdf8;
           stroke-width: 2.5;
           stroke-linecap: round;
@@ -381,7 +433,8 @@
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        Download with SmartDM
+        <span>Download with SmartDM</span>
+        <span class="close-btn" title="Vanish overlay">✕</span>
       </button>
       <div class="popover">
         <div class="popover-title">Select Quality / Format</div>
@@ -392,8 +445,18 @@
     `;
 
     const bannerBtn = shadow.querySelector('.idm-banner');
+    const closeBtn = shadow.querySelector('.close-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        host.style.display = 'none';
+        if (host.parentNode) host.parentNode.removeChild(host);
+      });
+    }
 
     // Auto-close popover on outside click
     document.addEventListener('click', (e) => {
@@ -634,7 +697,7 @@
             content.innerHTML = '<div class="status-text">No media formats detected. Timeout.</div>';
           }
         }
-      }, 10000);
+      }, 40000);
     });
 
     container.appendChild(host);

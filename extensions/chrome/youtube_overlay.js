@@ -422,16 +422,16 @@
           color: rgba(248, 250, 252, 0.85);
           border: 1px solid rgba(56, 189, 248, 0.35);
           border-radius: 6px;
-          padding: 6px 12px;
+          padding: 4px 8px !important;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 12px;
+          font-size: 11px !important;
           font-weight: 700;
           cursor: pointer;
           display: flex;
           align-items: center;
-          gap: 6px;
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-          opacity: 0.5;
+          gap: 5px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+          opacity: 0.7;
           transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
           user-select: none;
         }
@@ -440,22 +440,43 @@
           background: rgba(15, 23, 42, 0.95);
           border-color: #38bdf8;
           color: #ffffff;
-          box-shadow: 0 6px 22px rgba(56, 189, 248, 0.6);
+          box-shadow: 0 6px 20px rgba(56, 189, 248, 0.6);
           transform: translateY(-1px);
         }
         .play-icon {
           width: 0;
           height: 0;
-          border-top: 5px solid transparent;
-          border-bottom: 5px solid transparent;
-          border-left: 8px solid #38bdf8;
+          border-top: 4px solid transparent;
+          border-bottom: 4px solid transparent;
+          border-left: 7px solid #38bdf8;
         }
         .idm-banner:hover .play-icon {
           border-left-color: #ffffff;
         }
+        .close-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.15);
+          color: rgba(248, 250, 252, 0.7);
+          font-size: 10px;
+          font-weight: bold;
+          line-height: 1;
+          margin-left: 3px;
+          cursor: pointer !important;
+          transition: background 0.15s, color 0.15s, transform 0.15s;
+        }
+        .close-btn:hover {
+          background: #ef4444 !important;
+          color: #ffffff !important;
+          transform: scale(1.15);
+        }
         .popover {
           position: absolute;
-          top: 36px;
+          top: 32px;
           right: 0;
           width: 270px;
           background: rgba(15, 23, 42, 0.96);
@@ -539,7 +560,8 @@
       </style>
       <button class="idm-banner">
         <span class="play-icon"></span>
-        Download this video
+        <span>Download this video</span>
+        <span class="close-btn" title="Vanish overlay">✕</span>
       </button>
       <div class="popover">
         <div class="popover-title">Select Quality / Format</div>
@@ -550,8 +572,18 @@
     `;
 
     const bannerBtn = shadow.querySelector('.idm-banner');
+    const closeBtn = shadow.querySelector('.close-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        host.style.display = 'none';
+        if (host.parentNode) host.parentNode.removeChild(host);
+      });
+    }
 
     // Auto-close on click outside
     document.addEventListener('click', (e) => {
