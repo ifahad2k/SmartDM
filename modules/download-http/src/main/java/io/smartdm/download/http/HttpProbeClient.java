@@ -112,12 +112,15 @@ public class HttpProbeClient {
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
                 .thenApply(response -> {
+                    if (response.statusCode() == 404) {
+                        throw new RuntimeException("HTTP 404 Not Found: The file or release asset does not exist on the server.");
+                    }
                     if (response.statusCode() == 401) {
                         String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("Secure Area");
                         throw new UnauthorizedException(wwwAuth);
                     }
                     if (response.statusCode() >= 300) {
-                        throw new RuntimeException("HEAD status: " + response.statusCode());
+                        throw new RuntimeException("HTTP Error " + response.statusCode() + ": Failed to probe URL");
                     }
                     long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
                     String mimeType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
@@ -144,13 +147,13 @@ public class HttpProbeClient {
                     if (ex == null) {
                         return CompletableFuture.completedFuture(result);
                     }
-                    // HEAD failed (possibly 405 Method Not Allowed or 401/403 from CDN)
+                    // If probing with cookies/credentials failed (e.g. 401/403/405), retry WITHOUT credentials first!
+                    // Fixes GitHub Releases, S3 presigned URLs, and CDN links that reject browser cookies.
+                    if (credential != null && (credential.cookies() != null || credential.username() != null)) {
+                        return probeAsync(uri, null);
+                    }
                     if (ex.getCause() instanceof UnauthorizedException) {
                         return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
-                    }
-                    // If probing with cookies failed, retry WITHOUT cookies (fixes GitHub releases & S3/Azure presigned URLs)
-                    if (credential != null && credential.cookies() != null && !credential.cookies().isEmpty()) {
-                        return probeAsync(uri, null);
                     }
                     return probeViaGetRange(uri, credential);
                 })
@@ -170,6 +173,10 @@ public class HttpProbeClient {
                         // Dummy read to consume a single byte and prevent "resource never referenced" warning
                         int unused = is.read();
                         
+                        if (response.statusCode() == 404) {
+                            throw new RuntimeException("HTTP 404 Not Found: The file or release asset does not exist on the server.");
+                        }
+
                         if (response.statusCode() == 401) {
                             String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("Secure Area");
                             throw new UnauthorizedException(wwwAuth);

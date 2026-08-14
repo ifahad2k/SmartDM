@@ -60,9 +60,13 @@ public class HttpRequestFactory {
                 builder.header("Authorization", "Basic " + basicAuth);
             }
             if (credential.cookies() != null && !credential.cookies().isEmpty()) {
-                String cookieHeader = HttpProbeClient.parseNetscapeCookies(credential.cookies());
-                if (!cookieHeader.isEmpty()) {
-                    builder.header("Cookie", cookieHeader);
+                String host = uri.value().getHost();
+                boolean isCdnUrl = host != null && (host.contains("githubusercontent.com") || host.contains("amazonaws.com") || host.contains("cloudfront.net"));
+                if (!isCdnUrl) {
+                    String cookieHeader = HttpProbeClient.parseNetscapeCookies(credential.cookies());
+                    if (!cookieHeader.isEmpty()) {
+                        builder.header("Cookie", cookieHeader);
+                    }
                 }
             }
         }
