@@ -469,24 +469,22 @@
     let startX = 0, startY = 0;
     let initialLeft = 0, initialTop = 0;
 
-    bannerBtn.addEventListener('mousedown', (e) => {
-      if (e.target.classList && e.target.classList.contains('close-btn')) return;
+    const startDrag = (clientX, clientY, target) => {
+      if (target && target.classList && target.classList.contains('close-btn')) return;
       isDragging = true;
       dragMoved = false;
-      startX = e.clientX;
-      startY = e.clientY;
+      startX = clientX;
+      startY = clientY;
 
       const rect = host.getBoundingClientRect();
       initialLeft = rect.left;
       initialTop = rect.top;
+    };
 
-      e.stopPropagation();
-    });
-
-    document.addEventListener('mousemove', (e) => {
+    const moveDrag = (clientX, clientY, e) => {
       if (!isDragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
 
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         dragMoved = true;
@@ -494,19 +492,49 @@
       }
 
       if (hasCustomPosition) {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
         host.style.setProperty('position', 'fixed', 'important');
         host.style.setProperty('top', Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px', 'important');
         host.style.setProperty('left', Math.max(0, Math.min(window.innerWidth - 100, initialLeft + dx)) + 'px', 'important');
         host.style.setProperty('right', 'auto', 'important');
         host.style.setProperty('transform', 'none', 'important');
       }
-    });
+    };
 
-    document.addEventListener('mouseup', () => {
+    const stopDrag = () => {
       if (isDragging) {
         isDragging = false;
       }
+    };
+
+    bannerBtn.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // Left-click drag only
+      startDrag(e.clientX, e.clientY, e.target);
+      e.stopPropagation();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      moveDrag(e.clientX, e.clientY, e);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      stopDrag();
+    });
+
+    bannerBtn.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches[0]) {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY, e.target);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches && e.touches[0]) {
+        moveDrag(e.touches[0].clientX, e.touches[0].clientY, e);
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => {
+      stopDrag();
     });
 
     function resolveCurrentMediaUrl(mEl) {
@@ -589,13 +617,6 @@
       if (isFb && pageUrl) pageUrl = pageUrl.replace('/reels/', '/reel/');
       return pageUrl;
     }
-
-    ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(evtName => {
-      bannerBtn.addEventListener(evtName, (e) => {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }, true);
-    });
 
     const resolvedUrl = resolveCurrentMediaUrl(mediaEl);
     
