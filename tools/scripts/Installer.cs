@@ -149,6 +149,7 @@ namespace SmartDM.Installer
             this.Controls.Add(step1Panel);
 
             Label step1Header = new Label();
+            step1Header.UseMnemonic = false;
             step1Header.Text = "Privacy Policy & End User Agreement";
             step1Header.Font = new Font("Segoe UI", 14f, FontStyle.Bold);
             step1Header.ForeColor = Color.FromArgb(56, 189, 248); // #38bdf8
@@ -198,6 +199,7 @@ namespace SmartDM.Installer
             this.Controls.Add(step2Panel);
 
             Label step2Header = new Label();
+            step2Header.UseMnemonic = false;
             step2Header.Text = "Installation Options & Directory";
             step2Header.Font = new Font("Segoe UI", 14f, FontStyle.Bold);
             step2Header.ForeColor = Color.FromArgb(56, 189, 248);
@@ -206,6 +208,7 @@ namespace SmartDM.Installer
             step2Panel.Controls.Add(step2Header);
 
             Label pathLabel = new Label();
+            pathLabel.UseMnemonic = false;
             pathLabel.Text = "Destination Folder:";
             pathLabel.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
             pathLabel.ForeColor = Color.FromArgb(203, 213, 225);
@@ -238,7 +241,8 @@ namespace SmartDM.Installer
             step2Panel.Controls.Add(browseButton);
 
             Label optionsLabel = new Label();
-            optionsLabel.Text = "Select Installation Shortcuts & Integration:";
+            optionsLabel.UseMnemonic = false;
+            optionsLabel.Text = "Select Shortcuts & Integration:";
             optionsLabel.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
             optionsLabel.ForeColor = Color.FromArgb(203, 213, 225);
             optionsLabel.Location = new Point(30, 140);
@@ -264,12 +268,13 @@ namespace SmartDM.Installer
             step2Panel.Controls.Add(startupCheckBox);
 
             browserIntegrationCheckBox = new CheckBox();
-            browserIntegrationCheckBox.Text = "Auto-install Chrome, Edge, Brave & Firefox Browser Integration";
+            browserIntegrationCheckBox.UseMnemonic = false;
+            browserIntegrationCheckBox.Text = "Register Browser Native Messaging (Chrome, Edge, Brave & Firefox)";
             browserIntegrationCheckBox.Checked = true;
             browserIntegrationCheckBox.Font = new Font("Segoe UI", 9.5f);
             browserIntegrationCheckBox.ForeColor = Color.FromArgb(241, 245, 249);
             browserIntegrationCheckBox.Location = new Point(30, 234);
-            browserIntegrationCheckBox.Size = new Size(480, 25);
+            browserIntegrationCheckBox.Size = new Size(500, 25);
             step2Panel.Controls.Add(browserIntegrationCheckBox);
 
             // --- Step 3 Panel: Installing Progress ---
