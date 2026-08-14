@@ -87,43 +87,29 @@
     
     const host = window.location.hostname.toLowerCase();
     if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
-      return false; // Social media feed videos are always main videos
+      return false; // Social media feed videos are main videos
     }
 
-    // A main video usually has controls, or is large.
+    // Controls indicate a standalone main player, not a thumbnail preview
     if (mediaEl.hasAttribute('controls')) return false;
-    
-    // If it's a large video, it's almost certainly the main player, not a thumbnail preview.
-    if (mediaEl.offsetWidth >= 500 || mediaEl.offsetHeight >= 400) return false;
 
-    // Check if it's inside a link (most thumbnails are wrapped in a tags)
+    // Check if inside a link <a> tag
     let el = mediaEl;
     let depth = 0;
-    while(el && el !== document.body && depth < 5) {
-        if (el.tagName === 'A') return true;
-        el = el.parentElement;
-        depth++;
-    }
-
-    // Check dimensions - thumbnail preview videos are small/medium grid cards
-    if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 500) {
-      const parentCard = mediaEl.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, [class*="thumb"], [class*="card"], [class*="grid"], [class*="item"]');
-      if (parentCard) return true;
-    }
-
-    // Fallback: check classes for explicit thumbnail indicators
-    let current = mediaEl;
-    depth = 0;
-    while (current && current.parentElement && depth < 8) {
-      current = current.parentElement;
-      const cls = (current.className || '').toString().toLowerCase();
-      const id = (current.id || '').toString().toLowerCase();
-      
-      // Be more restrictive: only match if it explicitly says 'thumb' or 'preview'
-      if (cls.includes('thumb') || cls.includes('preview') || id.includes('thumb') || id.includes('preview')) {
-        return true;
-      }
+    while (el && el !== document.body && depth < 6) {
+      if (el.tagName === 'A') return true;
+      el = el.parentElement;
       depth++;
+    }
+
+    // Check if inside a card/grid/thumbnail container
+    if (mediaEl.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, [class*="thumb"], [class*="card"], [class*="grid"], [class*="item"], [class*="preview"], [id*="thumb"], [id*="preview"]')) {
+      return true;
+    }
+
+    // Check dimensions - preview videos in grid items are smaller than 600px
+    if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 600 && mediaEl.offsetHeight < 500) {
+      return true;
     }
 
     return false;
@@ -165,6 +151,12 @@
 
   function attachUniversalBanner(mediaEl) {
     if (!mediaEl) return;
+
+    // Do NOT attach universal player banner to preview videos inside thumbnail cards!
+    if (isThumbnailVideo(mediaEl)) {
+      mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
+      return;
+    }
 
     const hostname = window.location.hostname.toLowerCase();
     const isFacebook = hostname.includes('facebook.com');
@@ -967,6 +959,27 @@
         .thumb-btn:hover .icon {
           stroke: #ffffff;
         }
+        .close-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.15);
+          color: rgba(248, 250, 252, 0.7);
+          font-size: 10px;
+          font-weight: bold;
+          line-height: 1;
+          margin-left: 3px;
+          cursor: pointer !important;
+          transition: background 0.15s, color 0.15s, transform 0.15s;
+        }
+        .close-btn:hover {
+          background: #ef4444 !important;
+          color: #ffffff !important;
+          transform: scale(1.15);
+        }
         .popover {
           position: absolute;
           top: 28px;
@@ -1046,7 +1059,8 @@
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        Download
+        <span>Download</span>
+        <span class="close-btn" title="Vanish overlay">✕</span>
       </button>
       <div class="popover">
         <div class="popover-title">Download Video</div>
@@ -1057,8 +1071,27 @@
     `;
 
     const thumbBtn = shadow.querySelector('.thumb-btn');
+    const closeBtn = shadow.querySelector('.close-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
+
+    // Trigger prefetch in advance on hover over container or button
+    containerEl.addEventListener('mouseenter', () => {
+      prefetchYtDlpFormats(videoUrl);
+    });
+    thumbBtn.addEventListener('mouseenter', () => {
+      prefetchYtDlpFormats(videoUrl);
+    });
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        host.style.display = 'none';
+        if (host.parentNode) host.parentNode.removeChild(host);
+      });
+    }
     
 
 
