@@ -1,24 +1,26 @@
 import React from 'react';
-import { Copy, Terminal } from 'lucide-react';
-import { smartdmConfig } from '../../config/smartdmConfig';
+import { Copy, Terminal, Download } from 'lucide-react';
+import { usePublicConfig } from '../../hooks/usePublicConfig';
 
 interface InstallDocProps {
   triggerToast?: (msg: string) => void;
 }
 
 export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
+  const publicConfig = usePublicConfig();
+
   const copyText = (text: string) => {
     navigator.clipboard.writeText(text);
     if (triggerToast) triggerToast('Copied terminal command to clipboard!');
   };
 
-  const appImageCmd = `chmod +x ${smartdmConfig.releaseAssets.appImage.filename}\n./${smartdmConfig.releaseAssets.appImage.filename}`;
-  const debCmd = `sudo dpkg -i ${smartdmConfig.releaseAssets.deb.filename}\nsudo apt-get install -f`;
+  const appImageCmd = `chmod +x ${publicConfig.appImageFilename}\n./${publicConfig.appImageFilename}`;
+  const debCmd = `sudo dpkg -i ${publicConfig.debFilename}\nsudo apt-get install -f`;
 
   return (
     <div className="doc-panel active">
       <span className="doc-kicker">DOCS / INSTALLATION</span>
-      <h3>Installing SmartDM Desktop</h3>
+      <h3>Installing SmartDM Desktop v{publicConfig.version}</h3>
       <p>Follow the platform instructions below to install SmartDM on Windows or Linux environments.</p>
 
       <ul className="step-list">
@@ -26,7 +28,14 @@ export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
           <span>01</span>
           <div>
             <b>Windows Installation (.exe)</b>
-            <p>Download <code>{smartdmConfig.releaseAssets.windows.filename}</code> and run the installer executable. It will guide you through directory selection and auto-register system tray integration.</p>
+            <p>
+              Download <code>{publicConfig.windowsFilename}</code> and run the installer executable. It will guide you through directory selection and auto-register system tray integration.
+            </p>
+            <div style={{ marginTop: '0.75rem' }}>
+              <a href={publicConfig.windowsDownloadUrl} className="button button-small button-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Download size={14} /> Download {publicConfig.windowsFilename}
+              </a>
+            </div>
           </div>
         </li>
 
@@ -49,6 +58,11 @@ export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
                 <Copy size={16} />
               </button>
             </div>
+            <div style={{ marginTop: '0.75rem' }}>
+              <a href={publicConfig.appImageDownloadUrl} className="button button-small button-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Download size={14} /> Download {publicConfig.appImageFilename}
+              </a>
+            </div>
           </div>
         </li>
 
@@ -70,6 +84,11 @@ export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
               >
                 <Copy size={16} />
               </button>
+            </div>
+            <div style={{ marginTop: '0.75rem' }}>
+              <a href={publicConfig.debDownloadUrl} className="button button-small button-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Download size={14} /> Download {publicConfig.debFilename}
+              </a>
             </div>
           </div>
         </li>

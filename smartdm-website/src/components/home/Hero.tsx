@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Download, ArrowRight, Zap, Brain, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Download, ArrowRight, Zap, Brain, CheckCircle2 } from 'lucide-react';
 import { GithubIcon as Github } from '../GithubIcon';
-import { smartdmConfig, getDownloadUrl } from '../../config/smartdmConfig';
+import { smartdmConfig } from '../../config/smartdmConfig';
+import { usePublicConfig } from '../../hooks/usePublicConfig';
 
 export const Hero: React.FC = () => {
+  const publicConfig = usePublicConfig();
   const [tiltStyle, setTiltStyle] = useState<{ transform: string }>({ transform: '' });
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -35,7 +37,7 @@ export const Hero: React.FC = () => {
             rel="noreferrer"
           >
             <span className="pulse-dot" />
-            SmartDM <span className="version-text">v{smartdmConfig.version}</span> is available
+            SmartDM <span className="version-text">v{publicConfig.version}</span> is available
             <ArrowRight size={14} />
           </a>
 
@@ -52,10 +54,10 @@ export const Hero: React.FC = () => {
           <div className="hero-actions">
             <a
               className="button button-primary button-large"
-              href={getDownloadUrl('windows')}
+              href={publicConfig.windowsDownloadUrl}
             >
               <Download size={22} />
-              <span>Download SmartDM</span>
+              <span>Download SmartDM v{publicConfig.version}</span>
               <small>Free & open source (GPL-3.0)</small>
             </a>
 
@@ -83,7 +85,7 @@ export const Hero: React.FC = () => {
           </div>
         </div>
 
-        {/* Hero Visual Mockup Stage */}
+        {/* Hero Visual App Screenshot Stage */}
         <div className="hero-visual">
           <div
             className="app-stage"
@@ -93,51 +95,36 @@ export const Hero: React.FC = () => {
           >
             <div className="app-glow" aria-hidden="true" />
 
-            {/* Floating Info Cards */}
+            {/* Application Interface Screenshot */}
+            <div className="window-frame">
+              <img
+                src="/assets/smartdm-app.png"
+                alt="SmartDM Desktop Application Interface"
+              />
+            </div>
+
+            {/* Floating Info Cards (Rendered AFTER window-frame to guarantee top z-stacking) */}
             <div className="floating-card card-speed">
               <div className="card-icon">
                 <Zap size={18} />
               </div>
-              <div>
-                <b>16x Parallel Streams</b>
-                <small>Dynamic Segmenting</small>
+              <div className="card-copy">
+                <strong>16-Connection Engine</strong>
+                <small>Multi-threaded chunk acceleration</small>
               </div>
             </div>
 
             <div className="floating-card card-ai">
-              <div className="card-icon" style={{ color: 'var(--violet)', background: 'rgba(159,102,255,0.12)' }}>
+              <div className="card-icon">
                 <Brain size={18} />
               </div>
-              <div>
-                <b>AI Cataloging</b>
-                <small>Auto-tagging files</small>
+              <div className="card-copy">
+                <strong>Local AI Cataloger</strong>
+                <small>Zero telemetry privacy</small>
               </div>
-            </div>
-
-            <div className="floating-card card-safe">
-              <div className="card-icon" style={{ color: 'var(--green)', background: 'rgba(84,242,181,0.1)' }}>
-                <ShieldCheck size={18} />
-              </div>
-              <div>
-                <b>Local Inspection</b>
-                <small>Checksum verification</small>
-              </div>
-            </div>
-
-            <div className="window-frame">
-              <img
-                src="/assets/smartdm-app.png"
-                alt="SmartDM Application Interface Mockup"
-                loading="eager"
-              />
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="scroll-cue" aria-hidden="true">
-        <span />
-        SCROLL TO EXPLORE
       </div>
     </section>
   );

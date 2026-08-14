@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Monitor, Copy, CheckCircle2, ShieldAlert } from 'lucide-react';
-import { smartdmConfig, getDownloadUrl } from '../../config/smartdmConfig';
+import { Download, Monitor, Copy, CheckCircle2 } from 'lucide-react';
+import { usePublicConfig } from '../../hooks/usePublicConfig';
 
 interface DownloadsSectionProps {
   triggerToast?: (msg: string) => void;
 }
 
 export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast }) => {
+  const publicConfig = usePublicConfig();
   const [detectedOs, setDetectedOs] = useState<'windows' | 'linux' | 'other'>('windows');
 
   useEffect(() => {
@@ -21,6 +22,7 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
   }, []);
 
   const handleCopyHash = (hash: string) => {
+    if (!hash) return;
     navigator.clipboard.writeText(hash);
     if (triggerToast) {
       triggerToast('SHA-256 Checksum copied to clipboard!');
@@ -32,7 +34,7 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
       <div className="container">
         <div className="section-heading">
           <span className="eyebrow">DOWNLOAD SMARTDM</span>
-          <h2>Get SmartDM v{smartdmConfig.version} for your platform</h2>
+          <h2>Get SmartDM v{publicConfig.version} for your platform</h2>
           <p>
             Free, local-first, and open source under GPL-3.0. Download native installers or standalone packages below.
           </p>
@@ -51,23 +53,38 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
               <p>Official installer with auto-updater, background service, and context menu integrations.</p>
             </div>
             <div className="download-meta">
-              <span>v{smartdmConfig.version}</span>
-              <span>{smartdmConfig.releaseAssets.windows.architecture}</span>
-              <span>{smartdmConfig.releaseAssets.windows.size}</span>
+              <span>v{publicConfig.version}</span>
+              <span>x64</span>
+              <span>Direct GitHub</span>
             </div>
             <a
               className="button button-primary"
-              href={getDownloadUrl('windows')}
+              href={publicConfig.windowsDownloadUrl}
             >
               <Download size={18} />
               <span>Download .EXE</span>
             </a>
-            <div className="asset-name">{smartdmConfig.releaseAssets.windows.filename}</div>
+            <div className="asset-name">{publicConfig.windowsFilename}</div>
+            {publicConfig.windowsChecksum && (
+              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}>
+                <code style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>
+                  {publicConfig.windowsChecksum.substring(0, 16)}...
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyHash(publicConfig.windowsChecksum)}
+                  style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0 }}
+                  title="Copy SHA-256 Checksum"
+                >
+                  <Copy size={12} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Linux AppImage Download Card */}
-          <div className="download-card">
-            <span className="coming-soon-badge">Coming Soon</span>
+          <div className={`download-card ${detectedOs === 'linux' ? 'recommended' : ''}`}>
+            {detectedOs === 'linux' && <span className="recommend-badge">Your Platform</span>}
             <div className="os-icon">
               <Monitor size={28} />
             </div>
@@ -77,19 +94,22 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
               <p>Standalone executable for Ubuntu, Fedora, Arch, Debian, and all glibc 2.29+ distros.</p>
             </div>
             <div className="download-meta">
-              <span>In Development</span>
+              <span>v{publicConfig.version}</span>
               <span>x86_64</span>
+              <span>Standalone</span>
             </div>
-            <button className="button button-disabled" disabled>
+            <a
+              className="button button-secondary"
+              href={publicConfig.appImageDownloadUrl}
+            >
               <Download size={18} />
-              <span>Coming Soon</span>
-            </button>
-            <div className="asset-name">Linux release in active development</div>
+              <span>Download .AppImage</span>
+            </a>
+            <div className="asset-name">{publicConfig.appImageFilename}</div>
           </div>
 
           {/* Debian / Ubuntu .deb Download Card */}
           <div className="download-card">
-            <span className="coming-soon-badge">Coming Soon</span>
             <div className="os-icon">
               <Monitor size={28} />
             </div>
@@ -99,49 +119,32 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
               <p>Native .deb package with apt desktop integration and systemd service scripts.</p>
             </div>
             <div className="download-meta">
-              <span>In Development</span>
+              <span>v{publicConfig.version}</span>
               <span>amd64</span>
+              <span>Native DEB</span>
             </div>
-            <button className="button button-disabled" disabled>
+            <a
+              className="button button-secondary"
+              href={publicConfig.debDownloadUrl}
+            >
               <Download size={18} />
-              <span>Coming Soon</span>
-            </button>
-            <div className="asset-name">Debian/Ubuntu release in active development</div>
+              <span>Download .DEB</span>
+            </a>
+            <div className="asset-name">{publicConfig.debFilename}</div>
           </div>
         </div>
 
-        {/* Checksum Verification Box */}
-        <div className="path-box" style={{ marginTop: '36px' }}>
-          <div className="terminal-title">
-            <ShieldAlert size={14} style={{ color: 'var(--cyan)' }} />
-            <span>Official Release SHA-256 Checksum</span>
+        {/* Security Integrity Card */}
+        <div className="security-card" style={{ marginTop: '2.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <CheckCircle2 size={24} color="var(--green)" />
+            <div>
+              <strong style={{ display: 'block', fontSize: '1.05rem' }}>SHA-256 Binary Integrity Verification</strong>
+              <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                Every binary artifact built on GitHub Actions is signed and hashed before distribution.
+              </span>
+            </div>
           </div>
-          <code>{smartdmConfig.checksums.windows}</code>
-          <button
-            className="copy-button"
-            onClick={() => handleCopyHash(smartdmConfig.checksums.windows)}
-            title="Copy SHA-256 Hash"
-            aria-label="Copy SHA-256 Hash"
-          >
-            <Copy size={16} />
-          </button>
-        </div>
-
-        <div className="download-footer">
-          <p>
-            <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
-            <span>GPL-3.0 License</span>
-          </p>
-          <p>•</p>
-          <p>
-            <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
-            <span>Code Signed Executable</span>
-          </p>
-          <p>•</p>
-          <p>
-            <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
-            <span>100% VirusTotal Clean</span>
-          </p>
         </div>
       </div>
     </section>
