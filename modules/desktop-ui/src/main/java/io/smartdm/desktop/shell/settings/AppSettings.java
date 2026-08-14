@@ -18,6 +18,7 @@ public class AppSettings {
     private boolean closeToTray = true;
     private boolean autoCheckUpdates = true;
     private boolean autoDownloadUpdates = false;
+    private boolean firstRunCompleted = false;
     private String reportBugUrl = "https://github.com/ifahad2k/SmartDM/issues";
     private int maxParallelSegments = 8;
     private boolean enableSpeedLimit = false;
@@ -26,6 +27,9 @@ public class AppSettings {
     private String language = "en";
 
     public AppSettings() {}
+
+    public boolean isFirstRunCompleted() { return firstRunCompleted; }
+    public void setFirstRunCompleted(boolean firstRunCompleted) { this.firstRunCompleted = firstRunCompleted; }
 
     public boolean isRunOnStartup() { return runOnStartup; }
     public void setRunOnStartup(boolean runOnStartup) { this.runOnStartup = runOnStartup; }

@@ -198,12 +198,78 @@ public class BrowserIntegrationInstallerService {
         }
     }
 
-    private static void runCmd(String... args) {
+    public static boolean registerChromiumHost(Path chromeExtDir) {
+        try {
+            Path hostJsonPath = chromeExtDir.resolve("host").resolve("io.smartdm.host.json");
+            ensureHostJsonHasAbsolutePath(hostJsonPath);
+
+            String[] regKeys = new String[]{
+                "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\io.smartdm.host",
+                "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\io.smartdm.host",
+                "HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\io.smartdm.host"
+            };
+
+            for (String key : regKeys) {
+                runCmd("reg", "add", key, "/ve", "/t", "REG_SZ", "/d", hostJsonPath.toAbsolutePath().toString(), "/f");
+            }
+            return true;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return false;
+        }
+    }
+
+    public static boolean registerFirefoxHost(Path firefoxExtDir) {
+        try {
+            Path hostJsonPath = firefoxExtDir.resolve("host").resolve("io.smartdm.host.firefox.json");
+            runCmd("reg", "add", "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\io.smartdm.host", "/ve", "/t", "REG_SZ", "/d", hostJsonPath.toAbsolutePath().toString(), "/f");
+            runCmd("reg", "add", "HKCU\\Software\\Policies\\Mozilla\\Firefox\\ExtensionSettings\\smartdm-extension@smartdm.io", "/v", "installation_mode", "/t", "REG_SZ", "/d", "normal_installed", "/f");
+            runCmd("reg", "add", "HKCU\\Software\\Policies\\Mozilla\\Firefox\\ExtensionSettings\\smartdm-extension@smartdm.io", "/v", "install_url", "/t", "REG_SZ", "/d", "file:///" + firefoxExtDir.resolve("manifest.json").toAbsolutePath().toString().replace('\\', '/'), "/f");
+            return true;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return false;
+        }
+    }
+
+    public static boolean removeAllIntegrations() {
+        try {
+            String[] regKeysToDelete = new String[]{
+                "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\io.smartdm.host",
+                "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\io.smartdm.host",
+                "HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\io.smartdm.host",
+                "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\io.smartdm.host",
+                "HKCU\\Software\\Policies\\Mozilla\\Firefox\\ExtensionSettings\\smartdm-extension@smartdm.io",
+                "HKCU\\Software\\Google\\Chrome\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh",
+                "HKCU\\Software\\Microsoft\\Edge\\Extensions\\knldjnnmkkebefogdbmggjijknmjeaoh"
+            };
+
+            for (String key : regKeysToDelete) {
+                runCmd("reg", "delete", key, "/f");
+            }
+            return true;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return false;
+        }
+    }
+
+    private static int runCmd(String... args) {
         try {
             ProcessBuilder pb = new ProcessBuilder(args);
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            p.waitFor();
-        } catch (Exception ignored) {}
+            try (java.io.InputStream is = p.getInputStream()) {
+                is.readAllBytes();
+            }
+            int exitCode = p.waitFor();
+            if (exitCode != 0) {
+                System.err.println("Command failed (exit " + exitCode + "): " + String.join(" ", args));
+            }
+            return exitCode;
+        } catch (Exception e) {
+            System.err.println("Command execution failed: " + String.join(" ", args) + " - " + e.getMessage());
+            return -1;
+        }
     }
 }

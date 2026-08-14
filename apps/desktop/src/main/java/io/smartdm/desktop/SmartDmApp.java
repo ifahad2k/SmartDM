@@ -678,6 +678,20 @@ public class SmartDmApp extends Application {
             primaryStage.show();
             primaryStage.toFront();
             primaryStage.requestFocus();
+
+            io.smartdm.desktop.shell.settings.AppSettings appSettings = io.smartdm.desktop.shell.settings.AppSettings.loadFromDisk();
+            if (!appSettings.isFirstRunCompleted()) {
+                javafx.application.Platform.runLater(() -> {
+                    try {
+                        io.smartdm.desktop.shell.BrowserIntegrationDialog dialog = new io.smartdm.desktop.shell.BrowserIntegrationDialog(primaryStage);
+                        dialog.showAndWait();
+                        appSettings.setFirstRunCompleted(true);
+                        appSettings.saveToDisk();
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                });
+            }
         } else {
             System.out.println(">>> SmartDmApp started silently in system tray <<<");
         }

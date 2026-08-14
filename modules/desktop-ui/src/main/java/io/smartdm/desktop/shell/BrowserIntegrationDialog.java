@@ -26,33 +26,55 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
     private final VBox profileListContainer = new VBox(15);
     private final Label statusLabel = new Label("");
     private final Map<BrowserProfile, CheckBox> profileCheckBoxMap = new LinkedHashMap<>();
+    private String activeTab = "CHROME"; // "CHROME" or "FIREFOX"
+
+    private final Button tabChromeBtn;
+    private final Button tabFirefoxBtn;
+    private final VBox chromeGuideCard;
+    private final VBox firefoxGuideCard;
 
     @SuppressWarnings("this-escape")
     public BrowserIntegrationDialog(Stage owner) {
-        super(owner, "Browser Integration & Profile Manager");
+        super(owner, "Browser Integration & Extension Installation Guide");
 
-        dialogBody.setSpacing(15);
-        dialogBody.setPadding(new Insets(20));
+        dialogBody.setSpacing(12);
+        dialogBody.setPadding(new Insets(18));
 
         Label subtitle = new Label(
-            "Select specific browsers and profiles to enable SmartDM integration.\n" +
-            "Native Messaging Host bridges are registered automatically for your selections."
+            "Follow the guided manual steps below to install the SmartDM extension into Chrome, Edge, Brave, or Firefox.\n" +
+            "Native Messaging Host bridges link your browser directly to SmartDM for instant download interception."
         );
         subtitle.setWrapText(true);
         subtitle.setStyle("-fx-font-size: 13px; -fx-text-fill: #94A3B8; -fx-line-spacing: 3px;");
 
-        VBox guideCard = new VBox(6);
-        guideCard.setPadding(new Insets(10));
-        guideCard.setStyle("-fx-background-color: rgba(56, 189, 248, 0.08); -fx-border-color: rgba(56, 189, 248, 0.25); -fx-border-radius: 6px; -fx-background-radius: 6px;");
-        Label guideHeader = new Label("💡 Chrome / Edge / Brave Extension Activation:");
-        guideHeader.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
-        Label guideStep1 = new Label("1. Select your browser profile below and click 'Apply Selected Integration'.");
-        guideStep1.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
-        Label guideStep2 = new Label("2. Open chrome://extensions, toggle 'Developer mode' ON in top-right.");
-        guideStep2.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
-        Label guideStep3 = new Label("3. Click 'Load unpacked' and select the SmartDM extension folder (opened via button below).");
-        guideStep3.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
-        guideCard.getChildren().addAll(guideHeader, guideStep1, guideStep2, guideStep3);
+        // ── Tab Switcher ──────────────────────────────────────────────────
+        HBox tabBox = new HBox(10);
+        tabBox.setAlignment(Pos.CENTER_LEFT);
+
+        tabChromeBtn = new Button("🟢 Google Chrome / Edge / Brave Guide");
+        tabChromeBtn.getStyleClass().add("btn");
+        tabChromeBtn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.2); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8; -fx-font-weight: bold; -fx-font-size: 13px;");
+
+        tabFirefoxBtn = new Button("🦊 Mozilla Firefox Guide");
+        tabFirefoxBtn.getStyleClass().add("btn");
+        tabFirefoxBtn.setStyle("-fx-background-color: rgba(255, 255, 255, 0.05); -fx-text-fill: #94A3B8; -fx-border-color: rgba(255,255,255,0.1); -fx-font-size: 13px;");
+
+        tabBox.getChildren().addAll(tabChromeBtn, tabFirefoxBtn);
+
+        // ── 1. Chrome / Chromium Guide Card ──────────────────────────────
+        chromeGuideCard = buildChromeGuideCard();
+
+        // ── 2. Firefox Guide Card ─────────────────────────────────────────
+        firefoxGuideCard = buildFirefoxGuideCard();
+        firefoxGuideCard.setManaged(false);
+        firefoxGuideCard.setVisible(false);
+
+        tabChromeBtn.setOnAction(e -> switchTab("CHROME"));
+        tabFirefoxBtn.setOnAction(e -> switchTab("FIREFOX"));
+
+        // ── Profile Scanner Title ─────────────────────────────────────────
+        Label profileSectionTitle = new Label("🔍 Detected System Browser Profiles:");
+        profileSectionTitle.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #E2E8F0; -fx-padding: 6 0 0 0;");
 
         statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
@@ -60,24 +82,14 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
 
         ScrollPane scrollPane = new ScrollPane(profileListContainer);
         scrollPane.setFitToWidth(true);
-        scrollPane.setPrefHeight(260);
+        scrollPane.setPrefHeight(200);
         scrollPane.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8px;");
 
-        // Action Buttons
+        // Bottom Action Bar
         HBox btnBox = new HBox(8);
         btnBox.setAlignment(Pos.CENTER_RIGHT);
 
-        Button openChromeBtn = new Button("🌐 1. Open chrome://extensions");
-        openChromeBtn.getStyleClass().addAll("btn");
-        openChromeBtn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.15); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8;");
-        openChromeBtn.setOnAction(e -> openChromeExtensionsPage());
-
-        Button openExtFolderBtn = new Button("📁 2. Copy Path & Open Folder");
-        openExtFolderBtn.getStyleClass().add("btn");
-        openExtFolderBtn.setStyle("-fx-background-color: rgba(52, 211, 153, 0.15); -fx-text-fill: #34D399; -fx-border-color: #34D399;");
-        openExtFolderBtn.setOnAction(e -> openExtensionFolder());
-
-        Button rescanBtn = new Button("🔄 Rescan");
+        Button rescanBtn = new Button("🔄 Rescan Profiles");
         rescanBtn.getStyleClass().add("btn");
         rescanBtn.setOnAction(e -> populateProfiles());
 
@@ -85,19 +97,140 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         applyBtn.getStyleClass().addAll("btn", "btn-primary");
         applyBtn.setOnAction(e -> applySelectedIntegration());
 
-        Button closeBtn = new Button("Close");
+        Button closeBtn = new Button("Done / Close");
         closeBtn.getStyleClass().add("btn");
         closeBtn.setOnAction(e -> close());
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        btnBox.getChildren().addAll(openChromeBtn, openExtFolderBtn, rescanBtn, spacer, applyBtn, closeBtn);
+        btnBox.getChildren().addAll(rescanBtn, spacer, applyBtn, closeBtn);
 
-        dialogBody.getChildren().addAll(subtitle, guideCard, scrollPane, statusLabel, btnBox);
+        dialogBody.getChildren().addAll(subtitle, tabBox, chromeGuideCard, firefoxGuideCard, profileSectionTitle, scrollPane, statusLabel, btnBox);
 
         // Initial Scanning
         populateProfiles();
+    }
+
+    private void switchTab(String tab) {
+        this.activeTab = tab;
+        if ("CHROME".equals(tab)) {
+            tabChromeBtn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.2); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8; -fx-font-weight: bold; -fx-font-size: 13px;");
+            tabFirefoxBtn.setStyle("-fx-background-color: rgba(255, 255, 255, 0.05); -fx-text-fill: #94A3B8; -fx-border-color: rgba(255,255,255,0.1); -fx-font-size: 13px;");
+            chromeGuideCard.setManaged(true);
+            chromeGuideCard.setVisible(true);
+            firefoxGuideCard.setManaged(false);
+            firefoxGuideCard.setVisible(false);
+        } else {
+            tabFirefoxBtn.setStyle("-fx-background-color: rgba(251, 146, 60, 0.2); -fx-text-fill: #FB923C; -fx-border-color: #FB923C; -fx-font-weight: bold; -fx-font-size: 13px;");
+            tabChromeBtn.setStyle("-fx-background-color: rgba(255, 255, 255, 0.05); -fx-text-fill: #94A3B8; -fx-border-color: rgba(255,255,255,0.1); -fx-font-size: 13px;");
+            firefoxGuideCard.setManaged(true);
+            firefoxGuideCard.setVisible(true);
+            chromeGuideCard.setManaged(false);
+            chromeGuideCard.setVisible(false);
+        }
+    }
+
+    private VBox buildChromeGuideCard() {
+        VBox card = new VBox(10);
+        card.setPadding(new Insets(14));
+        card.setStyle("-fx-background-color: rgba(56, 189, 248, 0.06); -fx-border-color: rgba(56, 189, 248, 0.25); -fx-border-radius: 8px; -fx-background-radius: 8px;");
+
+        Label header = new Label("🟢 Chrome / Edge / Brave / Opera Manual Installation Steps:");
+        header.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
+
+        HBox stepsBox = new HBox(8);
+        stepsBox.setAlignment(Pos.CENTER_LEFT);
+
+        Button step1Btn = new Button("⚡ 1. Register Native Host");
+        step1Btn.getStyleClass().add("btn");
+        step1Btn.setStyle("-fx-background-color: rgba(56, 189, 248, 0.2); -fx-text-fill: #38BDF8; -fx-border-color: #38BDF8;");
+        step1Btn.setOnAction(e -> {
+            Path chromeExtDir = findExtensionBaseDir().resolve("chrome");
+            boolean ok = BrowserIntegrationInstallerService.registerChromiumHost(chromeExtDir);
+            if (ok) {
+                statusLabel.setText("✅ Native Messaging Host registered in Registry for Chrome/Edge/Brave!");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+            } else {
+                statusLabel.setText("❌ Failed to register Native Host.");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
+            }
+        });
+
+        Button step2Btn = new Button("📁 2. Copy Path & Open Folder");
+        step2Btn.getStyleClass().add("btn");
+        step2Btn.setStyle("-fx-background-color: rgba(52, 211, 153, 0.2); -fx-text-fill: #34D399; -fx-border-color: #34D399;");
+        step2Btn.setOnAction(e -> openExtensionFolder("chrome"));
+
+        Button step3Btn = new Button("🌐 3. Open chrome://extensions");
+        step3Btn.getStyleClass().add("btn");
+        step3Btn.setStyle("-fx-background-color: rgba(168, 85, 247, 0.2); -fx-text-fill: #C084FC; -fx-border-color: #C084FC;");
+        step3Btn.setOnAction(e -> openChromeExtensionsPage());
+
+        stepsBox.getChildren().addAll(step1Btn, step2Btn, step3Btn);
+
+        VBox instructions = new VBox(4);
+        Label i1 = new Label("① In top-right corner of chrome://extensions, toggle 'Developer mode' ON.");
+        i1.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        Label i2 = new Label("② Click 'Load unpacked' button at top-left.");
+        i2.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        Label i3 = new Label("③ Paste the copied path or select the opened 'extensions/chrome' folder.");
+        i3.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        instructions.getChildren().addAll(i1, i2, i3);
+
+        card.getChildren().addAll(header, stepsBox, instructions);
+        return card;
+    }
+
+    private VBox buildFirefoxGuideCard() {
+        VBox card = new VBox(10);
+        card.setPadding(new Insets(14));
+        card.setStyle("-fx-background-color: rgba(251, 146, 60, 0.06); -fx-border-color: rgba(251, 146, 60, 0.25); -fx-border-radius: 8px; -fx-background-radius: 8px;");
+
+        Label header = new Label("🦊 Mozilla Firefox Manual Installation Steps:");
+        header.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #FB923C;");
+
+        HBox stepsBox = new HBox(8);
+        stepsBox.setAlignment(Pos.CENTER_LEFT);
+
+        Button step1Btn = new Button("⚡ 1. Register Firefox Native Host");
+        step1Btn.getStyleClass().add("btn");
+        step1Btn.setStyle("-fx-background-color: rgba(251, 146, 60, 0.2); -fx-text-fill: #FB923C; -fx-border-color: #FB923C;");
+        step1Btn.setOnAction(e -> {
+            Path firefoxExtDir = findExtensionBaseDir().resolve("firefox");
+            boolean ok = BrowserIntegrationInstallerService.registerFirefoxHost(firefoxExtDir);
+            if (ok) {
+                statusLabel.setText("✅ Firefox Native Host & Extension Policy registered successfully!");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+            } else {
+                statusLabel.setText("❌ Failed to register Firefox Native Host.");
+                statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
+            }
+        });
+
+        Button step2Btn = new Button("📂 2. Copy Path & Open Folder");
+        step2Btn.getStyleClass().add("btn");
+        step2Btn.setStyle("-fx-background-color: rgba(52, 211, 153, 0.2); -fx-text-fill: #34D399; -fx-border-color: #34D399;");
+        step2Btn.setOnAction(e -> openExtensionFolder("firefox"));
+
+        Button step3Btn = new Button("🦊 3. Open about:debugging");
+        step3Btn.getStyleClass().add("btn");
+        step3Btn.setStyle("-fx-background-color: rgba(168, 85, 247, 0.2); -fx-text-fill: #C084FC; -fx-border-color: #C084FC;");
+        step3Btn.setOnAction(e -> openFirefoxDebuggingPage());
+
+        stepsBox.getChildren().addAll(step1Btn, step2Btn, step3Btn);
+
+        VBox instructions = new VBox(4);
+        Label i1 = new Label("① In Firefox address bar, navigate to about:debugging#/runtime/this-firefox");
+        i1.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        Label i2 = new Label("② Click 'Load Temporary Add-on...' button.");
+        i2.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        Label i3 = new Label("③ Select the 'manifest.json' file inside the opened 'extensions/firefox' folder.");
+        i3.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+        instructions.getChildren().addAll(i1, i2, i3);
+
+        card.getChildren().addAll(header, stepsBox, instructions);
+        return card;
     }
 
     private void populateProfiles() {
@@ -124,7 +257,6 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                 return;
             }
 
-            // Group profiles by Browser Name
             Map<String, List<BrowserProfile>> grouped = new LinkedHashMap<>();
             for (BrowserProfile p : detectedProfiles) {
                 grouped.computeIfAbsent(p.browserName(), k -> new ArrayList<>()).add(p);
@@ -135,7 +267,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                 List<BrowserProfile> pList = entry.getValue();
 
                 VBox browserCard = new VBox(10);
-                browserCard.setPadding(new Insets(12));
+                browserCard.setPadding(new Insets(10));
                 browserCard.setStyle(
                     "-fx-background-color: rgba(255, 255, 255, 0.03);" +
                     "-fx-border-color: rgba(255, 255, 255, 0.1);" +
@@ -143,13 +275,12 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     "-fx-background-radius: 8px;"
                 );
 
-                // Card Header
                 HBox cardHeader = new HBox(10);
                 cardHeader.setAlignment(Pos.CENTER_LEFT);
 
                 String icon = getBrowserIcon(browserName);
                 Label browserTitle = new Label(icon + " " + browserName + " (" + pList.size() + " Profile" + (pList.size() > 1 ? "s" : "") + ")");
-                browserTitle.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
+                browserTitle.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
 
                 Region cardSpacer = new Region();
                 HBox.setHgrow(cardSpacer, Priority.ALWAYS);
@@ -171,7 +302,6 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                 cardHeader.getChildren().addAll(browserTitle, cardSpacer, selectAllBtn, deselectAllBtn);
                 browserCard.getChildren().add(cardHeader);
 
-                // Profile Rows
                 VBox profileBox = new VBox(6);
                 profileBox.setPadding(new Insets(4, 0, 0, 10));
 
@@ -180,7 +310,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                     pRow.setAlignment(Pos.CENTER_LEFT);
 
                     CheckBox cb = new CheckBox(p.profileName());
-                    cb.setSelected(false); // NO profiles pre-selected by default
+                    cb.setSelected(false);
                     cb.setStyle("-fx-text-fill: #E2E8F0; -fx-font-size: 12px;");
 
                     Label badge = new Label(p.isIntegrated() ? "🟢 Integrated" : "⚪ Ready");
@@ -207,33 +337,12 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         List<BrowserProfile> selectedProfiles = getSelectedProfiles();
 
         if (selectedProfiles.isEmpty()) {
-            statusLabel.setText("⚠️ Please select at least one browser profile to integrate.");
+            statusLabel.setText("⚠️ Please select at least one browser profile below to register host bridge.");
             statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
             return;
         }
 
-        // Developer mode check: Prompt and stop if Developer Mode is OFF
-        List<BrowserProfile> devDisabledList = new ArrayList<>();
-        for (BrowserProfile p : selectedProfiles) {
-            if (!"firefox".equalsIgnoreCase(p.browserType())) {
-                boolean devOn = BrowserScannerService.isDeveloperModeEnabled(p.profilePath());
-                if (!devOn) {
-                    devDisabledList.add(p);
-                }
-            }
-        }
-
-        if (!devDisabledList.isEmpty()) {
-            BrowserProfile target = devDisabledList.get(0);
-            statusLabel.setText("⚠️ Developer Mode is OFF for " + target.browserName() + " (" + target.profileName() + ")!\n" +
-                "Please turn ON 'Developer mode' toggle in top-right of Chrome extensions, then click Apply again.");
-            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
-
-            openChromeExtensionsPage();
-            return;
-        }
-
-        statusLabel.setText("⏳ Applying SmartDM integration to " + selectedProfiles.size() + " profile(s)...");
+        statusLabel.setText("⏳ Applying SmartDM Native Host bridge to " + selectedProfiles.size() + " profile(s)...");
         statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
         Path extBaseDir = findExtensionBaseDir();
@@ -248,22 +357,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         applyTask.setOnSucceeded(e -> {
             boolean ok = applyTask.getValue();
             if (ok) {
-                // Copy extension folder path to Clipboard
-                try {
-                    Path chromeExtDir = extBaseDir.resolve("chrome");
-                    ClipboardContent content = new ClipboardContent();
-                    content.putString(chromeExtDir.toAbsolutePath().toString());
-                    Clipboard.getSystemClipboard().setContent(content);
-                } catch (Exception ignored) {}
-
-                // Auto-launch selected Chromium browser profiles with --load-extension
-                for (BrowserProfile p : selectedProfiles) {
-                    if (!"firefox".equalsIgnoreCase(p.browserType())) {
-                        launchBrowserProfile(p, extBaseDir.resolve("chrome"));
-                    }
-                }
-
-                statusLabel.setText("🎉 Applied! SmartDM extension launched into " + selectedProfiles.size() + " profile(s). Extension path copied to Clipboard.");
+                statusLabel.setText("🎉 Applied Native Host registration for " + selectedProfiles.size() + " profile(s)!");
                 statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
                 populateProfiles();
             } else {
@@ -273,21 +367,6 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         });
 
         new Thread(applyTask).start();
-    }
-
-    private void launchBrowserProfile(BrowserProfile p, Path chromeExtDir) {
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            try {
-                String exe = switch (p.browserType().toLowerCase()) {
-                    case "edge" -> "msedge.exe";
-                    case "brave" -> "brave.exe";
-                    default -> "chrome.exe";
-                };
-                new ProcessBuilder("cmd", "/c", "start", exe, "--profile-directory=\"" + p.profileId() + "\"", "--load-extension=\"" + chromeExtDir.toAbsolutePath().toString() + "\"").start();
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
-        });
     }
 
     private Path findExtensionBaseDir() {
@@ -325,59 +404,26 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
                 ex.printStackTrace();
             }
         });
+        statusLabel.setText("📋 Opening chrome://extensions... (Turn ON Developer Mode in top-right, then click Load unpacked).");
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
     }
 
-    private void launchBrowserWithExtension() {
-        List<BrowserProfile> selectedProfiles = getSelectedProfiles();
-        if (selectedProfiles.isEmpty()) {
-            statusLabel.setText("⚠️ Please select a profile to launch.");
-            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
-            return;
-        }
-
-        BrowserProfile target = selectedProfiles.get(0);
-        Path extBase = findExtensionBaseDir();
-        Path chromeExtDir = extBase.resolve("chrome");
-
-        BrowserIntegrationInstallerService.applyIntegration(Collections.singletonList(target), extBase);
-
-        statusLabel.setText("🚀 Launching " + target.browserName() + " (" + target.profileName() + ") with SmartDM...");
-        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
+    private void openFirefoxDebuggingPage() {
+        try {
+            ClipboardContent content = new ClipboardContent();
+            content.putString("about:debugging#/runtime/this-firefox");
+            Clipboard.getSystemClipboard().setContent(content);
+        } catch (Exception ignored) {}
 
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
-                String exe = switch (target.browserType().toLowerCase()) {
-                    case "edge" -> "msedge.exe";
-                    case "brave" -> "brave.exe";
-                    default -> "chrome.exe";
-                };
-                new ProcessBuilder("cmd", "/c", "start", exe, "--profile-directory=\"" + target.profileId() + "\"", "--load-extension=\"" + chromeExtDir.toAbsolutePath().toString() + "\"").start();
+                new ProcessBuilder("cmd", "/c", "start", "firefox", "about:debugging#/runtime/this-firefox").start();
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
         });
-    }
-
-    private void createSelectedShortcut() {
-        List<BrowserProfile> selectedProfiles = getSelectedProfiles();
-        if (selectedProfiles.isEmpty()) {
-            statusLabel.setText("⚠️ Please select a profile to create desktop shortcut.");
-            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
-            return;
-        }
-
-        BrowserProfile target = selectedProfiles.get(0);
-        Path extBase = findExtensionBaseDir();
-        Path chromeExtDir = extBase.resolve("chrome");
-
-        boolean ok = BrowserIntegrationInstallerService.createDesktopShortcut(target, chromeExtDir);
-        if (ok) {
-            statusLabel.setText("📌 Shortcut created on Desktop for " + target.browserName() + " (" + target.profileName() + ")!");
-            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
-        } else {
-            statusLabel.setText("❌ Failed to create shortcut.");
-            statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
-        }
+        statusLabel.setText("📋 Copied 'about:debugging#/runtime/this-firefox' & opened Firefox!");
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #FB923C;");
     }
 
     private List<BrowserProfile> getSelectedProfiles() {
@@ -388,8 +434,8 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
         return list;
     }
 
-    private void openExtensionFolder() {
-        Path base = findExtensionBaseDir().resolve("chrome");
+    private void openExtensionFolder(String subfolder) {
+        Path base = findExtensionBaseDir().resolve(subfolder);
         if (!java.nio.file.Files.exists(base)) {
             base = findExtensionBaseDir();
         }
@@ -399,7 +445,7 @@ public class BrowserIntegrationDialog extends GlassmorphicDialog {
             ClipboardContent content = new ClipboardContent();
             content.putString(targetDir.toAbsolutePath().toString());
             Clipboard.getSystemClipboard().setContent(content);
-            statusLabel.setText("📋 Copied path & opened Explorer! In Chrome (chrome://extensions), click 'Load unpacked' & select folder.");
+            statusLabel.setText("📋 Copied extension path (" + targetDir.getFileName() + ") & opened Explorer!");
             statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #34D399;");
         } catch (Exception ignored) {}
 

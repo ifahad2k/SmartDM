@@ -183,7 +183,30 @@ public class SettingsWorkspace extends VBox {
             trayCb
         );
 
-        card.getChildren().addAll(sectionTitle, startupRow, trayRow);
+        // Uninstall Card
+        VBox uninstallCard = new VBox(8);
+        uninstallCard.setPadding(new Insets(14));
+        uninstallCard.setStyle("-fx-background-color: rgba(248, 113, 113, 0.06); -fx-border-color: rgba(248, 113, 113, 0.25); -fx-border-radius: 8px; -fx-background-radius: 8px;");
+
+        Label uninstallTitle = new Label("Application Removal");
+        uninstallTitle.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #F87171;");
+
+        Label uninstallDesc = new Label("Uninstall SmartDM, unregister browser native messaging bridges, and optionally clean up database and AppData.");
+        uninstallDesc.setWrapText(true);
+        uninstallDesc.setStyle("-fx-font-size: 11px; -fx-text-fill: #CBD5E1;");
+
+        Button uninstallBtn = new Button("🗑️ Uninstall SmartDM...");
+        uninstallBtn.getStyleClass().add("btn");
+        uninstallBtn.setStyle("-fx-background-color: rgba(239, 68, 68, 0.2); -fx-text-fill: #F87171; -fx-border-color: #F87171; -fx-font-weight: bold;");
+        uninstallBtn.setOnAction(e -> {
+            Stage owner = (Stage) getScene().getWindow();
+            UninstallDialog dialog = new UninstallDialog(owner);
+            dialog.show();
+        });
+
+        uninstallCard.getChildren().addAll(uninstallTitle, uninstallDesc, uninstallBtn);
+
+        card.getChildren().addAll(sectionTitle, startupRow, trayRow, uninstallCard);
         return card;
     }
 
