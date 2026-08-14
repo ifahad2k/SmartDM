@@ -48,7 +48,6 @@ namespace SmartDM.Installer
         private Button browseButton;
         private CheckBox desktopShortcutCheckBox;
         private CheckBox startupCheckBox;
-        private CheckBox browserIntegrationCheckBox;
 
         // Step 3 Controls
         private Label progressTitleLabel;
@@ -267,16 +266,6 @@ namespace SmartDM.Installer
             startupCheckBox.Size = new Size(450, 25);
             step2Panel.Controls.Add(startupCheckBox);
 
-            browserIntegrationCheckBox = new CheckBox();
-            browserIntegrationCheckBox.UseMnemonic = false;
-            browserIntegrationCheckBox.Text = "Register Browser Native Messaging (Chrome, Edge, Brave & Firefox)";
-            browserIntegrationCheckBox.Checked = true;
-            browserIntegrationCheckBox.Font = new Font("Segoe UI", 9.5f);
-            browserIntegrationCheckBox.ForeColor = Color.FromArgb(241, 245, 249);
-            browserIntegrationCheckBox.Location = new Point(30, 234);
-            browserIntegrationCheckBox.Size = new Size(500, 25);
-            step2Panel.Controls.Add(browserIntegrationCheckBox);
-
             // --- Step 3 Panel: Installing Progress ---
             step3Panel = new Panel();
             step3Panel.Dock = DockStyle.Fill;
@@ -479,22 +468,19 @@ namespace SmartDM.Installer
                         }
                     }
 
-                    if (browserIntegrationCheckBox.Checked)
+                    UpdateProgress(80, "Registering Native Host Communications...");
+                    string regBat = Path.Combine(targetDir, "register-native-host.bat");
+                    if (File.Exists(regBat))
                     {
-                        UpdateProgress(80, "Registering Browser Native Messaging Hosts...");
-                        string regBat = Path.Combine(targetDir, "register-native-host.bat");
-                        if (File.Exists(regBat))
+                        ProcessStartInfo psi = new ProcessStartInfo(regBat)
                         {
-                            ProcessStartInfo psi = new ProcessStartInfo(regBat)
-                            {
-                                CreateNoWindow = true,
-                                UseShellExecute = false,
-                                WorkingDirectory = targetDir
-                            };
-                            using (Process p = Process.Start(psi))
-                            {
-                                p.WaitForExit();
-                            }
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            WorkingDirectory = targetDir
+                        };
+                        using (Process p = Process.Start(psi))
+                        {
+                            p.WaitForExit();
                         }
                     }
 
