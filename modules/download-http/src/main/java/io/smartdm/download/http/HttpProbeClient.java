@@ -123,6 +123,7 @@ public class HttpProbeClient {
                         throw new RuntimeException("HTTP Error " + response.statusCode() + ": Failed to probe URL");
                     }
                     long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+                    if (contentLength <= 0) contentLength = -1L;
                     String mimeType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
                     String etag = response.headers().firstValue("ETag").orElse(null);
                     String lastMod = response.headers().firstValue("Last-Modified").orElse(null);
@@ -197,6 +198,12 @@ public class HttpProbeClient {
                                     contentLength = Long.parseLong(contentRange.substring(slashIndex + 1).trim());
                                 } catch (NumberFormatException ignored) {}
                             }
+                        }
+                        if (contentLength <= 0) {
+                            contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+                        }
+                        if (contentLength <= 0) {
+                            contentLength = -1L;
                         }
                         
                         String mimeType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");

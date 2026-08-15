@@ -472,7 +472,7 @@ public final class DownloadStatusDialog extends GlassmorphicDialog {
     }
 
     private String formatBytes(long bytes) {
-        if (bytes < 0) return "Unknown";
+        if (bytes <= 0) return "Unknown (Stream)";
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format("%.2f KB", bytes / 1024.0);
         if (bytes < 1024 * 1024 * 1024) return String.format("%.2f MB", bytes / (1024.0 * 1024.0));

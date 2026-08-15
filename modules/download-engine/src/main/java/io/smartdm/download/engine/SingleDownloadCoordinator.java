@@ -283,9 +283,14 @@ public class SingleDownloadCoordinator {
             // Verify size
             long expectedSize = probeResult.size().value();
             long actualSize = download.downloadedBytes().value();
-            if (expectedSize >= 0 && actualSize != expectedSize) {
+            if (expectedSize > 0 && actualSize != expectedSize) {
                 throw new IOException("Downloaded bytes do not match expected size: expected="
                         + expectedSize + ", actual=" + actualSize);
+            }
+
+            // If size was unknown or 0 during probe, update totalBytes to actualSize
+            if (expectedSize <= 0 && actualSize > 0) {
+                download.updateProgress(download.downloadedBytes(), io.smartdm.domain.ByteCount.of(actualSize));
             }
 
             // ── Phase 3: Verify ──────────────────────────────────────
