@@ -1,1 +1,0 @@
-﻿# Netscape HTTP Cookie File\nfacebook.com\tFALSE\t/\tTRUE\t123456\tc_user\t123456\n
