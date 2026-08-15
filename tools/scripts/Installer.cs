@@ -626,6 +626,12 @@ namespace SmartDM.Installer
 
         private async Task EnsureJavaRuntimeAsync(string targetDir)
         {
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072 | (System.Net.SecurityProtocolType)768 | System.Net.SecurityProtocolType.Tls12;
+            }
+            catch {}
+
             string runtimeDir = Path.Combine(targetDir, "runtime");
             string javaExe = Path.Combine(runtimeDir, "bin", "java.exe");
             string jvmCfg = Path.Combine(runtimeDir, "lib", "jvm.cfg");
@@ -649,18 +655,20 @@ namespace SmartDM.Installer
             {
                 using (System.Net.WebClient client = new System.Net.WebClient())
                 {
-                    client.Headers.Add("User-Agent", "SmartDM-Installer");
+                    client.Headers.Add("User-Agent", "SmartDM-Installer/1.0");
                     client.DownloadProgressChanged += (s, e) =>
                     {
-                        int pct = 60 + (int)(e.ProgressPercentage * 0.15);
-                        string mb = (e.BytesReceived / 1024.0 / 1024.0).ToString("F1") + " MB / " + (e.TotalBytesToReceive / 1024.0 / 1024.0).ToString("F1") + " MB";
-                        UpdateProgress(pct, "Downloading Java 21 Runtime (" + mb + ")...");
+                        int pct = 60 + (int)(e.ProgressPercentage * 0.18);
+                        double recMB = e.BytesReceived / 1024.0 / 1024.0;
+                        double totalMB = e.TotalBytesToReceive > 0 ? e.TotalBytesToReceive / 1024.0 / 1024.0 : 44.8;
+                        string status = string.Format("Downloading Java 21 Runtime ({0}% - {1:F1} MB / {2:F1} MB)...", e.ProgressPercentage, recMB, totalMB);
+                        UpdateProgress(pct, status);
                     };
 
                     await client.DownloadFileTaskAsync(new Uri(jreUrl), tempZip);
                 }
 
-                UpdateProgress(76, "Extracting Java 21 Runtime...");
+                UpdateProgress(78, "Extracting Java 21 Runtime...");
                 string extractTemp = Path.Combine(Path.GetTempPath(), "jdk21_extract_" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(extractTemp);
 
@@ -677,11 +685,12 @@ namespace SmartDM.Installer
                 try { File.Delete(tempZip); } catch {}
                 try { Directory.Delete(extractTemp, true); } catch {}
 
-                UpdateProgress(80, "✅ Java 21 Runtime installed successfully.");
+                UpdateProgress(80, "✅ Java 21 Runtime downloaded and installed successfully.");
             }
             catch (Exception ex)
             {
-                UpdateProgress(80, "⚠️ Note: Online Java 21 download skipped (" + ex.Message + ").");
+                UpdateProgress(60, "❌ Download error: " + ex.Message);
+                throw new Exception("Failed to download Java 21 Runtime: " + ex.Message + "\n\nPlease check your internet connection and try installing again.");
             }
         }
 
