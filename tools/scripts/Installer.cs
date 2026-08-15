@@ -467,8 +467,14 @@ namespace SmartDM.Installer
                             }
                         }
                     }
+                });
 
-                    UpdateProgress(80, "Registering Native Host Communications...");
+                // Check & Download Java 21 Runtime if missing
+                await EnsureJavaRuntimeAsync(targetDir);
+
+                await Task.Run(() =>
+                {
+                    UpdateProgress(85, "Registering Native Host Communications...");
                     string regBat = Path.Combine(targetDir, "register-native-host.bat");
                     if (File.Exists(regBat))
                     {
@@ -564,6 +570,138 @@ namespace SmartDM.Installer
             }
             progressBar.Value = Math.Min(100, Math.Max(0, value));
             progressStatusLabel.Text = statusText;
+        }
+
+        private bool IsSystemJava21Available(string targetDir)
+        {
+            string localJava = Path.Combine(targetDir, "runtime", "bin", "java.exe");
+            if (File.Exists(localJava)) return true;
+
+            string javaHome = Environment.GetEnvironmentVariable("JAVA_HOME");
+            if (!string.IsNullOrEmpty(javaHome))
+            {
+                string jhJava = Path.Combine(javaHome, "bin", "java.exe");
+                if (File.Exists(jhJava) && IsJavaVersion21OrGreater(jhJava)) return true;
+            }
+
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("java.exe", "-version")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    string output = p.StandardError.ReadToEnd();
+                    p.WaitForExit();
+                    if (output.Contains("21.") || output.Contains("version \"21")) return true;
+                }
+            }
+            catch {}
+
+            return false;
+        }
+
+        private bool IsJavaVersion21OrGreater(string javaExePath)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(javaExePath, "-version")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    string output = p.StandardError.ReadToEnd();
+                    p.WaitForExit();
+                    return output.Contains("21.") || output.Contains("version \"21") || output.Contains("version \"22") || output.Contains("version \"23") || output.Contains("version \"24");
+                }
+            }
+            catch { return false; }
+        }
+
+        private async Task EnsureJavaRuntimeAsync(string targetDir)
+        {
+            if (IsSystemJava21Available(targetDir))
+            {
+                UpdateProgress(75, "✅ Java 21 detected. Skipping runtime download.");
+                return;
+            }
+
+            string runtimeDir = Path.Combine(targetDir, "runtime");
+            if (File.Exists(Path.Combine(runtimeDir, "bin", "java.exe")))
+            {
+                UpdateProgress(75, "✅ Bundled Java 21 runtime ready.");
+                return;
+            }
+
+            UpdateProgress(60, "⏳ Downloading Java 21 Runtime (Adoptium OpenJDK)...");
+            string tempZip = Path.Combine(Path.GetTempPath(), "OpenJDK21U-jre.zip");
+            string jreUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jre_x64_windows_hotspot_21.0.6_7.zip";
+
+            try
+            {
+                using (System.Net.WebClient client = new System.Net.WebClient())
+                {
+                    client.Headers.Add("User-Agent", "SmartDM-Installer");
+                    client.DownloadProgressChanged += (s, e) =>
+                    {
+                        int pct = 60 + (int)(e.ProgressPercentage * 0.15);
+                        string mb = (e.BytesReceived / 1024.0 / 1024.0).ToString("F1") + " MB / " + (e.TotalBytesToReceive / 1024.0 / 1024.0).ToString("F1") + " MB";
+                        UpdateProgress(pct, "Downloading Java 21 Runtime (" + mb + ")...");
+                    };
+
+                    await client.DownloadFileTaskAsync(new Uri(jreUrl), tempZip);
+                }
+
+                UpdateProgress(76, "Extracting Java 21 Runtime...");
+                string extractTemp = Path.Combine(Path.GetTempPath(), "jdk21_extract_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(extractTemp);
+
+                await Task.Run(() => {
+                    ZipFile.ExtractToDirectory(tempZip, extractTemp);
+                    string[] dirs = Directory.GetDirectories(extractTemp);
+                    string sourceJre = dirs.Length > 0 ? dirs[0] : extractTemp;
+
+                    if (!Directory.Exists(runtimeDir)) Directory.CreateDirectory(runtimeDir);
+
+                    CopyDirectory(sourceJre, runtimeDir);
+                });
+
+                try { File.Delete(tempZip); } catch {}
+                try { Directory.Delete(extractTemp, true); } catch {}
+
+                UpdateProgress(80, "✅ Java 21 Runtime installed successfully.");
+            }
+            catch (Exception ex)
+            {
+                UpdateProgress(80, "⚠️ Note: Online Java 21 download skipped (" + ex.Message + ").");
+            }
+        }
+
+        private void CopyDirectory(string sourceDir, string destinationDir)
+        {
+            DirectoryInfo dir = new DirectoryInfo(sourceDir);
+            if (!dir.Exists) return;
+
+            DirectoryInfo[] dirs = dir.GetDirectories();
+            Directory.CreateDirectory(destinationDir);
+
+            foreach (FileInfo file in dir.GetFiles())
+            {
+                string targetFilePath = Path.Combine(destinationDir, file.Name);
+                file.CopyTo(targetFilePath, true);
+            }
+
+            foreach (DirectoryInfo subDir in dirs)
+            {
+                string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+                CopyDirectory(subDir.FullName, newDestinationDir);
+            }
         }
     }
 }
