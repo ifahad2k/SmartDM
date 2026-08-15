@@ -48,20 +48,32 @@ public class LocalMediaToolManager implements MediaToolManager {
         return CACHE.computeIfAbsent(name, LocalMediaToolManager::findExecutable).orElse(null);
     }
 
+    private static boolean isExecutableFile(Path path) {
+        if (path == null || !Files.exists(path) || Files.isDirectory(path)) {
+            return false;
+        }
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (osName.contains("win")) {
+            String fn = path.getFileName().toString().toLowerCase();
+            return fn.endsWith(".exe") || fn.endsWith(".bat") || fn.endsWith(".cmd");
+        }
+        return Files.isExecutable(path);
+    }
+
     private static Optional<Path> findExecutable(String name) {
         String isWindows = System.getProperty("os.name").toLowerCase().contains("win") ? ".exe" : "";
         String execName = name + isWindows;
 
         // 1. Check ~/.local/share/smartdm/tools/ or %LOCALAPPDATA%/SmartDM/tools/
         Path userTools = Paths.get(System.getProperty("user.home"), ".local", "share", "smartdm", "tools", execName);
-        if (Files.isExecutable(userTools) && !Files.isDirectory(userTools)) {
+        if (isExecutableFile(userTools)) {
             return Optional.of(userTools.toAbsolutePath());
         }
 
         String localAppData = System.getenv("LOCALAPPDATA");
         if (localAppData != null) {
             Path appDataTools = Paths.get(localAppData, "SmartDM", "tools", execName);
-            if (Files.isExecutable(appDataTools) && !Files.isDirectory(appDataTools)) {
+            if (isExecutableFile(appDataTools)) {
                 return Optional.of(appDataTools.toAbsolutePath());
             }
         }
@@ -74,14 +86,14 @@ public class LocalMediaToolManager implements MediaToolManager {
                 Path jarDir = codePath.getParent();
                 if (jarDir != null) {
                     Path p1 = jarDir.resolve("tools").resolve(execName);
-                    if (Files.isExecutable(p1) && !Files.isDirectory(p1)) {
+                    if (isExecutableFile(p1)) {
                         return Optional.of(p1.toAbsolutePath());
                     }
                     if (jarDir.getFileName() != null && jarDir.getFileName().toString().equalsIgnoreCase("lib")) {
                         Path appRoot = jarDir.getParent();
                         if (appRoot != null) {
                             Path p2 = appRoot.resolve("tools").resolve(execName);
-                            if (Files.isExecutable(p2) && !Files.isDirectory(p2)) {
+                            if (isExecutableFile(p2)) {
                                 return Optional.of(p2.toAbsolutePath());
                             }
                         }
@@ -94,14 +106,14 @@ public class LocalMediaToolManager implements MediaToolManager {
         String appDir = System.getProperty("app.dir");
         if (appDir != null && !appDir.isBlank()) {
             Path p = Paths.get(appDir, "tools", execName);
-            if (Files.isExecutable(p) && !Files.isDirectory(p)) {
+            if (isExecutableFile(p)) {
                 return Optional.of(p.toAbsolutePath());
             }
         }
 
         // 3. Check relative working directory "tools"
         Path localTools = Paths.get("tools", execName);
-        if (Files.isExecutable(localTools) && !Files.isDirectory(localTools)) {
+        if (isExecutableFile(localTools)) {
             return Optional.of(localTools.toAbsolutePath());
         }
 
@@ -112,7 +124,7 @@ public class LocalMediaToolManager implements MediaToolManager {
             for (String dir : dirs) {
                 try {
                     Path p = Paths.get(dir, execName);
-                    if (Files.isExecutable(p) && !Files.isDirectory(p)) {
+                    if (isExecutableFile(p)) {
                         return Optional.of(p.toAbsolutePath());
                     }
                 } catch (Exception ignored) {}
@@ -122,7 +134,7 @@ public class LocalMediaToolManager implements MediaToolManager {
         // 5. Check WinGet locations
         if (localAppData != null) {
             Path wingetLinks = Paths.get(localAppData, "Microsoft", "WinGet", "Links", execName);
-            if (Files.isExecutable(wingetLinks)) {
+            if (isExecutableFile(wingetLinks)) {
                 return Optional.of(wingetLinks.toAbsolutePath());
             }
             Path wingetPackages = Paths.get(localAppData, "Microsoft", "WinGet", "Packages");
@@ -130,7 +142,7 @@ public class LocalMediaToolManager implements MediaToolManager {
                 try (var stream = Files.walk(wingetPackages, 3)) {
                     Optional<Path> found = stream
                         .filter(p -> p.getFileName().toString().equalsIgnoreCase(execName))
-                        .filter(Files::isExecutable)
+                        .filter(LocalMediaToolManager::isExecutableFile)
                         .findFirst();
                     if (found.isPresent()) return Optional.of(found.get().toAbsolutePath());
                 } catch (Exception ignored) {}
@@ -155,7 +167,7 @@ public class LocalMediaToolManager implements MediaToolManager {
                     .GET()
                     .build();
                 java.net.http.HttpResponse<Path> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofFile(targetFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING));
-                if (resp.statusCode() == 200 && Files.isExecutable(targetFile)) {
+                if (resp.statusCode() == 200 && isExecutableFile(targetFile)) {
                     System.out.println("yt-dlp auto-downloaded successfully: " + targetFile.toAbsolutePath());
                     return Optional.of(targetFile.toAbsolutePath());
                 }
