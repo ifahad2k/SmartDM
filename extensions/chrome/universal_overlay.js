@@ -788,7 +788,8 @@
         } catch (e) {}
       }
       if (rawTitle) {
-        let clean = rawTitle.replace(/\s*[\-\|]\s*(Gogoanime|HiAnime|Animepahe|Vidbox|Movies7|FMovies|Watch Online|Free).*$/i, '').trim();
+        let clean = rawTitle.replace(/\s*[\-\|\:·].*$/, '').trim();
+        if (!clean || clean.length < 3) clean = rawTitle;
         clean = clean.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim().replace(/\s+/g, '_');
         if (clean.length > 3) {
           return `${clean}.${ext.toLowerCase()}`;
