@@ -1,5 +1,5 @@
 # Build
-.gradle/
+**/.gradle/
 build/
 **/build/
 out/
