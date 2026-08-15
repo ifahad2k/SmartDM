@@ -103,15 +103,15 @@ reg add "HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\io.smart
 reg add "HKCU\Software\Mozilla\NativeMessagingHosts\io.smartdm.host" /ve /t REG_SZ /d "%~dp0io.smartdm.host.firefox.json" /f >nul 2>&1
 
 reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
+reg add "HKCU\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.8" /f >nul 2>&1
 
 reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
+reg add "HKLM\Software\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.8" /f >nul 2>&1
 reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
+reg add "HKLM\Software\WOW6432Node\Google\Chrome\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.8" /f >nul 2>&1
 
 reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "path" /t REG_SZ /d "%APP_DIR%extensions/chrome" /f >nul 2>&1
-reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.7" /f >nul 2>&1
+reg add "HKLM\Software\Microsoft\Edge\Extensions\knldjnnmkkebefogdbmggjijknmjeaoh" /v "version" /t REG_SZ /d "1.0.8" /f >nul 2>&1
 
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "installation_mode" /t REG_SZ /d "normal_installed" /f >nul 2>&1
 reg add "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\smartdm-extension@smartdm.io" /v "install_url" /t REG_SZ /d "file:///%APP_DIR%extensions/firefox/manifest.json" /f >nul 2>&1
