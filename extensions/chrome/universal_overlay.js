@@ -527,12 +527,12 @@
       const dx = clientX - startX;
       const dy = clientY - startY;
 
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
         dragMoved = true;
         hasCustomPosition = true;
       }
 
-      if (hasCustomPosition) {
+      if (hasCustomPosition && dragMoved) {
         if (e && e.preventDefault) e.preventDefault();
         
         if (host.parentElement !== document.body) {
@@ -551,6 +551,7 @@
     const stopDrag = () => {
       if (isDragging) {
         isDragging = false;
+        setTimeout(() => { dragMoved = false; }, 50);
       }
     };
 
@@ -683,15 +684,14 @@
 
     bannerBtn.addEventListener('click', (e) => {
       if (dragMoved) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
         dragMoved = false;
         return;
       }
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      }
 
       const pageUrl = resolveCurrentMediaUrl(mediaEl);
 
