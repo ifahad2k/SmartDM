@@ -626,16 +626,11 @@ namespace SmartDM.Installer
 
         private async Task EnsureJavaRuntimeAsync(string targetDir)
         {
-            if (IsSystemJava21Available(targetDir))
-            {
-                UpdateProgress(75, "✅ Java 21 detected. Skipping runtime download.");
-                return;
-            }
-
             string runtimeDir = Path.Combine(targetDir, "runtime");
-            if (File.Exists(Path.Combine(runtimeDir, "bin", "java.exe")))
+            string javaExe = Path.Combine(runtimeDir, "bin", "java.exe");
+            if (File.Exists(javaExe))
             {
-                UpdateProgress(75, "✅ Bundled Java 21 runtime ready.");
+                UpdateProgress(75, "✅ Isolated Java 21 runtime ready.");
                 return;
             }
 

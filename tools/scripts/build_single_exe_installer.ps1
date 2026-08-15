@@ -55,18 +55,8 @@ Get-ChildItem -Path "$ProjectRoot\tools" -Filter "*.exe" -Recurse -ErrorAction S
     Write-Host "  + Bundled: $($_.Name)" -ForegroundColor Green
 }
 
-# 3b. Bundle Java 21 JRE Runtime so SmartDM is 100% self-contained on any PC
-Write-Host "`n[3b/6] Bundling Java 21 JRE Runtime..." -ForegroundColor Yellow
-$JdkSource = "C:\Users\ifaha\.gradle\jdks\eclipse_adoptium-21-amd64-windows.2"
-$RuntimeTarget = "$AppImageDir\runtime"
-New-Item -ItemType Directory -Path $RuntimeTarget -Force | Out-Null
-
-Copy-Item -Path "$JdkSource\bin" -Destination $RuntimeTarget -Recurse -Force
-Copy-Item -Path "$JdkSource\lib" -Destination $RuntimeTarget -Recurse -Force
-Copy-Item -Path "$JdkSource\conf" -Destination $RuntimeTarget -Recurse -Force
-Copy-Item -Path "$JdkSource\legal" -Destination $RuntimeTarget -Recurse -Force
-if (Test-Path "$JdkSource\release") { Copy-Item -Path "$JdkSource\release" -Destination $RuntimeTarget -Force }
-Write-Host "  + Bundled standalone Java 21 JRE Runtime" -ForegroundColor Green
+# 3b. Java 21 JRE Runtime will be downloaded on-demand by Installer.cs over user's internet
+Write-Host "`n[3b/6] Java 21 JRE Runtime set to on-demand online installer mode..." -ForegroundColor Yellow
 
 # 4. Copy Browser Extensions into extensions/ directory
 Write-Host "`n[4/6] Bundling Browser Extensions..." -ForegroundColor Yellow
