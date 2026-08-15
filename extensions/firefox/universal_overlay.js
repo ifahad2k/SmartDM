@@ -350,7 +350,7 @@
           top: 36px;
           right: 0;
           width: 280px;
-          background: rgba(15, 23, 42, 0.8);
+          background: rgba(15, 23, 42, 0.95);
           backdrop-filter: blur(18px);
           -webkit-backdrop-filter: blur(18px);
           border: 1px solid rgba(255, 255, 255, 0.2);
@@ -364,9 +364,10 @@
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
           font-size: 12px;
           z-index: 2147483647;
+          pointer-events: auto !important;
         }
-        .popover.active {
-          display: flex;
+        .popover * {
+          pointer-events: auto !important;
         }
         .popover-title {
           font-weight: 700;
@@ -396,7 +397,8 @@
           border: 1px solid rgba(255, 255, 255, 0.08);
           border-radius: 6px;
           padding: 7px 10px;
-          cursor: pointer;
+          cursor: pointer !important;
+          pointer-events: auto !important;
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -904,12 +906,16 @@
       div.appendChild(formatInfo);
       div.appendChild(formatBadge);
 
-      div.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
+      const handleItemClick = (ev) => {
+        if (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        }
         container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
 
-        chrome.runtime.sendMessage(
+        const runtime = (typeof browser !== 'undefined') ? browser.runtime : chrome.runtime;
+        runtime.sendMessage(
           {
             type: 'START_MEDIA_DOWNLOAD',
             url: item.url,
@@ -922,7 +928,14 @@
             setTimeout(() => popover.classList.remove('active'), 800);
           }
         );
-      });
+      };
+
+      div.addEventListener('click', handleItemClick, true);
+      div.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      }, true);
 
       container.appendChild(div);
     });
