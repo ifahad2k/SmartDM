@@ -205,7 +205,9 @@
     if (container === document.body) {
       host.style.setProperty('position', 'fixed', 'important');
       host.style.setProperty('z-index', '2147483647', 'important');
-      host.style.setProperty('pointer-events', 'none', 'important');
+      host.style.setProperty('width', 'fit-content', 'important');
+      host.style.setProperty('height', 'fit-content', 'important');
+      host.style.setProperty('pointer-events', 'auto', 'important');
       
       cleanupSync = () => {
         if (syncInterval) {
@@ -244,7 +246,7 @@
         } else {
           host.style.display = 'block';
           host.style.opacity = '1';
-          host.style.setProperty('pointer-events', 'none', 'important');
+          host.style.setProperty('pointer-events', 'auto', 'important');
           if (!hasCustomPosition) {
             host.style.setProperty('top', Math.max(12, rect.top + 12) + 'px', 'important');
             const bannerWidth = host.offsetWidth || 140;
@@ -262,7 +264,9 @@
       host.style.setProperty('top', '12px', 'important');
       host.style.setProperty('right', '12px', 'important');
       host.style.setProperty('z-index', '2147483647', 'important');
-      host.style.setProperty('pointer-events', 'none', 'important');
+      host.style.setProperty('width', 'fit-content', 'important');
+      host.style.setProperty('height', 'fit-content', 'important');
+      host.style.setProperty('pointer-events', 'auto', 'important');
     }
 
     const shadow = host.attachShadow({ mode: 'open' });
@@ -271,7 +275,9 @@
       <style>
         :host {
           z-index: 2147483647 !important;
-          pointer-events: none !important;
+          pointer-events: auto !important;
+          width: fit-content !important;
+          height: fit-content !important;
         }
         .idm-banner {
           background: rgba(15, 23, 42, 0.65) !important;
