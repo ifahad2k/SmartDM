@@ -628,10 +628,17 @@ namespace SmartDM.Installer
         {
             string runtimeDir = Path.Combine(targetDir, "runtime");
             string javaExe = Path.Combine(runtimeDir, "bin", "java.exe");
-            if (File.Exists(javaExe))
+            string jvmCfg = Path.Combine(runtimeDir, "lib", "jvm.cfg");
+
+            if (File.Exists(javaExe) && File.Exists(jvmCfg))
             {
                 UpdateProgress(75, "✅ Isolated Java 21 runtime ready.");
                 return;
+            }
+
+            if (Directory.Exists(runtimeDir))
+            {
+                try { Directory.Delete(runtimeDir, true); } catch {}
             }
 
             UpdateProgress(60, "⏳ Downloading Java 21 Runtime (Adoptium OpenJDK)...");
