@@ -205,7 +205,7 @@
     if (container === document.body) {
       host.style.setProperty('position', 'fixed', 'important');
       host.style.setProperty('z-index', '2147483647', 'important');
-      host.style.setProperty('pointer-events', 'auto', 'important');
+      host.style.setProperty('pointer-events', 'none', 'important');
       
       cleanupSync = () => {
         if (syncInterval) {
@@ -244,7 +244,7 @@
         } else {
           host.style.display = 'block';
           host.style.opacity = '1';
-          host.style.pointerEvents = 'auto';
+          host.style.setProperty('pointer-events', 'none', 'important');
           if (!hasCustomPosition) {
             host.style.setProperty('top', Math.max(12, rect.top + 12) + 'px', 'important');
             const bannerWidth = host.offsetWidth || 140;
@@ -262,7 +262,7 @@
       host.style.setProperty('top', '12px', 'important');
       host.style.setProperty('right', '12px', 'important');
       host.style.setProperty('z-index', '2147483647', 'important');
-      host.style.setProperty('pointer-events', 'auto', 'important');
+      host.style.setProperty('pointer-events', 'none', 'important');
     }
 
     const shadow = host.attachShadow({ mode: 'open' });
@@ -271,7 +271,7 @@
       <style>
         :host {
           z-index: 2147483647 !important;
-          pointer-events: auto !important;
+          pointer-events: none !important;
         }
         .idm-banner {
           background: rgba(15, 23, 42, 0.65) !important;
@@ -777,6 +777,27 @@
     container.appendChild(host);
   }
 
+  function derivePageTitleFilename(ext = 'mp4') {
+    try {
+      let rawTitle = document.title || '';
+      if (window.top !== window.self) {
+        try {
+          if (window.top.document && window.top.document.title) {
+            rawTitle = window.top.document.title;
+          }
+        } catch (e) {}
+      }
+      if (rawTitle) {
+        let clean = rawTitle.replace(/\s*[\-\|]\s*(Gogoanime|HiAnime|Animepahe|Vidbox|Movies7|FMovies|Watch Online|Free).*$/i, '').trim();
+        clean = clean.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim().replace(/\s+/g, '_');
+        if (clean.length > 3) {
+          return `${clean}.${ext.toLowerCase()}`;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function renderUniversalFormats(container, ytDlpFormats, netMediaList, pageUrl, popover) {
     container.innerHTML = '';
 
@@ -790,24 +811,33 @@
 
     // 1. Add yt-dlp extracted quality/resolution formats
     ytDlpFormats.forEach(fmt => {
-      const resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
+      let resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
+      if (resolution === '0' || resolution === '0p' || resolution.includes('0x0')) {
+        resolution = 'Best Quality';
+      }
       const ext = (fmt.ext || 'MP4').toUpperCase();
+      let cleanTitle = resolution;
+      if (!cleanTitle.toUpperCase().includes(ext)) {
+        cleanTitle += ` (${ext})`;
+      }
+      cleanTitle = cleanTitle.replace(/\(([^)]+)\)\s*\(\1\)/gi, '($1)');
+
       const formattedSize = formatSize(fmt.fileSize);
       const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
       rawItems.push({
-        title: `${resolution} (${ext})`,
+        title: cleanTitle,
         badge: sizeText,
         url: pageUrl,
         formatId: fmt.formatId,
-        fileName: null
+        fileName: derivePageTitleFilename(ext)
       });
     });
 
     // 2. Add network-intercepted media streams if yt-dlp produced no formats
     if (ytDlpFormats.length === 0 && netMediaList.length > 0) {
       netMediaList.forEach((m, idx) => {
-        const ext = (m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
+        const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'MP4').toUpperCase();
         const formattedSize = formatSize(m.contentLength);
         const sizeText = m.customBadge || (formattedSize ? formattedSize : 'Stream');
 
@@ -821,6 +851,11 @@
           else qualityName = `Video Stream ${idx + 1} (${ext})`;
         }
 
+        let fName = m.filename;
+        if (!fName || fName === 'index.mp4' || fName === 'video.mp4' || fName === 'stream.mp4' || fName === 'media_stream' || fName.startsWith('index') || fName.startsWith('master')) {
+          fName = derivePageTitleFilename(ext) || fName;
+        }
+
         rawItems.push({
           title: qualityName,
           badge: sizeText,
@@ -828,7 +863,7 @@
           videoUrl: m.videoUrl || null,
           audioUrl: m.audioUrl || null,
           formatId: m.formatId || (m.customTitle ? m.customTitle.replace(/[^0-9p]/g, '') : 'best'),
-          fileName: m.filename
+          fileName: fName
         });
       });
     }
