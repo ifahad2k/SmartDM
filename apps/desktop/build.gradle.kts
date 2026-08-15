@@ -15,6 +15,20 @@ application {
     )
 }
 
+tasks.named<CreateStartScripts>("startScripts") {
+    doLast {
+        val script = windowsScript
+        if (script.exists()) {
+            val text = script.readText()
+            val updatedText = text.replace(
+                "if defined JAVA_HOME goto findJavaFromJavaHome",
+                "if exist \"%APP_HOME%\\runtime\\bin\\java.exe\" set \"JAVA_HOME=%APP_HOME%\\runtime\"\nif defined JAVA_HOME goto findJavaFromJavaHome"
+            )
+            script.writeText(updatedText)
+        }
+    }
+}
+
 dependencies {
     implementation(project(":modules:desktop-ui"))
     implementation(project(":modules:application"))

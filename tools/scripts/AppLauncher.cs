@@ -22,6 +22,7 @@ namespace SmartDM.Launcher
 
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string batPath = Path.Combine(baseDir, "bin", "desktop.bat");
+                string bundledJre = Path.Combine(baseDir, "runtime");
                 
                 if (File.Exists(batPath))
                 {
@@ -38,6 +39,12 @@ namespace SmartDM.Launcher
                         CreateNoWindow = true,
                         UseShellExecute = false
                     };
+
+                    if (Directory.Exists(bundledJre))
+                    {
+                        psi.EnvironmentVariables["JAVA_HOME"] = bundledJre;
+                    }
+
                     Process.Start(psi);
                 }
                 else
@@ -172,6 +179,8 @@ namespace SmartDM.Launcher
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string batPath = Path.Combine(baseDir, "bin", "desktop.bat");
+                string bundledJre = Path.Combine(baseDir, "runtime");
+
                 if (File.Exists(batPath))
                 {
                     ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + batPath + "\" --autostart")
@@ -181,6 +190,12 @@ namespace SmartDM.Launcher
                         CreateNoWindow = true,
                         UseShellExecute = false
                     };
+
+                    if (Directory.Exists(bundledJre))
+                    {
+                        psi.EnvironmentVariables["JAVA_HOME"] = bundledJre;
+                    }
+
                     Process.Start(psi);
                     log("Auto-launched SmartDM in background system tray");
                 }
