@@ -72,7 +72,22 @@
       scanPlayers();
       scanThumbnails();
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    const target = document.body || document.documentElement;
+    if (target) {
+      observer.observe(target, { childList: true, subtree: true });
+    }
+
+    const mediaEvents = ['play', 'playing', 'canplay', 'loadedmetadata', 'loadstart'];
+    mediaEvents.forEach(evtName => {
+      window.addEventListener(evtName, (e) => {
+        if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) {
+          if (!e.target.hasAttribute(PLAYER_PROCESSED_ATTR)) {
+            attachUniversalBanner(e.target);
+          }
+        }
+      }, true);
+    });
+
     scanPlayers();
     scanThumbnails();
   }
@@ -82,35 +97,41 @@
     mediaElements.forEach(attachUniversalBanner);
   }
 
-  function isThumbnailVideo(mediaEl) {
+  function isMainVideoPlayer(mediaEl) {
     if (!mediaEl) return false;
-    
-    const host = window.location.hostname.toLowerCase();
-    if (host.includes('facebook.com') || host.includes('instagram.com') || host.includes('tiktok.com') || host.includes('twitter.com') || host.includes('x.com')) {
-      return false; // Social media feed videos are main videos
-    }
 
-    // Controls indicate a standalone main player, not a thumbnail preview
-    if (mediaEl.hasAttribute('controls')) return false;
-
-    // Check if inside a link <a> tag
-    let el = mediaEl;
-    let depth = 0;
-    while (el && el !== document.body && depth < 6) {
-      if (el.tagName === 'A') return true;
-      el = el.parentElement;
-      depth++;
-    }
-
-    // Check if inside a card/grid/thumbnail container
-    if (mediaEl.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, article, li, .card, .thumb, [class*="thumb"], [class*="card"], [class*="grid"], [class*="item"], [class*="preview"], [id*="thumb"], [id*="preview"]')) {
+    // 1. Inside an iframe, every video element is the main player!
+    if (window.top !== window.self && mediaEl.tagName === 'VIDEO') {
       return true;
     }
 
-    // Check dimensions - preview videos in grid items are smaller than 600px
-    if (mediaEl.offsetWidth > 0 && mediaEl.offsetWidth < 600 && mediaEl.offsetHeight < 500) {
+    // 2. Ignore non-video or hidden/tiny UI elements
+    if (mediaEl.tagName === 'AUDIO') {
+      if (mediaEl.offsetWidth < 180 || mediaEl.offsetHeight < 30) return false;
+    }
+
+    if (mediaEl.closest('header, nav, [role="navigation"], .ad-container, .adsbygoogle, [aria-label="Advertisement"]')) {
+      return false;
+    }
+
+    // 3. Active / Playing video is ALWAYS a main video player
+    if (!mediaEl.paused || mediaEl.currentTime > 0 || mediaEl.readyState >= 2) {
       return true;
     }
+
+    // 4. Check dimension bounds (must be at least 180x120px)
+    const rect = mediaEl.getBoundingClientRect();
+    const width = rect.width || mediaEl.offsetWidth;
+    const height = rect.height || mediaEl.offsetHeight;
+
+    if (width > 0 && height > 0) {
+      if (width < 180 || height < 120) return false;
+      return true;
+    }
+
+    // 5. If element is not yet rendered in layout, check if parent is a player container
+    if (mediaEl.hasAttribute('controls') || mediaEl.hasAttribute('autoplay')) return true;
+    if (mediaEl.closest('.player, .video-player, #player, .video-container, .vjs-tech, .plyr, .html5-video-container')) return true;
 
     return false;
   }
@@ -152,8 +173,7 @@
   function attachUniversalBanner(mediaEl) {
     if (!mediaEl) return;
 
-    // Do NOT attach universal player banner to preview videos inside thumbnail cards!
-    if (isThumbnailVideo(mediaEl)) {
+    if (!isMainVideoPlayer(mediaEl)) {
       mediaEl.setAttribute(PLAYER_PROCESSED_ATTR, 'true');
       return;
     }
