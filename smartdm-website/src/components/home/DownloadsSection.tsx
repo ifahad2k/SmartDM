@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Monitor, Copy, CheckCircle2 } from 'lucide-react';
+import { Download, Monitor, Copy, CheckCircle2, Cpu } from 'lucide-react';
 import { usePublicConfig } from '../../hooks/usePublicConfig';
 
 interface DownloadsSectionProps {
@@ -36,8 +36,23 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
           <span className="eyebrow">DOWNLOAD SMARTDM</span>
           <h2>Get SmartDM v{publicConfig.version} for your platform</h2>
           <p>
-            Free, local-first, and open source under GPL-3.0. Download native installers or standalone packages below.
+            Free, local-first, and open source under GPL-3.0. Powered by <strong>Java 21 LTS & JavaFX 21</strong>.
           </p>
+        </div>
+
+        {/* Java 21 LTS Bundled Runtime Banner */}
+        <div style={{ marginBottom: '2.5rem', padding: '1.25rem 1.5rem', borderRadius: '16px', background: 'rgba(255, 140, 0, 0.08)', border: '1px solid rgba(255, 140, 0, 0.3)', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ background: 'rgba(255, 140, 0, 0.15)', padding: '0.6rem', borderRadius: '12px', color: '#ff9800' }}>
+            <Cpu size={24} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h4 style={{ margin: '0 0 0.2rem 0', fontSize: '1rem', color: '#ff9800' }}>
+              Java 21 LTS Runtime Requirement (Auto-Bundled with Installer)
+            </h4>
+            <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              SmartDM runs on <strong>Java 21 LTS & JavaFX 21</strong>. The standalone Windows installer (<code>.exe</code>) automatically downloads and isolates an official Adoptium OpenJDK 21 JRE runtime if Java is missing—<strong>no manual Java installation required!</strong>
+            </p>
+          </div>
         </div>
 
         <div className="download-grid">
@@ -49,12 +64,12 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
             </div>
             <div>
               <small>Windows 10 / 11 (64-bit)</small>
-              <h3>Windows Setup</h3>
-              <p>Official installer with auto-updater, background service, and context menu integrations.</p>
+              <h3>Single-EXE Setup</h3>
+              <p>Official installer with auto Java 21 setup, system tray service, and browser integration.</p>
             </div>
             <div className="download-meta">
               <span>v{publicConfig.version}</span>
-              <span>x64</span>
+              <span>Java 21 Included</span>
               <span>Direct GitHub</span>
             </div>
             <a
@@ -62,7 +77,7 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
               href={publicConfig.windowsDownloadUrl}
             >
               <Download size={18} />
-              <span>Download .EXE</span>
+              <span>Download Installer (.EXE)</span>
             </a>
             <div className="asset-name">{publicConfig.windowsFilename}</div>
             {publicConfig.windowsChecksum && (
@@ -80,6 +95,31 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Portable Zip Distribution */}
+          <div className="download-card">
+            <div className="os-icon">
+              <Monitor size={28} />
+            </div>
+            <div>
+              <small>Portable Zip Distribution</small>
+              <h3>Portable Archive</h3>
+              <p>Extract and run SmartDM directly from any directory or USB drive without system installation.</p>
+            </div>
+            <div className="download-meta">
+              <span>v{publicConfig.version}</span>
+              <span>Portable</span>
+              <span>Zip Package</span>
+            </div>
+            <a
+              className="button button-secondary"
+              href={`${publicConfig.windowsDownloadUrl.substring(0, publicConfig.windowsDownloadUrl.lastIndexOf('/'))}/desktop-1.0.6.zip`}
+            >
+              <Download size={18} />
+              <span>Download Portable (.ZIP)</span>
+            </a>
+            <div className="asset-name">desktop-1.0.6.zip</div>
           </div>
 
           {/* Linux AppImage Download Card */}
@@ -107,31 +147,6 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
             </a>
             <div className="asset-name">{publicConfig.appImageFilename}</div>
           </div>
-
-          {/* Debian / Ubuntu .deb Download Card */}
-          <div className="download-card">
-            <div className="os-icon">
-              <Monitor size={28} />
-            </div>
-            <div>
-              <small>Debian & Ubuntu Distros</small>
-              <h3>Debian Package</h3>
-              <p>Native .deb package with apt desktop integration and systemd service scripts.</p>
-            </div>
-            <div className="download-meta">
-              <span>v{publicConfig.version}</span>
-              <span>amd64</span>
-              <span>Native DEB</span>
-            </div>
-            <a
-              className="button button-secondary"
-              href={publicConfig.debDownloadUrl}
-            >
-              <Download size={18} />
-              <span>Download .DEB</span>
-            </a>
-            <div className="asset-name">{publicConfig.debFilename}</div>
-          </div>
         </div>
 
         {/* Security Integrity Card */}
@@ -139,9 +154,9 @@ export const DownloadsSection: React.FC<DownloadsSectionProps> = ({ triggerToast
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <CheckCircle2 size={24} color="var(--green)" />
             <div>
-              <strong style={{ display: 'block', fontSize: '1.05rem' }}>SHA-256 Binary Integrity Verification</strong>
+              <strong style={{ display: 'block', fontSize: '1.05rem' }}>SHA-256 Binary Integrity Verification & SQLCipher Security</strong>
               <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-                Every binary artifact built on GitHub Actions is signed and hashed before distribution.
+                Every binary artifact built on GitHub Actions is signed and hashed. Local database is encrypted with SQLCipher.
               </span>
             </div>
           </div>

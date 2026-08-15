@@ -1,5 +1,5 @@
 import React from 'react';
-import { Copy, Terminal, Download } from 'lucide-react';
+import { Copy, Terminal, Download, Cpu } from 'lucide-react';
 import { usePublicConfig } from '../../hooks/usePublicConfig';
 
 interface InstallDocProps {
@@ -23,13 +23,26 @@ export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
       <h3>Installing SmartDM Desktop v{publicConfig.version}</h3>
       <p>Follow the platform instructions below to install SmartDM on Windows or Linux environments.</p>
 
+      {/* Java 21 LTS Runtime Box */}
+      <div style={{ margin: '1.5rem 0', padding: '1.25rem', borderRadius: '12px', background: 'rgba(255, 140, 0, 0.08)', border: '1px solid rgba(255, 140, 0, 0.25)', display: 'flex', gap: '0.85rem' }}>
+        <Cpu size={22} color="#ff9800" style={{ flexShrink: 0, marginTop: '2px' }} />
+        <div>
+          <strong style={{ color: '#ff9800', display: 'block', fontSize: '0.92rem', marginBottom: '0.2rem' }}>
+            Java 21 LTS & JavaFX 21 Runtime Requirement
+          </strong>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            SmartDM requires <strong>Java 21 LTS</strong>. The standalone Windows installer automatically downloads and isolates an official Adoptium OpenJDK 21 JRE runtime if Java is not installed on your PC—no manual configuration required.
+          </span>
+        </div>
+      </div>
+
       <ul className="step-list">
         <li>
           <span>01</span>
           <div>
-            <b>Windows Installation (.exe)</b>
+            <b>Standalone Windows Installer (.exe) - Recommended</b>
             <p>
-              Download <code>{publicConfig.windowsFilename}</code> and run the installer executable. It will guide you through directory selection and auto-register system tray integration.
+              Download <code>{publicConfig.windowsFilename}</code> and run the setup wizard. The installer automatically downloads Java 21 runtime if missing and opens the <strong>Guided First-Run Integration Window</strong> on launch.
             </p>
             <div style={{ marginTop: '0.75rem' }}>
               <a href={publicConfig.windowsDownloadUrl} className="button button-small button-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -41,6 +54,16 @@ export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
 
         <li>
           <span>02</span>
+          <div>
+            <b>Portable Zip Distribution</b>
+            <p>
+              Download <code>desktop-1.0.6.zip</code>, extract to your preferred directory (e.g. <code>C:\Program Files\SmartDM</code> or <code>~/SmartDM</code>), and launch <code>SmartDM.exe</code> (Windows) or <code>./bin/desktop</code> (Linux).
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <span>03</span>
           <div>
             <b>Linux AppImage (Universal)</b>
             <p>Make the AppImage binary executable and launch it directly from terminal or application launcher:</p>
@@ -67,7 +90,7 @@ export const InstallDoc: React.FC<InstallDocProps> = ({ triggerToast }) => {
         </li>
 
         <li>
-          <span>03</span>
+          <span>04</span>
           <div>
             <b>Debian / Ubuntu Package (.deb)</b>
             <p>Install via dpkg package manager to integrate with system menu shortcuts:</p>
