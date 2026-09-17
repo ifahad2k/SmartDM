@@ -73,6 +73,14 @@ public class SegmentWorker implements Callable<Void> {
                     }
                 }
 
+                if (isRangeRequest) {
+                    if (etag != null && !etag.isBlank()) {
+                        builder.header("If-Range", etag);
+                    } else if (lastModified != null && !lastModified.isBlank()) {
+                        builder.header("If-Range", lastModified);
+                    }
+                }
+
                 builder.timeout(Duration.ofSeconds(30));
                 HttpRequest request = builder.GET().build();
 
@@ -88,6 +96,8 @@ public class SegmentWorker implements Callable<Void> {
                         throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
                     }
 
+                    long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
+
                     if (isRangeRequest && response.statusCode() != 206) {
                         if (response.statusCode() == 200) {
                             if (segment.index() > 0) {
@@ -97,19 +107,23 @@ public class SegmentWorker implements Callable<Void> {
                                 segment.updateOffset(0);
                                 channel.truncate(0);
                             }
+                            bytesRemaining = Long.MAX_VALUE;
                         } else {
                             throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
                         }
                     }
-
-                    long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
 
                     byte[] buffer = new byte[65536];
                     int read;
                     while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
                         int toRead = (int) Math.min(buffer.length, bytesRemaining);
                         read = is.read(buffer, 0, toRead);
-                        if (read == -1) break;
+                        if (read == -1) {
+                            if (!paused && !Thread.currentThread().isInterrupted() && bytesRemaining > 0 && segment.endOffset() >= 0 && segment.currentOffset() <= segment.endOffset()) {
+                                throw new java.io.EOFException("Premature end of stream for segment " + segment.index() + ": expected " + (segment.endOffset() + 1) + " bytes, got " + segment.currentOffset());
+                            }
+                            break;
+                        }
 
                         if (rateLimiter != null) {
                             rateLimiter.acquire(read);

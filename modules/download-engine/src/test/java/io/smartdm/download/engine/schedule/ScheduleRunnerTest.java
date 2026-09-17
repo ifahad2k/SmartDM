@@ -49,4 +49,28 @@ class ScheduleRunnerTest {
         runner.updateSchedule(schedulePaused);
         assertThat(statusRef.get()).isEqualTo(DownloadQueue.Status.PAUSED);
     }
+
+    @Test
+    void shouldNotFailWhenScheduledDownloadsStarterThrows() {
+        AtomicReference<DownloadQueue.Status> statusRef = new AtomicReference<>(DownloadQueue.Status.PAUSED);
+        Clock clock = Clock.fixed(Instant.parse("2026-07-19T12:00:00Z"), ZoneId.of("UTC"));
+        
+        ScheduleRunner runner = new ScheduleRunner(
+            clock, 
+            statusRef::set, 
+            () -> { throw new RuntimeException("Database error during evaluation"); }, 
+            schedule -> {}
+        );
+        
+        Schedule scheduleActive = Schedule.createNew(
+            "Daytime", 
+            LocalTime.of(11, 0), 
+            LocalTime.of(13, 0), 
+            List.of(), 
+            Schedule.MissedTriggerPolicy.IGNORE
+        );
+        
+        // updateSchedule invokes evaluateSchedules(), which catches Throwable and logs it
+        runner.updateSchedule(scheduleActive);
+    }
 }

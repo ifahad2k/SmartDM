@@ -81,6 +81,11 @@ public class NativeHostMain {
                 }
 
                 byte[] responseBytes = responseJson.getBytes(StandardCharsets.UTF_8);
+                if (responseBytes.length > 1024 * 1024) {
+                    log.println("Warning: Payload exceeds Chrome Native Messaging 1MB limit (" + responseBytes.length + " bytes). Returning error response.");
+                    responseJson = "{\"status\":\"error\",\"message\":\"Payload exceeds Chrome Native Messaging 1MB limit\"}";
+                    responseBytes = responseJson.getBytes(StandardCharsets.UTF_8);
+                }
                 byte[] outLengthBytes = new byte[4];
                 outLengthBytes[0] = (byte) (responseBytes.length & 0xFF);
                 outLengthBytes[1] = (byte) ((responseBytes.length >> 8) & 0xFF);

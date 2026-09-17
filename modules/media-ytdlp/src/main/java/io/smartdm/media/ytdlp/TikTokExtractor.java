@@ -62,6 +62,9 @@ public class TikTokExtractor implements MediaExtractor {
                     ytDlp.toString(),
                     "--dump-json",
                     "--no-playlist",
+                    "--ignore-config",
+                    "--no-warnings",
+                    "--force-ipv4",
                     "--user-agent",
                     ua
                 ));
@@ -90,7 +93,12 @@ public class TikTokExtractor implements MediaExtractor {
                     combinedOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                 }
 
-                int exitCode = process.waitFor();
+                boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+                if (!finished) {
+                    process.destroyForcibly();
+                    return null;
+                }
+                int exitCode = process.exitValue();
                 if (exitCode != 0) {
                     System.err.println("TikTokExtractor warning: yt-dlp process exited with code " + exitCode + ", output: " + combinedOutput);
                     return null;

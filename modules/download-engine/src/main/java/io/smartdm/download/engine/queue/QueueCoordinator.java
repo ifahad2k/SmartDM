@@ -62,13 +62,17 @@ public class QueueCoordinator {
 
     private void triggerCoordination() {
         needsCoordination.set(true);
-        if (coordinationRunning.compareAndSet(false, true)) {
-            try {
-                while (needsCoordination.getAndSet(false)) {
-                    coordinate();
+        while (needsCoordination.get()) {
+            if (coordinationRunning.compareAndSet(false, true)) {
+                try {
+                    while (needsCoordination.getAndSet(false)) {
+                        coordinate();
+                    }
+                } finally {
+                    coordinationRunning.set(false);
                 }
-            } finally {
-                coordinationRunning.set(false);
+            } else {
+                break;
             }
         }
     }

@@ -45,11 +45,27 @@ public class SegmentedFileChannel implements AutoCloseable {
         if (targetParent != null && !Files.exists(targetParent)) {
             Files.createDirectories(targetParent);
         }
-        try {
-            Files.move(tempFile, finalDestination.value(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-            Files.copy(tempFile, finalDestination.value(), StandardCopyOption.REPLACE_EXISTING);
-            Files.deleteIfExists(tempFile);
+        int maxAttempts = 5;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                try {
+                    Files.move(tempFile, finalDestination.value(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                    Files.copy(tempFile, finalDestination.value(), StandardCopyOption.REPLACE_EXISTING);
+                    Files.deleteIfExists(tempFile);
+                }
+                return;
+            } catch (IOException e) {
+                if (attempt == maxAttempts - 1) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(100L * (attempt + 1));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
         }
     }
 

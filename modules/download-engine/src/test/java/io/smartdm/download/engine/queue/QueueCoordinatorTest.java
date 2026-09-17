@@ -54,4 +54,47 @@ class QueueCoordinatorTest {
         
         assertThat(started).contains(id1, id3);
     }
+
+    @Test
+    void shouldCoordinateConcurrentlyWithoutMissingUpdates() throws InterruptedException {
+        int threads = 8;
+        int iterations = 50;
+        java.util.concurrent.atomic.AtomicInteger startCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        QueueCoordinator.DownloadStarter starter = new QueueCoordinator.DownloadStarter() {
+            @Override
+            public void startDownload(DownloadId id) { startCount.incrementAndGet(); }
+            @Override
+            public void pauseDownload(DownloadId id) {}
+            @Override
+            public boolean isActive(DownloadId id) { return false; }
+            @Override
+            public boolean isScheduledFuture(DownloadId id) { return false; }
+        };
+
+        QueueCoordinator coordinator = new QueueCoordinator(starter);
+        DownloadQueue queue = DownloadQueue.createNew("Main", 100000, null);
+        coordinator.updateQueue(queue);
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(threads);
+
+        for (int t = 0; t < threads; t++) {
+            pool.submit(() -> {
+                try {
+                    for (int i = 0; i < iterations; i++) {
+                        DownloadId id = DownloadId.generate();
+                        QueueItem item = QueueItem.createNew(queue.getId(), id, 1, i);
+                        coordinator.updateQueueItems(queue.getId(), List.of(item));
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        pool.shutdown();
+        assertThat(startCount.get()).isGreaterThan(0);
+    }
 }

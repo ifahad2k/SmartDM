@@ -111,13 +111,7 @@ public class LocalMediaToolManager implements MediaToolManager {
             }
         }
 
-        // 3. Check relative working directory "tools"
-        Path localTools = Paths.get("tools", execName);
-        if (isExecutableFile(localTools)) {
-            return Optional.of(localTools.toAbsolutePath());
-        }
-
-        // 4. Check PATH env variable
+        // 3. Check PATH env variable
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {
             String[] dirs = pathEnv.split(File.pathSeparator);

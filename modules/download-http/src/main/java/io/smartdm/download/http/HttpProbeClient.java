@@ -115,6 +115,9 @@ public class HttpProbeClient {
                     if (response.statusCode() == 404) {
                         throw new RuntimeException("HTTP 404 Not Found: The file or release asset does not exist on the server.");
                     }
+                    if (response.statusCode() == 410) {
+                        throw new RuntimeException("HTTP 410 Gone: The requested resource is no longer available on the server.");
+                    }
                     if (response.statusCode() == 401) {
                         String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("Secure Area");
                         throw new UnauthorizedException(wwwAuth);
@@ -148,13 +151,18 @@ public class HttpProbeClient {
                     if (ex == null) {
                         return CompletableFuture.completedFuture(result);
                     }
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    String message = cause.getMessage();
+                    if (message != null && (message.contains("404") || message.contains("410"))) {
+                        return CompletableFuture.<ProbeResult>failedFuture(cause);
+                    }
                     // If probing with cookies/credentials failed (e.g. 401/403/405), retry WITHOUT credentials first!
                     // Fixes GitHub Releases, S3 presigned URLs, and CDN links that reject browser cookies.
                     if (credential != null && (credential.cookies() != null || credential.username() != null)) {
                         return probeAsync(uri, null);
                     }
-                    if (ex.getCause() instanceof UnauthorizedException) {
-                        return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
+                    if (cause instanceof UnauthorizedException) {
+                        return CompletableFuture.<ProbeResult>failedFuture(cause);
                     }
                     return probeViaGetRange(uri, credential);
                 })
@@ -177,6 +185,9 @@ public class HttpProbeClient {
                         if (response.statusCode() == 404) {
                             throw new RuntimeException("HTTP 404 Not Found: The file or release asset does not exist on the server.");
                         }
+                        if (response.statusCode() == 410) {
+                            throw new RuntimeException("HTTP 410 Gone: The requested resource is no longer available on the server.");
+                        }
 
                         if (response.statusCode() == 401) {
                             String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("Secure Area");
@@ -194,12 +205,17 @@ public class HttpProbeClient {
                         if (contentRange != null) {
                             int slashIndex = contentRange.lastIndexOf('/');
                             if (slashIndex >= 0) {
-                                try {
-                                    contentLength = Long.parseLong(contentRange.substring(slashIndex + 1).trim());
-                                } catch (NumberFormatException ignored) {}
+                                String totalPart = contentRange.substring(slashIndex + 1).trim();
+                                if ("*".equals(totalPart)) {
+                                    contentLength = -1;
+                                } else {
+                                    try {
+                                        contentLength = Long.parseLong(totalPart);
+                                    } catch (NumberFormatException ignored) {}
+                                }
                             }
                         }
-                        if (contentLength <= 0) {
+                        if (contentLength <= 0 && response.statusCode() == 200) {
                             contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
                         }
                         if (contentLength <= 0) {
@@ -235,13 +251,18 @@ public class HttpProbeClient {
                     if (ex == null) {
                         return CompletableFuture.completedFuture(result);
                     }
-                    if (ex.getCause() instanceof UnauthorizedException) {
-                        return CompletableFuture.<ProbeResult>failedFuture(ex.getCause());
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    String message = cause.getMessage();
+                    if (message != null && (message.contains("404") || message.contains("410"))) {
+                        return CompletableFuture.<ProbeResult>failedFuture(cause);
+                    }
+                    if (cause instanceof UnauthorizedException) {
+                        return CompletableFuture.<ProbeResult>failedFuture(cause);
                     }
                     if (credential != null && credential.cookies() != null && !credential.cookies().isEmpty()) {
                         return probeViaGetRange(uri, null);
                     }
-                    return CompletableFuture.<ProbeResult>failedFuture(ex);
+                    return CompletableFuture.<ProbeResult>failedFuture(cause);
                 })
                 .thenCompose(future -> future);
     }

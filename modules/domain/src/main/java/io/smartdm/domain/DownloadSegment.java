@@ -3,7 +3,7 @@ package io.smartdm.domain;
 public class DownloadSegment {
     private final int index;
     private final long startOffset;
-    private long currentOffset;
+    private volatile long currentOffset;
     private final long endOffset;
 
     public DownloadSegment(int index, long startOffset, long currentOffset, long endOffset) {

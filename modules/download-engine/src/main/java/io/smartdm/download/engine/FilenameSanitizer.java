@@ -98,6 +98,15 @@ public final class FilenameSanitizer {
         // 7. Replace remaining Windows-illegal characters
         raw = raw.replaceAll("[<>:\"|?*]", "_");
 
+        // 8. Strip trailing dots and trailing spaces (Windows file creation defense)
+        while (raw.endsWith(".") || raw.endsWith(" ")) {
+            raw = raw.substring(0, raw.length() - 1);
+        }
+
+        if (raw.isBlank()) {
+            return null;
+        }
+
         return raw;
     }
 }

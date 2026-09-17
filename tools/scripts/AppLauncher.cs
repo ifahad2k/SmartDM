@@ -23,16 +23,49 @@ namespace SmartDM.Launcher
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string batPath = Path.Combine(baseDir, "bin", "desktop.bat");
                 string bundledJre = Path.Combine(baseDir, "runtime");
-                
-                if (File.Exists(batPath))
+                string javawPath = Path.Combine(bundledJre, "bin", "javaw.exe");
+
+                if (File.Exists(javawPath))
                 {
-                    string arguments = "/c \"" + batPath + "\"";
+                    ProcessStartInfo psi = new ProcessStartInfo(javawPath)
+                    {
+                        WorkingDirectory = baseDir,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    };
+                    psi.EnvironmentVariables["JAVA_HOME"] = bundledJre;
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("-Xms32m -Xmx256m -XX:+UseG1GC -XX:G1HeapRegionSize=1m -XX:MaxGCPauseMillis=50 -XX:+UseStringDeduplication ");
+                    sb.Append("-classpath \"").Append(Path.Combine(baseDir, "lib", "*")).Append("\" io.smartdm.desktop.Launcher");
                     if (args != null && args.Length > 0)
                     {
-                        arguments += " " + string.Join(" ", args);
+                        foreach (string arg in args)
+                        {
+                            if (string.IsNullOrEmpty(arg)) continue;
+                            sb.Append(" \"").Append(arg.Replace("\"", "\\\"")).Append("\"");
+                        }
                     }
+                    psi.Arguments = sb.ToString();
+                    Process.Start(psi);
+                }
+                else if (File.Exists(batPath))
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("/c \"\"").Append(batPath).Append("\"");
+                    if (args != null && args.Length > 0)
+                    {
+                        foreach (string arg in args)
+                        {
+                            if (string.IsNullOrEmpty(arg)) continue;
+                            string escaped = arg.Replace("\"", "\\\"");
+                            sb.Append(" \"").Append(escaped).Append("\"");
+                        }
+                    }
+                    sb.Append("\"");
 
-                    ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", arguments)
+                    ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", sb.ToString())
                     {
                         WorkingDirectory = baseDir,
                         WindowStyle = ProcessWindowStyle.Hidden,

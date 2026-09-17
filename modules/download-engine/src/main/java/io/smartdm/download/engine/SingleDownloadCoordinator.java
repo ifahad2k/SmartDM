@@ -81,7 +81,7 @@ public class SingleDownloadCoordinator {
         this.eventPublisher = eventPublisher;
         this.tempDir = tempDir;
         this.rateLimiter = rateLimiter;
-        this.segmentExecutor = new java.util.concurrent.ThreadPoolExecutor(4, 32, 60L, TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(256), r -> { Thread t = new Thread(r, "segment-worker"); t.setDaemon(true); return t; }, new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+        this.segmentExecutor = new java.util.concurrent.ThreadPoolExecutor(4, 32, 60L, TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(), r -> { Thread t = new Thread(r, "segment-worker"); t.setDaemon(true); return t; }, new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
     }
 
     public void execute(Download download) {
@@ -138,7 +138,8 @@ public class SingleDownloadCoordinator {
 
             // Re-check database state in case the user paused/cancelled during the blocking probe
             Download latest = repository.findById(download.id()).orElse(download);
-            if (latest.state() == DownloadState.PAUSED || latest.state() == DownloadState.CANCELED) {
+            if (session.paused || session.queued || session.cancelled ||
+                latest.state() == DownloadState.PAUSED || latest.state() == DownloadState.QUEUED || latest.state() == DownloadState.CANCELED) {
                 return; // Abort execution silently; pause/cancel already handled the DB and Events
             }
 
@@ -300,8 +301,19 @@ public class SingleDownloadCoordinator {
             
             // Hashing logic
             if (download.expectedHash() != null && !download.expectedHash().isBlank()) {
+                String cleanHash = download.expectedHash().trim();
+                String algorithm;
+                if (cleanHash.length() == 32) {
+                    algorithm = "MD5";
+                } else if (cleanHash.length() == 40) {
+                    algorithm = "SHA-1";
+                } else if (cleanHash.length() == 64) {
+                    algorithm = "SHA-256";
+                } else {
+                    algorithm = "SHA-256";
+                }
                 try {
-                    java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+                    java.security.MessageDigest digest = java.security.MessageDigest.getInstance(algorithm);
                     try (java.io.InputStream is = java.nio.file.Files.newInputStream(channel.getTempFile())) {
                         byte[] buffer = new byte[65536];
                         int read;
@@ -311,11 +323,11 @@ public class SingleDownloadCoordinator {
                     }
                     byte[] hashBytes = digest.digest();
                     String actualHash = java.util.HexFormat.of().formatHex(hashBytes);
-                    if (!actualHash.equalsIgnoreCase(download.expectedHash().trim())) {
+                    if (!actualHash.equalsIgnoreCase(cleanHash)) {
                         throw new RuntimeException("Hash verification failed. Expected: " + download.expectedHash() + ", Actual: " + actualHash);
                     }
                 } catch (java.security.NoSuchAlgorithmException e) {
-                    throw new RuntimeException("SHA-256 algorithm not available for hash verification", e);
+                    throw new RuntimeException(algorithm + " algorithm not available for hash verification", e);
                 }
             }
 
@@ -334,15 +346,25 @@ public class SingleDownloadCoordinator {
         } finally {
             if (session != null) {
                 sessions.remove(download.id());
-                if (download.state() == DownloadState.FAILED || download.state() == DownloadState.CANCELED) {
+                if (download.state() == DownloadState.CANCELED) {
                     if (session.channel != null) {
                         session.channel.cleanup();
                     }
-                } else if (download.state() == DownloadState.PAUSED || download.state() == DownloadState.QUEUED) {
-                    try { if (session.channel != null) session.channel.close(); } catch(Exception ignored){}
+                } else {
+                    try {
+                        if (session.channel != null) {
+                            session.channel.close();
+                        }
+                    } catch (Exception ignored) {}
                 }
             } else if (channel != null) {
-                if (download.state() == DownloadState.FAILED) channel.cleanup();
+                if (download.state() == DownloadState.CANCELED) {
+                    channel.cleanup();
+                } else {
+                    try {
+                        channel.close();
+                    } catch (Exception ignored) {}
+                }
             }
         }
     }
@@ -403,6 +425,7 @@ public class SingleDownloadCoordinator {
         DownloadSession session = sessions.get(id);
         if (session != null) {
             session.cancelled = true;
+            session.download.updateState(DownloadState.CANCELED);
             for (SegmentWorker worker : session.workers) {
                 worker.pause();
             }

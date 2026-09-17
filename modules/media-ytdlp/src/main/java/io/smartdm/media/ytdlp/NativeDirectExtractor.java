@@ -152,9 +152,11 @@ public class NativeDirectExtractor {
     private Optional<MediaMetadata> extractFacebookDirect(String url, String cookies, String userAgent) throws Exception {
         URI parsedUri = URI.create(url);
         String host = parsedUri.getHost();
-        if (host == null || !(host.endsWith("facebook.com") || host.endsWith("fb.watch"))) {
-            return Optional.empty(); // Prevent SSRF
-        }
+        if (host == null) return Optional.empty();
+        host = host.toLowerCase(java.util.Locale.ROOT);
+        boolean isFb = host.equals("facebook.com") || host.endsWith(".facebook.com") ||
+                       host.equals("fb.watch") || host.endsWith(".fb.watch");
+        if (!isFb) return Optional.empty();
         String ua = (userAgent != null && !userAgent.isBlank())
                 ? userAgent
                 : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";

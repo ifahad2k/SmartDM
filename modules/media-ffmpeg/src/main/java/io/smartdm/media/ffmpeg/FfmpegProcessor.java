@@ -4,6 +4,8 @@ import io.smartdm.media.api.MediaToolManager;
 
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class FfmpegProcessor {
 
@@ -34,7 +36,12 @@ public class FfmpegProcessor {
                 try (java.io.InputStream is = process.getInputStream()) {
                     is.readAllBytes();
                 }
-                int exitCode = process.waitFor();
+                boolean finished = process.waitFor(120, TimeUnit.SECONDS);
+                if (!finished) {
+                    process.destroyForcibly();
+                    throw new TimeoutException("FFmpeg merge process timed out after 120 seconds");
+                }
+                int exitCode = process.exitValue();
                 if (exitCode != 0) {
                     throw new RuntimeException("FFmpeg merge failed with exit code " + exitCode);
                 }
@@ -67,7 +74,12 @@ public class FfmpegProcessor {
                 try (java.io.InputStream is = process.getInputStream()) {
                     is.readAllBytes();
                 }
-                int exitCode = process.waitFor();
+                boolean finished = process.waitFor(120, TimeUnit.SECONDS);
+                if (!finished) {
+                    process.destroyForcibly();
+                    throw new TimeoutException("FFmpeg audio extraction process timed out after 120 seconds");
+                }
+                int exitCode = process.exitValue();
                 if (exitCode != 0) {
                     throw new RuntimeException("FFmpeg audio extraction failed with exit code " + exitCode);
                 }

@@ -143,7 +143,11 @@ public class YtDlpExtractor implements MediaExtractor {
                         combinedOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                     }
 
-                    int exitCode = process.waitFor();
+                    boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+                    if (!finished) {
+                        process.destroyForcibly();
+                    }
+                    int exitCode = finished ? process.exitValue() : -1;
                     if (exitCode != 0 || combinedOutput.isBlank() || (!combinedOutput.contains("{") && !combinedOutput.contains("}"))) {
                         log.warn("yt-dlp standard dump failed: {}. Attempting fallback player_client...", combinedOutput);
                         
@@ -183,7 +187,10 @@ public class YtDlpExtractor implements MediaExtractor {
                         try (InputStream is = processCookies.getInputStream()) {
                             combinedOutput = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                         }
-                        processCookies.waitFor();
+                        boolean finishedCookies = processCookies.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+                        if (!finishedCookies) {
+                            processCookies.destroyForcibly();
+                        }
                     }
 
                     int start = combinedOutput.indexOf('{');
