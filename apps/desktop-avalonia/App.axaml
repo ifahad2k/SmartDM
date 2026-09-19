@@ -1,0 +1,59 @@
+﻿<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SmartDm.Desktop.Avalonia.App"
+             xmlns:local="using:SmartDm.Desktop.Avalonia"
+             RequestedThemeVariant="Light">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- EXACT WHITE MODE COLOR PALETTE -->
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppBackground">#F7F8FA</SolidColorBrush>
+                    <SolidColorBrush x:Key="SidebarBackground">#F1F3F6</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBackground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="ElevatedBackground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderColor">#E3E7ED</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryText">#111827</SolidColorBrush>
+                    <SolidColorBrush x:Key="SecondaryText">#5F6B7A</SolidColorBrush>
+                    <SolidColorBrush x:Key="MutedText">#8A94A3</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryAccent">#3B82F6</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentHover">#2563EB</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentLight">#EAF2FF</SolidColorBrush>
+                    <SolidColorBrush x:Key="SuccessColor">#16A34A</SolidColorBrush>
+                    <SolidColorBrush x:Key="WarningColor">#D97706</SolidColorBrush>
+                    <SolidColorBrush x:Key="ErrorColor">#DC2626</SolidColorBrush>
+                </ResourceDictionary>
+
+                <!-- EXACT DARK MODE COLOR PALETTE -->
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppBackground">#0B0D10</SolidColorBrush>
+                    <SolidColorBrush x:Key="SidebarBackground">#11151A</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBackground">#171C22</SolidColorBrush>
+                    <SolidColorBrush x:Key="ElevatedBackground">#1D232B</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderColor">#29313B</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryText">#F2F5F7</SolidColorBrush>
+                    <SolidColorBrush x:Key="SecondaryText">#9AA4B2</SolidColorBrush>
+                    <SolidColorBrush x:Key="MutedText">#687382</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryAccent">#4F8CFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentHover">#6A9FFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentLight">#264F8CFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="SuccessColor">#3DDC97</SolidColorBrush>
+                    <SolidColorBrush x:Key="WarningColor">#F5B84B</SolidColorBrush>
+                    <SolidColorBrush x:Key="ErrorColor">#FF5C6C</SolidColorBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+        <Style Selector="TextBlock">
+            <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI, sans-serif" />
+        </Style>
+    </Application.Styles>
+</Application>

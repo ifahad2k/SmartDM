@@ -1,0 +1,172 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SmartDm.Desktop.Avalonia.ViewModels"
+        x:Class="SmartDm.Desktop.Avalonia.Views.CompletionInspectorWindow"
+        x:DataType="vm:CompletionInspectorViewModel"
+        Icon="/Assets/SDM_2.0_logo.png"
+        Title="SmartDM 2.0 â€¢ Completion Inspector"
+        Width="940" Height="620"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource ElevatedBackground}">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Titlebar -->
+        <Border Grid.Row="0" Height="40" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" />
+                    <TextBlock Text="SmartDM 2.0 â€¢ Completion Inspector" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
+                    <Border Background="{DynamicResource BorderColor}" CornerRadius="4" Padding="6,2">
+                        <TextBlock Text="Session #4882" FontSize="10" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                    </Border>
+                </StackPanel>
+                <Button Grid.Column="1" Command="{Binding DismissCommand}" Background="Transparent" BorderThickness="0" Content="✕" FontSize="12" Foreground="{DynamicResource MutedText}" />
+            </Grid>
+        </Border>
+
+        <!-- Body -->
+        <ScrollViewer Grid.Row="1" Padding="22">
+            <StackPanel Spacing="16">
+                <!-- Top Header Banner -->
+                <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="18">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Grid.Column="0" Width="50" Height="50" Background="#34D399" CornerRadius="12" Margin="0,0,16,0">
+                            <TextBlock Text="âœ“" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+
+                        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Download Finished Successfully!" FontSize="18" FontWeight="ExtraBold" Foreground="{DynamicResource PrimaryText}" />
+                                <Border Background="#D1FAE5" CornerRadius="4" Padding="6,2">
+                                    <TextBlock Text="READY" FontSize="10.5" FontWeight="Bold" Foreground="#065F46" />
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="File verified, reconstructed flawlessly from 16 parallel segments, and written to cache." FontSize="12" Foreground="{DynamicResource SecondaryText}" />
+                        </StackPanel>
+
+                        <!-- 2x8 Matrix -->
+                        <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="16 / 16 Segments Merged 100% OK" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" HorizontalAlignment="Right" />
+                            <UniformGrid Columns="8" Rows="2" Width="140" Height="22">
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                                <Border Background="#16A34A" CornerRadius="2" Margin="1" />
+                            </UniformGrid>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 2-Column Info Grid -->
+                <Grid ColumnDefinitions="*,*">
+                    <!-- Left: File Payload Info -->
+                    <Border Grid.Column="0" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,8,0">
+                        <StackPanel Spacing="14">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Border Width="40" Height="40" Background="#E0F2FE" CornerRadius="8">
+                                    <TextBlock Text="ðŸ“" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Download.Title, FallbackValue='Cyberpunk_2077_Update_v2.1.zip'}" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="application/x-zip-compressed â€¢ Solid Multi-Volume" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+                                <Grid ColumnDefinitions="*,*,*">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="PAYLOAD SIZE" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                        <TextBlock Text="{Binding PayloadSizeText}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="ELAPSED TIME" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                        <TextBlock Text="{Binding ElapsedTimeText}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="AVG SPEED" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                        <TextBlock Text="{Binding AvgSpeedText}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource SuccessColor}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="SAVED LOCATION" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Text="{Binding SavedLocation}" FontSize="11" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                        <TextBlock Grid.Column="1" Text="ðŸ”— Copy Path" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Right: Security & Integrity Vault -->
+                    <Border Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="8,0,0,0">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="ðŸ›¡ï¸ SECURITY &amp; INTEGRITY VAULT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
+                                <Border Background="#D1FAE5" CornerRadius="4" Padding="6,1">
+                                    <TextBlock Text="â— Passed" FontSize="10" FontWeight="Bold" Foreground="#065F46" />
+                                </Border>
+                            </Grid>
+
+                            <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="Windows Defender Endpoint" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="{Binding DefenderStatus}" FontSize="10.5" Foreground="{DynamicResource SuccessColor}" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="âœ“" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="SmartDM Heuristic Engine" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="{Binding HeuristicStatus}" FontSize="10.5" Foreground="{DynamicResource SuccessColor}" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="âœ“" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Spacing="4">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="SHA-256 FINGERPRINT" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                    <TextBlock Grid.Column="1" Text="Match with clipboard Verified âœ“" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+                                </Grid>
+                                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8">
+                                    <TextBlock Text="{Binding Sha256Hash}" FontSize="10" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Actions -->
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                        <Button Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="16,8" FontSize="12.5" FontWeight="Bold" Content="â–· Quick Open File" />
+                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="ðŸ“ Open Enclosing Folder" />
+                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="ðŸ“¦ Extract to /Archives/" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Command="{Binding DismissCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Dismiss" />
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>
