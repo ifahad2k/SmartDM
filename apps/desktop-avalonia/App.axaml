@@ -1,4 +1,4 @@
-﻿<Application xmlns="https://github.com/avaloniaui"
+<Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="SmartDm.Desktop.Avalonia.App"
              xmlns:local="using:SmartDm.Desktop.Avalonia"
@@ -56,4 +56,24 @@
             <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI, sans-serif" />
         </Style>
     </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/SDM_2.0_logo.png" ToolTipText="SmartDM 2.0 Pro">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Open SmartDM" Click="OnOpenSmartDmClicked" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Add Download..." Click="OnAddDownloadClicked" />
+                        <NativeMenuItem Header="Active Transfers Monitor" Click="OnActiveTransfersClicked" />
+                        <NativeMenuItem Header="Preferences &amp; Settings..." Click="OnSettingsClicked" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Toggle Light / Dark" Click="OnToggleThemeClicked" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Exit SmartDM" Click="OnExitClicked" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
 </Application>

@@ -1,0 +1,81 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="using:SmartDm.Desktop.Avalonia.Models"
+        x:Class="SmartDm.Desktop.Avalonia.Views.RefreshLinkDialog"
+        Icon="/Assets/SDM_2.0_logo.png"
+        Title="SmartDM 2.0 • Refresh Download Address"
+        Width="640" Height="420"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
+        Background="{DynamicResource ElevatedBackground}">
+
+    <Grid RowDefinitions="36,*">
+        <!-- Unified System Titlebar -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 • Refresh Download Address" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+                <Border Grid.Column="2" Width="140" />
+            </Grid>
+        </Border>
+
+        <!-- Body -->
+        <Grid Grid.Row="1" RowDefinitions="*,Auto" Margin="24">
+            <StackPanel Grid.Row="0" Spacing="16">
+                <!-- Target File Banner -->
+                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14,10">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Grid.Column="0" Width="36" Height="36" Background="{DynamicResource AccentLight}" CornerRadius="6" Margin="0,0,12,0">
+                            <Image Source="/Assets/Icons/link-blue.png" Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="FileTitleText" Text="Filename.zip" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource PrimaryText}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="Session token or URL expired. Enter new fresh URL below to seamlessly resume." FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Current URL (Readonly) -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="PREVIOUS EXPIRED URL" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <TextBox x:Name="OldUrlBox" IsReadOnly="True" Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource SecondaryText}" BorderBrush="{DynamicResource BorderColor}" CornerRadius="6" Height="32" VerticalContentAlignment="Center" FontSize="11" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+
+                <!-- New Fresh URL -->
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="NEW FRESH DOWNLOAD ADDRESS" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                        <Button Grid.Column="1" Click="OnPasteClipboardClicked" Background="Transparent" BorderThickness="0" Padding="0">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Image Source="/Assets/Icons/paste-blue.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                <TextBlock Text="Paste Clipboard" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <TextBox x:Name="NewUrlBox" Watermark="https://example.com/fresh-token-url..." Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource PrimaryText}" BorderBrush="{DynamicResource PrimaryAccent}" CornerRadius="6" Height="34" VerticalContentAlignment="Center" FontSize="11.5" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+
+                <!-- Status Feedback -->
+                <TextBlock x:Name="StatusMessageText" Text="Existing partially downloaded bytes will be preserved." FontSize="11" Foreground="{DynamicResource SuccessColor}" FontFamily="Cascadia Code, Consolas, monospace" />
+            </StackPanel>
+
+            <!-- Bottom Buttons -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,16,0,0">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <Button Click="OnCancelClicked" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" FontSize="12">Cancel</Button>
+                    <Button Click="OnUpdateResumeClicked" Background="{DynamicResource PrimaryAccent}" CornerRadius="7" Padding="18,8" Foreground="White" FontWeight="Bold" FontSize="12">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Image Source="/Assets/Icons/play-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="Update Link &amp; Resume" Foreground="White" FontWeight="Bold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

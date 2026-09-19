@@ -6,45 +6,54 @@
         x:Class="SmartDm.Desktop.Avalonia.Views.TransferMonitorWindow"
         x:DataType="vm:TransferMonitorViewModel"
         Icon="/Assets/SDM_2.0_logo.png"
-        Title="SmartDM 2.0 â€¢ Active Transfer Monitor"
-        Width="920" Height="740"
-        WindowStartupLocation="CenterOwner"
+        Title="SmartDM 2.0 • Active Transfer Monitor"
+        Width="680" Height="750"
+        MinWidth="560" MinHeight="600"
+        CanResize="True"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
         Background="{DynamicResource ElevatedBackground}">
 
-    <Grid RowDefinitions="Auto,*">
-        <!-- Titlebar -->
-        <Border Grid.Row="0" Height="40" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
-            <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" />
-                    <TextBlock Text="SmartDM 2.0 â€¢ Active Transfer Monitor" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
-                    <Border Background="#1A16A34A" CornerRadius="4" Padding="6,2">
-                        <TextBlock Text="â— Concurrency Active" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+    <Grid RowDefinitions="36,*">
+        <!-- Unified Native Titlebar (Extended Client Area with Click-and-Drag) -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0" PointerPressed="OnTitleBarPointerPressed">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 • Active Transfer Monitor" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <Border Background="#1A16A34A" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="Concurrency Active" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                        </StackPanel>
                     </Border>
                 </StackPanel>
-                <Button Grid.Column="1" Command="{Binding CloseCommand}" Background="Transparent" BorderThickness="0" Content="✕" FontSize="12" Foreground="{DynamicResource MutedText}" />
+                <!-- Right column leaves room for native OS caption buttons (minimize, maximize, close) -->
+                <Border Grid.Column="2" Width="140" />
             </Grid>
         </Border>
 
-        <!-- Body -->
-        <ScrollViewer Grid.Row="1" Padding="22">
-            <StackPanel Spacing="16">
-                <!-- Top Summary Card -->
-                <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="18">
-                    <StackPanel Spacing="12">
+        <!-- Body (Horizontal scroll disabled to prevent clipping) -->
+        <ScrollViewer Grid.Row="1" Padding="12" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="10">
+                <!-- Top Summary Card (Always Visible, Draggable) -->
+                <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="13" PointerPressed="OnHeaderPointerPressed">
+                    <StackPanel Spacing="10">
                         <Grid ColumnDefinitions="Auto,*,Auto">
                             <Border Grid.Column="0" Width="44" Height="44" Background="{DynamicResource AccentLight}" CornerRadius="10" Margin="0,0,14,0">
-                                <TextBlock Text="ðŸ’¿" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Image Source="/Assets/Icons/disc-blue.png" Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
 
                             <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="{Binding Download.Title}" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="{Binding Download.Title}" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource PrimaryText}" TextTrimming="CharacterEllipsis" />
                                     <Border Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="6,1">
-                                        <TextBlock Text="16 SEGMENTS" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
+                                        <TextBlock Text="{Binding SegmentsBadge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
                                     </Border>
                                 </StackPanel>
-                                <TextBlock Text="Protocol: HTTP/2 TLS 1.3 â€¢ ALPN Multiplexed" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                <TextBlock Text="{Binding ProtocolInfo}" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
 
                             <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -53,53 +62,95 @@
                             </StackPanel>
                         </Grid>
 
-                        <ProgressBar Value="{Binding Download.ProgressPercentage}" Minimum="0" Maximum="100" Height="8" Foreground="{DynamicResource PrimaryAccent}" Background="{DynamicResource SidebarBackground}" />
+                        <ProgressBar Value="{Binding Download.ProgressPercentage}" Minimum="0" Maximum="100" Height="8" CornerRadius="4" Foreground="{DynamicResource PrimaryAccent}" Background="{DynamicResource SidebarBackground}" />
                         
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="{Binding Download.FormattedProgress}" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
-                            <TextBlock Grid.Column="1" Text="Direct DMA NVMe Ring Buffer" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                            <TextBlock Grid.Column="0" Text="{Binding Download.FormattedProgress}" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                            <TextBlock Grid.Column="1" Text="{Binding BufferInfo}" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
                         </Grid>
 
-                        <!-- Controls -->
+                        <!-- File Details: Save Destination Location -->
+                        <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,2,0,0">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/folder-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="Save Location:" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding Download.SavePath}" FontSize="10.5" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" Margin="8,0" VerticalAlignment="Center" />
+                                <Button Grid.Column="2" Command="{Binding OpenFolderCommand}" Background="Transparent" BorderThickness="0" Padding="4,1" VerticalAlignment="Center">
+                                    <TextBlock Text="Open" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <!-- Controls Bar -->
                         <Border BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{Binding TogglePauseCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="{Binding PauseButtonText}" />
-                                    <Button Command="{Binding CloseCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="â¹ Stop" />
-                                    <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="âš¡ Turbo Flush" />
+                                    <Button Command="{Binding TogglePauseCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Image Source="/Assets/Icons/pause-gray.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding PauseButtonText}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{Binding StopCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Image Source="/Assets/Icons/stop-gray.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                            <TextBlock Text="Stop" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{Binding OpenFolderCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Image Source="/Assets/Icons/folder-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                            <TextBlock Text="Open Folder" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
 
-                                <Button Grid.Column="2" Command="{Binding SimulateFinishCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource SuccessColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" Content="âœ“ Simulate Finished State" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                    <!-- Hide / Show Details Toggle Button -->
+                                    <Button Command="{Binding ToggleDetailsCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource PrimaryAccent}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}">
+                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DetailsButtonText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Hide to Tray Button -->
+                                    <Button Command="{Binding CloseCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Image Source="/Assets/Icons/arrow-down-blue.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                            <TextBlock Text="Hide to Tray" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </StackPanel>
                 </Border>
 
-                <!-- 16-Segment Slicing Visualizer -->
-                <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="16">
-                    <StackPanel Spacing="10">
+                <!-- 16-Segment Slicing Visualizer (Collapsible) -->
+                <Border IsVisible="{Binding ShowDetails}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="14,12">
+                    <StackPanel Spacing="9">
+                        <!-- Visualizer Header: Icon + Title + Live Socket Telemetry + Chunk Size -->
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="âš¡ 16 Parallel Stream Segments (Chunk Buffers)" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
-                            <TextBlock Grid.Column="1" Text="Chunk Size: 352.6 MB each" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/matrix-green.png" Width="14" Height="14" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding SegmentsTitle}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="6,1.5" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SocketsTelemetryBadge}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                </Border>
+                                <TextBlock Text="{Binding FormattedChunkSize}" FontSize="10" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                            </StackPanel>
                         </Grid>
 
-                        <!-- Segment Bar (16 Slices) -->
-                        <ItemsControl ItemsSource="{Binding SegmentProgressList}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="16" Height="22" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="x:Double">
-                                    <Border Background="{DynamicResource AccentLight}" CornerRadius="3" Margin="1" ClipToBounds="True">
-                                        <ProgressBar Value="{Binding}" Minimum="0" Maximum="100" Height="22" Foreground="{DynamicResource PrimaryAccent}" Background="Transparent" />
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <!-- Hardware-Accelerated Animated 16-Segment Buffer Strip (Recessed Channel) -->
+                        <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="5" Padding="3" Margin="0,1,0,3">
+                            <controls:SegmentVisualizerControl Segments="{Binding ThreadMetrics}" Height="13" />
+                        </Border>
 
-                        <!-- 4x4 Sockets Grid -->
+                        <!-- 4x4 High-Density Sockets Matrix -->
                         <ItemsControl ItemsSource="{Binding ThreadMetrics}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -108,13 +159,34 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="models:ThreadMetric">
-                                    <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="2" Height="40">
+                                    <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="2" Height="43">
                                         <Grid RowDefinitions="Auto,Auto">
-                                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                                                <TextBlock Text="{Binding ThreadName}" FontSize="9.5" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
-                                                <TextBlock Grid.Column="1" Text="â—" FontSize="8" Foreground="{DynamicResource SuccessColor}" />
+                                            <!-- Row 0: Socket # & Status Indicator on Left, Live Speed / Status on Right -->
+                                            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                    <!-- Active: Green Dot -->
+                                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource SuccessColor}" VerticalAlignment="Center" IsVisible="{Binding IsActive}" />
+                                                    <!-- Completed: Green Check / Dot -->
+                                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource SuccessColor}" VerticalAlignment="Center" IsVisible="{Binding IsCompletedDotVisible}" />
+                                                    <!-- Idle: Gray Dot -->
+                                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource MutedText}" VerticalAlignment="Center" IsVisible="{Binding IsIdleDotVisible}" />
+
+                                                    <TextBlock Text="{Binding ThreadName}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                                
+                                                <!-- Status / Speed: Green for DONE, PrimaryAccent for active speed, Muted for Idle -->
+                                                <Panel Grid.Column="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding FormattedSpeed}" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" FontFamily="Cascadia Code, Consolas, monospace" IsVisible="{Binding IsCompletedDotVisible}" />
+                                                    <TextBlock Text="{Binding FormattedSpeed}" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" IsVisible="{Binding IsActive}" />
+                                                    <TextBlock Text="{Binding FormattedSpeed}" FontSize="9" FontWeight="Normal" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" IsVisible="{Binding IsIdleDotVisible}" />
+                                                </Panel>
                                             </Grid>
-                                            <TextBlock Grid.Row="1" Text="{Binding FormattedSpeed}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+
+                                            <!-- Row 1: Bulletproof MiniProgressBar Track with Formatted Percentage -->
+                                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,4,0,0" VerticalAlignment="Center">
+                                                <controls:MiniProgressBar Grid.Column="0" Value="{Binding Progress}" Height="3.5" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBlock Grid.Column="1" Text="{Binding FormattedProgress}" FontSize="8.5" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -123,31 +195,86 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Speed Limiter & Sparkline -->
-                <Grid ColumnDefinitions="*,*">
-                    <!-- Sparkline -->
-                    <Border Grid.Column="0" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,0">
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Transfer Pulse (Last 60s)" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
-                            <Border Height="55">
-                                <controls:SparklineControl Points="{Binding SparklineHistory}" Height="55" />
+                <!-- Speed Limiter & Real-Time Sparkline (Collapsible) -->
+                <Grid IsVisible="{Binding ShowDetails}" ColumnDefinitions="*,*">
+                    <!-- Column 0: Transfer Pulse (Speed vs Time, Area = Total Download) -->
+                    <Border Grid.Column="0" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,5,0">
+                        <StackPanel Spacing="5">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/pulse-blue.png" Width="13" Height="13" VerticalAlignment="Center" />
+                                    <TextBlock Text="Transfer Pulse (Speed vs Time)" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="5,1">
+                                    <TextBlock Text="{Binding PeakSpeedFormatted, StringFormat='{}Peak: {0}'}" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                </Border>
+                            </Grid>
+
+                            <TextBlock Text="Area = Total Download Volume" FontSize="9" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+
+                            <Border Height="56" Margin="0,1">
+                                <controls:SparklineControl Points="{Binding SparklineHistory}" Height="56" />
                             </Border>
+
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Grid.Column="0" Text="-60s" FontSize="9" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                <TextBlock Grid.Column="1" Text="-30s" FontSize="9" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                                <TextBlock Grid.Column="2" Text="{Binding Download.FormattedSpeed, StringFormat='Now: {0}'}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
-                    <!-- Throttle Slider -->
-                    <Border Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,0">
-                        <StackPanel Spacing="8">
+                    <!-- Column 1: Bandwidth Limiter (Select Option + Slider + Direct Numeric Input) -->
+                    <Border Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="5,0,0,0">
+                        <StackPanel Spacing="6">
+                            <!-- Header: Title on Left, Select Dropdown on Right -->
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Text="Bandwidth Limiter" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
-                                <TextBlock Grid.Column="1" Text="{Binding SpeedLimitLabel}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/gauge-blue.png" Width="13" Height="13" VerticalAlignment="Center" />
+                                    <TextBlock Text="Bandwidth Limiter" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                
+                                <!-- Select Option Dropdown (Defaults to Max, Enables User Input on Custom) -->
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding LimitModeOptions}" SelectedItem="{Binding SelectedLimitMode, Mode=TwoWay}" Width="145" Height="26" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                             </Grid>
-                            <Slider Value="{Binding SpeedLimit}" Minimum="5" Maximum="120" />
+
+                            <!-- Subline & Input Row -->
+                            <Grid ColumnDefinitions="*,Auto" Height="26">
+                                <!-- Mode A: Default Max / Unlimited State -->
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding !IsCustomLimitEnabled}">
+                                    <TextBlock Text="Unlimited (Max Pipe)" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                    <Border Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="5,1.5" VerticalAlignment="Center">
+                                        <TextBlock Text="FULL PIPE" FontSize="8.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- Mode B: Custom Limit Active with User Input Box -->
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsCustomLimitEnabled}">
+                                    <TextBlock Text="{Binding SpeedLimitLabel}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                </StackPanel>
+
+                                <!-- User Input Bandwidth Limit Box (Enabled only when Custom Limit is selected) -->
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsCustomLimitEnabled}">
+                                    <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource PrimaryAccent}" BorderThickness="1" CornerRadius="5" Height="26" Padding="6,1" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+                                            <TextBox Text="{Binding SpeedLimitInput, Mode=TwoWay}" Width="44" Padding="0" MinHeight="0" Height="22" FontSize="11" FontWeight="Bold" FontFamily="Cascadia Code, Consolas, monospace" Background="Transparent" BorderThickness="0" TextAlignment="Right" VerticalAlignment="Center" VerticalContentAlignment="Center" />
+                                            <TextBlock Text="MB/s" FontSize="9.5" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Button Command="{Binding SetUnlimitedCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="5" Height="26" Padding="8,0" VerticalAlignment="Center" ToolTip.Tip="Reset to Maximum Unlimited Speed">
+                                        <TextBlock Text="Max" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Slider (Active only when Custom Limit is enabled, dimmed when Max) -->
+                            <Slider Value="{Binding SpeedLimit}" Minimum="1" Maximum="100" IsEnabled="{Binding IsCustomLimitEnabled}" Margin="0,1" />
+                            
                             <Grid ColumnDefinitions="*,*,*,*">
-                                <TextBlock Grid.Column="0" Text="5 MB/s" FontSize="9.5" Foreground="{DynamicResource MutedText}" />
-                                <TextBlock Grid.Column="1" Text="25 MB/s" FontSize="9.5" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="50 MB/s" FontSize="9.5" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
-                                <TextBlock Grid.Column="3" Text="Unlimited" FontSize="9.5" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Column="0" Text="1 MB/s" FontSize="9" Foreground="{DynamicResource MutedText}" />
+                                <TextBlock Grid.Column="1" Text="25 MB/s" FontSize="9" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="50 MB/s" FontSize="9" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
+                                <TextBlock Grid.Column="3" Text="100 MB/s" FontSize="9" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Right" />
                             </Grid>
                         </StackPanel>
                     </Border>

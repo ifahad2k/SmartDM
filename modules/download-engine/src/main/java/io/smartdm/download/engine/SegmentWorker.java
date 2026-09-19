@@ -96,8 +96,6 @@ public class SegmentWorker implements Callable<Void> {
                         throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
                     }
 
-                    long bytesRemaining = segment.endOffset() >= 0 ? (segment.endOffset() - segment.currentOffset() + 1) : Long.MAX_VALUE;
-
                     if (isRangeRequest && response.statusCode() != 206) {
                         if (response.statusCode() == 200) {
                             if (segment.index() > 0) {
@@ -107,19 +105,28 @@ public class SegmentWorker implements Callable<Void> {
                                 segment.updateOffset(0);
                                 channel.truncate(0);
                             }
-                            bytesRemaining = Long.MAX_VALUE;
                         } else {
                             throw new RuntimeException("HTTP GET failed with status: " + response.statusCode());
                         }
                     }
 
-                    byte[] buffer = new byte[65536];
+                    byte[] buffer = new byte[262144]; // 256 KB high-speed direct buffer
                     int read;
-                    while (!Thread.currentThread().isInterrupted() && !paused && bytesRemaining > 0) {
-                        int toRead = (int) Math.min(buffer.length, bytesRemaining);
+                    while (!Thread.currentThread().isInterrupted() && !paused) {
+                        long cur = segment.currentOffset();
+                        long end = segment.endOffset();
+                        if (end >= 0 && cur > end) {
+                            break; // Reached end of current slice (including dynamically contracted splits)
+                        }
+                        long remaining = end >= 0 ? (end - cur + 1) : Long.MAX_VALUE;
+                        if (remaining <= 0) {
+                            break;
+                        }
+
+                        int toRead = (int) Math.min(buffer.length, remaining);
                         read = is.read(buffer, 0, toRead);
                         if (read == -1) {
-                            if (!paused && !Thread.currentThread().isInterrupted() && bytesRemaining > 0 && segment.endOffset() >= 0 && segment.currentOffset() <= segment.endOffset()) {
+                            if (!paused && !Thread.currentThread().isInterrupted() && segment.endOffset() >= 0 && segment.currentOffset() <= segment.endOffset()) {
                                 throw new java.io.EOFException("Premature end of stream for segment " + segment.index() + ": expected " + (segment.endOffset() + 1) + " bytes, got " + segment.currentOffset());
                             }
                             break;
@@ -130,7 +137,6 @@ public class SegmentWorker implements Callable<Void> {
                         }
                         channel.writeAt(segment.currentOffset(), buffer, read);
                         segment.updateOffset(segment.currentOffset() + read);
-                        bytesRemaining -= read;
                         if (progressCallback != null) {
                             progressCallback.onProgress(segment, read);
                         }
@@ -173,5 +179,13 @@ public class SegmentWorker implements Callable<Void> {
 
     public void pause() {
         this.paused = true;
+    }
+
+    public boolean isPaused() {
+        return paused;
+    }
+
+    public DownloadSegment getSegment() {
+        return segment;
     }
 }

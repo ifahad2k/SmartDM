@@ -26,6 +26,33 @@ public class SegmentedFileChannel implements AutoCloseable {
     }
 
     /**
+     * Pre-allocates disk storage for the file up to totalSize.
+     * Prevents NTFS/ext4 fragmentation and file expansion stalls during multi-stream downloads.
+     */
+    public void preallocate(long totalSize) {
+        if (totalSize <= 0) return;
+        try {
+            if (channel != null && channel.isOpen() && channel.size() < totalSize) {
+                ByteBuffer zeroBuf = ByteBuffer.allocate(1);
+                zeroBuf.put((byte) 0);
+                zeroBuf.flip();
+                channel.write(zeroBuf, totalSize - 1);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Writes direct or heap ByteBuffer at the specified offset.
+     */
+    public void writeAt(long offset, ByteBuffer buffer) throws IOException {
+        long currentOffset = offset;
+        while (buffer.hasRemaining()) {
+            int written = channel.write(buffer, currentOffset);
+            currentOffset += written;
+        }
+    }
+
+    /**
      * Writes data at the specified offset. Thread-safe for positional writes
      * on standard JVM implementations (FileChannel.write(buf, pos) is atomic
      * for non-overlapping regions).

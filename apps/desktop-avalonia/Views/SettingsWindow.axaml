@@ -1,0 +1,444 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SmartDm.Desktop.Avalonia.ViewModels"
+        x:Class="SmartDm.Desktop.Avalonia.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Icon="/Assets/SDM_2.0_logo.png"
+        Title="SmartDM 2.0 — Settings &amp; Preferences"
+        Width="920" Height="680"
+        MinWidth="780" MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
+        Background="{DynamicResource AppBackground}">
+
+    <Grid RowDefinitions="36,*,56">
+        
+        <!-- 1. CUSTOM UNIFIED TITLEBAR -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 — Settings &amp; Preferences" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center" Margin="0,0,140,0">
+                    <TextBlock Text="CONFIG: LIVE" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 2. MAIN 2-COLUMN SETTINGS BODY -->
+        <Grid Grid.Row="1" ColumnDefinitions="230,*">
+            
+            <!-- LEFT NAVIGATION SIDEBAR -->
+            <Border Grid.Column="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,1,0" Padding="14,16">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="PREFERENCES" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" Margin="8,0,0,6" />
+                    
+                    <!-- General Tab -->
+                    <Button Command="{Binding SelectTabCommand}" CommandParameter="General" 
+                            Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="6">
+                        <Panel>
+                            <Border IsVisible="{Binding IsGeneralTab}" Background="{DynamicResource AccentLight}" CornerRadius="6" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/settings-gray.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="General &amp; System" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <Border IsVisible="{Binding !IsGeneralTab}" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/settings-gray.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="General &amp; System" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Panel>
+                    </Button>
+
+                    <!-- Network & Engine Tab -->
+                    <Button Command="{Binding SelectTabCommand}" CommandParameter="Network" 
+                            Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="6">
+                        <Panel>
+                            <Border IsVisible="{Binding IsNetworkTab}" Background="{DynamicResource AccentLight}" CornerRadius="6" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/pulse-blue.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="Network &amp; Engine" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <Border IsVisible="{Binding !IsNetworkTab}" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/pulse-blue.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="Network &amp; Engine" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Panel>
+                    </Button>
+
+                    <!-- Updates Tab -->
+                    <Button Command="{Binding SelectTabCommand}" CommandParameter="Updates" 
+                            Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="6">
+                        <Panel>
+                            <Border IsVisible="{Binding IsUpdatesTab}" Background="{DynamicResource AccentLight}" CornerRadius="6" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/transfers-blue.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="Updates &amp; Releases" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <Border IsVisible="{Binding !IsUpdatesTab}" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/transfers-gray.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="Updates &amp; Releases" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Panel>
+                    </Button>
+
+                    <!-- AI Assistant Tab -->
+                    <Button Command="{Binding SelectTabCommand}" CommandParameter="AI" 
+                            Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="6">
+                        <Panel>
+                            <Border IsVisible="{Binding IsAiTab}" Background="{DynamicResource AccentLight}" CornerRadius="6" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/matrix-green.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="AI Assistant" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <Border IsVisible="{Binding !IsAiTab}" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/matrix-green.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="AI Assistant" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Panel>
+                    </Button>
+
+                    <!-- Help & Support Tab -->
+                    <Button Command="{Binding SelectTabCommand}" CommandParameter="Help" 
+                            Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="6">
+                        <Panel>
+                            <Border IsVisible="{Binding IsHelpTab}" Background="{DynamicResource AccentLight}" CornerRadius="6" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/shield-gray.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="Help &amp; Support" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <Border IsVisible="{Binding !IsHelpTab}" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/shield-gray.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="Help &amp; Support" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Panel>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- RIGHT CONTENT AREA -->
+            <ScrollViewer Grid.Column="1" Padding="24,20">
+                <StackPanel Spacing="20">
+                    
+                    <!-- TAB 1: GENERAL & SYSTEM -->
+                    <StackPanel IsVisible="{Binding IsGeneralTab}" Spacing="16">
+                        <TextBlock Text="System Behavior &amp; Preferences" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
+                        
+                        <!-- Run on Startup Card -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="3">
+                                    <TextBlock Text="Launch on System Startup" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="Automatically start SmartDM in the background tray when computer turns on." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" IsChecked="{Binding RunOnStartup}" OnContent="" OffContent="" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Close to Tray Card -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="3">
+                                    <TextBlock Text="Minimize to Tray on Close (X button)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="Closing the main window keeps downloads running in the background notification tray." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" IsChecked="{Binding CloseToTray}" OnContent="" OffContent="" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Default Download Directory Card -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Default Download Directory" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                <TextBlock Text="Target folder for automatically routing completed downloads and new tasks." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                    <TextBox Grid.Column="0" Text="{Binding DefaultDownloadDirectory}" FontSize="12" Padding="8,6" Margin="0,0,8,0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" />
+                                    <Button Grid.Column="1" Command="{Binding BrowseDirectoryCommand}" Content="Browse..." Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="12,6" CornerRadius="6" FontSize="12" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Theme Selection Card -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="3">
+                                    <TextBlock Text="Interface Theme Mode" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="Choose between System Default (follow OS theme), Clean White, or Deep Dark." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                </StackPanel>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding ThemeOptions}" SelectedItem="{Binding SelectedTheme}" Width="150" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Application Removal & Data Wipe Card -->
+                        <Border Background="#12EF4444" BorderBrush="#33EF4444" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Application Removal &amp; Advanced Cleanup" FontWeight="Bold" FontSize="13" Foreground="#EF4444" />
+                                <TextBlock Text="Unregister browser native messaging bridges, remove autostart entries, and optionally wipe database." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" />
+                                <CheckBox IsChecked="{Binding EraseDataOnUninstall}" Content="Fully erase database, history, and AppData directory" FontSize="11.5" Foreground="{DynamicResource PrimaryText}" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="{Binding UninstallStatus}" FontSize="11" Foreground="#EF4444" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="1" Command="{Binding PerformUninstallCommand}" Content="Uninstall SmartDM..." Background="#EF4444" Foreground="White" FontWeight="Bold" Padding="12,6" CornerRadius="6" FontSize="11.5" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- TAB 2: NETWORK & ENGINE -->
+                    <StackPanel IsVisible="{Binding IsNetworkTab}" Spacing="16">
+                        <TextBlock Text="Download Engine &amp; Slicing Parameters" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
+                        
+                        <!-- Parallel Segments Slider -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="3">
+                                        <TextBlock Text="Maximum Parallel Connection Segments" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="Slice incoming streams into parallel TCP connections for full line-rate saturation." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="10,2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding MaxParallelSegments, StringFormat='{}{0} Threads'}" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" />
+                                    </Border>
+                                </Grid>
+                                <Slider Minimum="1" Maximum="16" Value="{Binding MaxParallelSegments}" IsSnapToTickEnabled="True" TickFrequency="1" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Speed Limiter -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="3">
+                                        <TextBlock Text="Global Download Speed Limiter" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="Throttle aggregate download bandwidth to preserve network for other devices." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableSpeedLimit}" OnContent="" OffContent="" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel IsVisible="{Binding EnableSpeedLimit}" Spacing="4" Margin="0,6,0,0">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="Bandwidth Ceiling" FontSize="11" Foreground="{DynamicResource MutedText}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding DefaultSpeedLimitKbps, StringFormat='{}{0} KB/s'}" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource PrimaryAccent}" />
+                                    </Grid>
+                                    <Slider Minimum="100" Maximum="10000" Value="{Binding DefaultSpeedLimitKbps}" IsSnapToTickEnabled="True" TickFrequency="100" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Connection Timeout & Retries -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <Grid ColumnDefinitions="*,Auto,30,*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="3">
+                                    <TextBlock Text="Socket Timeout" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="Seconds before probe/slice retry" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                                </StackPanel>
+                                <NumericUpDown Grid.Column="1" Value="{Binding ConnectionTimeoutSeconds}" Minimum="5" Maximum="60" Width="100" VerticalAlignment="Center" />
+
+                                <StackPanel Grid.Column="3" Spacing="3">
+                                    <TextBlock Text="Max Segment Retries" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
+                                    <TextBlock Text="Automatic failover reconnects" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                                </StackPanel>
+                                <NumericUpDown Grid.Column="4" Value="{Binding MaxRetries}" Minimum="1" Maximum="10" Width="100" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- User Agent -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Custom HTTP User-Agent Header" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
+                                <TextBox Text="{Binding UserAgent}" FontSize="11.5" Padding="8,6" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" FontFamily="Cascadia Code, Consolas, monospace" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- TAB 3: UPDATES & RELEASES -->
+                    <StackPanel IsVisible="{Binding IsUpdatesTab}" Spacing="16">
+                        <TextBlock Text="Application Releases &amp; Verification" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
+                        
+                        <!-- Version & Check Card -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="12">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Current Version" FontSize="11" Foreground="{DynamicResource MutedText}" />
+                                        <TextBlock Text="{Binding CurrentVersion, StringFormat='{}SmartDM v{0}'}" FontWeight="ExtraBold" FontSize="15" Foreground="{DynamicResource PrimaryText}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Command="{Binding CheckForUpdatesCommand}" IsEnabled="{Binding !IsCheckingUpdates}"
+                                            Background="{DynamicResource PrimaryAccent}" Foreground="White" FontWeight="Bold" Padding="14,8" CornerRadius="6" FontSize="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Image Source="/Assets/Icons/transfers-blue.png" Width="13" Height="13" VerticalAlignment="Center" />
+                                            <TextBlock Text="Check for Updates Now" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <CheckBox IsChecked="{Binding AutoCheckUpdates}" Content="Automatically check for new SmartDM releases on startup" FontSize="11.5" Foreground="{DynamicResource PrimaryText}" />
+
+                                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="12">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="{Binding UpdateStatusText}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" />
+                                        <ProgressBar IsVisible="{Binding IsDownloadingUpdate}" Value="{Binding UpdateProgress}" Minimum="0" Maximum="100" Height="6" CornerRadius="3" Foreground="{DynamicResource PrimaryAccent}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Button IsVisible="{Binding IsUpdateAvailable}" Command="{Binding DownloadAndInstallUpdateCommand}" IsEnabled="{Binding !IsDownloadingUpdate}"
+                                        Background="{DynamicResource SuccessColor}" Foreground="White" FontWeight="Bold" Padding="16,9" CornerRadius="6" FontSize="12" HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding LatestVersion, StringFormat='{}Download &amp; Install Release {0}'}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- TAB 4: AI ASSISTANT -->
+                    <StackPanel IsVisible="{Binding IsAiTab}" Spacing="16">
+                        <TextBlock Text="SmartDM AI Assistant Integration" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
+                        
+                        <!-- Host Hardware Capability Diagnostics (Matching v1) -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="HOST HARDWARE CAPABILITY DIAGNOSTICS" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                <TextBlock Text="{Binding HardwareSummary}" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
+                                <TextBlock Text="{Binding HardwareRecommendation}" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Provider Mode Selection -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Active AI Engine Mode" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                <Grid ColumnDefinitions="*,*,*">
+                                    <Button Grid.Column="0" Command="{Binding SetProviderCommand}" CommandParameter="DISABLED" 
+                                            Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="10,8" CornerRadius="6" Margin="0,0,4,0">
+                                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                                            <TextBlock Text="100% Offline" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Disabled / No AI" FontSize="10" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Column="1" Command="{Binding SetProviderCommand}" CommandParameter="GEMINI" 
+                                            Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="10,8" CornerRadius="6" Margin="4,0,4,0">
+                                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                                            <TextBlock Text="Google Gemini" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Free Cloud API" FontSize="10" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Column="2" Command="{Binding SetProviderCommand}" CommandParameter="OPENAI_COMPATIBLE" 
+                                            Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="10,8" CornerRadius="6" Margin="4,0,0,0">
+                                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                                            <TextBlock Text="Local Ollama" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource SuccessColor}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Local LLM (qwen/llama)" FontSize="10" Foreground="{DynamicResource MutedText}" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Gemini Options Card -->
+                        <Border IsVisible="{Binding IsAiGemini}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Google Gemini API Configuration" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource PrimaryAccent}" />
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Gemini API Key" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                    <TextBox Text="{Binding GeminiApiKey}" PasswordChar="•" FontSize="12" Padding="8,6" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" />
+                                </StackPanel>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="API Endpoint URL" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                    <TextBox Text="{Binding GeminiBaseUrl}" FontSize="11.5" Padding="8,6" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Ollama Options Card -->
+                        <Border IsVisible="{Binding IsAiOllama}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Local Ollama / OpenAI-Compatible Engine" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource SuccessColor}" />
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Ollama Endpoint Base URL" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                    <TextBox Text="{Binding OllamaBaseUrl}" FontSize="12" Padding="8,6" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" />
+                                </StackPanel>
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                    <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,10,0">
+                                        <TextBlock Text="Installed Model" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                        <ComboBox ItemsSource="{Binding AvailableOllamaModels}" SelectedItem="{Binding SelectedOllamaModel}" HorizontalAlignment="Stretch" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Command="{Binding DetectOllamaModelsCommand}" Content="Detect Models" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="12,7" CornerRadius="6" VerticalAlignment="Bottom" FontSize="12" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Status Bar -->
+                        <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10">
+                            <TextBlock Text="{Binding AiStatusMessage}" FontSize="11.5" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- TAB 5: HELP & SUPPORT -->
+                    <StackPanel IsVisible="{Binding IsHelpTab}" Spacing="16">
+                        <TextBlock Text="Help, Diagnostics &amp; About" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
+                        
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Image Source="/Assets/SDM_2.0_logo.png" Width="40" Height="40" VerticalAlignment="Center" />
+                                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="SmartDM 2.0 Pro" FontWeight="ExtraBold" FontSize="16" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="High-Performance Cross-Platform Parallel Download Engine" FontSize="12" Foreground="{DynamicResource SecondaryText}" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <TextBlock Text="SmartDM is engineered for high-throughput segmented downloads with zero tracking, local SQLite persistence, RTLO security validation, and browser native integration." FontSize="12" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" LineHeight="18" />
+                                
+                                <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Command="{Binding OpenUrlCommand}" CommandParameter="{Binding BugReportUrl}" 
+                                            Background="#EF4444" Foreground="White" FontWeight="Bold" Padding="12,7" CornerRadius="6" FontSize="11.5" Margin="0,0,8,8">
+                                        <TextBlock Text="🐛 Report a Bug / Issues" />
+                                    </Button>
+                                    <Button Command="{Binding OpenUrlCommand}" CommandParameter="{Binding GitHubRepoUrl}" 
+                                            Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="12,7" CornerRadius="6" FontSize="11.5" Margin="0,0,8,8">
+                                        <TextBlock Text="⭐ GitHub Repository" Foreground="{DynamicResource PrimaryText}" />
+                                    </Button>
+                                    <Button Command="{Binding OpenAppDataFolderCommand}" 
+                                            Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" Padding="12,7" CornerRadius="6" FontSize="11.5" Margin="0,0,8,8">
+                                        <TextBlock Text="📁 Open .smartdm Data Folder" Foreground="{DynamicResource PrimaryText}" />
+                                    </Button>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Privacy Commitment Card -->
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="🔒 100% LOCAL PRIVACY GUARANTEE" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+                                <TextBlock Text="Zero tracking, zero analytics, zero external phone-home servers. Your downloads, links, and credentials are stored strictly on your local disk in ~/.smartdm/." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" LineHeight="18" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- 3. BOTTOM ACTION FOOTER -->
+        <Border Grid.Row="2" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="18,10">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock Grid.Column="0" Text="Changes take effect immediately upon saving." FontSize="11" Foreground="{DynamicResource MutedText}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Command="{Binding CancelCommand}" Content="Cancel" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource SecondaryText}" FontWeight="SemiBold" FontSize="12" Padding="14,7" Margin="0,0,8,0" />
+                <Button Grid.Column="2" Command="{Binding SaveCommand}" Content="Save &amp; Apply Changes" Background="{DynamicResource PrimaryAccent}" Foreground="White" FontWeight="Bold" FontSize="12" CornerRadius="6" Padding="16,8" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

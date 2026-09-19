@@ -30,6 +30,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +40,17 @@ import org.slf4j.LoggerFactory;
  */
 public class SingleDownloadCoordinator {
     private static final Logger log = LoggerFactory.getLogger(SingleDownloadCoordinator.class);
+
+    static {
+        try {
+            if (System.getProperty("jdk.httpclient.receiveBufferSize") == null) {
+                System.setProperty("jdk.httpclient.receiveBufferSize", "1048576"); // 1 MB TCP window scale
+            }
+            if (System.getProperty("jdk.httpclient.connectionPoolSize") == null) {
+                System.setProperty("jdk.httpclient.connectionPoolSize", "64");
+            }
+        } catch (Throwable ignored) {}
+    }
     
     private final DownloadRepository repository;
     private final CategoryRepository categoryRepository;
@@ -52,8 +65,8 @@ public class SingleDownloadCoordinator {
     private static class DownloadSession {
         final Download download;
         volatile SegmentedFileChannel channel;
-        final List<SegmentWorker> workers = new ArrayList<>();
-        final List<Future<Void>> futures = new ArrayList<>();
+        final List<SegmentWorker> workers = new CopyOnWriteArrayList<>();
+        final List<Future<Void>> futures = new CopyOnWriteArrayList<>();
         volatile boolean cancelled = false;
         volatile boolean paused = false;
         volatile boolean queued = false;
@@ -81,7 +94,11 @@ public class SingleDownloadCoordinator {
         this.eventPublisher = eventPublisher;
         this.tempDir = tempDir;
         this.rateLimiter = rateLimiter;
-        this.segmentExecutor = new java.util.concurrent.ThreadPoolExecutor(4, 32, 60L, TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(), r -> { Thread t = new Thread(r, "segment-worker"); t.setDaemon(true); return t; }, new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+        this.segmentExecutor = Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "segment-worker");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     public void execute(Download download) {
@@ -213,27 +230,31 @@ public class SingleDownloadCoordinator {
             // ── Phase 2: Execute Workers ──────────────────────────────────────
             channel = new SegmentedFileChannel(download.destination(), tempDir, download.id().value() + ".part");
             session.channel = channel;
+            long totalExpectedSize = probeResult.size().value();
+            if (totalExpectedSize > 0) {
+                channel.preallocate(totalExpectedSize);
+            }
 
             HttpRequest baseRequest = HttpRequestFactory.createBuilder(download.source(), download.credential())
                     .GET()
                     .build();
 
-            long[] lastSaveTime = {System.currentTimeMillis()};
-            long[] lastProgressPublishTime = {0};
+            AtomicLong lastSaveTime = new AtomicLong(System.currentTimeMillis());
+            AtomicLong lastProgressPublishTime = new AtomicLong(0);
             SegmentWorker.ProgressCallback callback = (segment, read) -> {
                 long now = System.currentTimeMillis();
-                if (now - lastProgressPublishTime[0] >= 100) {
-                    lastProgressPublishTime[0] = now;
-                    eventPublisher.publish(new DownloadEvent.ProgressUpdated(
-                            download.id(), download.downloadedBytes(), download.totalBytes(), download));
+                long prevPub = lastProgressPublishTime.get();
+                if (now - prevPub >= 100) {
+                    if (lastProgressPublishTime.compareAndSet(prevPub, now)) {
+                        eventPublisher.publish(new DownloadEvent.ProgressUpdated(
+                                download.id(), download.downloadedBytes(), download.totalBytes(), download));
+                    }
                 }
-                if (now - lastSaveTime[0] > 5000) {
-                    synchronized (lastSaveTime) {
-                        if (now - lastSaveTime[0] > 5000) {
-                            try { session.channel.force(true); } catch(Exception ignored){}
-                            repository.save(download);
-                            lastSaveTime[0] = now;
-                        }
+                long prevSave = lastSaveTime.get();
+                if (now - prevSave > 5000) {
+                    if (lastSaveTime.compareAndSet(prevSave, now)) {
+                        try { session.channel.force(false); } catch(Exception ignored){}
+                        repository.save(download);
                     }
                 }
             };
@@ -246,15 +267,45 @@ public class SingleDownloadCoordinator {
                 session.futures.add(segmentExecutor.submit(worker));
             }
 
-            // Wait for all to finish
+            // Dynamic Work-Stealing Supervisor Loop
+            boolean canWorkSteal = probeResult.acceptsRanges() && totalExpectedSize > 0;
+            int maxConcurrency = Math.min(32, Math.max(8, download.segments().size() * 2));
+            long minStealSize = Math.min(4 * 1024 * 1024L, Math.max(512 * 1024L, totalExpectedSize / 32));
+
             boolean workerFailed = false;
-            for (Future<Void> future : session.futures) {
-                try {
-                    future.get();
-                } catch (Exception e) {
-                    if (!isAcceptableEndOfStream(e)) {
-                        workerFailed = true;
+            while (!session.cancelled && !session.paused && !session.queued) {
+                boolean allFinished = true;
+                int activeCount = 0;
+
+                for (Future<Void> future : session.futures) {
+                    if (future.isDone()) {
+                        try {
+                            future.get();
+                        } catch (Exception e) {
+                            if (!isAcceptableEndOfStream(e)) {
+                                workerFailed = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        allFinished = false;
+                        activeCount++;
                     }
+                }
+
+                if (workerFailed || allFinished) {
+                    break;
+                }
+
+                if (canWorkSteal && activeCount < maxConcurrency) {
+                    stealWorkIfPossible(session, download, channel, baseRequest, callback, minStealSize);
+                }
+
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
 
@@ -315,7 +366,7 @@ public class SingleDownloadCoordinator {
                 try {
                     java.security.MessageDigest digest = java.security.MessageDigest.getInstance(algorithm);
                     try (java.io.InputStream is = java.nio.file.Files.newInputStream(channel.getTempFile())) {
-                        byte[] buffer = new byte[65536];
+                        byte[] buffer = new byte[1048576]; // 1 MB high-speed hash verification buffer
                         int read;
                         while ((read = is.read(buffer)) != -1) {
                             digest.update(buffer, 0, read);
@@ -370,9 +421,46 @@ public class SingleDownloadCoordinator {
     }
 
     private int calculateDynamicSegments(long totalSize) {
-        if (totalSize < 5 * 1024 * 1024) return 1;
-        if (totalSize < 50 * 1024 * 1024) return 4;
-        return 8;
+        if (totalSize < 2 * 1024 * 1024) return 1;
+        if (totalSize < 20 * 1024 * 1024) return 4;
+        if (totalSize < 100 * 1024 * 1024) return 8;
+        return 16;
+    }
+
+    private void stealWorkIfPossible(
+            DownloadSession session,
+            Download download,
+            SegmentedFileChannel channel,
+            HttpRequest baseRequest,
+            SegmentWorker.ProgressCallback callback,
+            long minStealSize) {
+
+        DownloadSegment candidate = null;
+        long maxRemaining = minStealSize - 1;
+
+        for (DownloadSegment seg : download.segments()) {
+            long rem = seg.remainingBytes();
+            if (rem > maxRemaining) {
+                maxRemaining = rem;
+                candidate = seg;
+            }
+        }
+
+        if (candidate != null) {
+            int newIndex = download.segments().size();
+            DownloadSegment stolen = candidate.split(newIndex, minStealSize);
+            if (stolen != null) {
+                download.segments().add(stolen);
+                SegmentWorker newWorker = new SegmentWorker(
+                        httpClient, baseRequest, stolen, channel, rateLimiter,
+                        callback, download.etag(), download.lastModified(), true
+                );
+                session.workers.add(newWorker);
+                session.futures.add(segmentExecutor.submit(newWorker));
+                log.debug("Work stolen: bisected segment {} at {}, spawned segment {} [{} - {}]",
+                        candidate.index(), candidate.endOffset(), stolen.index(), stolen.startOffset(), stolen.endOffset());
+            }
+        }
     }
 
     public void pause(DownloadId id) {

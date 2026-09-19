@@ -37,9 +37,6 @@ public class HttpRequestFactory {
                 .header("User-Agent", userAgent)
                 .header("Accept", "*/*")
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Sec-Fetch-Dest", "document")
-                .header("Sec-Fetch-Mode", "navigate")
-                .header("Sec-Fetch-Site", "same-origin")
                 .header("Accept-Encoding", "identity");
 
         String urlStr = uri.value().toString().toLowerCase();
@@ -49,8 +46,6 @@ public class HttpRequestFactory {
             builder.header("Referer", "https://www.facebook.com/");
         } else if (urlStr.contains("instagram.com") || urlStr.contains("cdninstagram.com")) {
             builder.header("Referer", "https://www.instagram.com/");
-        } else if (uri.value().getHost() != null) {
-            builder.header("Referer", uri.value().getScheme() + "://" + uri.value().getHost() + "/");
         }
 
         if (credential != null) {

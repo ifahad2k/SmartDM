@@ -389,4 +389,47 @@ class SingleDownloadCoordinatorTest {
         Path partFile = tempDir.resolve("parts").resolve(dl.id().value() + ".part");
         assertTrue(Files.exists(partFile), "Part file must exist for resumed downloads");
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // 13. Dynamic Segment Splitting & Work Stealing Unit Verification
+    // ────────────────────────────────────────────────────────────────────
+    @Test
+    void testDynamicSegmentSplitAndStealIntegrity() {
+        // Segment covering 0 to 1,000,000 bytes (~1 MB)
+        io.smartdm.domain.DownloadSegment parent = new io.smartdm.domain.DownloadSegment(0, 0, 200_000, 1_000_000);
+        assertEquals(800_001, parent.remainingBytes());
+
+        // Split with min threshold 500_000
+        io.smartdm.domain.DownloadSegment child = parent.split(1, 500_000);
+        assertNotNull(child);
+        assertEquals(1, child.index());
+
+        // Parent should now end at midpoint: 200_000 + 400_000 = 600_000
+        assertEquals(600_000, parent.endOffset());
+        assertEquals(600_001, child.startOffset());
+        assertEquals(600_001, child.currentOffset());
+        assertEquals(1_000_000, child.endOffset());
+
+        // Total remaining bytes across parent and child must equal the original remaining bytes
+        assertEquals(800_001, parent.remainingBytes() + child.remainingBytes());
+
+        // Split child again with threshold 100_000
+        io.smartdm.domain.DownloadSegment grandChild = child.split(2, 100_000);
+        assertNotNull(grandChild);
+        assertEquals(2, grandChild.index());
+        assertEquals(1_000_000, grandChild.endOffset());
+        assertEquals(child.endOffset() + 1, grandChild.startOffset());
+
+        // Sum of all chunks must preserve exact total range from 0 to 1,000,000 without gaps or overlaps
+        assertEquals(1_000_001, parent.totalBytes() + child.totalBytes() + grandChild.totalBytes());
+    }
+
+    @Test
+    void testDynamicSegmentSplitRejectionWhenBelowThreshold() {
+        io.smartdm.domain.DownloadSegment seg = new io.smartdm.domain.DownloadSegment(0, 0, 950, 1000);
+        // remaining = 51 bytes. Attempting to split with 100 byte threshold should return null
+        io.smartdm.domain.DownloadSegment stolen = seg.split(1, 100);
+        assertNull(stolen);
+        assertEquals(1000, seg.endOffset()); // Unchanged
+    }
 }

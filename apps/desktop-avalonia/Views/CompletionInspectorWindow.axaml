@@ -4,24 +4,28 @@
         x:Class="SmartDm.Desktop.Avalonia.Views.CompletionInspectorWindow"
         x:DataType="vm:CompletionInspectorViewModel"
         Icon="/Assets/SDM_2.0_logo.png"
-        Title="SmartDM 2.0 â€¢ Completion Inspector"
+        Title="SmartDM 2.0 • Completion Inspector"
         Width="940" Height="620"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="CenterScreen"
         CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
         Background="{DynamicResource ElevatedBackground}">
 
-    <Grid RowDefinitions="Auto,*">
-        <!-- Titlebar -->
-        <Border Grid.Row="0" Height="40" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
-            <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" />
-                    <TextBlock Text="SmartDM 2.0 â€¢ Completion Inspector" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" />
-                    <Border Background="{DynamicResource BorderColor}" CornerRadius="4" Padding="6,2">
+    <Grid RowDefinitions="36,*">
+        <!-- Unified Native Titlebar (Extended Client Area) -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 • Completion Inspector" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <Border Background="{DynamicResource BorderColor}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
                         <TextBlock Text="Session #4882" FontSize="10" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
                     </Border>
                 </StackPanel>
-                <Button Grid.Column="1" Command="{Binding DismissCommand}" Background="Transparent" BorderThickness="0" Content="✕" FontSize="12" Foreground="{DynamicResource MutedText}" />
+                <!-- Right column leaves room for native OS caption buttons (minimize, maximize, close) -->
+                <Border Grid.Column="2" Width="140" />
             </Grid>
         </Border>
 
@@ -31,8 +35,8 @@
                 <!-- Top Header Banner -->
                 <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="18">
                     <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Border Grid.Column="0" Width="50" Height="50" Background="#34D399" CornerRadius="12" Margin="0,0,16,0">
-                            <TextBlock Text="âœ“" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Border Grid.Column="0" Width="50" Height="50" Background="#16A34A" CornerRadius="12" Margin="0,0,16,0">
+                            <Image Source="/Assets/Icons/check-white.png" Width="26" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
 
                         <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
@@ -77,11 +81,11 @@
                         <StackPanel Spacing="14">
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <Border Width="40" Height="40" Background="#E0F2FE" CornerRadius="8">
-                                    <TextBlock Text="ðŸ“" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <Image Source="/Assets/Icons/archive-gray.png" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <StackPanel Spacing="2" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Download.Title, FallbackValue='Cyberpunk_2077_Update_v2.1.zip'}" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource PrimaryText}" />
-                                    <TextBlock Text="application/x-zip-compressed â€¢ Solid Multi-Volume" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                                    <TextBlock Text="application/x-zip-compressed • Solid Multi-Volume" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
                                 </StackPanel>
                             </StackPanel>
 
@@ -106,8 +110,11 @@
                                 <TextBlock Text="SAVED LOCATION" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
                                 <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8">
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Text="{Binding SavedLocation}" FontSize="11" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
-                                        <TextBlock Grid.Column="1" Text="ðŸ”— Copy Path" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}" />
+                                        <TextBlock Grid.Column="0" Text="{Binding SavedLocation}" FontSize="11" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                            <Image Source="/Assets/Icons/copy-blue.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                            <TextBlock Text="Copy Path" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -118,9 +125,15 @@
                     <Border Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="8,0,0,0">
                         <StackPanel Spacing="12">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Text="ðŸ›¡ï¸ SECURITY &amp; INTEGRITY VAULT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />
-                                <Border Background="#D1FAE5" CornerRadius="4" Padding="6,1">
-                                    <TextBlock Text="â— Passed" FontSize="10" FontWeight="Bold" Foreground="#065F46" />
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/shield-check-green.png" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="SECURITY &amp; INTEGRITY VAULT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#D1FAE5" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                        <Ellipse Width="5" Height="5" Fill="#065F46" VerticalAlignment="Center" />
+                                        <TextBlock Text="Passed" FontSize="10" FontWeight="Bold" Foreground="#065F46" VerticalAlignment="Center" />
+                                    </StackPanel>
                                 </Border>
                             </Grid>
 
@@ -130,7 +143,7 @@
                                         <TextBlock Text="Windows Defender Endpoint" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource PrimaryText}" />
                                         <TextBlock Text="{Binding DefenderStatus}" FontSize="10.5" Foreground="{DynamicResource SuccessColor}" FontWeight="SemiBold" />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="âœ“" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                                    <Image Grid.Column="1" Source="/Assets/Icons/check-green.png" Width="14" Height="14" VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
 
@@ -140,17 +153,20 @@
                                         <TextBlock Text="SmartDM Heuristic Engine" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource PrimaryText}" />
                                         <TextBlock Text="{Binding HeuristicStatus}" FontSize="10.5" Foreground="{DynamicResource SuccessColor}" FontWeight="SemiBold" />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="âœ“" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                                    <Image Grid.Column="1" Source="/Assets/Icons/check-green.png" Width="14" Height="14" VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
 
                             <StackPanel Spacing="4">
                                 <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="SHA-256 FINGERPRINT" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
-                                    <TextBlock Grid.Column="1" Text="Match with clipboard Verified âœ“" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+                                    <TextBlock Grid.Column="0" Text="SHA-256 FINGERPRINT" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock Text="Match with clipboard Verified" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
+                                        <Image Source="/Assets/Icons/check-green.png" Width="10" Height="10" VerticalAlignment="Center" />
+                                    </StackPanel>
                                 </Grid>
                                 <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="8">
-                                    <TextBlock Text="{Binding Sha256Hash}" FontSize="10" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                                    <TextBlock Text="{Binding Sha256Hash}" FontSize="9.5" Foreground="{DynamicResource PrimaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
                                 </Border>
                             </StackPanel>
                         </StackPanel>
@@ -160,9 +176,24 @@
                 <!-- Actions -->
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                        <Button Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="16,8" FontSize="12.5" FontWeight="Bold" Content="â–· Quick Open File" />
-                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="ðŸ“ Open Enclosing Folder" />
-                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="ðŸ“¦ Extract to /Archives/" />
+                        <Button Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="16,8" FontSize="12.5" FontWeight="Bold">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/play-white.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                <TextBlock Text="Quick Open File" FontWeight="Bold" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/folder-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                <TextBlock Text="Open Enclosing Folder" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/archive-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                <TextBlock Text="Extract to /Archives/" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                     <Button Grid.Column="2" Command="{Binding DismissCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Dismiss" />
                 </Grid>

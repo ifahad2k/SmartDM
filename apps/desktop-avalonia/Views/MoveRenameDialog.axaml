@@ -1,0 +1,77 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SmartDm.Desktop.Avalonia.Views.MoveRenameDialog"
+        Icon="/Assets/SDM_2.0_logo.png"
+        Title="SmartDM 2.0 • Move / Rename Task"
+        Width="640" Height="410"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
+        Background="{DynamicResource ElevatedBackground}">
+
+    <Grid RowDefinitions="36,*">
+        <!-- Unified System Titlebar -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 • Move / Rename Task" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+                <Border Grid.Column="2" Width="140" />
+            </Grid>
+        </Border>
+
+        <!-- Body -->
+        <Grid Grid.Row="1" RowDefinitions="*,Auto" Margin="24">
+            <StackPanel Grid.Row="0" Spacing="16">
+                <!-- Target File Banner -->
+                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14,10">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Grid.Column="0" Width="36" Height="36" Background="{DynamicResource AccentLight}" CornerRadius="6" Margin="0,0,12,0">
+                            <Image Source="/Assets/Icons/folder-gray.png" Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="FileTitleBanner" Text="Filename.zip" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource PrimaryText}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="Modify target file name or relocate destination download directory." FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- New File Name -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="TARGET FILE NAME" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <TextBox x:Name="FileNameBox" Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource PrimaryText}" BorderBrush="{DynamicResource BorderColor}" CornerRadius="6" Height="34" VerticalContentAlignment="Center" FontSize="12" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+
+                <!-- Destination Folder -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="DESTINATION FOLDER" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" x:Name="FolderPathBox" Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource PrimaryText}" BorderBrush="{DynamicResource BorderColor}" CornerRadius="6" Height="34" VerticalContentAlignment="Center" FontSize="11.5" FontFamily="Cascadia Code, Consolas, monospace" Margin="0,0,8,0" />
+                        <Button Grid.Column="1" Click="OnBrowseFolderClicked" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="12,7" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" FontSize="11.5">
+                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/folder-gray.png" Width="13" Height="13" VerticalAlignment="Center" />
+                                <TextBlock Text="Browse..." VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Status Feedback -->
+                <TextBlock x:Name="StatusMessageText" Text="Files on disk will be automatically moved or renamed." FontSize="11" Foreground="{DynamicResource SuccessColor}" FontFamily="Cascadia Code, Consolas, monospace" />
+            </StackPanel>
+
+            <!-- Bottom Buttons -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,16,0,0">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <Button Click="OnCancelClicked" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" FontSize="12">Cancel</Button>
+                    <Button Click="OnSaveClicked" Background="{DynamicResource PrimaryAccent}" CornerRadius="7" Padding="18,8" Foreground="White" FontWeight="Bold" FontSize="12">
+                        <TextBlock Text="Save Changes" Foreground="White" FontWeight="Bold" VerticalAlignment="Center" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

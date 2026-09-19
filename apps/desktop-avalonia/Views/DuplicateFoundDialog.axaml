@@ -1,0 +1,103 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SmartDm.Desktop.Avalonia.Views.DuplicateFoundDialog"
+        Icon="/Assets/SDM_2.0_logo.png"
+        Title="SmartDM 2.0 • Duplicate Download Detected"
+        Width="660" Height="440"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
+        Background="{DynamicResource ElevatedBackground}">
+
+    <Grid RowDefinitions="36,*">
+        <!-- Unified System Titlebar -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 • Duplicate File Detected" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                </StackPanel>
+                <Border Grid.Column="2" Width="140" />
+            </Grid>
+        </Border>
+
+        <!-- Body -->
+        <Grid Grid.Row="1" RowDefinitions="*,Auto" Margin="24">
+            <StackPanel Grid.Row="0" Spacing="16">
+                <!-- Header Alert Banner -->
+                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Grid.Column="0" Width="42" Height="42" Background="{DynamicResource AccentLight}" BorderBrush="{DynamicResource PrimaryAccent}" BorderThickness="1" CornerRadius="8" Margin="0,0,14,0">
+                            <Image Source="/Assets/Icons/search-gray.png" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                            <TextBlock Text="File Already Exists in Your System" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource PrimaryText}" />
+                            <TextBlock x:Name="HeaderPromptText" Text="SmartDM catalog search found this exact file already saved in your storage." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Matched File Card -->
+                <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Grid.Column="0" Width="40" Height="40" Background="{DynamicResource AccentLight}" CornerRadius="8" Margin="0,0,14,0">
+                            <Image x:Name="FileIconImage" Source="/Assets/Icons/disc-blue.png" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" x:Name="FileNameText" Text="Filename.zip" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource PrimaryText}" TextTrimming="CharacterEllipsis" />
+                                <Border Grid.Column="1" Background="#1A16A34A" CornerRadius="4" Padding="6,2">
+                                    <TextBlock x:Name="VerifiedStatusBadge" Text="✓ Verified on Disk" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="FilePathText" Text="E:\Downloads\Filename.zip" FontSize="11" Foreground="{DynamicResource PrimaryAccent}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="MatchReasonText" Text="Drive E:\ • 6.20 GB • Identical Download URL &amp; File Match" FontSize="10.5" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Explanatory Options Box -->
+                <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="14,10">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="CATALOG INTELLIGENCE" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                        <TextBlock Text="You can open the existing file directly or open its folder in File Explorer without consuming unnecessary internet bandwidth. If you still require a new copy, select 'Download Again'." FontSize="11" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" LineHeight="16" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Bottom Buttons Bar -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,16,0,0">
+                <!-- Left: Open File & Open Location -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                    <Button Click="OnOpenFileClicked" Background="{DynamicResource PrimaryAccent}" CornerRadius="7" Padding="14,8">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="/Assets/Icons/open-blue.png" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="Open File" FontWeight="Bold" FontSize="12" Foreground="White" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnOpenLocationClicked" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="/Assets/Icons/folder-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="Open Location" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Right: Download Again & Cancel -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <Button Click="OnCancelClicked" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" FontSize="12">
+                        Cancel
+                    </Button>
+                    <Button Click="OnDownloadAgainClicked" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="/Assets/Icons/arrow-down-blue.png" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="Download Again" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>
