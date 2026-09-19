@@ -46,15 +46,16 @@ public class DownloadSegment {
     }
 
     /**
-     * Atomically splits this segment if the remaining bytes >= minStealBytes.
+     * Atomically splits this segment proportionally according to ownerRatio (clamped between 0.20 and 0.80).
      * Contracts this segment's endOffset to midpoint, and returns a new DownloadSegment
      * covering [midpoint + 1, originalEndOffset].
      *
      * @param newIndex the index for the newly created segment
      * @param minStealBytes minimum bytes needed to justify splitting
+     * @param ownerRatio the proportion of remaining bytes retained by the current worker
      * @return the newly created stolen segment, or null if split is not possible
      */
-    public synchronized DownloadSegment split(int newIndex, long minStealBytes) {
+    public synchronized DownloadSegment split(int newIndex, long minStealBytes, double ownerRatio) {
         if (endOffset < 0) return null;
         long cur = currentOffset;
         long end = endOffset;
@@ -63,12 +64,21 @@ public class DownloadSegment {
         if (remaining < minStealBytes) {
             return null;
         }
-        long mid = cur + (remaining / 2);
+        double clampedRatio = Math.max(0.20, Math.min(0.80, ownerRatio));
+        long ownerShare = Math.round(remaining * clampedRatio);
+        long mid = cur + ownerShare - 1;
         if (mid <= cur || mid >= end) {
             return null;
         }
         this.endOffset = mid;
         return new DownloadSegment(newIndex, mid + 1, mid + 1, end);
+    }
+
+    /**
+     * Atomically splits this segment with default 50/50 bisection.
+     */
+    public synchronized DownloadSegment split(int newIndex, long minStealBytes) {
+        return split(newIndex, minStealBytes, 0.50);
     }
 
     public long downloadedBytes() {

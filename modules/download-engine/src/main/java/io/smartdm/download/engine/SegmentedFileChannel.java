@@ -27,16 +27,24 @@ public class SegmentedFileChannel implements AutoCloseable {
 
     /**
      * Pre-allocates disk storage for the file up to totalSize.
+     * Uses native Windows Win32 instant allocation when running on Windows,
+     * falling back to channel position allocation on other platforms.
      * Prevents NTFS/ext4 fragmentation and file expansion stalls during multi-stream downloads.
      */
     public void preallocate(long totalSize) {
         if (totalSize <= 0) return;
         try {
             if (channel != null && channel.isOpen() && channel.size() < totalSize) {
-                ByteBuffer zeroBuf = ByteBuffer.allocate(1);
-                zeroBuf.put((byte) 0);
-                zeroBuf.flip();
-                channel.write(zeroBuf, totalSize - 1);
+                boolean nativeAllocated = false;
+                if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
+                    nativeAllocated = WindowsFilePreallocator.tryPreallocate(tempFile, totalSize);
+                }
+                if (!nativeAllocated) {
+                    ByteBuffer zeroBuf = ByteBuffer.allocate(1);
+                    zeroBuf.put((byte) 0);
+                    zeroBuf.flip();
+                    channel.write(zeroBuf, totalSize - 1);
+                }
             }
         } catch (Exception ignored) {}
     }

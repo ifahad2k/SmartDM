@@ -259,18 +259,22 @@ public class SingleDownloadCoordinator {
                 }
             };
 
-            for (DownloadSegment segment : download.segments()) {
-                if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) continue;
-                boolean acceptsRanges = download.segments().size() > 1 || (download.totalBytes() != null && download.totalBytes().value() > 0);
-                SegmentWorker worker = new SegmentWorker(httpClient, baseRequest, segment, channel, rateLimiter, callback, download.etag(), download.lastModified(), acceptsRanges);
-                session.workers.add(worker);
-                session.futures.add(segmentExecutor.submit(worker));
-            }
-
-            // Dynamic Work-Stealing Supervisor Loop
+            // Dynamic Work-Stealing & Adaptive Slicing Configuration
             boolean canWorkSteal = probeResult.acceptsRanges() && totalExpectedSize > 0;
             int maxConcurrency = Math.min(32, Math.max(8, download.segments().size() * 2));
             long minStealSize = Math.min(4 * 1024 * 1024L, Math.max(512 * 1024L, totalExpectedSize / 32));
+
+            SegmentWorker.WorkStealingProvider warmSocketProvider = canWorkSteal
+                    ? (idleWorker, minSteal) -> stealWorkForWorker(session, download, idleWorker, Math.max(minSteal, minStealSize))
+                    : null;
+
+            for (DownloadSegment segment : download.segments()) {
+                if (segment.currentOffset() > segment.endOffset() && segment.endOffset() >= 0) continue;
+                boolean acceptsRanges = download.segments().size() > 1 || (download.totalBytes() != null && download.totalBytes().value() > 0);
+                SegmentWorker worker = new SegmentWorker(httpClient, baseRequest, segment, channel, rateLimiter, callback, download.etag(), download.lastModified(), acceptsRanges, warmSocketProvider);
+                session.workers.add(worker);
+                session.futures.add(segmentExecutor.submit(worker));
+            }
 
             boolean workerFailed = false;
             while (!session.cancelled && !session.paused && !session.queued) {
@@ -298,7 +302,7 @@ public class SingleDownloadCoordinator {
                 }
 
                 if (canWorkSteal && activeCount < maxConcurrency) {
-                    stealWorkIfPossible(session, download, channel, baseRequest, callback, minStealSize);
+                    stealWorkIfPossible(session, download, channel, baseRequest, callback, minStealSize, warmSocketProvider);
                 }
 
                 try {
@@ -427,38 +431,100 @@ public class SingleDownloadCoordinator {
         return 16;
     }
 
+    private DownloadSegment stealWorkForWorker(
+            DownloadSession session,
+            Download download,
+            SegmentWorker idleWorker,
+            long minStealSize) {
+
+        synchronized (download) {
+            if (session.cancelled || session.paused || session.queued) {
+                return null;
+            }
+
+            DownloadSegment candidate = null;
+            SegmentWorker candidateWorker = null;
+            long maxRemaining = minStealSize - 1;
+
+            for (SegmentWorker w : session.workers) {
+                if (w == idleWorker || w.isPaused()) continue;
+                DownloadSegment seg = w.getSegment();
+                if (seg != null) {
+                    long rem = seg.remainingBytes();
+                    if (rem > maxRemaining) {
+                        maxRemaining = rem;
+                        candidate = seg;
+                        candidateWorker = w;
+                    }
+                }
+            }
+
+            if (candidate != null) {
+                int newIndex = download.segments().size();
+                double ownerSpeed = candidateWorker != null ? Math.max(0.01, candidateWorker.getCurrentSpeedMBps()) : 1.0;
+                double idleSpeed = idleWorker != null ? Math.max(0.01, idleWorker.getCurrentSpeedMBps()) : 1.0;
+                double ownerRatio = ownerSpeed / (ownerSpeed + idleSpeed);
+
+                DownloadSegment stolen = candidate.split(newIndex, minStealSize, ownerRatio);
+                if (stolen != null) {
+                    download.segments().add(stolen);
+                    log.debug("Warm-socket work stolen: split segment {} (speed={}) at {}, assigned to worker (speed={}) for segment {} [{} - {}]",
+                            candidate.index(), String.format("%.2f", ownerSpeed), candidate.endOffset(),
+                            String.format("%.2f", idleSpeed), stolen.index(), stolen.startOffset(), stolen.endOffset());
+                    return stolen;
+                }
+            }
+            return null;
+        }
+    }
+
     private void stealWorkIfPossible(
             DownloadSession session,
             Download download,
             SegmentedFileChannel channel,
             HttpRequest baseRequest,
             SegmentWorker.ProgressCallback callback,
-            long minStealSize) {
+            long minStealSize,
+            SegmentWorker.WorkStealingProvider warmSocketProvider) {
 
-        DownloadSegment candidate = null;
-        long maxRemaining = minStealSize - 1;
-
-        for (DownloadSegment seg : download.segments()) {
-            long rem = seg.remainingBytes();
-            if (rem > maxRemaining) {
-                maxRemaining = rem;
-                candidate = seg;
+        synchronized (download) {
+            if (session.cancelled || session.paused || session.queued) {
+                return;
             }
-        }
 
-        if (candidate != null) {
-            int newIndex = download.segments().size();
-            DownloadSegment stolen = candidate.split(newIndex, minStealSize);
-            if (stolen != null) {
-                download.segments().add(stolen);
-                SegmentWorker newWorker = new SegmentWorker(
-                        httpClient, baseRequest, stolen, channel, rateLimiter,
-                        callback, download.etag(), download.lastModified(), true
-                );
-                session.workers.add(newWorker);
-                session.futures.add(segmentExecutor.submit(newWorker));
-                log.debug("Work stolen: bisected segment {} at {}, spawned segment {} [{} - {}]",
-                        candidate.index(), candidate.endOffset(), stolen.index(), stolen.startOffset(), stolen.endOffset());
+            DownloadSegment candidate = null;
+            SegmentWorker candidateWorker = null;
+            long maxRemaining = minStealSize - 1;
+
+            for (SegmentWorker w : session.workers) {
+                if (w.isPaused()) continue;
+                DownloadSegment seg = w.getSegment();
+                if (seg != null) {
+                    long rem = seg.remainingBytes();
+                    if (rem > maxRemaining) {
+                        maxRemaining = rem;
+                        candidate = seg;
+                        candidateWorker = w;
+                    }
+                }
+            }
+
+            if (candidate != null) {
+                int newIndex = download.segments().size();
+                double ownerSpeed = candidateWorker != null ? Math.max(0.01, candidateWorker.getCurrentSpeedMBps()) : 1.0;
+                double ownerRatio = 0.50;
+                DownloadSegment stolen = candidate.split(newIndex, minStealSize, ownerRatio);
+                if (stolen != null) {
+                    download.segments().add(stolen);
+                    SegmentWorker newWorker = new SegmentWorker(
+                            httpClient, baseRequest, stolen, channel, rateLimiter,
+                            callback, download.etag(), download.lastModified(), true, warmSocketProvider
+                    );
+                    session.workers.add(newWorker);
+                    session.futures.add(segmentExecutor.submit(newWorker));
+                    log.debug("Work stolen: bisected segment {} at {}, spawned segment {} [{} - {}]",
+                            candidate.index(), candidate.endOffset(), stolen.index(), stolen.startOffset(), stolen.endOffset());
+                }
             }
         }
     }
