@@ -23,6 +23,7 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             bool isDemo = desktop.Args != null && (desktop.Args.Contains("--snapshot") || desktop.Args.Contains("--snapshot-settings") || desktop.Args.Contains("--demo"));
+            _ = EngineDaemonLauncher.EnsureDaemonRunningAsync();
             var mainVm = new MainViewModel(isDemoMode: isDemo);
 
             // Apply saved theme preference on launch

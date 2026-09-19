@@ -164,7 +164,7 @@ public partial class MainViewModel : ViewModelBase
         _isDemoMode = isDemoMode;
         _repository = repository ?? new SqliteDatabaseRepository();
         _safetyScanner = safetyScanner ?? new SafetyScannerService();
-        _engine = engine ?? new DownloadEngine(_repository, _safetyScanner);
+        _engine = engine ?? new IpcDownloadEngine(_repository, _safetyScanner);
         _probeService = probeService ?? new HttpProbeService();
         _ipcService = ipcService ?? new LocalIpcService();
         _settingsService = settingsService ?? new SettingsService();

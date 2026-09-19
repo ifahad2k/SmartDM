@@ -10,6 +10,7 @@ dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.jna)
     implementation(libs.jna.platform)
+    implementation(libs.jackson.databind)
 
     testImplementation(libs.bundles.testing)
 }
@@ -18,4 +19,9 @@ tasks.test {
     testLogging {
         showStandardStreams = true
     }
+}
+
+tasks.register<JavaExec>("runEngineDaemon") {
+    mainClass.set("io.smartdm.download.engine.ipc.EngineDaemonMain")
+    classpath = sourceSets["main"].runtimeClasspath
 }

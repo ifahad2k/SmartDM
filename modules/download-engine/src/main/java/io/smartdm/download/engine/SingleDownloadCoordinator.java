@@ -609,6 +609,34 @@ public class SingleDownloadCoordinator {
         }
     }
 
+    public record WorkerSnapshot(int index, long startByte, long endByte, long currentOffset, long downloadedBytes, boolean isCompleted, double speedMBps) {}
+
+    public List<WorkerSnapshot> getWorkerSnapshots(DownloadId id) {
+        DownloadSession session = sessions.get(id);
+        if (session == null) return Collections.emptyList();
+        List<WorkerSnapshot> list = new ArrayList<>();
+        for (SegmentWorker w : session.workers) {
+            DownloadSegment seg = w.getSegment();
+            if (seg != null) {
+                long start = seg.startOffset();
+                long cur = seg.currentOffset();
+                long end = seg.endOffset();
+                long downloaded = Math.max(0, cur - start);
+                boolean completed = end >= 0 && cur > end;
+                list.add(new WorkerSnapshot(
+                    seg.index(),
+                    start,
+                    end,
+                    cur,
+                    downloaded,
+                    completed,
+                    w.getCurrentSpeedMBps()
+                ));
+            }
+        }
+        return list;
+    }
+
     public void shutdown() {
         segmentExecutor.shutdownNow();
         try {
