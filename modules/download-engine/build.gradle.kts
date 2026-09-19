@@ -13,3 +13,9 @@ dependencies {
 
     testImplementation(libs.bundles.testing)
 }
+
+tasks.test {
+    testLogging {
+        showStandardStreams = true
+    }
+}

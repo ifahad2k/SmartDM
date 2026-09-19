@@ -21,6 +21,15 @@ public class BenchmarkRunnerTest {
         Files.createDirectories(tempDir);
         Path destFile = tempDir.resolve("512MB.zip");
         Files.deleteIfExists(destFile);
+        Path partsDir = tempDir.resolve("parts");
+        if (Files.exists(partsDir)) {
+            try (var stream = Files.walk(partsDir)) {
+                stream.sorted(Comparator.reverseOrder()).forEach(p -> {
+                    try { Files.deleteIfExists(p); } catch (Exception ignored) {}
+                });
+            }
+        }
+        Files.createDirectories(partsDir);
 
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_2)
