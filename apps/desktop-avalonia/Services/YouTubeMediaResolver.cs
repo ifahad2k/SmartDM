@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using YoutubeExplode;
+using YoutubeExplode.Videos.Streams;
 
 namespace SmartDm.Desktop.Avalonia.Services;
 
@@ -19,6 +22,8 @@ public class YouTubeResolveResult
 
 public static class YouTubeMediaResolver
 {
+    private static readonly YoutubeClient _ytClient = new();
+
     private static readonly HttpClient _httpClient = new HttpClient
     {
         Timeout = TimeSpan.FromSeconds(12)
@@ -71,6 +76,92 @@ public static class YouTubeMediaResolver
 
         result.VideoId = videoId;
 
+        // --- METHOD 1: Native YoutubeExplode Resolver (Bypasses bot check, full 4K/1080p/audio extraction) ---
+        try
+        {
+            var video = await _ytClient.Videos.GetAsync(videoId);
+            string title = !string.IsNullOrWhiteSpace(video.Title) ? video.Title : "YouTube Video";
+            result.Title = title;
+
+            var streamManifest = await _ytClient.Videos.Streams.GetManifestAsync(videoId);
+
+            // Find best audio stream (prefer m4a/mp4 for broad muxing compatibility)
+            var audioStreams = streamManifest.GetAudioOnlyStreams().OrderByDescending(s => s.Bitrate).ToList();
+            var bestAudio = audioStreams.FirstOrDefault(s => s.Container.Name.Equals("mp4", StringComparison.OrdinalIgnoreCase)) ?? audioStreams.FirstOrDefault();
+            string? bestAudioUrl = bestAudio?.Url;
+            long bestAudioSize = bestAudio?.Size.Bytes ?? 0;
+
+            var list = new List<MediaFormatDto>();
+            var videoStreams = streamManifest.GetVideoStreams().ToList();
+
+            // Group/Distinct by resolution + container, ordered highest resolution first
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var stream in videoStreams.OrderByDescending(s => s.VideoQuality.MaxHeight).ThenByDescending(s => s.Bitrate))
+            {
+                string qualityLabel = stream.VideoQuality.Label;
+                string ext = stream.Container.Name.ToLowerInvariant();
+                string key = $"{qualityLabel}_{ext}";
+                if (!seen.Add(key)) continue;
+
+                long totalBytes = stream.Size.Bytes;
+                bool isVideoOnly = stream is VideoOnlyStreamInfo;
+                if (isVideoOnly && bestAudioSize > 0)
+                {
+                    totalBytes += bestAudioSize;
+                }
+
+                list.Add(new MediaFormatDto
+                {
+                    FormatId = qualityLabel,
+                    Resolution = qualityLabel,
+                    Ext = ext,
+                    FileSize = totalBytes,
+                    IsAudioOnly = false,
+                    DirectUrl = stream.Url,
+                    AudioUrl = isVideoOnly ? bestAudioUrl : null
+                });
+            }
+
+            // Append MP3 option
+            if (!string.IsNullOrEmpty(bestAudioUrl))
+            {
+                list.Add(new MediaFormatDto
+                {
+                    FormatId = "bestaudio/best",
+                    Resolution = "Audio (MP3 / High Quality)",
+                    Ext = "mp3",
+                    FileSize = bestAudioSize,
+                    IsAudioOnly = true,
+                    DirectUrl = bestAudioUrl,
+                    AudioUrl = null
+                });
+            }
+
+            // Append HD Thumbnail option
+            list.Add(new MediaFormatDto
+            {
+                FormatId = "thumbnail",
+                Resolution = "Thumbnail (Cover Image / HD)",
+                Ext = "jpg",
+                FileSize = 0,
+                IsAudioOnly = false,
+                DirectUrl = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg",
+                AudioUrl = null
+            });
+
+            if (list.Count > 0)
+            {
+                result.Success = true;
+                result.Formats = list;
+                return result;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"YoutubeClient resolution failed for {videoId}: {ex.Message}. Falling back to Innertube...");
+        }
+
+        // --- METHOD 2: Direct Innertube ANDROID_VR fallback ---
         try
         {
             var reqObj = new

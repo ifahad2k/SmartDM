@@ -378,34 +378,35 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, async (response) => {
-    if (chrome.runtime.lastError || !response || response.status === 'error') {
-      console.warn('Native host unavailable, falling back to direct loopback IPC:', chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Error response');
-      const ports = [18420, 18421, 18422, 18423, 18424, 18425];
-      let httpSuccess = false;
-      for (const port of ports) {
-        try {
-          const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(request)
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (sendResponse) sendResponse(data || { success: true, status: 'ok' });
-            httpSuccess = true;
-            break;
-          }
-        } catch (e) {}
+  // 1. Direct Loopback IPC to running SmartDM Avalonia Desktop App (port 18420-18425)
+  const ports = [18420, 18421, 18422, 18423, 18424, 18425];
+  for (const port of ports) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (sendResponse) sendResponse(data || { success: true, status: 'ok' });
+        return;
       }
-      if (!httpSuccess) {
-        if (sendResponse) sendResponse({ success: false, error: 'Could not connect to SmartDM desktop app.' });
+    } catch (e) {}
+  }
+
+  // 2. Fallback to Native Messaging Host if desktop app was launched via browser host
+  try {
+    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+      if (chrome.runtime.lastError || !response || response.status === 'error') {
+        if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
+      } else {
+        if (sendResponse) sendResponse(response || { success: true, status: 'ok' });
       }
-    } else {
-      if (sendResponse) sendResponse(response || { success: true, status: 'ok' });
-      else console.log('Received response from native host:', response);
-    }
-  });
+    });
+  } catch (err) {
+    if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
+  }
 }
 
 function getYouTubeCookiesHeader() {
@@ -627,21 +628,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo') {
     const url = request.url;
-    if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
-      fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
-        if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
-          sendResponse(ytRes);
-        } else {
-          appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, sendResponse);
-        }
-      }).catch(() => {
-        appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, sendResponse);
-      });
-      return true; // Async response
-    }
-
-    request.type = 'GET_MEDIA_FORMATS';
-    appendCookiesAndSend(request, sendResponse);
+    // Query SmartDM desktop app first (native YoutubeExplode + Innertube engine)
+    appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, (desktopRes) => {
+      if (desktopRes && (desktopRes.status === 'ok' || desktopRes.success) && desktopRes.formats && desktopRes.formats.length > 0) {
+        sendResponse(desktopRes);
+      } else if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
+        fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
+          if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
+            sendResponse(ytRes);
+          } else {
+            sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract media formats.' });
+          }
+        }).catch(() => {
+          sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract media formats.' });
+        });
+      } else {
+        sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract media formats.' });
+      }
+    });
     return true; // Async response
   }
 

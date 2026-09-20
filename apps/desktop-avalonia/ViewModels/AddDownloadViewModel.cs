@@ -81,6 +81,11 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         SelectedFormatId = value.FormatId;
 
+        if (!string.IsNullOrWhiteSpace(value.DirectUrl))
+        {
+            Url = value.DirectUrl;
+        }
+
         // Update file extension if switched between video/audio/image formats
         if (!string.IsNullOrWhiteSpace(FileName))
         {

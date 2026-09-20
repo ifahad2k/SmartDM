@@ -25,7 +25,8 @@ sealed class Program
 
         if (args != null && System.Linq.Enumerable.Contains(args, "--test-media-resolve"))
         {
-            RunMediaResolutionTestAsync().GetAwaiter().GetResult();
+            string? url = System.Linq.Enumerable.FirstOrDefault(args, a => a.StartsWith("http"));
+            RunMediaResolutionTestAsync(url).GetAwaiter().GetResult();
             return;
         }
 
@@ -216,15 +217,21 @@ sealed class Program
         Console.WriteLine("=== SmartDM 2.0 IPC Bridge End-to-End Test PASSED Successfully! ===");
     }
 
-    private static async System.Threading.Tasks.Task RunMediaResolutionTestAsync()
+    private static async System.Threading.Tasks.Task RunMediaResolutionTestAsync(string? specificUrl = null)
     {
         Console.WriteLine("=== Starting SmartDM 2.0 Dynamic Media Format Resolution Test ===");
 
         // Test 1: Direct YouTube URL probe & resolution without yt-dlp
-        string testYtUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        string testYtUrl = !string.IsNullOrWhiteSpace(specificUrl) ? specificUrl : "https://www.youtube.com/watch?v=Pc1JzImPw_M";
         Console.WriteLine($"[TEST 1] Probing YouTube URL: {testYtUrl}");
         var vm = new ViewModels.AddDownloadViewModel(initialUrl: testYtUrl);
-        await System.Threading.Tasks.Task.Delay(2500);
+        
+        int waitMs = 0;
+        while (!vm.IsMediaFormatSelectorVisible && waitMs < 12000)
+        {
+            await System.Threading.Tasks.Task.Delay(250);
+            waitMs += 250;
+        }
 
         if (!vm.IsMediaFormatSelectorVisible)
         {

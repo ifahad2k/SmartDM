@@ -758,24 +758,31 @@
 
     const elements = document.querySelectorAll(selectors.join(','));
     elements.forEach((el) => {
-      const cardContainer = el.closest('.videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb, a') || el;
+      const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
       
       const rect = cardContainer.getBoundingClientRect();
       if (rect.height < 40) return;
 
-      if (cardContainer.getAttribute(ATTR_THUMB_ATTACHED)) return;
-      cardContainer.setAttribute(ATTR_THUMB_ATTACHED, 'true');
+      if (cardContainer.getAttribute(ATTR_THUMB_ATTACHED) || cardContainer.closest('[' + ATTR_THUMB_ATTACHED + ']')) return;
+      if (cardContainer.querySelector('.smartdm-thumb-host')) return;
 
       let videoUrl = null;
-      if (cardContainer.tagName === 'A' && cardContainer.href) {
+      const link = cardContainer.querySelector('a[href*="/watch?v="], a[href*="/watch/"], a[href*="/shorts/"], a[href*="/video/"], a[href*="/view_video.php"]') || (cardContainer.tagName === 'A' ? cardContainer : null);
+      if (link && link.href) {
+        videoUrl = link.href;
+      } else if (cardContainer.tagName === 'A' && cardContainer.href) {
         videoUrl = cardContainer.href;
-      } else {
-        const link = cardContainer.querySelector('a[href*="/watch"], a[href*="/video/"], a[href*="/view_video.php"]');
-        if (link) videoUrl = link.href;
       }
 
       if (!videoUrl) return;
-      attachThumbnailBadge(cardContainer, getCanonicalUrl(videoUrl));
+
+      cardContainer.setAttribute(ATTR_THUMB_ATTACHED, 'true');
+
+      // Prefer attaching directly to the thumbnail visual container if present
+      const targetMount = cardContainer.querySelector('ytd-thumbnail, #thumbnail, .yt-lockup-view-model__visual, .video-thumbnail, .thumb') || cardContainer;
+      targetMount.setAttribute(ATTR_THUMB_ATTACHED, 'true');
+
+      attachThumbnailBadge(targetMount, getCanonicalUrl(videoUrl));
     });
   }
 
