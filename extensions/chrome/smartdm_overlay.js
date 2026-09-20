@@ -1191,6 +1191,109 @@
     document.body.appendChild(host);
   }
 
+  // --- UNIVERSAL VISUAL THUMBNAIL MOUNT RESOLVER ---
+  function findVisualThumbnailMount(cardContainer) {
+    if (!cardContainer) return null;
+
+    // If cardContainer itself is an image or video tag
+    if (cardContainer.tagName === 'IMG' || cardContainer.tagName === 'VIDEO') {
+      return cardContainer.parentElement || cardContainer;
+    }
+
+    // 1. Gather all potential visual media elements in the card (images, videos, canvases)
+    const mediaList = Array.from(
+      cardContainer.querySelectorAll('img, video, canvas, [style*="background-image"]')
+    );
+
+    let bestThumbMedia = null;
+    let maxArea = 0;
+
+    for (const el of mediaList) {
+      // Exclude elements that are clearly avatars, channel logos, user badges, or icons
+      if (el.closest('[class*="avatar"], [class*="channel"], [class*="author"], [class*="badge"], [class*="icon"], [class*="user"], [class*="profile"], [class*="meta"], [class*="detail"], [id*="title"], h1, h2, h3, h4')) {
+        continue;
+      }
+
+      const r = el.getBoundingClientRect();
+      const w = r.width || el.offsetWidth || (el.naturalWidth ? Math.min(el.naturalWidth, 400) : 0);
+      const h = r.height || el.offsetHeight || (el.naturalHeight ? Math.min(el.naturalHeight, 300) : 0);
+
+      // Must be a reasonable size for a video thumbnail preview (minimum 60x35 px)
+      if (w < 60 || h < 35) continue;
+
+      // Filter out circular or square avatars that might lack avatar classes
+      const aspect = w / (h || 1);
+      if (aspect > 0.85 && aspect < 1.15 && w < 100) continue;
+
+      const area = w * h;
+      if (area > maxArea) {
+        maxArea = area;
+        bestThumbMedia = el;
+      }
+    }
+
+    if (bestThumbMedia) {
+      const mediaRect = bestThumbMedia.getBoundingClientRect();
+      const mW = mediaRect.width || bestThumbMedia.offsetWidth || 100;
+      const mH = mediaRect.height || bestThumbMedia.offsetHeight || 56;
+
+      // Walk up ancestors from bestThumbMedia:
+      // Find the highest ancestor that still wraps ONLY the visual media,
+      // and does NOT expand to include card metadata / titles!
+      let curr = bestThumbMedia.parentElement || bestThumbMedia;
+
+      while (curr && curr !== cardContainer && curr !== document.body) {
+        const parent = curr.parentElement;
+        if (!parent || parent === cardContainer || parent === document.body) break;
+
+        // If parent contains text metadata / title elements that are not inside curr, STOP!
+        const titleEl = parent.querySelector('[id*="title"], h1, h2, h3, h4, [class*="title"], [class*="metadata"], [id*="metadata"], [class*="detail"], [id*="detail"], [class*="meta"], [id*="meta"]');
+        if (titleEl && !curr.contains(titleEl)) {
+          break;
+        }
+
+        const pRect = parent.getBoundingClientRect();
+        const pW = pRect.width || parent.offsetWidth || 0;
+        const pH = pRect.height || parent.offsetHeight || 0;
+
+        // If parent width is significantly wider than the media (> 25% wider),
+        // it means parent is a horizontal flex/grid row encompassing the text side!
+        if (pW > 0 && mW > 0 && pW > mW * 1.25) {
+          break;
+        }
+
+        // If parent height is significantly taller than the media (> 35% taller),
+        // it means parent is a vertical card encompassing text below!
+        if (pH > 0 && mH > 0 && pH > mH * 1.35) {
+          break;
+        }
+
+        curr = parent;
+      }
+
+      return curr;
+    }
+
+    // Fallback: If no distinct media element found, check if cardContainer has any child element
+    // occupying only the left portion of a horizontal card, or any element matching visual/thumb patterns
+    const visualElement = cardContainer.querySelector(
+      '[class*="visual"], [class*="thumbnail"], [class*="thumb"], [id*="thumbnail"], [id*="thumb"], [class*="preview"], [class*="cover"], [class*="poster"], [class*="media"]'
+    );
+    if (visualElement && visualElement !== cardContainer) {
+      const vRect = visualElement.getBoundingClientRect();
+      const cRect = cardContainer.getBoundingClientRect();
+      const vW = vRect.width || visualElement.offsetWidth || 0;
+      const cW = cRect.width || cardContainer.offsetWidth || 0;
+      if (vW > 0 && cW > 0) {
+        if (vW < cW * 0.85) return visualElement;
+      } else {
+        return visualElement;
+      }
+    }
+
+    return cardContainer;
+  }
+
   // --- UNIVERSAL THUMBNAIL OVERLAY INJECTOR ---
   function scanThumbnails() {
     const selectors = [
@@ -1239,10 +1342,15 @@
 
       if (!videoUrl) return;
 
-      cardContainer.setAttribute(ATTR_THUMB_ATTACHED, 'true');
+      // Universally resolve the exact visual thumbnail mount element (never cardContainer on horizontal cards)
+      const targetMount = findVisualThumbnailMount(cardContainer);
+      if (!targetMount) return;
 
-      // Prefer attaching directly to the thumbnail visual container if present
-      const targetMount = cardContainer.querySelector('.phimage, .thumbnailWrapper, .video-thumbnail, ytd-thumbnail, #thumbnail, .yt-lockup-view-model__visual, .thumb, .preloadImage, a.linkVideoThumb') || cardContainer;
+      if (targetMount.getAttribute(ATTR_THUMB_ATTACHED) || targetMount.querySelector('.smartdm-thumb-host')) return;
+
+      cardContainer.setAttribute(ATTR_THUMB_ATTACHED, 'true');
+      targetMount.setAttribute(ATTR_THUMB_ATTACHED, 'true');
+
       if (window.getComputedStyle(targetMount).position === 'static') {
         targetMount.style.position = 'relative';
       }
@@ -1261,10 +1369,15 @@
     const host = document.createElement('div');
     host.className = 'smartdm-thumb-host';
     host.style.position = 'absolute';
-    host.style.top = '8px';
-    host.style.right = '8px';
+    host.style.top = '6px';
+    host.style.right = '6px';
     host.style.zIndex = '99999';
     host.style.pointerEvents = 'auto';
+
+    // Prevent any clicks inside the host from bubbling up and triggering card navigation
+    host.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
 
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
@@ -1273,7 +1386,7 @@
         .spinner { width: 12px; height: 12px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         .spinner-container { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 0; }
         .thumb-btn {
-          background: rgba(15, 23, 42, 0.8);
+          background: rgba(15, 23, 42, 0.82);
           backdrop-filter: blur(10px);
           -webkit-backdrop-filter: blur(10px);
           color: #f8fafc;
@@ -1288,7 +1401,7 @@
           align-items: center;
           gap: 4px;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-          opacity: 0.8;
+          opacity: 0.85;
           transition: all 0.2s ease;
           user-select: none;
         }
@@ -1301,11 +1414,11 @@
         .icon { width: 12px; height: 12px; fill: none; stroke: #38bdf8; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
         .thumb-btn:hover .icon { stroke: #ffffff; }
         .popover {
-          position: absolute;
-          top: 28px; right: 0;
+          position: fixed;
           width: 250px;
-          background: rgba(15, 23, 42, 0.95);
+          background: rgba(15, 23, 42, 0.96);
           backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           border: 1px solid rgba(255, 255, 255, 0.2);
           border-radius: 8px;
           padding: 8px;
@@ -1316,7 +1429,7 @@
           color: #f8fafc;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
           font-size: 11px;
-          z-index: 999999;
+          z-index: 2147483647;
         }
         .popover.active { display: flex; }
         .popover-title {
@@ -1361,6 +1474,20 @@
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
 
+    const positionPopover = () => {
+      const btnRect = thumbBtn.getBoundingClientRect();
+      const pHeight = popover.offsetHeight || 220;
+      let top = btnRect.bottom + 4;
+      if (top + pHeight > window.innerHeight && btnRect.top > pHeight + 10) {
+        top = Math.max(10, btnRect.top - pHeight - 4);
+      }
+      popover.style.top = top + 'px';
+      let left = btnRect.right - 250;
+      if (left < 10) left = 10;
+      if (left + 250 > window.innerWidth - 10) left = window.innerWidth - 260;
+      popover.style.left = left + 'px';
+    };
+
     document.addEventListener('click', (e) => {
       if (popover.classList.contains('active')) {
         const path = e.composedPath ? e.composedPath() : [];
@@ -1368,7 +1495,20 @@
           popover.classList.remove('active');
         }
       }
-    });
+    }, true);
+
+    const onScrollOrResize = () => {
+      if (popover.classList.contains('active')) {
+        const r = thumbBtn.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) {
+          popover.classList.remove('active');
+        } else {
+          positionPopover();
+        }
+      }
+    };
+    window.addEventListener('scroll', onScrollOrResize, { passive: true, capture: true });
+    window.addEventListener('resize', onScrollOrResize, { passive: true });
 
     thumbBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1382,6 +1522,7 @@
       }
 
       popover.classList.add('active');
+      positionPopover();
       content.innerHTML = `
         <div class="spinner-container">
           <div class="spinner"></div>
