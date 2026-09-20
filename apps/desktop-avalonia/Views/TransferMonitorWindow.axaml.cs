@@ -1,6 +1,8 @@
 using System;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.VisualTree;
 using SmartDm.Desktop.Avalonia.ViewModels;
 
 namespace SmartDm.Desktop.Avalonia.Views;
@@ -38,15 +40,33 @@ public partial class TransferMonitorWindow : Window
     {
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
-            BeginMoveDrag(e);
+            if (e.Source is Button || (e.Source is Visual visual && visual.FindAncestorOfType<Button>() != null))
+            {
+                return;
+            }
+
+            if (e.ClickCount == 2 && CanResize)
+            {
+                WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            }
+            else
+            {
+                BeginMoveDrag(e);
+            }
         }
     }
 
     private void OnHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && e.Source is not Button)
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
+            if (e.Source is Button || (e.Source is Visual visual && visual.FindAncestorOfType<Button>() != null))
+            {
+                return;
+            }
+
             BeginMoveDrag(e);
         }
     }
 }
+

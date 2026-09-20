@@ -315,7 +315,6 @@ public partial class App : Application
 
             mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies) =>
             {
-                RestoreMainWindow();
                 var addVm = new AddDownloadViewModel(mainVm.ProbeService, mainVm.CatalogService, initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies);
                 var dialog = new AddDownloadDialog
                 {
@@ -344,7 +343,7 @@ public partial class App : Application
                     mainVm.OpenMonitor(newDl);
                 };
                 addVm.RequestClose += () => dialog.Close();
-                dialog.Show(); // INDEPENDENT WINDOW
+                dialog.ShowTransientTopmost();
             };
 
             mainVm.RequestOpenMonitor += dl =>

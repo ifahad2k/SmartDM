@@ -29,7 +29,7 @@
     <Grid RowDefinitions="36,54,*,32">
         
         <!-- 1. UNIFIED SYSTEM TITLEBAR (EXTENDED CLIENT AREA) -->
-        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0" PointerPressed="OnTitleBarPointerPressed">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
@@ -45,7 +45,7 @@
         </Border>
 
         <!-- 2. NAVBAR (OFFICIAL BRAND, SEARCH BAR, ACTION TOOLBAR) -->
-        <Border Grid.Row="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="18,0">
+        <Border Grid.Row="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="18,0" PointerPressed="OnTitleBarPointerPressed">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 
                 <!-- Brand Title with Official SDM 2.0 Logo -->

@@ -15,6 +15,28 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            // Do not intercept if clicking interactive elements inside titlebar or navbar
+            if (e.Source is Button || e.Source is TextBox || 
+                (e.Source is Visual visual && (visual.FindAncestorOfType<Button>() != null || visual.FindAncestorOfType<TextBox>() != null)))
+            {
+                return;
+            }
+
+            if (e.ClickCount == 2 && CanResize)
+            {
+                WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            }
+            else
+            {
+                BeginMoveDrag(e);
+            }
+        }
+    }
+
     private void OnCardPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Control control && control.DataContext is DownloadModel dl && DataContext is MainViewModel vm)

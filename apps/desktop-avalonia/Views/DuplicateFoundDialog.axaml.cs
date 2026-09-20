@@ -1,9 +1,12 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
+using Avalonia.VisualTree;
 using SmartDm.Desktop.Avalonia.Services;
 
 namespace SmartDm.Desktop.Avalonia.Views;
@@ -16,6 +19,19 @@ public partial class DuplicateFoundDialog : Window
     public DuplicateFoundDialog()
     {
         InitializeComponent();
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            if (e.Source is Button || (e.Source is Visual visual && visual.FindAncestorOfType<Button>() != null))
+            {
+                return;
+            }
+
+            BeginMoveDrag(e);
+        }
     }
 
     public void LoadMatch(CatalogMatch match, string? attemptedUrl = null)

@@ -1,8 +1,11 @@
 using System;
 using System.IO;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
+using Avalonia.VisualTree;
 
 namespace SmartDm.Desktop.Avalonia.Views;
 
@@ -25,6 +28,19 @@ public partial class FileCollisionDialog : Window
     public FileCollisionDialog()
     {
         InitializeComponent();
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            if (e.Source is Button || (e.Source is Visual visual && visual.FindAncestorOfType<Button>() != null))
+            {
+                return;
+            }
+
+            BeginMoveDrag(e);
+        }
     }
 
     public void LoadCollision(string targetPath, string autoNumberedPath)
