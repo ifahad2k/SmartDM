@@ -33,6 +33,99 @@ public class DownloadEngine : IDownloadEngine
         public CancellationTokenSource Cts { get; set; } = new();
         public Task? RunnerTask { get; set; }
         public Process? ActiveProcess { get; set; }
+        public string StagingDirectory { get; set; } = "";
+        public string StagingFilePath { get; set; } = "";
+    }
+
+    public static string GetDownloadStagingDirectory(string downloadId)
+    {
+        string safeId = "dl_" + string.Join("_", downloadId.Replace(".", "_").Split(Path.GetInvalidFileNameChars()));
+        string stagingDir;
+        try
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string tempRoot = Path.Combine(baseDir, ".temp");
+            Directory.CreateDirectory(tempRoot);
+            try
+            {
+                var di = new DirectoryInfo(tempRoot);
+                if ((di.Attributes & FileAttributes.Hidden) != FileAttributes.Hidden)
+                {
+                    di.Attributes |= FileAttributes.Hidden;
+                }
+            }
+            catch { }
+
+            stagingDir = Path.Combine(tempRoot, safeId);
+            Directory.CreateDirectory(stagingDir);
+            return stagingDir;
+        }
+        catch
+        {
+            // Fallback to LocalApplicationData if BaseDirectory is read-only
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string tempRoot = Path.Combine(appData, "SmartDM", ".temp");
+            Directory.CreateDirectory(tempRoot);
+            try
+            {
+                var di = new DirectoryInfo(tempRoot);
+                if ((di.Attributes & FileAttributes.Hidden) != FileAttributes.Hidden)
+                {
+                    di.Attributes |= FileAttributes.Hidden;
+                }
+            }
+            catch { }
+
+            stagingDir = Path.Combine(tempRoot, safeId);
+            Directory.CreateDirectory(stagingDir);
+            return stagingDir;
+        }
+    }
+
+    public static void CleanupStagingDirectory(string stagingDir)
+    {
+        try
+        {
+            if (Directory.Exists(stagingDir))
+            {
+                Directory.Delete(stagingDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DownloadEngine] Failed to clean staging directory '{stagingDir}': {ex.Message}");
+        }
+    }
+
+    public static void CleanupOrphanStagingDirectories()
+    {
+        try
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string tempRoot = Path.Combine(baseDir, ".temp");
+            if (Directory.Exists(tempRoot))
+            {
+                foreach (var dir in Directory.GetDirectories(tempRoot))
+                {
+                    try { Directory.Delete(dir, recursive: true); } catch { }
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string tempRoot = Path.Combine(appData, "SmartDM", ".temp");
+            if (Directory.Exists(tempRoot))
+            {
+                foreach (var dir in Directory.GetDirectories(tempRoot))
+                {
+                    try { Directory.Delete(dir, recursive: true); } catch { }
+                }
+            }
+        }
+        catch { }
     }
 
     public DownloadEngine(IDatabaseRepository repository, ISafetyScanner safetyScanner, HttpClient? httpClient = null)
@@ -100,10 +193,16 @@ public class DownloadEngine : IDownloadEngine
         await _repository.SaveDownloadAsync(download);
         DownloadStatusChanged?.Invoke(download);
 
+        string stagingDir = GetDownloadStagingDirectory(download.Id);
+        string finalFileName = Path.GetFileName(download.SavePath);
+        string stagingFilePath = Path.Combine(stagingDir, finalFileName);
+
         var session = new DownloadSession
         {
             Download = download,
-            Cts = new CancellationTokenSource()
+            Cts = new CancellationTokenSource(),
+            StagingDirectory = stagingDir,
+            StagingFilePath = stagingFilePath
         };
 
         // Check if this stream requires FFmpeg muxing/copying (HLS .m3u8, dual stream video+audio, or MP3 audio conversion)
@@ -163,10 +262,10 @@ public class DownloadEngine : IDownloadEngine
 
         if (totalBytes > 0)
         {
-            // Pre-allocate file size
+            // Pre-allocate file size in isolated staging directory
             try
             {
-                await using (var fs = new FileStream(download.SavePath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
+                await using (var fs = new FileStream(session.StagingFilePath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
                 {
                     if (fs.Length < totalBytes)
                     {
@@ -196,7 +295,7 @@ public class DownloadEngine : IDownloadEngine
                 {
                     initialDownloaded = Math.Clamp(cachedSegs[i].DownloadedBytes, 0, end - start + 1);
                 }
-                var worker = new SegmentWorker(_httpClient, download.Url, download.SavePath, i + 1, start, end, initialDownloaded, referer, uaString, cookieHeader);
+                var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, i + 1, start, end, initialDownloaded, referer, uaString, cookieHeader);
                 session.Workers.Add(worker);
                 currentOffset = end + 1;
             }
@@ -204,7 +303,7 @@ public class DownloadEngine : IDownloadEngine
         else
         {
             long initialDownloaded = (cachedSegs != null && cachedSegs.Count > 0) ? cachedSegs[0].DownloadedBytes : 0;
-            var worker = new SegmentWorker(_httpClient, download.Url, download.SavePath, 1, 0, -1, initialDownloaded, referer, uaString, cookieHeader);
+            var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, 1, 0, -1, initialDownloaded, referer, uaString, cookieHeader);
             session.Workers.Add(worker);
         }
 
@@ -287,6 +386,23 @@ public class DownloadEngine : IDownloadEngine
 
             if (!token.IsCancellationRequested && hasBytes)
             {
+                // Atomically move assembled file from hidden staging directory to user's final save path
+                if (!string.IsNullOrEmpty(session.StagingFilePath) && File.Exists(session.StagingFilePath))
+                {
+                    string? targetDir = Path.GetDirectoryName(dl.SavePath);
+                    if (!string.IsNullOrEmpty(targetDir))
+                    {
+                        Directory.CreateDirectory(targetDir);
+                    }
+                    File.Move(session.StagingFilePath, dl.SavePath, overwrite: true);
+                }
+
+                // Clean up hidden staging directory and any intermediate segment chunks
+                if (!string.IsNullOrEmpty(session.StagingDirectory))
+                {
+                    CleanupStagingDirectory(session.StagingDirectory);
+                }
+
                 // Download successfully completed
                 dl.Status = DownloadStatus.Completed;
                 dl.SpeedMbps = 0;
@@ -357,10 +473,17 @@ public class DownloadEngine : IDownloadEngine
             dl.Title = Path.GetFileName(dl.SavePath);
         }
 
+        // Ensure staging directory and output path are configured
+        if (string.IsNullOrEmpty(session.StagingDirectory))
+        {
+            session.StagingDirectory = GetDownloadStagingDirectory(dl.Id);
+        }
+        session.StagingFilePath = Path.Combine(session.StagingDirectory, Path.GetFileName(dl.SavePath));
+
         // Initialize synthetic segment workers for Transfer Monitor UI
         session.Workers.Clear();
-        session.Workers.Add(new SegmentWorker(_httpClient, dl.Url, dl.SavePath, 1, 0, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, 0));
-        session.Workers.Add(new SegmentWorker(_httpClient, dl.AudioUrl ?? dl.Url, dl.SavePath, 2, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, dl.TotalBytes, 0));
+        session.Workers.Add(new SegmentWorker(_httpClient, dl.Url, session.StagingFilePath, 1, 0, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, 0));
+        session.Workers.Add(new SegmentWorker(_httpClient, dl.AudioUrl ?? dl.Url, session.StagingFilePath, 2, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, dl.TotalBytes, 0));
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
         string referer = dl.Referer ?? "";
@@ -421,6 +544,7 @@ public class DownloadEngine : IDownloadEngine
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
+            WorkingDirectory = session.StagingDirectory, // Strict containment: all chunks, caches, and demux buffers stay in .temp
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
@@ -480,7 +604,7 @@ public class DownloadEngine : IDownloadEngine
             psi.ArgumentList.Add("-movflags");
             psi.ArgumentList.Add("+faststart");
         }
-        psi.ArgumentList.Add(dl.SavePath);
+        psi.ArgumentList.Add(session.StagingFilePath);
 
         using var proc = new Process { StartInfo = psi };
         session.ActiveProcess = proc;
@@ -575,13 +699,25 @@ public class DownloadEngine : IDownloadEngine
 
             await proc.WaitForExitAsync();
 
-            bool fileHasData = File.Exists(dl.SavePath) && new FileInfo(dl.SavePath).Length > 0;
+            bool fileHasData = File.Exists(session.StagingFilePath) && new FileInfo(session.StagingFilePath).Length > 0;
             if (proc.ExitCode == 0 && !token.IsCancellationRequested && fileHasData)
             {
-                var fi = new FileInfo(dl.SavePath);
+                var fi = new FileInfo(session.StagingFilePath);
                 dl.TotalBytes = fi.Length;
                 dl.DownloadedBytes = fi.Length;
 
+                // Ensure target folder exists
+                string? targetDir = Path.GetDirectoryName(dl.SavePath);
+                if (!string.IsNullOrEmpty(targetDir))
+                {
+                    Directory.CreateDirectory(targetDir);
+                }
+
+                // Atomically move final assembled file from hidden staging directory to user's SavePath
+                File.Move(session.StagingFilePath, dl.SavePath, overwrite: true);
+
+                // Instantly purge all segment chunks, demuxer caches, and temporary staging files
+                CleanupStagingDirectory(session.StagingDirectory);
 
                 dl.Status = DownloadStatus.Completed;
                 dl.SpeedMbps = 0;
@@ -603,6 +739,7 @@ public class DownloadEngine : IDownloadEngine
                 dl.StatusDetail = "Paused by user";
                 await _repository.SaveDownloadAsync(dl);
                 DownloadStatusChanged?.Invoke(dl);
+                CleanupStagingDirectory(session.StagingDirectory);
             }
             else
             {
@@ -611,6 +748,7 @@ public class DownloadEngine : IDownloadEngine
                 dl.StatusDetail = !string.IsNullOrEmpty(lastError) ? $"Stream error: {lastError}" : "FFmpeg stream transfer interrupted";
                 await _repository.SaveDownloadAsync(dl);
                 DownloadStatusChanged?.Invoke(dl);
+                CleanupStagingDirectory(session.StagingDirectory);
             }
         }
         catch (OperationCanceledException)
@@ -620,6 +758,7 @@ public class DownloadEngine : IDownloadEngine
             dl.StatusDetail = "Paused by user";
             await _repository.SaveDownloadAsync(dl);
             DownloadStatusChanged?.Invoke(dl);
+            CleanupStagingDirectory(session.StagingDirectory);
         }
         catch (Exception ex)
         {
@@ -628,10 +767,18 @@ public class DownloadEngine : IDownloadEngine
             dl.StatusDetail = $"Error: {ex.Message}";
             await _repository.SaveDownloadAsync(dl);
             DownloadStatusChanged?.Invoke(dl);
+            if (!File.Exists(session.StagingFilePath) || new FileInfo(session.StagingFilePath).Length == 0)
+            {
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
         }
         finally
         {
             _sessions.TryRemove(dl.Id, out _);
+            if (dl.Status == DownloadStatus.Completed)
+            {
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
         }
     }
 
@@ -710,6 +857,10 @@ public class DownloadEngine : IDownloadEngine
                 {
                     session.ActiveProcess.Kill(true);
                 }
+                if (session.RunnerTask != null)
+                {
+                    await Task.WhenAny(session.RunnerTask, Task.Delay(800));
+                }
             }
             catch { }
             session.Download.Status = DownloadStatus.Paused;
@@ -717,6 +868,8 @@ public class DownloadEngine : IDownloadEngine
             session.Download.StatusDetail = "Cancelled";
             await _repository.SaveDownloadAsync(session.Download);
             DownloadStatusChanged?.Invoke(session.Download);
+            _sessions.TryRemove(downloadId, out _);
         }
+        CleanupStagingDirectory(GetDownloadStagingDirectory(downloadId));
     }
 }

@@ -483,6 +483,12 @@ public partial class MainViewModel : ViewModelBase
                 }
             }
             catch { }
+
+            try
+            {
+                DownloadEngine.CleanupStagingDirectory(DownloadEngine.GetDownloadStagingDirectory(dl.Id));
+            }
+            catch { }
         }
 
         _allMasterDownloads.Remove(dl);

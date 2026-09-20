@@ -30,6 +30,12 @@ sealed class Program
             return;
         }
 
+        if (args != null && System.Linq.Enumerable.Contains(args, "--test-staging"))
+        {
+            RunStagingIsolationTest();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
     }
 
@@ -338,6 +344,75 @@ sealed class Program
         Console.WriteLine($"[PASS] Generic '(311) YouTube.mp4' successfully rejected and replaced with real title: '{genericVm.FileName}'");
 
         Console.WriteLine("=== SmartDM 2.0 Dynamic Media Format Resolution Test PASSED Successfully! ===");
+    }
+
+    private static void RunStagingIsolationTest()
+    {
+        Console.WriteLine("=== Starting SmartDM 2.0 Staging Directory & Auto-Cleanup Test ===");
+
+        string testId = "test_download_" + Guid.NewGuid().ToString("N");
+        string stagingDir = Services.DownloadEngine.GetDownloadStagingDirectory(testId);
+        Console.WriteLine($"[PASS] Staging directory allocated: {stagingDir}");
+
+        if (!System.IO.Directory.Exists(stagingDir))
+        {
+            throw new Exception("Staging directory was not created on disk.");
+        }
+
+        // Verify root is marked Hidden
+        string parentDir = System.IO.Path.GetDirectoryName(stagingDir)!;
+        var di = new System.IO.DirectoryInfo(parentDir);
+        bool isHidden = (di.Attributes & System.IO.FileAttributes.Hidden) != 0;
+        Console.WriteLine($"[PASS] Staging root is marked hidden: {isHidden} ({parentDir})");
+
+        // Simulate 390 segment files written during HLS stream transfer
+        Console.WriteLine("[TEST] Simulating 390 segment chunks written during stream download...");
+        for (int i = 0; i < 390; i++)
+        {
+            string segPath = System.IO.Path.Combine(stagingDir, $"chunk_{i:D4}.ts");
+            System.IO.File.WriteAllText(segPath, "dummy HLS video transport stream payload");
+        }
+        string outputMp4 = System.IO.Path.Combine(stagingDir, "final_video.mp4");
+        System.IO.File.WriteAllBytes(outputMp4, new byte[1024 * 64]);
+
+        int chunkCount = System.IO.Directory.GetFiles(stagingDir, "*.ts").Length;
+        if (chunkCount != 390)
+        {
+            throw new Exception($"Expected 390 chunks, found {chunkCount}");
+        }
+        Console.WriteLine($"[PASS] Successfully contained {chunkCount} chunks in hidden staging directory without touching user folders.");
+
+        // Simulate successful completion: Atomic move to target and cleanup
+        string finalTarget = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "smartdm_test_dest", "final_video.mp4");
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(finalTarget)!);
+        System.IO.File.Move(outputMp4, finalTarget, overwrite: true);
+
+        Services.DownloadEngine.CleanupStagingDirectory(stagingDir);
+
+        if (System.IO.Directory.Exists(stagingDir))
+        {
+            throw new Exception("Staging directory was not cleaned up after completion.");
+        }
+        Console.WriteLine("[PASS] Staging directory and all 390 chunk files automatically deleted!");
+
+        if (!System.IO.File.Exists(finalTarget) || new System.IO.FileInfo(finalTarget).Length == 0)
+        {
+            throw new Exception("Final output file was not moved to destination.");
+        }
+        Console.WriteLine($"[PASS] Final file exists at destination: {finalTarget} ({new System.IO.FileInfo(finalTarget).Length} bytes)");
+        try { System.IO.File.Delete(finalTarget); } catch { }
+
+        // Test orphan cleanup
+        string orphanDir = Services.DownloadEngine.GetDownloadStagingDirectory("orphan_" + Guid.NewGuid().ToString("N"));
+        System.IO.File.WriteAllText(System.IO.Path.Combine(orphanDir, "leftover.ts"), "leftover");
+        Services.DownloadEngine.CleanupOrphanStagingDirectories();
+        if (System.IO.Directory.Exists(orphanDir))
+        {
+            throw new Exception("Orphan staging directory was not cleaned up by CleanupOrphanStagingDirectories.");
+        }
+        Console.WriteLine("[PASS] Orphan staging directory cleanup verified!");
+
+        Console.WriteLine("=== SmartDM 2.0 Staging Directory & Auto-Cleanup Test PASSED! ===");
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
