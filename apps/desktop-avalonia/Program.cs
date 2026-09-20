@@ -36,6 +36,12 @@ sealed class Program
             return;
         }
 
+        if (args != null && System.Linq.Enumerable.Contains(args, "--benchmark-yt-speed"))
+        {
+            RunYouTubeSpeedBenchmarkAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
     }
 
@@ -233,7 +239,7 @@ sealed class Program
         var vm = new ViewModels.AddDownloadViewModel(initialUrl: testYtUrl);
         
         int waitMs = 0;
-        while (!vm.IsMediaFormatSelectorVisible && waitMs < 12000)
+        while (!vm.IsMediaFormatSelectorVisible && waitMs < 30000)
         {
             await System.Threading.Tasks.Task.Delay(250);
             waitMs += 250;
@@ -413,6 +419,85 @@ sealed class Program
         Console.WriteLine("[PASS] Orphan staging directory cleanup verified!");
 
         Console.WriteLine("=== SmartDM 2.0 Staging Directory & Auto-Cleanup Test PASSED! ===");
+    }
+
+    private static async System.Threading.Tasks.Task RunYouTubeSpeedBenchmarkAsync()
+    {
+        Console.WriteLine("=== YouTube Download Speed Diagnostic Benchmark ===");
+        var res = await Services.YouTubeMediaResolver.ResolveYouTubeFormatsAsync("https://www.youtube.com/watch?v=Pc1JzImPw_M");
+        var stream = System.Linq.Enumerable.FirstOrDefault(res.Formats, f => !string.IsNullOrEmpty(f.DirectUrl) && f.FileSize > 50000000);
+        if (stream == null) { Console.WriteLine("Stream not found"); return; }
+
+        string testUrl = stream.DirectUrl!;
+        Console.WriteLine($"Testing Stream URL: {testUrl.Substring(0, Math.Min(80, testUrl.Length))}...");
+        Console.WriteLine($"Total Stream Size: {stream.FileSize / (1024 * 1024)} MB");
+
+        var handler = new System.Net.Http.SocketsHttpHandler
+        {
+            AllowAutoRedirect = true,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+            EnableMultipleHttp2Connections = true
+        };
+        var client = new System.Net.Http.HttpClient(handler);
+
+        // Test 1: Single sequential stream (simulating FFmpeg)
+        Console.WriteLine("\n[1] Testing Single Sequential Stream (FFmpeg behavior)...");
+        var sw1 = System.Diagnostics.Stopwatch.StartNew();
+        long bytes1 = 0;
+        using (var req1 = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, testUrl))
+        {
+            req1.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 10485760); // 10 MB
+            using var resp1 = await client.SendAsync(req1, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+            var stream1 = await resp1.Content.ReadAsStreamAsync();
+            byte[] buf = new byte[65536];
+            int read;
+            while ((read = await stream1.ReadAsync(buf, 0, buf.Length)) > 0)
+            {
+                bytes1 += read;
+                if (bytes1 >= 10485760) break;
+            }
+        }
+        sw1.Stop();
+        double speed1 = (bytes1 / (1024.0 * 1024.0)) / sw1.Elapsed.TotalSeconds;
+        Console.WriteLine($"Single Stream: Downloaded {bytes1 / (1024 * 1024)} MB in {sw1.Elapsed.TotalSeconds:F2}s -> Speed: {speed1:F2} MB/s");
+
+        // Test 2: Multi-Connection Segmented (IDM / SmartDM multi-worker behavior)
+        Console.WriteLine("\n[2] Testing 16-Connection Segmented Range Requests (IDM behavior)...");
+        int workers = 16;
+        long totalTestBytes = 20971520; // 20 MB
+        long chunkSize = totalTestBytes / workers;
+        var sw2 = System.Diagnostics.Stopwatch.StartNew();
+        var tasks = new System.Collections.Generic.List<System.Threading.Tasks.Task<long>>();
+
+        for (int i = 0; i < workers; i++)
+        {
+            long start = i * chunkSize;
+            long end = (i == workers - 1) ? totalTestBytes - 1 : (start + chunkSize - 1);
+            tasks.Add(System.Threading.Tasks.Task.Run(async () =>
+            {
+                using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, testUrl);
+                req.Version = System.Net.HttpVersion.Version11;
+                req.VersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact;
+                req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(start, end);
+                using var resp = await client.SendAsync(req, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+                var s = await resp.Content.ReadAsStreamAsync();
+                byte[] buf = new byte[131072];
+                long b = 0;
+                int r;
+                while ((r = await s.ReadAsync(buf, 0, buf.Length)) > 0)
+                {
+                    b += r;
+                }
+                return b;
+            }));
+        }
+
+        var results = await System.Threading.Tasks.Task.WhenAll(tasks);
+        sw2.Stop();
+        long bytes2 = System.Linq.Enumerable.Sum(results);
+        double speed2 = (bytes2 / (1024.0 * 1024.0)) / sw2.Elapsed.TotalSeconds;
+        Console.WriteLine($"16 Parallel Sockets: Downloaded {bytes2 / (1024 * 1024)} MB in {sw2.Elapsed.TotalSeconds:F2}s -> Speed: {speed2:F2} MB/s");
+        Console.WriteLine($"\nSpeedup: {speed2 / speed1:F1}x faster with 16 parallel sockets!");
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

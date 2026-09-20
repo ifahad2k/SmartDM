@@ -169,7 +169,7 @@ public partial class TransferMonitorViewModel : ViewModelBase
         }
     }
 
-    public string SegmentsTitle => $"{Download?.ParallelThreads ?? 16} Parallel Stream Segments (Chunk Buffers)";
+    public string SegmentsTitle => $"{Math.Max(Download?.ParallelThreads ?? 16, ThreadMetrics.Count)} Parallel Stream Segments (Chunk Buffers)";
 
     public string SocketsTelemetryBadge
     {
@@ -195,7 +195,13 @@ public partial class TransferMonitorViewModel : ViewModelBase
         Download = download;
         _engine = engine;
 
+        var existingSegs = _engine?.GetSegments(download.Id);
         int threadCount = Math.Max(1, download.ParallelThreads > 0 ? download.ParallelThreads : 16);
+        if (existingSegs != null && existingSegs.Count > 0)
+        {
+            threadCount = Math.Max(threadCount, existingSegs.Count);
+        }
+
         for (int i = 0; i < threadCount; i++)
         {
             ThreadMetrics.Add(new ThreadMetric
@@ -207,7 +213,6 @@ public partial class TransferMonitorViewModel : ViewModelBase
             });
         }
 
-        var existingSegs = _engine?.GetSegments(download.Id);
         if (existingSegs != null && existingSegs.Count > 0)
         {
             for (int i = 0; i < existingSegs.Count && i < ThreadMetrics.Count; i++)
@@ -333,6 +338,16 @@ public partial class TransferMonitorViewModel : ViewModelBase
             if (_engine != null)
             {
                 var segs = _engine.GetSegments(updated.Id);
+                while (ThreadMetrics.Count < segs.Count)
+                {
+                    ThreadMetrics.Add(new ThreadMetric
+                    {
+                        ThreadIndex = ThreadMetrics.Count + 1,
+                        SpeedMbps = 0,
+                        IsActive = updated.Status == DownloadStatus.Active,
+                        Progress = 0
+                    });
+                }
                 for (int i = 0; i < segs.Count && i < ThreadMetrics.Count; i++)
                 {
                     ThreadMetrics[i].SpeedMbps = segs[i].SpeedMbps;
@@ -341,6 +356,7 @@ public partial class TransferMonitorViewModel : ViewModelBase
                     ThreadMetrics[i].IsCompleted = segs[i].IsCompleted;
                 }
                 OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                OnPropertyChanged(nameof(SegmentsTitle));
             }
         });
     }

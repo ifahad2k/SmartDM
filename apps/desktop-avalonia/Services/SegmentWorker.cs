@@ -71,6 +71,8 @@ public class SegmentWorker
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, _url);
+            req.Version = System.Net.HttpVersion.Version11;
+            req.VersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact;
             if (!string.IsNullOrEmpty(_referer))
             {
                 req.Headers.TryAddWithoutValidation("Referer", _referer);
@@ -96,15 +98,31 @@ public class SegmentWorker
             using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             resp.EnsureSuccessStatusCode();
 
+            if (currentStart > 0 && resp.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+                throw new HttpRequestException("Server does not support HTTP Range requests (returned 200 OK for sub-range)");
+            }
+
             await using var contentStream = await resp.Content.ReadAsStreamAsync(cancellationToken);
-            await using var fileStream = new FileStream(_targetFilePath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite, 65536, useAsync: true);
+            await using var fileStream = new FileStream(_targetFilePath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite, 131072, useAsync: true);
             fileStream.Seek(currentStart, SeekOrigin.Begin);
 
-            byte[] buffer = new byte[65536];
+            byte[] buffer = new byte[131072];
             int read;
 
-            while ((read = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+            while (true)
             {
+                int toRead = buffer.Length;
+                if (Progress.EndByte > 0)
+                {
+                    long bytesNeeded = (Progress.EndByte - Progress.StartByte + 1) - Progress.DownloadedBytes;
+                    if (bytesNeeded <= 0) break;
+                    toRead = (int)Math.Min((long)buffer.Length, bytesNeeded);
+                }
+
+                read = await contentStream.ReadAsync(buffer.AsMemory(0, toRead), cancellationToken);
+                if (read <= 0) break;
+
                 await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 Progress.DownloadedBytes += read;
                 _bytesSinceLastCheck += read;

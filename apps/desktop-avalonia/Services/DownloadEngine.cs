@@ -205,12 +205,30 @@ public class DownloadEngine : IDownloadEngine
             StagingFilePath = stagingFilePath
         };
 
-        // Check if this stream requires FFmpeg muxing/copying (HLS .m3u8, dual stream video+audio, or MP3 audio conversion)
-        bool isFfmpegTask = download.Url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
-                            !string.IsNullOrWhiteSpace(download.AudioUrl) ||
-                            (download.Category == "Audio" && download.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) && !download.Url.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase));
+        // 1. Dual-stream video+audio (DASH / YouTube 1080p, 720p, etc.) -> High-Speed 24-Stream Parallel Transfer
+        if (!string.IsNullOrWhiteSpace(download.AudioUrl))
+        {
+            _sessions[download.Id] = session;
+            session.RunnerTask = Task.Run(async () =>
+            {
+                await RunDualStreamSessionAsync(session);
+            });
+            return;
+        }
 
-        if (isFfmpegTask)
+        // 2. Audio-only MP3 conversion (YouTube audio, etc.) -> High-Speed Parallel Download + Local Conversion
+        if (download.Category == "Audio" && download.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) && !download.Url.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            _sessions[download.Id] = session;
+            session.RunnerTask = Task.Run(async () =>
+            {
+                await RunAudioConversionSessionAsync(session);
+            });
+            return;
+        }
+
+        // 3. HLS .m3u8 stream tasks (Pornhub, etc.) -> FFmpeg Stream Session
+        if (download.Url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
         {
             _sessions[download.Id] = session;
             session.RunnerTask = Task.Run(async () =>
@@ -458,6 +476,601 @@ public class DownloadEngine : IDownloadEngine
         {
             monitorCts.Cancel();
             _sessions.TryRemove(dl.Id, out _);
+        }
+    }
+
+    private static string ResolveFfmpegPath()
+    {
+        string ffmpegPath = "ffmpeg";
+        string? envFfmpeg = Environment.GetEnvironmentVariable("FFMPEG_PATH");
+        if (!string.IsNullOrEmpty(envFfmpeg) && File.Exists(envFfmpeg))
+        {
+            return envFfmpeg;
+        }
+        string wingetPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            @"Microsoft\WinGet\Packages\yt-dlp.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-125365-g9a01c1cb6a-win64-gpl\bin\ffmpeg.exe");
+        if (File.Exists(wingetPath))
+        {
+            return wingetPath;
+        }
+        return ffmpegPath;
+    }
+
+    private async Task<long> ProbeStreamLengthAsync(string url, string? referer, string? uaString, string? cookieHeader, CancellationToken token)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Version = System.Net.HttpVersion.Version11;
+            req.VersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact;
+            req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+            if (!string.IsNullOrEmpty(referer)) req.Headers.TryAddWithoutValidation("Referer", referer);
+            if (!string.IsNullOrEmpty(uaString)) req.Headers.TryAddWithoutValidation("User-Agent", uaString);
+            if (!string.IsNullOrEmpty(cookieHeader)) req.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+
+            using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return -1;
+            }
+            if (resp.Content.Headers.ContentRange?.Length.HasValue == true)
+            {
+                return resp.Content.Headers.ContentRange.Length.Value;
+            }
+            if (resp.Content.Headers.ContentLength.HasValue && resp.Content.Headers.ContentLength.Value > 1)
+            {
+                return resp.Content.Headers.ContentLength.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DownloadEngine] ProbeStreamLengthAsync failed for {url}: {ex.Message}");
+        }
+        return -1;
+    }
+
+    private async Task RunDualStreamSessionAsync(DownloadSession session)
+    {
+        var dl = session.Download;
+        var token = session.Cts.Token;
+
+        if (dl.SavePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) || dl.SavePath.EndsWith(".webm", StringComparison.OrdinalIgnoreCase))
+        {
+            dl.SavePath = Path.ChangeExtension(dl.SavePath, ".mp4");
+            dl.Title = Path.GetFileName(dl.SavePath);
+        }
+
+        if (string.IsNullOrEmpty(session.StagingDirectory))
+        {
+            session.StagingDirectory = GetDownloadStagingDirectory(dl.Id);
+        }
+        session.StagingFilePath = Path.Combine(session.StagingDirectory, Path.GetFileName(dl.SavePath));
+
+        string referer = dl.Referer ?? "";
+        if (string.IsNullOrEmpty(referer) && (dl.Url.Contains("phncdn.com", StringComparison.OrdinalIgnoreCase) || dl.Url.Contains("pornhub.com", StringComparison.OrdinalIgnoreCase)))
+        {
+            referer = "https://www.pornhub.com/";
+        }
+
+        string uaString = !string.IsNullOrWhiteSpace(dl.UserAgent)
+            ? dl.UserAgent
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+        string? cookieHeader = null;
+        if (!string.IsNullOrEmpty(dl.Cookies))
+        {
+            var cookiePairs = new List<string>();
+            var lines = dl.Cookies.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var l in lines)
+            {
+                if (l.StartsWith("#") || string.IsNullOrWhiteSpace(l)) continue;
+                var parts = l.Split('\t');
+                if (parts.Length >= 7) cookiePairs.Add($"{parts[5]}={parts[6]}");
+            }
+            if (cookiePairs.Count > 0) cookieHeader = string.Join("; ", cookiePairs);
+            else if (!dl.Cookies.Contains("\t")) cookieHeader = dl.Cookies;
+        }
+
+        dl.StatusDetail = "Probing video & audio stream boundaries...";
+        DownloadStatusChanged?.Invoke(dl);
+
+        long videoSize = await ProbeStreamLengthAsync(dl.Url, referer, uaString, cookieHeader, token);
+        long audioSize = await ProbeStreamLengthAsync(dl.AudioUrl!, referer, uaString, cookieHeader, token);
+
+        if (videoSize <= 0 || audioSize <= 0)
+        {
+            Debug.WriteLine($"[DownloadEngine] Dual stream probing returned video={videoSize}, audio={audioSize}. Falling back to FFmpeg.");
+            await RunFfmpegSessionAsync(session);
+            return;
+        }
+
+        dl.TotalBytes = videoSize + audioSize;
+
+        string videoStagingPath = Path.Combine(session.StagingDirectory, "video_stream.tmp");
+        string audioStagingPath = Path.Combine(session.StagingDirectory, "audio_stream.tmp");
+
+        try
+        {
+            await using (var fs = new FileStream(videoStagingPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
+            {
+                if (fs.Length < videoSize) fs.SetLength(videoSize);
+            }
+            await using (var fs = new FileStream(audioStagingPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
+            {
+                if (fs.Length < audioSize) fs.SetLength(audioSize);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DownloadEngine] Pre-allocate error: {ex.Message}");
+        }
+
+        session.Workers.Clear();
+        int videoThreads = Math.Min(16, Math.Max(1, (int)(videoSize / (128 * 1024))));
+        int audioThreads = Math.Min(8, Math.Max(1, (int)(audioSize / (128 * 1024))));
+        dl.ParallelThreads = videoThreads + audioThreads;
+
+        // 1. Create Video Segment Workers (1-16)
+        long videoChunkSize = videoSize / videoThreads;
+        long vOffset = 0;
+        for (int i = 0; i < videoThreads; i++)
+        {
+            long start = vOffset;
+            long end = (i == videoThreads - 1) ? videoSize - 1 : (vOffset + videoChunkSize - 1);
+            var worker = new SegmentWorker(_httpClient, dl.Url, videoStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader);
+            session.Workers.Add(worker);
+            vOffset = end + 1;
+        }
+
+        // 2. Create Audio Segment Workers (17-24)
+        long audioChunkSize = audioSize / audioThreads;
+        long aOffset = 0;
+        for (int i = 0; i < audioThreads; i++)
+        {
+            long start = aOffset;
+            long end = (i == audioThreads - 1) ? audioSize - 1 : (aOffset + audioChunkSize - 1);
+            var worker = new SegmentWorker(_httpClient, dl.AudioUrl!, audioStagingPath, videoThreads + i + 1, start, end, 0, referer, uaString, cookieHeader);
+            session.Workers.Add(worker);
+            aOffset = end + 1;
+        }
+
+        _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+
+        var workerTasks = session.Workers.Select(w => w.ExecuteAsync(token)).ToList();
+
+        // Telemetry monitor loop
+        var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var monitorTask = Task.Run(async () =>
+        {
+            long lastDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            var sw = Stopwatch.StartNew();
+
+            while (!monitorCts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(500, monitorCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+                double elapsedSec = sw.Elapsed.TotalSeconds;
+
+                if (elapsedSec > 0)
+                {
+                    long delta = currentDownloaded - lastDownloaded;
+                    double speedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
+                    dl.SpeedMbps = speedMbps;
+                    dl.DownloadedBytes = Math.Min(dl.TotalBytes, currentDownloaded);
+                    dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
+
+                    long remainingBytes = dl.TotalBytes - dl.DownloadedBytes;
+                    if (speedMbps > 0.01)
+                    {
+                        dl.EtaSeconds = (int)(remainingBytes / (speedMbps * 1024 * 1024));
+                    }
+
+                    dl.StatusDetail = $"Accelerated {dl.ParallelThreads}-Stream Transfer ({dl.SpeedMbps:F1} MB/s)...";
+                    dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / {MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s";
+
+                    lastDownloaded = currentDownloaded;
+                    sw.Restart();
+
+                    _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+                    DownloadProgressChanged?.Invoke(dl);
+                }
+            }
+        }, monitorCts.Token);
+
+        try
+        {
+            await Task.WhenAll(workerTasks);
+            monitorCts.Cancel();
+
+            long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            bool hasBytes = totalDownloaded >= dl.TotalBytes;
+
+            if (!token.IsCancellationRequested && hasBytes)
+            {
+                dl.StatusDetail = "Muxing high-speed video & audio streams...";
+                dl.SpeedMbps = 0;
+                dl.ProgressPercentage = 99.0;
+                dl.DownloadedBytes = dl.TotalBytes;
+                dl.Subline = $"{MediaFormatItem.FormatBytes(dl.TotalBytes)} • Fast Local Mux";
+                DownloadProgressChanged?.Invoke(dl);
+
+                string ffmpegPath = ResolveFfmpegPath();
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    WorkingDirectory = session.StagingDirectory,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                psi.ArgumentList.Add("-y");
+                psi.ArgumentList.Add("-nostdin");
+                psi.ArgumentList.Add("-i");
+                psi.ArgumentList.Add(videoStagingPath);
+                psi.ArgumentList.Add("-i");
+                psi.ArgumentList.Add(audioStagingPath);
+                psi.ArgumentList.Add("-c:v");
+                psi.ArgumentList.Add("copy");
+                psi.ArgumentList.Add("-c:a");
+                psi.ArgumentList.Add("aac");
+                psi.ArgumentList.Add("-movflags");
+                psi.ArgumentList.Add("+faststart");
+                psi.ArgumentList.Add(session.StagingFilePath);
+
+                using var proc = new Process { StartInfo = psi };
+                session.ActiveProcess = proc;
+
+                using var reg = token.Register(() =>
+                {
+                    try { if (!proc.HasExited) proc.Kill(true); } catch { }
+                });
+
+                proc.Start();
+                var stderrTask = proc.StandardError.ReadToEndAsync(token);
+                await proc.WaitForExitAsync(token);
+                string stderr = await stderrTask;
+
+                bool fileHasData = File.Exists(session.StagingFilePath) && new FileInfo(session.StagingFilePath).Length > 0;
+                if (proc.ExitCode == 0 && !token.IsCancellationRequested && fileHasData)
+                {
+                    var fi = new FileInfo(session.StagingFilePath);
+                    dl.TotalBytes = fi.Length;
+                    dl.DownloadedBytes = fi.Length;
+
+                    string? targetDir = Path.GetDirectoryName(dl.SavePath);
+                    if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+                    File.Move(session.StagingFilePath, dl.SavePath, overwrite: true);
+                    CleanupStagingDirectory(session.StagingDirectory);
+
+                    dl.Status = DownloadStatus.Completed;
+                    dl.SpeedMbps = 0;
+                    dl.ProgressPercentage = 100.0;
+                    dl.StatusDetail = "High-speed media downloaded & muxed successfully";
+                    dl.Subline = $"{MediaFormatItem.FormatBytes(dl.TotalBytes)} • Completed";
+                    DownloadProgressChanged?.Invoke(dl);
+
+                    var scanResult = await _safetyScanner.ScanFileAsync(dl.SavePath);
+                    dl.Sha256Hash = scanResult.Sha256Hash;
+                    await _repository.SaveDownloadAsync(dl);
+                    DownloadCompleted?.Invoke(dl, scanResult);
+                    DownloadStatusChanged?.Invoke(dl);
+                }
+                else
+                {
+                    dl.Status = DownloadStatus.Paused;
+                    dl.SpeedMbps = 0;
+                    dl.StatusDetail = proc.ExitCode != 0 ? $"Muxing failed (exit code {proc.ExitCode})" : "Muxing interrupted";
+                    await _repository.SaveDownloadAsync(dl);
+                    DownloadStatusChanged?.Invoke(dl);
+                }
+            }
+            else if (!token.IsCancellationRequested)
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                string? firstWorkerError = session.Workers.FirstOrDefault(w => !string.IsNullOrEmpty(w.LastError))?.LastError;
+                dl.StatusDetail = !string.IsNullOrEmpty(firstWorkerError) ? $"Stream error: {firstWorkerError}" : "Transfer interrupted or partial bytes received";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+            }
+            else if (token.IsCancellationRequested)
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                dl.StatusDetail = "Paused by user";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = "Paused by user";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
+            CleanupStagingDirectory(session.StagingDirectory);
+        }
+        catch (Exception ex)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = $"Error: {ex.Message}";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
+            if (!File.Exists(session.StagingFilePath) || new FileInfo(session.StagingFilePath).Length == 0)
+            {
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
+        }
+        finally
+        {
+            monitorCts.Cancel();
+            _sessions.TryRemove(dl.Id, out _);
+            if (dl.Status == DownloadStatus.Completed)
+            {
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
+        }
+    }
+
+    private async Task RunAudioConversionSessionAsync(DownloadSession session)
+    {
+        var dl = session.Download;
+        var token = session.Cts.Token;
+
+        if (string.IsNullOrEmpty(session.StagingDirectory))
+        {
+            session.StagingDirectory = GetDownloadStagingDirectory(dl.Id);
+        }
+        session.StagingFilePath = Path.Combine(session.StagingDirectory, Path.GetFileName(dl.SavePath));
+
+        string referer = dl.Referer ?? "";
+        string uaString = !string.IsNullOrWhiteSpace(dl.UserAgent)
+            ? dl.UserAgent
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+        string? cookieHeader = null;
+        if (!string.IsNullOrEmpty(dl.Cookies))
+        {
+            var cookiePairs = new List<string>();
+            var lines = dl.Cookies.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var l in lines)
+            {
+                if (l.StartsWith("#") || string.IsNullOrWhiteSpace(l)) continue;
+                var parts = l.Split('\t');
+                if (parts.Length >= 7) cookiePairs.Add($"{parts[5]}={parts[6]}");
+            }
+            if (cookiePairs.Count > 0) cookieHeader = string.Join("; ", cookiePairs);
+            else if (!dl.Cookies.Contains("\t")) cookieHeader = dl.Cookies;
+        }
+
+        long probedSize = await ProbeStreamLengthAsync(dl.Url, referer, uaString, cookieHeader, token);
+        long audioSize = probedSize > 0 ? probedSize : dl.TotalBytes;
+
+        if (audioSize <= 0)
+        {
+            await RunFfmpegSessionAsync(session);
+            return;
+        }
+
+        dl.TotalBytes = audioSize;
+        string audioStagingPath = Path.Combine(session.StagingDirectory, "audio_raw.tmp");
+
+        try
+        {
+            await using (var fs = new FileStream(audioStagingPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
+            {
+                if (fs.Length < audioSize) fs.SetLength(audioSize);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DownloadEngine] Pre-allocate audio error: {ex.Message}");
+        }
+
+        session.Workers.Clear();
+        int threadCount = Math.Min(16, Math.Max(1, (int)(audioSize / (128 * 1024))));
+        dl.ParallelThreads = threadCount;
+        long chunkSize = audioSize / threadCount;
+        long currentOffset = 0;
+        for (int i = 0; i < threadCount; i++)
+        {
+            long start = currentOffset;
+            long end = (i == threadCount - 1) ? audioSize - 1 : (currentOffset + chunkSize - 1);
+            var worker = new SegmentWorker(_httpClient, dl.Url, audioStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader);
+            session.Workers.Add(worker);
+            currentOffset = end + 1;
+        }
+
+        _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+        var workerTasks = session.Workers.Select(w => w.ExecuteAsync(token)).ToList();
+
+        // Telemetry monitor loop
+        var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var monitorTask = Task.Run(async () =>
+        {
+            long lastDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            var sw = Stopwatch.StartNew();
+
+            while (!monitorCts.Token.IsCancellationRequested)
+            {
+                try { await Task.Delay(500, monitorCts.Token); } catch { break; }
+
+                long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+                double elapsedSec = sw.Elapsed.TotalSeconds;
+
+                if (elapsedSec > 0)
+                {
+                    long delta = currentDownloaded - lastDownloaded;
+                    double speedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
+                    dl.SpeedMbps = speedMbps;
+                    dl.DownloadedBytes = Math.Min(dl.TotalBytes, currentDownloaded);
+                    dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
+
+                    long remainingBytes = dl.TotalBytes - dl.DownloadedBytes;
+                    if (speedMbps > 0.01)
+                    {
+                        dl.EtaSeconds = (int)(remainingBytes / (speedMbps * 1024 * 1024));
+                    }
+
+                    dl.StatusDetail = $"Accelerated Audio Transfer ({dl.SpeedMbps:F1} MB/s)...";
+                    dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / {MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s";
+
+                    lastDownloaded = currentDownloaded;
+                    sw.Restart();
+                    _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+                    DownloadProgressChanged?.Invoke(dl);
+                }
+            }
+        }, monitorCts.Token);
+
+        try
+        {
+            await Task.WhenAll(workerTasks);
+            monitorCts.Cancel();
+
+            long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            bool hasBytes = totalDownloaded >= dl.TotalBytes;
+
+            if (!token.IsCancellationRequested && hasBytes)
+            {
+                dl.StatusDetail = "Converting audio to MP3...";
+                dl.SpeedMbps = 0;
+                dl.ProgressPercentage = 99.0;
+                dl.DownloadedBytes = dl.TotalBytes;
+                dl.Subline = $"{MediaFormatItem.FormatBytes(dl.TotalBytes)} • Fast Local Conversion";
+                DownloadProgressChanged?.Invoke(dl);
+
+                string ffmpegPath = ResolveFfmpegPath();
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    WorkingDirectory = session.StagingDirectory,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                psi.ArgumentList.Add("-y");
+                psi.ArgumentList.Add("-nostdin");
+                psi.ArgumentList.Add("-i");
+                psi.ArgumentList.Add(audioStagingPath);
+                psi.ArgumentList.Add("-vn");
+                psi.ArgumentList.Add("-acodec");
+                psi.ArgumentList.Add("libmp3lame");
+                psi.ArgumentList.Add("-q:a");
+                psi.ArgumentList.Add("2");
+                psi.ArgumentList.Add(session.StagingFilePath);
+
+                using var proc = new Process { StartInfo = psi };
+                session.ActiveProcess = proc;
+
+                using var reg = token.Register(() =>
+                {
+                    try { if (!proc.HasExited) proc.Kill(true); } catch { }
+                });
+
+                proc.Start();
+                var stderrTask = proc.StandardError.ReadToEndAsync(token);
+                await proc.WaitForExitAsync(token);
+                string stderr = await stderrTask;
+
+                bool fileHasData = File.Exists(session.StagingFilePath) && new FileInfo(session.StagingFilePath).Length > 0;
+                if (proc.ExitCode == 0 && !token.IsCancellationRequested && fileHasData)
+                {
+                    var fi = new FileInfo(session.StagingFilePath);
+                    dl.TotalBytes = fi.Length;
+                    dl.DownloadedBytes = fi.Length;
+
+                    string? targetDir = Path.GetDirectoryName(dl.SavePath);
+                    if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+                    File.Move(session.StagingFilePath, dl.SavePath, overwrite: true);
+                    CleanupStagingDirectory(session.StagingDirectory);
+
+                    dl.Status = DownloadStatus.Completed;
+                    dl.SpeedMbps = 0;
+                    dl.ProgressPercentage = 100.0;
+                    dl.StatusDetail = "Audio stream downloaded & converted to MP3 successfully";
+                    dl.Subline = $"{MediaFormatItem.FormatBytes(dl.TotalBytes)} • Completed";
+                    DownloadProgressChanged?.Invoke(dl);
+
+                    var scanResult = await _safetyScanner.ScanFileAsync(dl.SavePath);
+                    dl.Sha256Hash = scanResult.Sha256Hash;
+                    await _repository.SaveDownloadAsync(dl);
+                    DownloadCompleted?.Invoke(dl, scanResult);
+                    DownloadStatusChanged?.Invoke(dl);
+                }
+                else
+                {
+                    dl.Status = DownloadStatus.Paused;
+                    dl.SpeedMbps = 0;
+                    dl.StatusDetail = proc.ExitCode != 0 ? $"Audio conversion failed (code {proc.ExitCode})" : "Audio conversion interrupted";
+                    await _repository.SaveDownloadAsync(dl);
+                    DownloadStatusChanged?.Invoke(dl);
+                }
+            }
+            else if (!token.IsCancellationRequested)
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                string? firstWorkerError = session.Workers.FirstOrDefault(w => !string.IsNullOrEmpty(w.LastError))?.LastError;
+                dl.StatusDetail = !string.IsNullOrEmpty(firstWorkerError) ? $"Stream error: {firstWorkerError}" : "Transfer interrupted or partial bytes received";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+            }
+            else if (token.IsCancellationRequested)
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                dl.StatusDetail = "Paused by user";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = "Paused by user";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
+            CleanupStagingDirectory(session.StagingDirectory);
+        }
+        catch (Exception ex)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = $"Error: {ex.Message}";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
+            if (!File.Exists(session.StagingFilePath) || new FileInfo(session.StagingFilePath).Length == 0)
+            {
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
+        }
+        finally
+        {
+            monitorCts.Cancel();
+            _sessions.TryRemove(dl.Id, out _);
+            if (dl.Status == DownloadStatus.Completed)
+            {
+                CleanupStagingDirectory(session.StagingDirectory);
+            }
         }
     }
 
