@@ -29,18 +29,12 @@ function sanitizeStreamUrl(rawUrl) {
   if (!rawUrl) return '';
   try {
     const u = new URL(rawUrl);
-    // Facebook CDN stream range deduplication
-    if (u.hostname.includes('fbcdn.net') || u.hostname.includes('facebook.com')) {
-      u.searchParams.delete('bytestart');
-      u.searchParams.delete('byteend');
-      return u.href;
-    }
-    // Google Video range parameter removal
-    if (u.hostname.includes('googlevideo.com') || u.pathname.includes('videoplayback')) {
+    if (u.searchParams.has('bytestart')) u.searchParams.delete('bytestart');
+    if (u.searchParams.has('byteend')) u.searchParams.delete('byteend');
+    if (u.searchParams.has('range') && !u.hostname.includes('googlevideo.com')) {
       u.searchParams.delete('range');
-      return u.href;
     }
-    return rawUrl;
+    return u.href;
   } catch (e) {
     return rawUrl;
   }
@@ -194,7 +188,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
                               url.includes('.html') || url.includes('.ico') || url.includes('.webmanifest') ||
-                              url.includes('manifest.') || url.includes('.torrent') || url.includes('.rar') ||
+                              url.includes('.torrent') || url.includes('.rar') ||
                               url.includes('.zip') || url.includes('.7z') || url.includes('.tar') ||
                               url.includes('.gz') || url.includes('.iso') || url.includes('.exe') ||
                               url.includes('.msi') || url.includes('.pdf') || contentType.includes('bittorrent') ||
@@ -207,12 +201,11 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         if (url.includes('success') || url.includes('failure') || url.includes('no_input') || url.includes('open') || url.includes('sound')) return;
       }
 
-      // Filter out HLS/DASH segment chunks and range requests
+      // Filter out HLS/DASH segment chunks (preserve full stream URLs)
       const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com');
       const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
-                             (url.includes('.m4s') && !url.includes('master')) ||
-                             (!isFbMedia && !isGoogleVideo && (url.includes('bytestart=') || url.includes('byteend=') || url.includes('range=')));
+                             (url.includes('.m4s') && !url.includes('master'));
       if (isSegmentChunk) return;
 
       let targetUrl = sanitizeStreamUrl(details.url);
@@ -420,19 +413,39 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  // 1. Direct Loopback IPC to running SmartDM Avalonia Desktop App (port 18420-18425) with 350ms timeout
+  // 1. Discover active SmartDM desktop app port (port 18420-18425) via fast OPTIONS probe
+  const isFormatQuery = request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo';
   const ports = [18420, 18421, 18422, 18423, 18424, 18425];
+  let activePort = null;
+
   for (const port of ports) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 350);
-      const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
+      const probeController = new AbortController();
+      const probeTimer = setTimeout(() => probeController.abort(), 120);
+      const probeRes = await fetch(`http://127.0.0.1:${port}/api/browser`, {
+        method: 'OPTIONS',
+        signal: probeController.signal
+      });
+      clearTimeout(probeTimer);
+      if (probeRes.ok || probeRes.status === 200 || probeRes.status === 204) {
+        activePort = port;
+        break;
+      }
+    } catch(e) {}
+  }
+
+  if (activePort) {
+    try {
+      const timeoutMs = isFormatQuery ? 7000 : 3000;
+      const reqController = new AbortController();
+      const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
+      const res = await fetch(`http://127.0.0.1:${activePort}/api/browser`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
-        signal: controller.signal
+        signal: reqController.signal
       });
-      clearTimeout(timeoutId);
+      clearTimeout(reqTimer);
       if (res.ok) {
         const data = await res.json();
         if (sendResponse) sendResponse(data || { success: true, status: 'ok' });
@@ -442,7 +455,7 @@ async function appendCookiesAndSend(request, sendResponse) {
   }
 
   // Never call native messaging for format queries - avoid blocking stalls
-  if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo') {
+  if (isFormatQuery) {
     if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
     return;
   }

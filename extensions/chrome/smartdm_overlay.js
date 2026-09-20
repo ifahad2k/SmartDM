@@ -420,12 +420,135 @@
     return null;
   }
 
-  // --- DYNAMIC FORMAT EXTRACTION ENGINE (3 TIERS) ---
+  // --- UNIVERSAL TUBE & HTML5 DOM PARSER ---
+  function extractTubeFormatsFromDOM(pageTitle = 'video') {
+    const formats = [];
+    const seen = new Set();
+
+    const addFormat = (url, quality, ext = 'mp4') => {
+      if (!url || typeof url !== 'string' || !url.startsWith('http')) return;
+      if (seen.has(url)) return;
+      seen.add(url);
+
+      const isHls = ext === 'm3u8' || url.includes('.m3u8');
+      let qStr = quality ? String(quality).trim() : '';
+      if (qStr && !qStr.endsWith('p') && /^\d+$/.test(qStr)) qStr += 'p';
+      let qLabel = qStr || (isHls ? 'Master HLS' : 'Video');
+      const hNum = parseInt(qLabel, 10);
+      if (hNum >= 720 && !qLabel.includes('HD')) qLabel += ' HD';
+      qLabel += isHls ? ' (Stream)' : ' (MP4)';
+
+      formats.push({
+        formatId: 'tube_' + (quality || formats.length),
+        resolution: qLabel,
+        height: hNum || (isHls ? 1080 : 720),
+        ext: isHls ? 'm3u8' : 'mp4',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: pageTitle,
+        url: url
+      });
+    };
+
+    try {
+      // 1. Scan page scripts for embedded player definitions
+      const scripts = document.querySelectorAll('script');
+      for (const s of scripts) {
+        const text = s.textContent || '';
+        if (!text || text.length < 30) continue;
+
+        // A. Pornhub / MindGeek network (mediaDefinitions)
+        if (text.includes('mediaDefinitions')) {
+          const idx = text.indexOf('mediaDefinitions');
+          const start = text.indexOf('[', idx);
+          if (start >= 0) {
+            let openCount = 0, last = -1;
+            for (let i = start; i < text.length; i++) {
+              if (text[i] === '[') openCount++;
+              else if (text[i] === ']') {
+                openCount--;
+                if (openCount === 0) { last = i; break; }
+              }
+            }
+            if (last > start) {
+              try {
+                const list = JSON.parse(text.substring(start, last + 1));
+                if (Array.isArray(list)) {
+                  list.forEach(item => {
+                    if (item && item.videoUrl) {
+                      addFormat(item.videoUrl, item.quality || (item.format === 'hls' ? 'Master' : '720p'), item.format);
+                    }
+                  });
+                }
+              } catch(e) {}
+            }
+          }
+        }
+
+        // B. XVideos / XNXX (html5player.setVideoUrlLow/High/HLS)
+        if (text.includes('html5player.setVideo')) {
+          const high = text.match(/html5player\.setVideoUrlHigh\(['"]([^'"]+)['"]\)/);
+          if (high) addFormat(high[1], '720p', 'mp4');
+          const low = text.match(/html5player\.setVideoUrlLow\(['"]([^'"]+)['"]\)/);
+          if (low) addFormat(low[1], '360p', 'mp4');
+          const hls = text.match(/html5player\.setVideoHLS\(['"]([^'"]+)['"]\)/);
+          if (hls) addFormat(hls[1], 'Master', 'm3u8');
+        }
+
+        // C. SpankBang & Generic Tube: "720p": "https://..." or quality_720p
+        const qMatches = text.matchAll(/["']?(?:quality_)?(2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|144p?)["']?\s*[:=]\s*["'](https?:\/\/[^"']+\.(?:mp4|webm|m3u8)[^"']*)["']/gi);
+        for (const m of qMatches) {
+          addFormat(m[2], m[1], m[2].includes('.m3u8') ? 'm3u8' : 'mp4');
+        }
+
+        // D. XHamster: sources: { ... } or xplayerSettings
+        if (text.includes('xplayerSettings') || text.includes('sources')) {
+          const srcMatches = text.matchAll(/["']?(2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|144p?|hls)["']?\s*:\s*["'](https?:\/\/[^"']+)["']/gi);
+          for (const m of srcMatches) {
+            if (m[2].includes('http') && (m[2].includes('.mp4') || m[2].includes('.m3u8'))) {
+              addFormat(m[2], m[1], m[2].includes('.m3u8') ? 'm3u8' : 'mp4');
+            }
+          }
+        }
+      }
+
+      // 2. HTML5 Video Elements & Sources
+      const videos = document.querySelectorAll('video');
+      videos.forEach(v => {
+        const src = v.currentSrc || v.src;
+        if (src && src.startsWith('http')) {
+          const h = v.videoHeight || 720;
+          addFormat(src, h + 'p', src.includes('.m3u8') ? 'm3u8' : 'mp4');
+        }
+        const sources = v.querySelectorAll('source');
+        sources.forEach(s => {
+          const sUrl = s.src || s.getAttribute('src');
+          if (sUrl && sUrl.startsWith('http')) {
+            const res = s.getAttribute('res') || s.getAttribute('size') || (v.videoHeight ? v.videoHeight + 'p' : '720p');
+            addFormat(sUrl, res, sUrl.includes('.m3u8') ? 'm3u8' : 'mp4');
+          }
+        });
+      });
+    } catch(e) {}
+
+    formats.sort((a, b) => (b.height || 0) - (a.height || 0));
+    return formats;
+  }
+
   // --- UNIVERSAL FALLBACK & INTENT SENSOR ---
   function buildFallbackFormats(videoUrl, mediaEl, callback) {
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
     if (!mediaEl) mediaEl = findActiveVideoElement();
+    const pageTitle = extractSemanticPageTitle() || 'video';
 
+    // 1. First check in-page Tube formats from DOM scripts (Pornhub, XVideos, XHamster, etc.)
+    const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
+    if (tubeFormats && tubeFormats.length > 0) {
+      callback({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
+      return;
+    }
+
+    // 2. Query detected network streams from background
     runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
       let netMedia = (netRes && netRes.media) ? netRes.media : [];
       let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
@@ -436,16 +559,9 @@
         }
       }
 
-      const isYouTube = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
-      if (isYouTube) {
-        callback({ success: false, status: 'error', message: 'Could not extract YouTube formats.' });
-        return;
-      }
-
       const formats = [];
-      const pageTitle = extractSemanticPageTitle() || 'video';
 
-      if (liveSrc && liveSrc.startsWith('http') && !liveSrc.includes('googlevideo.com')) {
+      if (liveSrc && liveSrc.startsWith('http')) {
         const h = mediaEl ? (mediaEl.videoHeight || 0) : 0;
         const w = mediaEl ? (mediaEl.videoWidth || 0) : 0;
         let resText = 'Source Stream';
@@ -467,17 +583,34 @@
       }
 
       netMedia.forEach((m, idx) => {
-        if (m.url.includes('googlevideo.com') || (liveSrc && m.url === liveSrc)) return;
+        if (liveSrc && m.url === liveSrc) return;
+        const isGv = m.url.includes('googlevideo.com') || m.url.includes('videoplayback');
         const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'mp4').toLowerCase();
         const isAudio = (m.contentType && m.contentType.includes('audio/')) || m.url.includes('.m4a') || m.url.includes('.mp3');
+        
         let resLabel = m.customTitle || '';
-        if (!resLabel || isOpaqueTokenOrHash(resLabel) || resLabel.includes('Video Stream (mp4)')) {
+        if (isGv) {
+          const itagMatch = m.url.match(/[?&]itag=(\d+)/);
+          const itag = itagMatch ? itagMatch[1] : '';
+          if (isAudio || itag === '140' || itag === '251') {
+            resLabel = 'Audio Stream (High Quality)';
+          } else if (itag === '137' || itag === '248' || itag === '399') {
+            resLabel = '1080p Full HD (MP4)';
+          } else if (itag === '22' || itag === '136' || itag === '247') {
+            resLabel = '720p HD (MP4)';
+          } else if (itag === '18' || itag === '135' || itag === '244') {
+            resLabel = '480p / 360p (MP4)';
+          } else {
+            resLabel = m.height && m.height >= 720 ? `${m.height}p HD (MP4)` : (m.height ? `${m.height}p (MP4)` : `Video Stream (itag ${itag})`);
+          }
+        } else if (!resLabel || isOpaqueTokenOrHash(resLabel) || resLabel.includes('Video Stream (mp4)')) {
           if (m.height && m.height > 0) {
             resLabel = m.height >= 720 ? `${m.height}p HD (${ext.toUpperCase()})` : `${m.height}p (${ext.toUpperCase()})`;
           } else {
             resLabel = isAudio ? `Audio Stream ${idx + 1} (${ext.toUpperCase()})` : `Video Stream ${idx + 1} (${ext.toUpperCase()})`;
           }
         }
+
         formats.push({
           formatId: 'net_' + idx,
           resolution: resLabel,
@@ -535,20 +668,28 @@
           notifyCallbacks(fallbackRes);
         });
       }
-    }, 1200);
+    }, 2500);
 
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
     const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
 
-    // For all non-YouTube sites (Facebook, Pornhub, Vimeo, etc.), build immediately from DOM & detected stream graph
+    // 1. For non-YouTube sites, first check Tube in-page DOM scripts
     if (!isYouTube) {
+      const pageTitle = extractSemanticPageTitle() || 'video';
+      const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
+      if (tubeFormats && tubeFormats.length > 0) {
+        notifyCallbacks({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
+        return;
+      }
+
+      // If no scripts found, query detected network streams
       buildFallbackFormats(videoUrl, mediaEl, (result) => {
         notifyCallbacks(result);
       });
       return;
     }
 
-    // For YouTube URLs, query SmartDM desktop app / service worker
+    // 2. For YouTube URLs, query SmartDM desktop app first
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
       if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
         notifyCallbacks(res);
@@ -562,7 +703,10 @@
         return;
       }
 
-      notifyCallbacks({ success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+      // If desktop app is not running or blocked, use playing video stream + captured network streams
+      buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
+        notifyCallbacks(fallbackRes);
+      });
     });
   }
 
