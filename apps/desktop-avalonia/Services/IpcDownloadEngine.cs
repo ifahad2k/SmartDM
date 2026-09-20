@@ -38,9 +38,23 @@ public class IpcDownloadEngine : IDownloadEngine, IAsyncDisposable
         _ipcClient = ipcClient ?? new SmartDmIpcClient();
         _fallbackEngine = fallbackEngine ?? new DownloadEngine(_repository, _safetyScanner);
 
-        // Forward fallback events when fallback engine is active
-        _fallbackEngine.DownloadProgressChanged += dl => DownloadProgressChanged?.Invoke(dl);
-        _fallbackEngine.DownloadStatusChanged += dl => DownloadStatusChanged?.Invoke(dl);
+        // Forward fallback events when fallback engine is active (guarding against paused downloads)
+        _fallbackEngine.DownloadProgressChanged += dl =>
+        {
+            if (dl.Status == DownloadStatus.Paused) return;
+            if (_trackedDownloads.TryGetValue(dl.Id, out var tracked) && tracked.Status == DownloadStatus.Paused) return;
+            DownloadProgressChanged?.Invoke(dl);
+        };
+        _fallbackEngine.DownloadStatusChanged += dl =>
+        {
+            if (_trackedDownloads.TryGetValue(dl.Id, out var tracked))
+            {
+                tracked.Status = dl.Status;
+                tracked.StatusDetail = dl.StatusDetail;
+                tracked.SpeedMbps = dl.SpeedMbps;
+            }
+            DownloadStatusChanged?.Invoke(dl);
+        };
         _fallbackEngine.DownloadCompleted += (dl, scan) => DownloadCompleted?.Invoke(dl, scan);
 
         _ipcClient.MessageReceived += HandleIpcMessage;
@@ -98,70 +112,83 @@ public class IpcDownloadEngine : IDownloadEngine, IAsyncDisposable
 
     public async Task PauseDownloadAsync(string downloadId)
     {
+        // 1. Immediately pause fallback engine (stops C# socket workers, kills ffmpeg/mux processes, zeroes speed)
+        await _fallbackEngine.PauseDownloadAsync(downloadId);
+
+        // 2. If IPC daemon is connected, also send PAUSE_DOWNLOAD command
         if (_ipcClient.IsConnected)
         {
             await _ipcClient.SendAsync(new { command = "PAUSE_DOWNLOAD", downloadId });
-            if (_trackedDownloads.TryGetValue(downloadId, out var dl))
-            {
-                dl.Status = DownloadStatus.Paused;
-                dl.SpeedMbps = 0;
-                dl.StatusDetail = "Paused by user";
-                await _repository.SaveDownloadAsync(dl);
-                DownloadStatusChanged?.Invoke(dl);
-            }
         }
-        else
+
+        if (_trackedDownloads.TryGetValue(downloadId, out var dl))
         {
-            await _fallbackEngine.PauseDownloadAsync(downloadId);
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = "Paused by user";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
         }
     }
 
     public async Task ResumeDownloadAsync(string downloadId, DownloadModel? existingModel = null)
     {
-        if (existingModel != null)
+        DownloadModel? target = existingModel;
+        if (target == null && _trackedDownloads.TryGetValue(downloadId, out var tracked))
         {
-            _trackedDownloads[downloadId] = existingModel;
+            target = tracked;
+        }
+        if (target == null)
+        {
+            var all = await _repository.GetAllDownloadsAsync();
+            target = all.FirstOrDefault(d => d.Id == downloadId);
         }
 
-        if (!_ipcClient.IsConnected)
-        {
-            await _ipcClient.ConnectAsync();
-        }
+        if (target == null) return;
 
-        if (_ipcClient.IsConnected)
+        _trackedDownloads[downloadId] = target;
+
+        // Determine if stream is managed by fallback engine (YouTube dual stream, HLS, or audio conversion)
+        bool isFallbackStream = !string.IsNullOrWhiteSpace(target.AudioUrl) ||
+                                target.Url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                                (target.Category == "Audio" && target.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase));
+
+        if (isFallbackStream || !_ipcClient.IsConnected)
         {
-            if (_trackedDownloads.TryGetValue(downloadId, out var dl))
-            {
-                dl.Status = DownloadStatus.Active;
-                dl.StatusDetail = "Resuming via Java 21 Engine (Warm Sockets)...";
-                await _repository.SaveDownloadAsync(dl);
-                DownloadStatusChanged?.Invoke(dl);
-            }
-            await _ipcClient.SendAsync(new { command = "RESUME_DOWNLOAD", downloadId });
+            target.Status = DownloadStatus.Active;
+            target.StatusDetail = "Resuming multi-socket download...";
+            await _repository.SaveDownloadAsync(target);
+            DownloadStatusChanged?.Invoke(target);
+            await _fallbackEngine.ResumeDownloadAsync(downloadId, target);
         }
         else
         {
-            await _fallbackEngine.ResumeDownloadAsync(downloadId, existingModel);
+            target.Status = DownloadStatus.Active;
+            target.StatusDetail = "Resuming via Java 21 Engine (Warm Sockets)...";
+            await _repository.SaveDownloadAsync(target);
+            DownloadStatusChanged?.Invoke(target);
+            await _ipcClient.SendAsync(new { command = "RESUME_DOWNLOAD", downloadId });
         }
     }
 
     public async Task CancelDownloadAsync(string downloadId)
     {
+        // 1. Immediately cancel fallback engine (cancels workers and purges staging directory)
+        await _fallbackEngine.CancelDownloadAsync(downloadId);
+
+        // 2. If IPC daemon is connected, also send CANCEL_DOWNLOAD command
         if (_ipcClient.IsConnected)
         {
             await _ipcClient.SendAsync(new { command = "CANCEL_DOWNLOAD", downloadId });
-            if (_trackedDownloads.TryGetValue(downloadId, out var dl))
-            {
-                dl.Status = DownloadStatus.Paused;
-                dl.SpeedMbps = 0;
-                dl.StatusDetail = "Cancelled";
-                await _repository.SaveDownloadAsync(dl);
-                DownloadStatusChanged?.Invoke(dl);
-            }
         }
-        else
+
+        if (_trackedDownloads.TryGetValue(downloadId, out var dl))
         {
-            await _fallbackEngine.CancelDownloadAsync(downloadId);
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = "Cancelled";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
         }
     }
 
@@ -200,6 +227,7 @@ public class IpcDownloadEngine : IDownloadEngine, IAsyncDisposable
                 if (string.IsNullOrEmpty(dlId)) return;
 
                 if (!_trackedDownloads.TryGetValue(dlId, out var dl)) return;
+                if (dl.Status == DownloadStatus.Paused) return;
 
                 if (root.TryGetProperty("downloadedBytes", out var dlBytesProp))
                     dl.DownloadedBytes = dlBytesProp.GetInt64();

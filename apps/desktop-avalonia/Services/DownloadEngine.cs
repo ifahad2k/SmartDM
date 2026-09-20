@@ -348,7 +348,7 @@ public class DownloadEngine : IDownloadEngine
             long lastDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
             var sw = Stopwatch.StartNew();
 
-            while (!monitorCts.Token.IsCancellationRequested)
+            while (!monitorCts.Token.IsCancellationRequested && !token.IsCancellationRequested && dl.Status != DownloadStatus.Paused)
             {
                 try
                 {
@@ -358,6 +358,8 @@ public class DownloadEngine : IDownloadEngine
                 {
                     break;
                 }
+
+                if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
 
                 long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
                 double elapsedSec = sw.Elapsed.TotalSeconds;
@@ -393,6 +395,7 @@ public class DownloadEngine : IDownloadEngine
 
                     _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
+                    if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
                     DownloadProgressChanged?.Invoke(dl);
                 }
             }
@@ -615,6 +618,51 @@ public class DownloadEngine : IDownloadEngine
         int audioThreads = Math.Min(8, Math.Max(1, (int)(audioSize / (128 * 1024))));
         dl.ParallelThreads = videoThreads + audioThreads;
 
+        string vPartsFile = videoStagingPath + ".parts";
+        string aPartsFile = audioStagingPath + ".parts";
+
+        var completedVideoChunks = new HashSet<long>();
+        long initialVideoBytes = 0;
+        if (File.Exists(vPartsFile))
+        {
+            try
+            {
+                foreach (var line in File.ReadAllLines(vPartsFile))
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length == 2 && long.TryParse(parts[0], out long s) && long.TryParse(parts[1], out long e))
+                    {
+                        if (completedVideoChunks.Add(s))
+                        {
+                            initialVideoBytes += (e - s + 1);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        var completedAudioChunks = new HashSet<long>();
+        long initialAudioBytes = 0;
+        if (File.Exists(aPartsFile))
+        {
+            try
+            {
+                foreach (var line in File.ReadAllLines(aPartsFile))
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length == 2 && long.TryParse(parts[0], out long s) && long.TryParse(parts[1], out long e))
+                    {
+                        if (completedAudioChunks.Add(s))
+                        {
+                            initialAudioBytes += (e - s + 1);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         // 1. Build Dynamic Chunk Queue for Video (1 MB to 3 MB chunks to prevent CDN throttle & eliminate stragglers)
         var videoQueue = new System.Collections.Concurrent.ConcurrentQueue<ChunkRange>();
         long vSliceSize = Math.Clamp(videoSize / 48, 1048576, 3145728);
@@ -622,7 +670,10 @@ public class DownloadEngine : IDownloadEngine
         while (vOffset < videoSize)
         {
             long end = Math.Min(vOffset + vSliceSize - 1, videoSize - 1);
-            videoQueue.Enqueue(new ChunkRange(vOffset, end));
+            if (!completedVideoChunks.Contains(vOffset))
+            {
+                videoQueue.Enqueue(new ChunkRange(vOffset, end));
+            }
             vOffset = end + 1;
         }
 
@@ -633,7 +684,10 @@ public class DownloadEngine : IDownloadEngine
         while (aOffset < audioSize)
         {
             long end = Math.Min(aOffset + aSliceSize - 1, audioSize - 1);
-            audioQueue.Enqueue(new ChunkRange(aOffset, end));
+            if (!completedAudioChunks.Contains(aOffset))
+            {
+                audioQueue.Enqueue(new ChunkRange(aOffset, end));
+            }
             aOffset = end + 1;
         }
 
@@ -659,24 +713,43 @@ public class DownloadEngine : IDownloadEngine
 
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
+        object vLock = new object();
+        Action<ChunkRange> onVideoChunkCompleted = c =>
+        {
+            lock (vLock)
+            {
+                try { File.AppendAllText(vPartsFile, $"{c.StartByte},{c.EndByte}{Environment.NewLine}"); } catch { }
+            }
+        };
+
+        object aLock = new object();
+        Action<ChunkRange> onAudioChunkCompleted = c =>
+        {
+            lock (aLock)
+            {
+                try { File.AppendAllText(aPartsFile, $"{c.StartByte},{c.EndByte}{Environment.NewLine}"); } catch { }
+            }
+        };
+
         var workerTasks = new List<Task>();
         for (int i = 0; i < videoThreads; i++)
         {
-            workerTasks.Add(session.Workers[i].ExecuteChunkQueueAsync(videoQueue, token));
+            workerTasks.Add(session.Workers[i].ExecuteChunkQueueAsync(videoQueue, token, onVideoChunkCompleted));
         }
         for (int i = 0; i < audioThreads; i++)
         {
-            workerTasks.Add(session.Workers[videoThreads + i].ExecuteChunkQueueAsync(audioQueue, token));
+            workerTasks.Add(session.Workers[videoThreads + i].ExecuteChunkQueueAsync(audioQueue, token, onAudioChunkCompleted));
         }
 
         // Telemetry monitor loop with Exponential Moving Average (EMA) smoothing
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        long baseDownloaded = initialVideoBytes + initialAudioBytes;
         var monitorTask = Task.Run(async () =>
         {
-            long lastDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            long lastDownloaded = baseDownloaded + session.Workers.Sum(w => w.Progress.DownloadedBytes);
             var sw = Stopwatch.StartNew();
 
-            while (!monitorCts.Token.IsCancellationRequested)
+            while (!monitorCts.Token.IsCancellationRequested && !token.IsCancellationRequested && dl.Status != DownloadStatus.Paused)
             {
                 try
                 {
@@ -687,7 +760,9 @@ public class DownloadEngine : IDownloadEngine
                     break;
                 }
 
-                long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+                if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
+
+                long currentDownloaded = baseDownloaded + session.Workers.Sum(w => w.Progress.DownloadedBytes);
                 double elapsedSec = sw.Elapsed.TotalSeconds;
 
                 if (elapsedSec > 0)
@@ -716,6 +791,8 @@ public class DownloadEngine : IDownloadEngine
                     sw.Restart();
 
                     _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+
+                    if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
                     DownloadProgressChanged?.Invoke(dl);
                 }
             }
@@ -726,9 +803,9 @@ public class DownloadEngine : IDownloadEngine
             await Task.WhenAll(workerTasks);
             monitorCts.Cancel();
 
-            long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
-            bool hasBytes = totalDownloaded >= dl.TotalBytes;
-            bool hasError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || !videoQueue.IsEmpty || !audioQueue.IsEmpty;
+            long totalDownloaded = baseDownloaded + session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            bool hasBytes = totalDownloaded >= dl.TotalBytes || (videoQueue.IsEmpty && audioQueue.IsEmpty);
+            bool hasError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || (!videoQueue.IsEmpty && !token.IsCancellationRequested) || (!audioQueue.IsEmpty && !token.IsCancellationRequested);
 
             if (!token.IsCancellationRequested && hasBytes && !hasError)
             {
@@ -919,6 +996,28 @@ public class DownloadEngine : IDownloadEngine
         int threadCount = Math.Min(16, Math.Max(1, (int)(audioSize / (128 * 1024))));
         dl.ParallelThreads = threadCount;
 
+        string aPartsFile = audioStagingPath + ".parts";
+        var completedAudioChunks = new HashSet<long>();
+        long initialAudioBytes = 0;
+        if (File.Exists(aPartsFile))
+        {
+            try
+            {
+                foreach (var line in File.ReadAllLines(aPartsFile))
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length == 2 && long.TryParse(parts[0], out long s) && long.TryParse(parts[1], out long e))
+                    {
+                        if (completedAudioChunks.Add(s))
+                        {
+                            initialAudioBytes += (e - s + 1);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         // Build Dynamic Chunk Queue for Audio (512 KB to 2 MB chunks)
         var audioQueue = new System.Collections.Concurrent.ConcurrentQueue<ChunkRange>();
         long aSliceSize = Math.Clamp(audioSize / 32, 524288, 2097152);
@@ -926,7 +1025,10 @@ public class DownloadEngine : IDownloadEngine
         while (aOffset < audioSize)
         {
             long end = Math.Min(aOffset + aSliceSize - 1, audioSize - 1);
-            audioQueue.Enqueue(new ChunkRange(aOffset, end));
+            if (!completedAudioChunks.Contains(aOffset))
+            {
+                audioQueue.Enqueue(new ChunkRange(aOffset, end));
+            }
             aOffset = end + 1;
         }
 
@@ -940,20 +1042,40 @@ public class DownloadEngine : IDownloadEngine
         }
 
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
-        var workerTasks = session.Workers.Select(w => w.ExecuteChunkQueueAsync(audioQueue, token)).ToList();
+
+        object aLock = new object();
+        Action<ChunkRange> onAudioChunkCompleted = c =>
+        {
+            lock (aLock)
+            {
+                try { File.AppendAllText(aPartsFile, $"{c.StartByte},{c.EndByte}{Environment.NewLine}"); } catch { }
+            }
+        };
+
+        var workerTasks = session.Workers.Select(w => w.ExecuteChunkQueueAsync(audioQueue, token, onAudioChunkCompleted)).ToList();
 
         // Telemetry monitor loop with Exponential Moving Average (EMA) smoothing
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        long baseDownloaded = initialAudioBytes;
         var monitorTask = Task.Run(async () =>
         {
-            long lastDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            long lastDownloaded = baseDownloaded + session.Workers.Sum(w => w.Progress.DownloadedBytes);
             var sw = Stopwatch.StartNew();
 
-            while (!monitorCts.Token.IsCancellationRequested)
+            while (!monitorCts.Token.IsCancellationRequested && !token.IsCancellationRequested && dl.Status != DownloadStatus.Paused)
             {
-                try { await Task.Delay(400, monitorCts.Token); } catch { break; }
+                try
+                {
+                    await Task.Delay(400, monitorCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
 
-                long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+                if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
+
+                long currentDownloaded = baseDownloaded + session.Workers.Sum(w => w.Progress.DownloadedBytes);
                 double elapsedSec = sw.Elapsed.TotalSeconds;
 
                 if (elapsedSec > 0)
@@ -981,6 +1103,8 @@ public class DownloadEngine : IDownloadEngine
                     lastDownloaded = currentDownloaded;
                     sw.Restart();
                     _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+
+                    if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
                     DownloadProgressChanged?.Invoke(dl);
                 }
             }
@@ -991,9 +1115,9 @@ public class DownloadEngine : IDownloadEngine
             await Task.WhenAll(workerTasks);
             monitorCts.Cancel();
 
-            long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
-            bool hasBytes = totalDownloaded >= dl.TotalBytes;
-            bool hasError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || !audioQueue.IsEmpty;
+            long totalDownloaded = baseDownloaded + session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            bool hasBytes = totalDownloaded >= dl.TotalBytes || audioQueue.IsEmpty;
+            bool hasError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || (!audioQueue.IsEmpty && !token.IsCancellationRequested);
 
             if (!token.IsCancellationRequested && hasBytes && !hasError)
             {
@@ -1285,7 +1409,7 @@ public class DownloadEngine : IDownloadEngine
             string? lastError = null;
             while ((line = await proc.StandardError.ReadLineAsync()) != null)
             {
-                if (token.IsCancellationRequested) break;
+                if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
 
                 if (line.Contains("403 Forbidden", StringComparison.OrdinalIgnoreCase) ||
                     line.Contains("Server returned 403", StringComparison.OrdinalIgnoreCase) ||
@@ -1357,7 +1481,10 @@ public class DownloadEngine : IDownloadEngine
                         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
                     }
 
-                    DownloadProgressChanged?.Invoke(dl);
+                    if (dl.Status != DownloadStatus.Paused && !token.IsCancellationRequested)
+                    {
+                        DownloadProgressChanged?.Invoke(dl);
+                    }
                 }
             }
 

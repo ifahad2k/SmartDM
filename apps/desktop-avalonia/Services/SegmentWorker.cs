@@ -163,7 +163,8 @@ public class SegmentWorker
 
     public async Task ExecuteChunkQueueAsync(
         System.Collections.Concurrent.ConcurrentQueue<ChunkRange> queue,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<ChunkRange>? onChunkCompleted = null)
     {
         Progress.IsActive = true;
         Progress.IsCompleted = false;
@@ -241,6 +242,7 @@ public class SegmentWorker
                     {
                         success = true;
                         LastError = null;
+                        onChunkCompleted?.Invoke(chunk);
                     }
                 }
                 catch (OperationCanceledException)

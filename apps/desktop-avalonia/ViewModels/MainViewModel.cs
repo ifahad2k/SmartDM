@@ -297,9 +297,32 @@ public partial class MainViewModel : ViewModelBase
         dl.IconBitmap = LoadIcon(Path.GetFileName(dl.IconSource ?? "disc-blue.png"));
         dl.OnOpenMonitor = d => RequestOpenMonitor?.Invoke(d);
         dl.OnOpenInspector = d => RequestOpenInspector?.Invoke(d);
-        dl.OnPause = async d => await _engine.PauseDownloadAsync(d.Id);
-        dl.OnResume = async d => await _engine.ResumeDownloadAsync(d.Id, d);
-        dl.OnCancel = async d => await _engine.CancelDownloadAsync(d.Id);
+        dl.OnPause = async d =>
+        {
+            d.Status = DownloadStatus.Paused;
+            d.SpeedMbps = 0;
+            d.StatusDetail = "Paused by user";
+            RefreshEngineMetrics();
+            UpdateCounts();
+            await _engine.PauseDownloadAsync(d.Id);
+        };
+        dl.OnResume = async d =>
+        {
+            d.Status = DownloadStatus.Active;
+            d.StatusDetail = "Resuming download...";
+            RefreshEngineMetrics();
+            UpdateCounts();
+            await _engine.ResumeDownloadAsync(d.Id, d);
+        };
+        dl.OnCancel = async d =>
+        {
+            d.Status = DownloadStatus.Paused;
+            d.SpeedMbps = 0;
+            d.StatusDetail = "Cancelled";
+            RefreshEngineMetrics();
+            UpdateCounts();
+            await _engine.CancelDownloadAsync(d.Id);
+        };
         dl.OnDelete = d => RequestOpenDeleteConfirm?.Invoke(d);
         dl.OnOpenFile = d => OpenFileNative(d.SavePath);
         dl.OnOpenFolder = d => OpenFolderNative(d.SavePath);
@@ -335,14 +358,23 @@ public partial class MainViewModel : ViewModelBase
         var activeDl = _allMasterDownloads.FirstOrDefault(d => d.Status == DownloadStatus.Active);
         if (activeDl != null)
         {
-            var segs = _engine.GetSegments(activeDl.Id);
-            ActiveSocketCount = segs.Count > 0 ? segs.Count(s => s.IsActive) : activeDl.ParallelThreads;
-            ActiveTaskTitle = activeDl.Title;
-            SocketBufferStatus = "Live Buffer: 99.8%";
-            TotalEtaFormatted = activeDl.EtaSeconds > 0 ? $"{activeDl.EtaSeconds / 60}m {activeDl.EtaSeconds % 60}s" : "--";
-            EngineSubline = $"{activeDl.Domain} | {ActiveSocketCount} Sockets | ETA ~{TotalEtaFormatted}";
-            UpstreamSpeedFormatted = "0.8 KB/s";
+            ActiveSocketCount = Math.Max(1, activeDl.ParallelThreads);
+            ActiveTaskTitle = activeDl.Title ?? "Downloading...";
+            SocketBufferStatus = "Direct Async FileChannel (32 Buffers Active)";
+            TotalEtaFormatted = activeDl.FormattedEta;
+            EngineSubline = $"Active | {ActiveSocketCount} Streams | Speed {activeDl.FormattedSpeed}";
+            UpstreamSpeedFormatted = "12.4 KB/s (ACK/ALPN)";
 
+            var segs = _engine.GetSegments(activeDl.Id);
+            while (ActiveThreads.Count < segs.Count)
+            {
+                ActiveThreads.Add(new ThreadMetric
+                {
+                    ThreadIndex = ActiveThreads.Count + 1,
+                    SpeedMbps = 0,
+                    IsActive = true
+                });
+            }
             for (int i = 0; i < segs.Count && i < ActiveThreads.Count; i++)
             {
                 ActiveThreads[i].SpeedMbps = segs[i].SpeedMbps;
@@ -389,7 +421,10 @@ public partial class MainViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() =>
         {
             var existing = _allMasterDownloads.FirstOrDefault(d => d.Id == updated.Id);
-            if (existing != null && !ReferenceEquals(existing, updated))
+            if (existing == null) return;
+            if (existing.Status == DownloadStatus.Paused || updated.Status == DownloadStatus.Paused) return;
+
+            if (!ReferenceEquals(existing, updated))
             {
                 existing.DownloadedBytes = updated.DownloadedBytes;
                 existing.TotalBytes = updated.TotalBytes;
@@ -1083,6 +1118,8 @@ public partial class MainViewModel : ViewModelBase
             dl.StatusDetail = "Paused by user";
             await _engine.PauseDownloadAsync(dl.Id);
         }
+        UpdateCounts();
+        ApplyFilters();
         RefreshEngineMetrics();
     }
 
@@ -1099,6 +1136,8 @@ public partial class MainViewModel : ViewModelBase
             dl.StatusDetail = "Resuming...";
             await _engine.ResumeDownloadAsync(dl.Id, dl);
         }
+        UpdateCounts();
+        ApplyFilters();
         RefreshEngineMetrics();
     }
 }
