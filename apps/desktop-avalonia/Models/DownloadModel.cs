@@ -109,6 +109,15 @@ public partial class DownloadModel : ObservableObject
     private string _subline = string.Empty;
 
     [ObservableProperty]
+    private string? _referer;
+
+    [ObservableProperty]
+    private string? _userAgent;
+
+    [ObservableProperty]
+    private string? _cookies;
+
+    [ObservableProperty]
     private bool _isStorage = false;
 
     // Advanced Forensics & Metadata

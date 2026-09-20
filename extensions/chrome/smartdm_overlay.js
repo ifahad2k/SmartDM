@@ -661,20 +661,52 @@
       }
     };
 
-    // Safety timeout: UI will never hang indefinitely
+    // Guaranteed safety timeout (3500ms): UI will NEVER hang or spin indefinitely
     setTimeout(() => {
       if (!isHandled) {
         buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
           notifyCallbacks(fallbackRes);
         });
+        setTimeout(() => {
+          if (!isHandled) {
+            notifyCallbacks({ success: false, status: 'error', message: 'No media formats detected.' });
+          }
+        }, 500);
       }
-    }, 2500);
+    }, 3500);
 
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
     const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
 
-    // 1. For non-YouTube sites, first check Tube in-page DOM scripts
+    // 1. For non-YouTube sites:
     if (!isYouTube) {
+      const isExternalWatchUrl = videoUrl !== window.location.href && 
+        (videoUrl.includes('/view_video.php') || videoUrl.includes('/video/') || videoUrl.includes('/videos/') || videoUrl.includes('/watch'));
+
+      // If clicked from a thumbnail on a listing/search page, fetch watch page HTML directly
+      if (isExternalWatchUrl) {
+        runtime.sendMessage({ type: 'GET_PAGE_MEDIA_FORMATS', url: videoUrl }, (pageRes) => {
+          if (pageRes && (pageRes.success || pageRes.status === 'ok') && pageRes.formats && pageRes.formats.length > 0) {
+            notifyCallbacks(pageRes);
+            return;
+          }
+
+          // Fallback to in-page scripts / network
+          const pageTitle = extractSemanticPageTitle() || 'video';
+          const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
+          if (tubeFormats && tubeFormats.length > 0) {
+            notifyCallbacks({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
+            return;
+          }
+
+          buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
+            notifyCallbacks(fallbackRes);
+          });
+        });
+        return;
+      }
+
+      // If already on the watch page, first check in-page DOM scripts
       const pageTitle = extractSemanticPageTitle() || 'video';
       const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
       if (tubeFormats && tubeFormats.length > 0) {
@@ -689,7 +721,7 @@
       return;
     }
 
-    // 2. For YouTube URLs, query SmartDM desktop app first
+    // 2. For YouTube URLs, query SmartDM desktop app first (sub-800ms Innertube / YoutubeExplode)
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
       if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
         notifyCallbacks(res);
@@ -932,6 +964,8 @@
           formatId: item.formatId,
           fileName: item.fileName,
           title: finalBaseTitle,
+          referer: videoUrl || window.location.href,
+          pageUrl: window.location.href,
           formats: formatsList
         }, () => {
           setTimeout(() => popover.classList.remove('active'), 800);
@@ -950,6 +984,18 @@
 
   function attachPlayerBanner(mediaEl) {
     if (mediaEl.getAttribute(ATTR_PLAYER_ATTACHED)) return;
+
+    // Strict filtering: ignore preview videos on cards, hover clips, tiny audio/icon elements
+    if (mediaEl.closest('.phimage, .thumbnailWrapper, .pcVideoListItem, .videoBox, [class*="preview"], ytd-thumbnail, .thumb, .card, article')) return;
+    if (mediaEl.tagName === 'VIDEO') {
+      const isMuted = mediaEl.muted || mediaEl.hasAttribute('muted');
+      const isLoop = mediaEl.loop || mediaEl.hasAttribute('loop');
+      const isShort = mediaEl.duration > 0 && mediaEl.duration < 25;
+      if (isMuted && (isLoop || isShort)) {
+        if (mediaEl.offsetWidth < 450 || mediaEl.offsetHeight < 300) return;
+      }
+    }
+
     mediaEl.setAttribute(ATTR_PLAYER_ATTACHED, 'true');
 
     // Strict filtering: ignore tiny background audio/icon elements
@@ -1156,7 +1202,10 @@
       'a[href*="/video/"]',
       'a[href*="/watch/"]',
       'a[href*="/watch?"]',
+      '.phimage',
+      '.thumbnailWrapper',
       '.ph-thumbnail',
+      '.videoBox',
       '.videoCard',
       '.video-card',
       '.thumb',
@@ -1186,7 +1235,12 @@
       cardContainer.setAttribute(ATTR_THUMB_ATTACHED, 'true');
 
       // Prefer attaching directly to the thumbnail visual container if present
-      const targetMount = cardContainer.querySelector('ytd-thumbnail, #thumbnail, .yt-lockup-view-model__visual, .video-thumbnail, .thumb') || cardContainer;
+      const targetMount = cardContainer.querySelector('.phimage, .thumbnailWrapper, .video-thumbnail, ytd-thumbnail, #thumbnail, .yt-lockup-view-model__visual, .thumb, .preloadImage, a.linkVideoThumb') || cardContainer;
+      if (window.getComputedStyle(targetMount).position === 'static') {
+        targetMount.style.position = 'relative';
+      }
+      targetMount.style.overflow = 'visible';
+
       const cardTitle = extractCardTitle(cardContainer);
       attachThumbnailBadge(targetMount, getCanonicalUrl(videoUrl), cardTitle);
     });
@@ -1312,6 +1366,7 @@
     thumbBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
 
       const isActive = popover.classList.contains('active');
       if (isActive) {
@@ -1335,7 +1390,7 @@
           content.innerHTML = '<div class="status-text" style="color:#f87171;">No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span></div>';
         }
       });
-    });
+    }, true);
 
     containerEl.appendChild(host);
   }

@@ -208,6 +208,8 @@ public class LocalIpcService : ILocalIpcService
             string? title = null;
             string? cookies = null;
             string? userAgent = null;
+            string? referer = null;
+            string? pageUrl = null;
             List<MediaFormatDto>? formats = null;
 
             if (root.TryGetProperty("url", out var urlElem)) url = urlElem.GetString();
@@ -221,6 +223,8 @@ public class LocalIpcService : ILocalIpcService
             if (root.TryGetProperty("title", out var titleElem)) title = titleElem.GetString();
             if (root.TryGetProperty("cookies", out var cElem)) cookies = cElem.GetString();
             if (root.TryGetProperty("userAgent", out var uaElem)) userAgent = uaElem.GetString();
+            if (root.TryGetProperty("referer", out var refElem)) referer = refElem.GetString();
+            if (root.TryGetProperty("pageUrl", out var puElem)) pageUrl = puElem.GetString();
 
             if (root.TryGetProperty("formats", out var formatsElem) && formatsElem.ValueKind == JsonValueKind.Array)
             {
@@ -264,6 +268,8 @@ public class LocalIpcService : ILocalIpcService
                     FormatId = formatId,
                     FileName = fileName,
                     Title = title,
+                    Referer = referer ?? pageUrl,
+                    PageUrl = pageUrl ?? referer,
                     Cookies = cookies,
                     UserAgent = userAgent,
                     Formats = formats

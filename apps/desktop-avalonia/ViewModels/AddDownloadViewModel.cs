@@ -76,6 +76,9 @@ public partial class AddDownloadViewModel : ViewModelBase
     private string _selectedFormatId = string.Empty;
 
     private string? _authoritativeTitle;
+    private string? _initialReferer;
+    private string? _initialUserAgent;
+    private string? _initialCookies;
 
     public static bool IsGenericOrInvalidFileName(string? name)
     {
@@ -182,10 +185,16 @@ public partial class AddDownloadViewModel : ViewModelBase
         string? initialFileName = null,
         string? initialFormatId = null,
         List<MediaFormatDto>? initialFormats = null,
-        string? initialTitle = null)
+        string? initialTitle = null,
+        string? initialReferer = null,
+        string? initialUserAgent = null,
+        string? initialCookies = null)
     {
         _probeService = probeService ?? new HttpProbeService();
         _catalogService = catalogService ?? new FileCatalogService();
+        _initialReferer = initialReferer;
+        _initialUserAgent = initialUserAgent;
+        _initialCookies = initialCookies;
 
         string downloadsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
         SavePath = downloadsDir;
@@ -558,6 +567,9 @@ public partial class AddDownloadViewModel : ViewModelBase
             ParallelThreads = _probedAcceptsRanges ? ParallelThreads : 1,
             ActiveMirrors = MirrorNodes.Count > 0 ? MirrorNodes.Count : 1,
             SavePath = finalSavePath,
+            Referer = _initialReferer,
+            UserAgent = _initialUserAgent,
+            Cookies = _initialCookies,
             StatusDetail = _probedAcceptsRanges ? $"{ParallelThreads}-Way Sliced Transfer" : "Single-Stream Sequential",
             Subline = $"{sizeStr} • Waiting in Queue",
             FooterDetail = "Target: " + finalSavePath,

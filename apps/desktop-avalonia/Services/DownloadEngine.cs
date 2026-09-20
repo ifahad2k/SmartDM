@@ -127,6 +127,40 @@ public class DownloadEngine : IDownloadEngine
 
         _segmentCache.TryGetValue(download.Id, out var cachedSegs);
 
+        string? referer = download.Referer;
+        if (string.IsNullOrEmpty(referer) && (download.Url.Contains("phncdn.com", StringComparison.OrdinalIgnoreCase) || download.Url.Contains("pornhub.com", StringComparison.OrdinalIgnoreCase)))
+        {
+            referer = "https://www.pornhub.com/";
+        }
+
+        string? cookieHeader = null;
+        if (!string.IsNullOrEmpty(download.Cookies))
+        {
+            var cookiePairs = new List<string>();
+            var lines = download.Cookies.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var l in lines)
+            {
+                if (l.StartsWith("#") || string.IsNullOrWhiteSpace(l)) continue;
+                var parts = l.Split('\t');
+                if (parts.Length >= 7)
+                {
+                    cookiePairs.Add($"{parts[5]}={parts[6]}");
+                }
+            }
+            if (cookiePairs.Count > 0)
+            {
+                cookieHeader = string.Join("; ", cookiePairs);
+            }
+            else if (!download.Cookies.Contains("\t"))
+            {
+                cookieHeader = download.Cookies;
+            }
+        }
+
+        string? uaString = !string.IsNullOrWhiteSpace(download.UserAgent)
+            ? download.UserAgent
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
         if (totalBytes > 0)
         {
             // Pre-allocate file size
@@ -162,7 +196,7 @@ public class DownloadEngine : IDownloadEngine
                 {
                     initialDownloaded = Math.Clamp(cachedSegs[i].DownloadedBytes, 0, end - start + 1);
                 }
-                var worker = new SegmentWorker(_httpClient, download.Url, download.SavePath, i + 1, start, end, initialDownloaded);
+                var worker = new SegmentWorker(_httpClient, download.Url, download.SavePath, i + 1, start, end, initialDownloaded, referer, uaString, cookieHeader);
                 session.Workers.Add(worker);
                 currentOffset = end + 1;
             }
@@ -170,7 +204,7 @@ public class DownloadEngine : IDownloadEngine
         else
         {
             long initialDownloaded = (cachedSegs != null && cachedSegs.Count > 0) ? cachedSegs[0].DownloadedBytes : 0;
-            var worker = new SegmentWorker(_httpClient, download.Url, download.SavePath, 1, 0, -1, initialDownloaded);
+            var worker = new SegmentWorker(_httpClient, download.Url, download.SavePath, 1, 0, -1, initialDownloaded, referer, uaString, cookieHeader);
             session.Workers.Add(worker);
         }
 
@@ -309,19 +343,59 @@ public class DownloadEngine : IDownloadEngine
         session.Workers.Add(new SegmentWorker(_httpClient, dl.AudioUrl ?? dl.Url, dl.SavePath, 2, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, dl.TotalBytes, 0));
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
-        string userAgent = "-user_agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\"";
+        string referer = dl.Referer ?? "";
+        if (string.IsNullOrEmpty(referer) && (dl.Url.Contains("phncdn.com", StringComparison.OrdinalIgnoreCase) || dl.Url.Contains("pornhub.com", StringComparison.OrdinalIgnoreCase)))
+        {
+            referer = "https://www.pornhub.com/";
+        }
+
+        string uaString = !string.IsNullOrWhiteSpace(dl.UserAgent)
+            ? dl.UserAgent
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        string userAgent = $"-user_agent \"{uaString}\"";
+
+        string customHeaders = "";
+        if (!string.IsNullOrEmpty(referer))
+        {
+            customHeaders += $"Referer: {referer}\r\n";
+        }
+        if (!string.IsNullOrEmpty(dl.Cookies))
+        {
+            var cookiePairs = new List<string>();
+            var lines = dl.Cookies.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var l in lines)
+            {
+                if (l.StartsWith("#") || string.IsNullOrWhiteSpace(l)) continue;
+                var parts = l.Split('\t');
+                if (parts.Length >= 7)
+                {
+                    cookiePairs.Add($"{parts[5]}={parts[6]}");
+                }
+            }
+            if (cookiePairs.Count > 0)
+            {
+                customHeaders += $"Cookie: {string.Join("; ", cookiePairs)}\r\n";
+            }
+            else if (!dl.Cookies.Contains("\t"))
+            {
+                customHeaders += $"Cookie: {dl.Cookies}\r\n";
+            }
+        }
+
+        string headerParam = !string.IsNullOrEmpty(customHeaders) ? $"-headers \"{customHeaders}\" " : "";
+
         string arguments;
         if (!string.IsNullOrWhiteSpace(dl.AudioUrl))
         {
-            arguments = $"-y {userAgent} -i \"{dl.Url}\" {userAgent} -i \"{dl.AudioUrl}\" -c:v copy -c:a aac -movflags +faststart \"{dl.SavePath}\"";
+            arguments = $"-y {headerParam}{userAgent} -i \"{dl.Url}\" {headerParam}{userAgent} -i \"{dl.AudioUrl}\" -c:v copy -c:a aac -movflags +faststart \"{dl.SavePath}\"";
         }
         else if (dl.Category == "Audio" && dl.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
         {
-            arguments = $"-y {userAgent} -i \"{dl.Url}\" -vn -acodec libmp3lame -q:a 2 \"{dl.SavePath}\"";
+            arguments = $"-y {headerParam}{userAgent} -i \"{dl.Url}\" -vn -acodec libmp3lame -q:a 2 \"{dl.SavePath}\"";
         }
         else
         {
-            arguments = $"-y {userAgent} -i \"{dl.Url}\" -c copy \"{dl.SavePath}\"";
+            arguments = $"-y {headerParam}{userAgent} -i \"{dl.Url}\" -c copy \"{dl.SavePath}\"";
         }
 
         string ffmpegPath = "ffmpeg";

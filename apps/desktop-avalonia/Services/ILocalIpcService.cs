@@ -24,6 +24,8 @@ public class BrowserDownloadRequest
     public string? FormatId { get; set; }
     public string? FileName { get; set; }
     public string? Title { get; set; }
+    public string? Referer { get; set; }
+    public string? PageUrl { get; set; }
     public string? Cookies { get; set; }
     public string? UserAgent { get; set; }
     public List<MediaFormatDto>? Formats { get; set; }

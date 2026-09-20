@@ -82,7 +82,194 @@ public static class YouTubeMediaResolver
 
         result.VideoId = videoId;
 
-        // --- METHOD 1: Native YoutubeExplode Resolver (Bypasses bot check, full 4K/1080p/audio extraction) ---
+        // --- METHOD 1: Fast Direct Innertube ANDROID_VR (Instant sub-300ms resolution) ---
+        try
+        {
+            var reqObj = new
+            {
+                videoId = videoId,
+                contentCheckOk = true,
+                racyCheckOk = true,
+                context = new
+                {
+                    client = new
+                    {
+                        clientName = "ANDROID_VR",
+                        clientVersion = "1.56.21",
+                        androidSdkVersion = 32
+                    }
+                }
+            };
+
+            using var message = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/youtubei/v1/player")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(reqObj), Encoding.UTF8, "application/json")
+            };
+            message.Headers.Add("User-Agent", "com.google.android.youtube/1.56.21 (Linux; U; Android 11)");
+
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(3));
+            var response = await _httpClient.SendAsync(message, cts.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("streamingData", out var streamingData))
+                {
+                    string title = "YouTube Video";
+                    if (root.TryGetProperty("videoDetails", out var videoDetails) &&
+                        videoDetails.TryGetProperty("title", out var titleElem))
+                    {
+                        title = titleElem.GetString() ?? title;
+                    }
+
+                    result.Title = title;
+
+                    // 1. Identify best audio stream
+                    string? defaultAudioUrl = null;
+                    long defaultAudioSize = 0;
+                    if (streamingData.TryGetProperty("adaptiveFormats", out var adaptiveElem))
+                    {
+                        foreach (var f in adaptiveElem.EnumerateArray())
+                        {
+                            string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                            if (mime.Contains("audio/"))
+                            {
+                                string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
+                                if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
+                                {
+                                    long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
+                                    string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
+                                    if (defaultAudioUrl == null || itag == "140")
+                                    {
+                                        defaultAudioUrl = streamUrl;
+                                        defaultAudioSize = clen;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    var rawList = new List<MediaFormatDto>();
+                    var seenQualities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    // 2. Video streams from adaptiveFormats (4K, 1440p, 1080p, 720p, etc.)
+                    if (streamingData.TryGetProperty("adaptiveFormats", out adaptiveElem))
+                    {
+                        foreach (var f in adaptiveElem.EnumerateArray())
+                        {
+                            string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                            if (mime.Contains("video/"))
+                            {
+                                string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
+                                if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
+                                {
+                                    string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
+                                    string quality = f.TryGetProperty("qualityLabel", out var ql) ? ql.GetString() ?? "" : "Video";
+                                    string ext = mime.Contains("webm") ? "webm" : "mp4";
+                                    string key = $"{quality}_{ext}";
+                                    if (!seenQualities.Add(key)) continue;
+
+                                    long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
+                                    long totalSize = defaultAudioSize > 0 ? clen + defaultAudioSize : clen;
+
+                                    rawList.Add(new MediaFormatDto
+                                    {
+                                        FormatId = itag,
+                                        Resolution = quality,
+                                        Ext = ext,
+                                        FileSize = totalSize,
+                                        IsAudioOnly = false,
+                                        Title = title,
+                                        DirectUrl = streamUrl,
+                                        AudioUrl = defaultAudioUrl
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Combined direct formats (360p, 720p)
+                    if (streamingData.TryGetProperty("formats", out var combinedElem))
+                    {
+                        foreach (var f in combinedElem.EnumerateArray())
+                        {
+                            string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
+                            if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
+                            {
+                                string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
+                                string quality = f.TryGetProperty("qualityLabel", out var ql) ? ql.GetString() ?? "" : "360p";
+                                string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                                string ext = mime.Contains("webm") ? "webm" : "mp4";
+                                string key = $"{quality}_{ext}";
+                                if (seenQualities.Add(key))
+                                {
+                                    long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
+                                    rawList.Add(new MediaFormatDto
+                                    {
+                                        FormatId = itag,
+                                        Resolution = quality,
+                                        Ext = ext,
+                                        FileSize = clen,
+                                        IsAudioOnly = false,
+                                        Title = title,
+                                        DirectUrl = streamUrl,
+                                        AudioUrl = null
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    if (rawList.Count > 0)
+                    {
+                        // Order descending by resolution height
+                        var sortedFormats = rawList.OrderByDescending(f =>
+                        {
+                            var numMatch = System.Text.RegularExpressions.Regex.Match(f.Resolution, @"\d+");
+                            return numMatch.Success ? int.Parse(numMatch.Value) : 0;
+                        }).ToList();
+
+                        // 4. Dynamic MP3 audio option
+                        sortedFormats.Add(new MediaFormatDto
+                        {
+                            FormatId = "bestaudio/best",
+                            Resolution = "Audio (MP3 / High Quality)",
+                            Ext = "mp3",
+                            FileSize = defaultAudioSize,
+                            IsAudioOnly = true,
+                            Title = title,
+                            DirectUrl = defaultAudioUrl,
+                            AudioUrl = null
+                        });
+
+                        // 5. Dynamic HD Thumbnail option
+                        sortedFormats.Add(new MediaFormatDto
+                        {
+                            FormatId = "thumbnail",
+                            Resolution = "Thumbnail (Cover Image / HD)",
+                            Ext = "jpg",
+                            FileSize = 0,
+                            IsAudioOnly = false,
+                            Title = title,
+                            DirectUrl = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg",
+                            AudioUrl = null
+                        });
+
+                        result.Formats = sortedFormats;
+                        result.Success = true;
+                        return result;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Innertube ANDROID_VR resolution failed: {ex.Message}. Falling back to YoutubeClient...");
+        }
+
+        // --- METHOD 2: Native YoutubeExplode Resolver Fallback ---
         try
         {
             var video = await _ytClient.Videos.GetAsync(videoId);
@@ -167,176 +354,7 @@ public static class YouTubeMediaResolver
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"YoutubeClient resolution failed for {videoId}: {ex.Message}. Falling back to Innertube...");
-        }
-
-        // --- METHOD 2: Direct Innertube ANDROID_VR fallback ---
-        try
-        {
-            var reqObj = new
-            {
-                videoId = videoId,
-                contentCheckOk = true,
-                racyCheckOk = true,
-                context = new
-                {
-                    client = new
-                    {
-                        clientName = "ANDROID_VR",
-                        clientVersion = "1.56.21",
-                        androidSdkVersion = 32
-                    }
-                }
-            };
-
-            using var message = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/youtubei/v1/player")
-            {
-                Content = new StringContent(JsonSerializer.Serialize(reqObj), Encoding.UTF8, "application/json")
-            };
-            message.Headers.Add("User-Agent", "com.google.android.youtube/1.56.21 (Linux; U; Android 11)");
-
-            var response = await _httpClient.SendAsync(message);
-            if (!response.IsSuccessStatusCode) return result;
-
-            var body = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(body);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("streamingData", out var streamingData)) return result;
-
-            string title = "YouTube Video";
-            if (root.TryGetProperty("videoDetails", out var videoDetails) &&
-                videoDetails.TryGetProperty("title", out var titleElem))
-            {
-                title = titleElem.GetString() ?? title;
-            }
-
-            result.Title = title;
-
-            // 1. Identify best audio stream
-            string? defaultAudioUrl = null;
-            long defaultAudioSize = 0;
-            if (streamingData.TryGetProperty("adaptiveFormats", out var adaptiveElem))
-            {
-                foreach (var f in adaptiveElem.EnumerateArray())
-                {
-                    string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
-                    if (mime.Contains("audio/"))
-                    {
-                        string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
-                        if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
-                        {
-                            long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
-                            string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
-                            if (defaultAudioUrl == null || itag == "140")
-                            {
-                                defaultAudioUrl = streamUrl;
-                                defaultAudioSize = clen;
-                            }
-                        }
-                    }
-                }
-            }
-
-            var list = new List<MediaFormatDto>();
-
-            // 2. Video streams from adaptiveFormats (4K, 1440p, 1080p, 720p, etc.)
-            if (streamingData.TryGetProperty("adaptiveFormats", out adaptiveElem))
-            {
-                foreach (var f in adaptiveElem.EnumerateArray())
-                {
-                    string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
-                    if (mime.Contains("video/"))
-                    {
-                        string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
-                        if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
-                        {
-                            string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
-                            string quality = f.TryGetProperty("qualityLabel", out var ql) ? ql.GetString() ?? "" : "Video";
-                            long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
-                            long totalSize = defaultAudioSize > 0 ? clen + defaultAudioSize : clen;
-                            string ext = mime.Contains("webm") ? "webm" : "mp4";
-
-                            list.Add(new MediaFormatDto
-                            {
-                                FormatId = itag,
-                                Resolution = quality,
-                                Ext = ext,
-                                FileSize = totalSize,
-                                IsAudioOnly = false,
-                                Title = title,
-                                DirectUrl = streamUrl,
-                                AudioUrl = defaultAudioUrl
-                            });
-                        }
-                    }
-                }
-            }
-
-            // 3. Combined direct formats (360p, 720p)
-            if (streamingData.TryGetProperty("formats", out var combinedElem))
-            {
-                foreach (var f in combinedElem.EnumerateArray())
-                {
-                    string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
-                    if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
-                    {
-                        string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
-                        string quality = f.TryGetProperty("qualityLabel", out var ql) ? ql.GetString() ?? "" : "360p";
-                        long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
-                        string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
-                        string ext = mime.Contains("webm") ? "webm" : "mp4";
-
-                        list.Add(new MediaFormatDto
-                        {
-                            FormatId = itag,
-                            Resolution = quality + " (Direct)",
-                            Ext = ext,
-                            FileSize = clen,
-                            IsAudioOnly = false,
-                            Title = title,
-                            DirectUrl = streamUrl,
-                            AudioUrl = null
-                        });
-                    }
-                }
-            }
-
-            if (list.Count > 0)
-            {
-                // 4. Dynamic MP3 audio option
-                list.Add(new MediaFormatDto
-                {
-                    FormatId = "bestaudio/best",
-                    Resolution = "Audio (MP3 / High Quality)",
-                    Ext = "mp3",
-                    FileSize = defaultAudioSize,
-                    IsAudioOnly = true,
-                    Title = title,
-                    DirectUrl = defaultAudioUrl,
-                    AudioUrl = null
-                });
-
-                // 5. Dynamic HD Thumbnail option
-                list.Add(new MediaFormatDto
-                {
-                    FormatId = "thumbnail",
-                    Resolution = "Thumbnail (Cover Image / HD)",
-                    Ext = "jpg",
-                    FileSize = 0,
-                    IsAudioOnly = false,
-                    Title = title,
-                    DirectUrl = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg",
-                    AudioUrl = null
-                });
-
-                result.Formats = list;
-                result.Success = true;
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"YouTubeMediaResolver error: {ex.Message}");
+            Debug.WriteLine($"YoutubeClient resolution failed for {videoId}: {ex.Message}");
         }
 
         return result;

@@ -312,10 +312,10 @@ public partial class App : Application
                 settingsWin.Show(); // INDEPENDENT WINDOW
             };
 
-            mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle) =>
+            mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies) =>
             {
                 RestoreMainWindow();
-                var addVm = new AddDownloadViewModel(mainVm.ProbeService, mainVm.CatalogService, initialUrl, initialFileName, formatId, formats, initialTitle);
+                var addVm = new AddDownloadViewModel(mainVm.ProbeService, mainVm.CatalogService, initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies);
                 var dialog = new AddDownloadDialog
                 {
                     DataContext = addVm

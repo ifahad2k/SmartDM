@@ -370,29 +370,33 @@ chrome.action.onClicked.addListener((tab) => {
 
 async function appendCookiesAndSend(request, sendResponse) {
   request.userAgent = navigator.userAgent;
+  request.referer = request.referer || request.pageUrl || null;
   try {
     let targetUrl = request.url;
     if (!targetUrl && request.urls && request.urls.length > 0) {
       targetUrl = request.urls[0];
     }
     
-    if (targetUrl && chrome.cookies) {
-      let cookieDomainUrl = targetUrl;
-      let domainHost = '';
-      try {
-        const parsed = new URL(targetUrl);
-        cookieDomainUrl = parsed.protocol + '//' + parsed.hostname + '/';
-        domainHost = parsed.hostname.replace(/^www\./, '');
-      } catch (e) {}
+    // Check both targetUrl and referer/pageUrl for cookies (crucial for Pornhub and CDN media streams)
+    let cookieDomainUrl = request.referer || request.pageUrl || targetUrl;
+    let domainHost = '';
+    try {
+      const parsed = new URL(cookieDomainUrl);
+      cookieDomainUrl = parsed.protocol + '//' + parsed.hostname + '/';
+      domainHost = parsed.hostname.replace(/^www\./, '');
+    } catch (e) {}
 
+    if (chrome.cookies) {
       const cookies = await new Promise(resolve => {
         if (domainHost) {
           chrome.cookies.getAll({ domain: domainHost }, (c) => {
             if (c && c.length > 0) return resolve(c);
             chrome.cookies.getAll({ url: cookieDomainUrl }, (c2) => resolve(c2 || []));
           });
-        } else {
+        } else if (cookieDomainUrl) {
           chrome.cookies.getAll({ url: cookieDomainUrl }, (c) => resolve(c || []));
+        } else {
+          resolve([]);
         }
       });
       
@@ -683,6 +687,133 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
   return null;
 }
 
+function sanitizeCleanTitle(str) {
+  if (!str || typeof str !== 'string') return '';
+  let clean = str.replace(/^\(\d+\)\s*/, '').trim();
+  clean = clean.replace(/\s*[\-\|\:·•]\s*(Facebook|Pornhub\.com|Pornhub|YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit).*$/i, '').trim();
+  if (clean.toLowerCase().endsWith(' - youtube')) clean = clean.substring(0, clean.length - 10).trim();
+  if (clean.toLowerCase().endsWith(' | youtube')) clean = clean.substring(0, clean.length - 10).trim();
+  if (clean.toLowerCase().endsWith(' youtube')) clean = clean.substring(0, clean.length - 8).trim();
+  if (clean.toLowerCase().endsWith(' - pornhub.com')) clean = clean.substring(0, clean.length - 14).trim();
+  if (clean.toLowerCase().endsWith(' - pornhub')) clean = clean.substring(0, clean.length - 10).trim();
+  if (clean.toLowerCase().endsWith(' | pornhub')) clean = clean.substring(0, clean.length - 10).trim();
+  if (clean.toLowerCase().endsWith(' - facebook')) clean = clean.substring(0, clean.length - 11).trim();
+  clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
+  return clean;
+}
+
+async function fetchPageMediaFormats(pageUrl) {
+  try {
+    const res = await fetch(pageUrl, {
+      headers: {
+        'User-Agent': navigator.userAgent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    let title = 'video';
+    const ogMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+                    html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:title["']/i);
+    if (ogMatch && ogMatch[1]) {
+      title = ogMatch[1].trim();
+    } else {
+      const tMatch = html.match(/<title>([^<]+)<\/title>/i);
+      if (tMatch && tMatch[1]) title = tMatch[1].trim();
+    }
+    title = sanitizeCleanTitle(title) || 'video';
+
+    const formats = [];
+    const seen = new Set();
+
+    const addFmt = (u, q, ext = 'mp4') => {
+      if (!u || typeof u !== 'string' || !u.startsWith('http') || seen.has(u)) return;
+      seen.add(u);
+      const isHls = ext === 'm3u8' || u.includes('.m3u8');
+      let qStr = q ? String(q).trim() : '';
+      if (qStr && !qStr.endsWith('p') && /^\d+$/.test(qStr)) qStr += 'p';
+      let qLabel = qStr || (isHls ? 'Master HLS' : 'Video');
+      const hNum = parseInt(qLabel, 10);
+      if (hNum >= 720 && !qLabel.includes('HD')) qLabel += ' HD';
+      qLabel += isHls ? ' (Stream)' : ' (MP4)';
+
+      formats.push({
+        formatId: 'tube_' + (q || formats.length),
+        resolution: qLabel,
+        height: hNum || (isHls ? 1080 : 720),
+        ext: isHls ? 'm3u8' : 'mp4',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: title,
+        url: u
+      });
+    };
+
+    // 1. Pornhub / MindGeek mediaDefinitions
+    if (html.includes('mediaDefinitions')) {
+      const idx = html.indexOf('mediaDefinitions');
+      const start = html.indexOf('[', idx);
+      if (start >= 0) {
+        let openCount = 0, last = -1;
+        for (let i = start; i < html.length; i++) {
+          if (html[i] === '[') openCount++;
+          else if (html[i] === ']') {
+            openCount--;
+            if (openCount === 0) { last = i; break; }
+          }
+        }
+        if (last > start) {
+          try {
+            const list = JSON.parse(html.substring(start, last + 1));
+            if (Array.isArray(list)) {
+              list.forEach(item => {
+                if (item && item.videoUrl) {
+                  addFmt(item.videoUrl, item.quality || (item.format === 'hls' ? 'Master' : '720p'), item.format);
+                }
+              });
+            }
+          } catch(e) {}
+        }
+      }
+    }
+
+    // 2. XVideos / XNXX html5player
+    if (html.includes('html5player.setVideo')) {
+      const high = html.match(/html5player\.setVideoUrlHigh\(['"]([^'"]+)['"]\)/);
+      if (high) addFmt(high[1], '720p', 'mp4');
+      const low = html.match(/html5player\.setVideoUrlLow\(['"]([^'"]+)['"]\)/);
+      if (low) addFmt(low[1], '360p', 'mp4');
+      const hls = html.match(/html5player\.setVideoHLS\(['"]([^'"]+)['"]\)/);
+      if (hls) addFmt(hls[1], 'Master', 'm3u8');
+    }
+
+    // 3. SpankBang & Generic Tube
+    const qMatches = html.matchAll(/["']?(?:quality_)?(2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|144p?)["']?\s*[:=]\s*["'](https?:\/\/[^"']+\.(?:mp4|webm|m3u8)[^"']*)["']/gi);
+    for (const m of qMatches) {
+      addFmt(m[2], m[1], m[2].includes('.m3u8') ? 'm3u8' : 'mp4');
+    }
+
+    // 4. XHamster sources
+    if (html.includes('xplayerSettings') || html.includes('sources')) {
+      const srcMatches = html.matchAll(/["']?(2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|144p?|hls)["']?\s*:\s*["'](https?:\/\/[^"']+)["']/gi);
+      for (const m of srcMatches) {
+        if (m[2].includes('http') && (m[2].includes('.mp4') || m[2].includes('.m3u8'))) {
+          addFmt(m[2], m[1], m[2].includes('.m3u8') ? 'm3u8' : 'mp4');
+        }
+      }
+    }
+
+    formats.sort((a, b) => (b.height || 0) - (a.height || 0));
+    if (formats.length > 0) {
+      return { success: true, status: 'ok', title: title, formats: formats };
+    }
+  } catch(e) {
+    console.warn('fetchPageMediaFormats error:', e);
+  }
+  return null;
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
@@ -693,6 +824,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     sendResponse({ success: true, media: media });
     return false;
+  }
+
+  if (request.type === 'GET_PAGE_MEDIA_FORMATS') {
+    const pageUrl = request.url;
+    fetchPageMediaFormats(pageUrl).then(pageRes => {
+      sendResponse(pageRes || { success: false, status: 'error', message: 'Could not extract page media formats.' });
+    }).catch(err => {
+      sendResponse({ success: false, status: 'error', message: err ? err.message : 'Error' });
+    });
+    return true; // Async response
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo') {
