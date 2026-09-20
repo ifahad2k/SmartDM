@@ -184,10 +184,19 @@ public partial class AddDownloadViewModel : ViewModelBase
             if (res.IsSuccess)
             {
                 IsProbeSuccessful = true;
-                FileName = res.FileName;
+                if (string.IsNullOrWhiteSpace(FileName) ||
+                    FileName.Equals("watch", StringComparison.OrdinalIgnoreCase) ||
+                    FileName.Equals("download", StringComparison.OrdinalIgnoreCase) ||
+                    !FileName.Contains("."))
+                {
+                    if (!string.IsNullOrWhiteSpace(res.FileName))
+                    {
+                        FileName = res.FileName;
+                    }
+                }
                 _probedTotalBytes = res.TotalBytes;
                 _probedAcceptsRanges = res.AcceptsRanges;
-                Category = res.SuggestedCategory;
+                Category = !string.IsNullOrWhiteSpace(FileName) ? _probeService.DetectCategory(FileName, res.MimeType) : res.SuggestedCategory;
 
                 string rangeStr = res.AcceptsRanges ? "Range Requests Supported" : "Single Stream Only";
                 ProbeStatus = $"• {res.StatusCode} OK • {res.HttpVersion} • {res.FormattedSize} • {rangeStr} • {res.LatencyMs}ms ping";

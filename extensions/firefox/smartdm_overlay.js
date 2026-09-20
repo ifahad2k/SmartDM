@@ -64,15 +64,19 @@
         } catch (e) {}
       }
       if (rawTitle) {
-        let clean = rawTitle.replace(/\s*[\-\|\:·].*$/, '').trim();
-        if (!clean || clean.length < 3) clean = rawTitle;
-        clean = clean.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim().replace(/\s+/g, '_');
-        if (clean.length > 3) {
-          return `${clean}.${ext.toLowerCase()}`;
+        let clean = rawTitle.replace(/\s*[\-\|\:·]\s*(YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook).*$/i, '').trim();
+        if (!clean || clean.length < 2) clean = rawTitle;
+        clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
+        if (clean.length > 0) {
+          const lowerExt = '.' + ext.toLowerCase();
+          if (!clean.toLowerCase().endsWith(lowerExt)) {
+            return `${clean}${lowerExt}`;
+          }
+          return clean;
         }
       }
     } catch (e) {}
-    return null;
+    return 'video.' + ext.toLowerCase();
   }
 
   // --- DYNAMIC IN-PAGE METADATA PARSER (TIER 1: SUB-5MS) ---
@@ -345,6 +349,9 @@
       const formattedSize = formatSize(fmt.fileSize);
       const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
+      let itemFileName = fmt.title ? (fmt.title.toLowerCase().endsWith('.' + ext.toLowerCase()) ? fmt.title : `${fmt.title}.${ext.toLowerCase()}`) : derivePageTitleFilename(ext.toLowerCase());
+      itemFileName = itemFileName.replace(/[\\/:*?""<>|]/g, '_');
+
       rawItems.push({
         title: cleanTitle,
         badge: sizeText,
@@ -352,7 +359,7 @@
         videoUrl: fmt.videoUrl || fmt.url || videoUrl,
         audioUrl: fmt.audioUrl || null,
         formatId: fmt.formatId,
-        fileName: fmt.title ? (fmt.title + '.' + ext.toLowerCase()) : null
+        fileName: itemFileName
       });
     });
 

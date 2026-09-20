@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -130,22 +130,36 @@ public class HttpProbeService : IHttpProbeService
                              ?? response.Content.Headers.ContentDisposition.FileName;
             }
 
-            if (string.IsNullOrWhiteSpace(extractedName))
+            if (string.IsNullOrWhiteSpace(extractedName) ||
+                extractedName.Equals("watch", StringComparison.OrdinalIgnoreCase) ||
+                extractedName.Equals("video", StringComparison.OrdinalIgnoreCase) ||
+                extractedName.Equals("index.html", StringComparison.OrdinalIgnoreCase) ||
+                extractedName.Equals("download", StringComparison.OrdinalIgnoreCase))
             {
-                string rawPath = uri.AbsolutePath;
-                if (!string.IsNullOrWhiteSpace(rawPath) && rawPath != "/")
+                if (result.MimeType.Contains("text/html") || uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("tiktok.com"))
                 {
-                    string leaf = Path.GetFileName(rawPath);
-                    if (!string.IsNullOrWhiteSpace(leaf))
+                    try
                     {
-                        extractedName = Uri.UnescapeDataString(leaf);
+                        using var getTitleReq = new HttpRequestMessage(HttpMethod.Get, uri);
+                        getTitleReq.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                        using var htmlResp = await _httpClient.SendAsync(getTitleReq, HttpCompletionOption.ResponseContentRead, cancellationToken);
+                        if (htmlResp.IsSuccessStatusCode)
+                        {
+                            string html = await htmlResp.Content.ReadAsStringAsync(cancellationToken);
+                            string pageTitle = ExtractTitleFromHtml(html);
+                            if (!string.IsNullOrWhiteSpace(pageTitle))
+                            {
+                                extractedName = pageTitle + ".mp4";
+                            }
+                        }
                     }
+                    catch { }
                 }
             }
 
             if (string.IsNullOrWhiteSpace(extractedName))
             {
-                extractedName = $"download_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+                extractedName = $"download_{DateTime.UtcNow:yyyyMMdd_HHmmss}.mp4";
             }
 
             result.FileName = SanitizeFileName(extractedName);
@@ -209,5 +223,33 @@ public class HttpProbeService : IHttpProbeService
                 _ => "Other"
             }
         };
+    }
+
+    private static string ExtractTitleFromHtml(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+
+        var ogMatch = Regex.Match(html, @"<meta\s+property=""og:title""\s+content=""([^""]+)""", RegexOptions.IgnoreCase);
+        if (ogMatch.Success && !string.IsNullOrWhiteSpace(ogMatch.Groups[1].Value))
+        {
+            return CleanWebTitle(ogMatch.Groups[1].Value);
+        }
+
+        var titleMatch = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (titleMatch.Success && !string.IsNullOrWhiteSpace(titleMatch.Groups[1].Value))
+        {
+            return CleanWebTitle(titleMatch.Groups[1].Value);
+        }
+
+        return string.Empty;
+    }
+
+    private static string CleanWebTitle(string raw)
+    {
+        string clean = WebUtility.HtmlDecode(raw).Trim();
+        clean = Regex.Replace(clean, @"\s*[\-\|\:·]\s*(YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook).*$", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"[\\/:*?""<>|]", "_");
+        clean = Regex.Replace(clean, @"\s+", " ").Trim();
+        return clean;
     }
 }
