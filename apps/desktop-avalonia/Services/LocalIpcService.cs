@@ -157,7 +157,10 @@ public class LocalIpcService : ILocalIpcService
             if (root.TryGetProperty("url", out var urlElem)) url = urlElem.GetString();
             if (root.TryGetProperty("videoUrl", out var vElem)) videoUrl = vElem.GetString();
             if (root.TryGetProperty("audioUrl", out var aElem)) audioUrl = aElem.GetString();
-            if (root.TryGetProperty("formatId", out var fmtElem)) formatId = fmtElem.GetString();
+            if (root.TryGetProperty("formatId", out var fmtElem))
+            {
+                formatId = fmtElem.ValueKind == JsonValueKind.String ? fmtElem.GetString() : fmtElem.ToString();
+            }
             if (root.TryGetProperty("fileName", out var fnElem)) fileName = fnElem.GetString();
             if (root.TryGetProperty("cookies", out var cElem)) cookies = cElem.GetString();
             if (root.TryGetProperty("userAgent", out var uaElem)) userAgent = uaElem.GetString();
@@ -168,12 +171,26 @@ public class LocalIpcService : ILocalIpcService
                 foreach (var item in formatsElem.EnumerateArray())
                 {
                     var dto = new MediaFormatDto();
-                    if (item.TryGetProperty("formatId", out var fid)) dto.FormatId = fid.GetString() ?? "";
-                    if (item.TryGetProperty("resolution", out var res)) dto.Resolution = res.GetString() ?? "";
+                    if (item.TryGetProperty("formatId", out var fid))
+                    {
+                        dto.FormatId = fid.ValueKind == JsonValueKind.String ? fid.GetString() ?? "" : fid.ToString();
+                    }
+                    if (item.TryGetProperty("resolution", out var res))
+                    {
+                        dto.Resolution = res.ValueKind == JsonValueKind.String ? res.GetString() ?? "" : res.ToString();
+                    }
                     if (item.TryGetProperty("ext", out var ext)) dto.Ext = ext.GetString() ?? "mp4";
-                    if (item.TryGetProperty("fileSize", out var fs)) dto.FileSize = fs.GetInt64();
-                    if (item.TryGetProperty("isAudioOnly", out var ia)) dto.IsAudioOnly = ia.GetBoolean();
+                    if (item.TryGetProperty("fileSize", out var fs))
+                    {
+                        if (fs.ValueKind == JsonValueKind.Number) dto.FileSize = fs.GetInt64();
+                        else if (fs.ValueKind == JsonValueKind.String && long.TryParse(fs.GetString(), out var s)) dto.FileSize = s;
+                    }
+                    if (item.TryGetProperty("isAudioOnly", out var ia))
+                    {
+                        dto.IsAudioOnly = ia.ValueKind == JsonValueKind.True;
+                    }
                     if (item.TryGetProperty("url", out var u)) dto.DirectUrl = u.GetString();
+                    else if (item.TryGetProperty("directUrl", out var du)) dto.DirectUrl = du.GetString();
                     if (item.TryGetProperty("audioUrl", out var au)) dto.AudioUrl = au.GetString();
                     formats.Add(dto);
                 }

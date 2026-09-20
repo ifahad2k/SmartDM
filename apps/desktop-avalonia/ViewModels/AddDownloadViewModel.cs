@@ -1,9 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -76,7 +81,7 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         SelectedFormatId = value.FormatId;
 
-        // Update file extension if switched between video/audio or formats
+        // Update file extension if switched between video/audio/image formats
         if (!string.IsNullOrWhiteSpace(FileName))
         {
             string nameWithoutExt = Path.GetFileNameWithoutExtension(FileName);
@@ -96,7 +101,20 @@ public partial class AddDownloadViewModel : ViewModelBase
             UpdateDriveSpace(SavePath);
         }
 
-        Category = value.IsAudioOnly ? "Audio" : "Media";
+        if (value.IsAudioOnly)
+        {
+            Category = "Audio";
+        }
+        else if (value.Ext.Equals("jpg", StringComparison.OrdinalIgnoreCase) || value.Ext.Equals("png", StringComparison.OrdinalIgnoreCase) || value.Ext.Equals("webp", StringComparison.OrdinalIgnoreCase))
+        {
+            Category = "Images";
+        }
+        else
+        {
+            Category = "Media";
+        }
+
+        ProbeStatus = $"• Selected: {value.DisplayLabel} • {value.FormattedSize}";
     }
 
     public ObservableCollection<MirrorNode> MirrorNodes { get; } = new();
@@ -155,9 +173,17 @@ public partial class AddDownloadViewModel : ViewModelBase
             }
 
             SelectedFormat = match ?? AvailableFormats.FirstOrDefault();
-        }
+            if (SelectedFormat != null && SelectedFormat.FileSize > 0)
+            {
+                _probedTotalBytes = SelectedFormat.FileSize;
+            }
 
-        if (!string.IsNullOrWhiteSpace(initialUrl))
+            if (string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(initialUrl))
+            {
+                Url = initialUrl.Trim();
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(initialUrl))
         {
             Url = initialUrl.Trim();
             _ = ProbeUrlAsync();
@@ -243,6 +269,240 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
     }
 
+    public static string? ExtractYouTubeVideoId(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        if (url.Contains("/watch?v="))
+        {
+            var parts = url.Split("/watch?v=")[1];
+            return parts.Split('&')[0].Split('#')[0];
+        }
+        if (url.Contains("/shorts/"))
+        {
+            return url.Split("/shorts/")[1].Split('/')[0].Split('?')[0].Split('#')[0];
+        }
+        if (url.Contains("youtu.be/"))
+        {
+            return url.Split("youtu.be/")[1].Split('?')[0].Split('#')[0];
+        }
+        return null;
+    }
+
+    private async Task<bool> TryResolveYouTubeFormatsAsync(string targetUrl)
+    {
+        string? videoId = ExtractYouTubeVideoId(targetUrl);
+        if (string.IsNullOrEmpty(videoId)) return false;
+
+        IsProbing = true;
+        ProbeStatus = "• Resolving YouTube streams & formats dynamically...";
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+
+            var reqObj = new
+            {
+                videoId = videoId,
+                contentCheckOk = true,
+                racyCheckOk = true,
+                context = new
+                {
+                    client = new
+                    {
+                        clientName = "ANDROID_VR",
+                        clientVersion = "1.56.21",
+                        androidSdkVersion = 32
+                    }
+                }
+            };
+
+            var jsonContent = new StringContent(JsonSerializer.Serialize(reqObj), Encoding.UTF8, "application/json");
+            var res = await client.PostAsync("https://www.youtube.com/youtubei/v1/player", jsonContent);
+            if (!res.IsSuccessStatusCode)
+            {
+                IsProbing = false;
+                return false;
+            }
+
+            var body = await res.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("streamingData", out var streamingData))
+            {
+                IsProbing = false;
+                return false;
+            }
+
+            string title = "YouTube Video";
+            if (root.TryGetProperty("videoDetails", out var videoDetails) &&
+                videoDetails.TryGetProperty("title", out var titleElem))
+            {
+                title = titleElem.GetString() ?? title;
+            }
+
+            string cleanTitle = string.Join("_", title.Split(Path.GetInvalidFileNameChars())).Trim();
+
+            // Find best audio stream
+            string? defaultAudioUrl = null;
+            long defaultAudioSize = 0;
+            if (streamingData.TryGetProperty("adaptiveFormats", out var adaptiveElem))
+            {
+                foreach (var f in adaptiveElem.EnumerateArray())
+                {
+                    string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                    if (mime.Contains("audio/"))
+                    {
+                        string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
+                        if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
+                        {
+                            long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
+                            string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
+                            if (defaultAudioUrl == null || itag == "140")
+                            {
+                                defaultAudioUrl = streamUrl;
+                                defaultAudioSize = clen;
+                            }
+                        }
+                    }
+                }
+            }
+
+            var formatsList = new List<MediaFormatItem>();
+
+            // Adaptive formats (1080p, 720p, 480p, etc.)
+            if (streamingData.TryGetProperty("adaptiveFormats", out adaptiveElem))
+            {
+                foreach (var f in adaptiveElem.EnumerateArray())
+                {
+                    string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                    if (mime.Contains("video/"))
+                    {
+                        string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
+                        if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
+                        {
+                            string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
+                            string quality = f.TryGetProperty("qualityLabel", out var ql) ? ql.GetString() ?? "" : "Video";
+                            long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
+                            long totalSize = defaultAudioSize > 0 ? clen + defaultAudioSize : clen;
+                            string ext = mime.Contains("webm") ? "webm" : "mp4";
+
+                            formatsList.Add(new MediaFormatItem
+                            {
+                                FormatId = itag,
+                                Resolution = quality,
+                                Ext = ext,
+                                FileSize = totalSize,
+                                IsAudioOnly = false,
+                                DisplayLabel = quality,
+                                FormattedSize = totalSize > 0 ? MediaFormatItem.FormatBytes(totalSize) : "Direct Stream",
+                                DirectUrl = streamUrl,
+                                AudioUrl = defaultAudioUrl
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Combined formats (360p, 720p with audio)
+            if (streamingData.TryGetProperty("formats", out var combinedElem))
+            {
+                foreach (var f in combinedElem.EnumerateArray())
+                {
+                    string? streamUrl = f.TryGetProperty("url", out var u) ? u.GetString() : null;
+                    if (!string.IsNullOrEmpty(streamUrl) && streamUrl.StartsWith("http"))
+                    {
+                        string itag = f.TryGetProperty("itag", out var it) ? it.ToString() : "";
+                        string quality = f.TryGetProperty("qualityLabel", out var ql) ? ql.GetString() ?? "" : "360p";
+                        long clen = f.TryGetProperty("contentLength", out var cl) && long.TryParse(cl.GetString(), out var s) ? s : 0;
+                        string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                        string ext = mime.Contains("webm") ? "webm" : "mp4";
+
+                        formatsList.Add(new MediaFormatItem
+                        {
+                            FormatId = itag,
+                            Resolution = quality + " (Direct)",
+                            Ext = ext,
+                            FileSize = clen,
+                            IsAudioOnly = false,
+                            DisplayLabel = quality + " (Direct)",
+                            FormattedSize = clen > 0 ? MediaFormatItem.FormatBytes(clen) : "Direct Stream",
+                            DirectUrl = streamUrl,
+                            AudioUrl = null
+                        });
+                    }
+                }
+            }
+
+            if (formatsList.Count == 0)
+            {
+                IsProbing = false;
+                return false;
+            }
+
+            // MP3 audio option
+            formatsList.Add(new MediaFormatItem
+            {
+                FormatId = "bestaudio/best",
+                Resolution = "Audio (MP3 / High Quality)",
+                Ext = "mp3",
+                FileSize = defaultAudioSize,
+                IsAudioOnly = true,
+                DisplayLabel = "Audio (MP3 / High Quality)",
+                FormattedSize = defaultAudioSize > 0 ? MediaFormatItem.FormatBytes(defaultAudioSize) : "Direct Audio",
+                DirectUrl = defaultAudioUrl,
+                AudioUrl = null
+            });
+
+            // HD Thumbnail option
+            formatsList.Add(new MediaFormatItem
+            {
+                FormatId = "thumbnail",
+                Resolution = "Thumbnail (Cover Image / HD)",
+                Ext = "jpg",
+                FileSize = 0,
+                IsAudioOnly = false,
+                DisplayLabel = "Thumbnail (Cover Image / HD)",
+                FormattedSize = "HD Image",
+                DirectUrl = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg",
+                AudioUrl = null
+            });
+
+            AvailableFormats.Clear();
+            foreach (var item in formatsList)
+            {
+                AvailableFormats.Add(item);
+            }
+
+            IsMediaFormatSelectorVisible = true;
+            IsProbeSuccessful = true;
+            IsProbing = false;
+
+            var preferred = AvailableFormats.FirstOrDefault(f => f.Resolution.StartsWith("1080p") && !f.IsAudioOnly)
+                         ?? AvailableFormats.FirstOrDefault(f => f.Resolution.StartsWith("720p") && !f.IsAudioOnly)
+                         ?? AvailableFormats.FirstOrDefault();
+
+            SelectedFormat = preferred;
+            FileName = $"{cleanTitle}.{SelectedFormat?.Ext ?? "mp4"}";
+
+            if (SelectedFormat != null && SelectedFormat.FileSize > 0)
+            {
+                _probedTotalBytes = SelectedFormat.FileSize;
+                UpdateDriveSpace(SavePath);
+            }
+
+            ProbeStatus = $"• Found {AvailableFormats.Count} formats • Selected: {SelectedFormat?.DisplayLabel} • {SelectedFormat?.FormattedSize}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"YouTube format resolution error: {ex.Message}");
+            IsProbing = false;
+            return false;
+        }
+    }
+
     [RelayCommand]
     private async Task ProbeUrlAsync()
     {
@@ -250,6 +510,11 @@ public partial class AddDownloadViewModel : ViewModelBase
         {
             ProbeStatus = "• Please enter a valid HTTP/HTTPS URL.";
             IsProbeSuccessful = false;
+            return;
+        }
+
+        if (await TryResolveYouTubeFormatsAsync(Url.Trim()))
+        {
             return;
         }
 
@@ -350,15 +615,24 @@ public partial class AddDownloadViewModel : ViewModelBase
             _ => "/Assets/Icons/disc-blue.png"
         };
 
-        string sizeStr = _probedTotalBytes > 0 ? $"{((double)_probedTotalBytes / (1024 * 1024 * 1024)):F2} GB" : "Direct Stream";
+        string targetUrl = (SelectedFormat != null && !string.IsNullOrWhiteSpace(SelectedFormat.DirectUrl))
+            ? SelectedFormat.DirectUrl
+            : Url.Trim();
+
+        long targetBytes = (SelectedFormat != null && SelectedFormat.FileSize > 0)
+            ? SelectedFormat.FileSize
+            : _probedTotalBytes;
+
+        string sizeStr = targetBytes > 0 ? $"{((double)targetBytes / (1024 * 1024 * 1024)):F2} GB" : "Direct Stream";
 
         var model = new DownloadModel
         {
             Title = FileName,
-            Url = Url.Trim(),
+            Url = targetUrl,
+            AudioUrl = SelectedFormat?.AudioUrl,
             FormatId = SelectedFormatId,
             Domain = Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var u) ? u.Host : "Remote Host",
-            TotalBytes = _probedTotalBytes,
+            TotalBytes = targetBytes,
             DownloadedBytes = 0,
             SpeedMbps = 0,
             ProgressPercentage = 0,

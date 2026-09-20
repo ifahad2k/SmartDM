@@ -23,6 +23,12 @@ sealed class Program
             return;
         }
 
+        if (args != null && System.Linq.Enumerable.Contains(args, "--test-media-resolve"))
+        {
+            RunMediaResolutionTestAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
     }
 
@@ -208,6 +214,98 @@ sealed class Program
         try { System.IO.File.Delete(targetFile); } catch { }
 
         Console.WriteLine("=== SmartDM 2.0 IPC Bridge End-to-End Test PASSED Successfully! ===");
+    }
+
+    private static async System.Threading.Tasks.Task RunMediaResolutionTestAsync()
+    {
+        Console.WriteLine("=== Starting SmartDM 2.0 Dynamic Media Format Resolution Test ===");
+
+        // Test 1: Direct YouTube URL probe & resolution without yt-dlp
+        string testYtUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        Console.WriteLine($"[TEST 1] Probing YouTube URL: {testYtUrl}");
+        var vm = new ViewModels.AddDownloadViewModel(initialUrl: testYtUrl);
+        await System.Threading.Tasks.Task.Delay(2500);
+
+        if (!vm.IsMediaFormatSelectorVisible)
+        {
+            throw new Exception("Media format selector should be visible for YouTube URL.");
+        }
+        if (vm.AvailableFormats.Count == 0)
+        {
+            throw new Exception("AvailableFormats collection is empty.");
+        }
+
+        Console.WriteLine($"[PASS] Format dropdown visible: {vm.IsMediaFormatSelectorVisible}");
+        Console.WriteLine($"[PASS] Discovered formats count: {vm.AvailableFormats.Count}");
+        Console.WriteLine($"[PASS] Selected format: {vm.SelectedFormat?.DisplayLabel} ({vm.SelectedFormat?.FormattedSize})");
+        Console.WriteLine($"[PASS] Direct URL prefix: {vm.SelectedFormat?.DirectUrl?.Substring(0, Math.Min(60, vm.SelectedFormat?.DirectUrl?.Length ?? 0))}...");
+        Console.WriteLine($"[PASS] Save FileName: {vm.FileName}");
+
+        bool hasMp3 = System.Linq.Enumerable.Any(vm.AvailableFormats, f => f.FormatId == "bestaudio/best");
+        bool hasThumb = System.Linq.Enumerable.Any(vm.AvailableFormats, f => f.FormatId == "thumbnail");
+        if (!hasMp3) throw new Exception("AvailableFormats missing MP3 format option.");
+        if (!hasThumb) throw new Exception("AvailableFormats missing HD Thumbnail format option.");
+        Console.WriteLine($"[PASS] Dynamic MP3 option present: {hasMp3}");
+        Console.WriteLine($"[PASS] Dynamic HD Thumbnail option present: {hasThumb}");
+
+        // Test 2: IPC initial formats passed from browser overlay
+        Console.WriteLine("[TEST 2] Verifying browser overlay formats binding & preselection...");
+        var browserFormats = new System.Collections.Generic.List<Services.MediaFormatDto>
+        {
+            new() { FormatId = "137", Resolution = "1080p (MP4)", Ext = "mp4", FileSize = 84361446L, DirectUrl = "https://example.com/video1080.mp4", AudioUrl = "https://example.com/audio140.m4a" },
+            new() { FormatId = "136", Resolution = "720p (MP4)", Ext = "mp4", FileSize = 29905327L, DirectUrl = "https://example.com/video720.mp4", AudioUrl = "https://example.com/audio140.m4a" },
+            new() { FormatId = "bestaudio/best", Resolution = "Audio (MP3 / High Quality)", Ext = "mp3", FileSize = 3449447L, IsAudioOnly = true, DirectUrl = "https://example.com/audio140.m4a" },
+            new() { FormatId = "thumbnail", Resolution = "Thumbnail (Cover Image / HD)", Ext = "jpg", FileSize = 0, DirectUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" }
+        };
+
+        var browserVm = new ViewModels.AddDownloadViewModel(
+            initialUrl: "https://example.com/video1080.mp4",
+            initialFileName: "Never_Gonna_Give_You_Up.mp4",
+            initialFormatId: "137",
+            initialFormats: browserFormats
+        );
+
+        if (!browserVm.IsMediaFormatSelectorVisible)
+        {
+            throw new Exception("Browser VM format selector not visible.");
+        }
+        if (browserVm.SelectedFormat?.FormatId != "137")
+        {
+            throw new Exception($"Expected preselected formatId '137', but got '{browserVm.SelectedFormat?.FormatId}'");
+        }
+        if (browserVm.SelectedFormat.FileSize != 84361446L)
+        {
+            throw new Exception($"Expected file size 84361446, but got {browserVm.SelectedFormat.FileSize}");
+        }
+        Console.WriteLine($"[PASS] Browser VM preselected: {browserVm.SelectedFormat.DisplayLabel} ({browserVm.SelectedFormat.FormattedSize})");
+
+        // Test 3: Switching format in dropdown updates extension and category
+        Console.WriteLine("[TEST 3] Verifying format switching in dropdown...");
+        var mp3Fmt = System.Linq.Enumerable.First(browserVm.AvailableFormats, f => f.FormatId == "bestaudio/best");
+        browserVm.SelectedFormat = mp3Fmt;
+        if (!browserVm.FileName.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception($"Expected filename to end with .mp3, but was {browserVm.FileName}");
+        }
+        if (browserVm.Category != "Audio")
+        {
+            throw new Exception($"Expected Category 'Audio', but was '{browserVm.Category}'");
+        }
+        Console.WriteLine($"[PASS] Switched to MP3 -> FileName: {browserVm.FileName}, Category: {browserVm.Category}");
+
+        var thumbFmt = System.Linq.Enumerable.First(browserVm.AvailableFormats, f => f.FormatId == "thumbnail");
+        browserVm.SelectedFormat = thumbFmt;
+        if (!browserVm.FileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception($"Expected filename to end with .jpg, but was {browserVm.FileName}");
+        }
+        if (browserVm.Category != "Images")
+        {
+            throw new Exception($"Expected Category 'Images', but was '{browserVm.Category}'");
+        }
+        Console.WriteLine($"[PASS] Switched to Thumbnail -> FileName: {browserVm.FileName}, Category: {browserVm.Category}");
+
+        Console.WriteLine("=== SmartDM 2.0 Dynamic Media Format Resolution Test PASSED Successfully! ===");
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

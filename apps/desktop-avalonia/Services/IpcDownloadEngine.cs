@@ -55,6 +55,14 @@ public class IpcDownloadEngine : IDownloadEngine, IAsyncDisposable
     {
         _trackedDownloads[download.Id] = download;
 
+        if (!string.IsNullOrWhiteSpace(download.AudioUrl) ||
+            download.Url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+            (download.Category == "Audio" && download.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+        {
+            await _fallbackEngine.StartDownloadAsync(download);
+            return;
+        }
+
         if (!_ipcClient.IsConnected)
         {
             await _ipcClient.ConnectAsync();

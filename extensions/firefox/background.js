@@ -177,13 +177,21 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
       // Filter out HLS/DASH segment chunks and range requests
       const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com');
+      const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
                              (url.includes('.m4s') && !url.includes('master')) ||
-                             (!isFbMedia && (url.includes('bytestart=') || url.includes('byteend=') || url.includes('range=')));
+                             (!isFbMedia && !isGoogleVideo && (url.includes('bytestart=') || url.includes('byteend=') || url.includes('range=')));
       if (isSegmentChunk) return;
 
-      const targetUrl = details.url;
-
+      let targetUrl = details.url;
+      if (isGoogleVideo) {
+        // Strip range parameter to target the full stream
+        targetUrl = targetUrl.replace(/&range=[^&]+/g, '').replace(/\?range=[^&]+&?/g, '?');
+        if (!contentLength || contentLength === 0) {
+          const clenMatch = targetUrl.match(/[?&]clen=(\d+)/);
+          if (clenMatch) contentLength = parseInt(clenMatch[1], 10);
+        }
+      }
 
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
@@ -196,7 +204,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
                          url.includes('.avi') || url.includes('.mkv');
 
-      if (isMediaMime || isMediaExt) {
+      if (isMediaMime || isMediaExt || isGoogleVideo) {
         if (!detectedMediaMap.has(details.tabId)) {
           detectedMediaMap.set(details.tabId, []);
         }
@@ -271,11 +279,26 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         // Standard direct media URL (mp4, webm, mp3, m4a, etc.)
         if (!mediaList.some((m) => m.url === targetUrl)) {
           if (mediaList.length >= 35) mediaList.shift();
+
+          let title = getFilenameFromUrl(targetUrl);
+          let badge = 'Media';
+          let customTitle = null;
+          if (isGoogleVideo) {
+            const itagMatch = targetUrl.match(/[?&]itag=(\d+)/);
+            const itag = itagMatch ? itagMatch[1] : '';
+            const isAudio = (contentType && contentType.includes('audio/')) || itag === '140' || itag === '251' || itag === '139';
+            badge = isAudio ? 'Audio Stream' : (itag ? `Video Stream (itag ${itag})` : 'Video Stream');
+            customTitle = isAudio ? `Audio Stream (${itag || 'm4a'})` : `Video Stream (${itag || 'mp4'})`;
+            title = isAudio ? `audio_${itag || 'stream'}.m4a` : `video_${itag || 'stream'}.mp4`;
+          }
+
           mediaList.push({
             url: targetUrl,
             contentType: contentType,
             contentLength: contentLength,
-            filename: getFilenameFromUrl(targetUrl)
+            filename: title,
+            customTitle: customTitle || title,
+            customBadge: badge
           });
         }
       }
@@ -466,52 +489,75 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
         const title = videoDetails.title || 'YouTube Video';
         const streamingData = data.streamingData;
         const formats = [];
+        const hlsUrl = streamingData.hlsManifestUrl || null;
+
+        let defaultAudioUrl = null;
+        let defaultAudioSize = 0;
+        const adaptive = streamingData.adaptiveFormats || [];
+        adaptive.forEach(f => {
+          if ((f.mimeType || '').includes('audio/') && f.url && f.url.startsWith('http')) {
+            if (!defaultAudioUrl || f.itag === 140) {
+              defaultAudioUrl = f.url;
+              defaultAudioSize = parseInt(f.contentLength || 0, 10);
+            }
+          }
+        });
 
         const combined = streamingData.formats || [];
         combined.forEach(f => {
-          formats.push({
-            formatId: String(f.itag || ('fmt_' + formats.length)),
-            resolution: f.qualityLabel || f.quality || '360p',
-            ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
-            formatNote: 'Direct Video + Audio',
-            fileSize: parseInt(f.contentLength || 0, 10),
-            fps: f.fps || 30,
-            isAudioOnly: false,
-            title: title
-          });
+          if (f.url && f.url.startsWith('http')) {
+            formats.push({
+              formatId: String(f.itag || ('fmt_' + formats.length)),
+              resolution: f.qualityLabel || f.quality || '360p',
+              ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+              formatNote: 'Direct Video + Audio',
+              fileSize: parseInt(f.contentLength || 0, 10),
+              fps: f.fps || 30,
+              isAudioOnly: false,
+              title: title,
+              url: f.url
+            });
+          }
         });
 
-        const adaptive = streamingData.adaptiveFormats || [];
         adaptive.forEach(f => {
-          const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
-          const isAudio = mime.startsWith('audio/');
-          const isVideo = mime.startsWith('video/');
-          const kbps = Math.round((f.bitrate || 0) / 1000);
-          formats.push({
-            formatId: String(f.itag || ('fmt_' + formats.length)),
-            resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
-            ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
-            formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
-            fileSize: parseInt(f.contentLength || 0, 10),
-            tbr: kbps,
-            fps: f.fps || 0,
-            isAudioOnly: isAudio,
-            isVideoOnly: isVideo,
-            title: title
-          });
+          if (f.url && f.url.startsWith('http')) {
+            const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
+            const isAudio = mime.startsWith('audio/');
+            const isVideo = mime.startsWith('video/');
+            const kbps = Math.round((f.bitrate || 0) / 1000);
+            const videoSize = parseInt(f.contentLength || 0, 10);
+            const totalSize = isVideo && defaultAudioSize > 0 ? videoSize + defaultAudioSize : videoSize;
+            formats.push({
+              formatId: String(f.itag || ('fmt_' + formats.length)),
+              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
+              ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+              formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+              fileSize: totalSize,
+              tbr: kbps,
+              fps: f.fps || 0,
+              isAudioOnly: isAudio,
+              isVideoOnly: isVideo,
+              title: title,
+              url: f.url,
+              audioUrl: (!isAudio && defaultAudioUrl) ? defaultAudioUrl : null
+            });
+          }
         });
-        if (formats.length > 1) {
+
+        const hasDirectUrls = formats.some(f => f.url && f.url.startsWith('http'));
+        if (formats.length > 0 && hasDirectUrls) {
           return { success: true, status: 'ok', title: title, formats: formats };
         }
       }
       return null;
     };
 
-    // 1. First try: Direct API Clients
+    // 1. Direct API Clients (ANDROID_VR yields direct stream URLs without signature cipher)
     const clients = [
-      { clientName: 'WEB', clientVersion: '2.20240101.00.00' },
       { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 },
-      { clientName: 'ANDROID', clientVersion: '19.11.38' }
+      { clientName: 'ANDROID', clientVersion: '19.11.38' },
+      { clientName: 'WEB', clientVersion: '2.20240101.00.00' }
     ];
 
     for (const clientObj of clients) {

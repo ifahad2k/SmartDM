@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartDm.Desktop.Avalonia.Models;
@@ -31,6 +32,7 @@ public class DownloadEngine : IDownloadEngine
         public List<SegmentWorker> Workers { get; set; } = new();
         public CancellationTokenSource Cts { get; set; } = new();
         public Task? RunnerTask { get; set; }
+        public Process? ActiveProcess { get; set; }
     }
 
     public DownloadEngine(IDatabaseRepository repository, ISafetyScanner safetyScanner, HttpClient? httpClient = null)
@@ -103,6 +105,21 @@ public class DownloadEngine : IDownloadEngine
             Download = download,
             Cts = new CancellationTokenSource()
         };
+
+        // Check if this stream requires FFmpeg muxing/copying (HLS .m3u8, dual stream video+audio, or MP3 audio conversion)
+        bool isFfmpegTask = download.Url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                            !string.IsNullOrWhiteSpace(download.AudioUrl) ||
+                            (download.Category == "Audio" && download.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) && !download.Url.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase));
+
+        if (isFfmpegTask)
+        {
+            _sessions[download.Id] = session;
+            session.RunnerTask = Task.Run(async () =>
+            {
+                await RunFfmpegSessionAsync(session);
+            });
+            return;
+        }
 
         // Determine segments
         int threadCount = Math.Clamp(download.ParallelThreads > 0 ? download.ParallelThreads : 16, 1, 32);
@@ -281,6 +298,189 @@ public class DownloadEngine : IDownloadEngine
         }
     }
 
+    private async Task RunFfmpegSessionAsync(DownloadSession session)
+    {
+        var dl = session.Download;
+        var token = session.Cts.Token;
+
+        // Initialize synthetic segment workers for Transfer Monitor UI
+        session.Workers.Clear();
+        session.Workers.Add(new SegmentWorker(_httpClient, dl.Url, dl.SavePath, 1, 0, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, 0));
+        session.Workers.Add(new SegmentWorker(_httpClient, dl.AudioUrl ?? dl.Url, dl.SavePath, 2, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, dl.TotalBytes, 0));
+        _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+
+        string userAgent = "-user_agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\"";
+        string arguments;
+        if (!string.IsNullOrWhiteSpace(dl.AudioUrl))
+        {
+            arguments = $"-y {userAgent} -i \"{dl.Url}\" {userAgent} -i \"{dl.AudioUrl}\" -c:v copy -c:a aac -movflags +faststart \"{dl.SavePath}\"";
+        }
+        else if (dl.Category == "Audio" && dl.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            arguments = $"-y {userAgent} -i \"{dl.Url}\" -vn -acodec libmp3lame -q:a 2 \"{dl.SavePath}\"";
+        }
+        else
+        {
+            arguments = $"-y {userAgent} -i \"{dl.Url}\" -c copy \"{dl.SavePath}\"";
+        }
+
+        string ffmpegPath = "ffmpeg";
+        string? envFfmpeg = Environment.GetEnvironmentVariable("FFMPEG_PATH");
+        if (!string.IsNullOrEmpty(envFfmpeg) && File.Exists(envFfmpeg))
+        {
+            ffmpegPath = envFfmpeg;
+        }
+        else
+        {
+            string wingetPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                @"Microsoft\WinGet\Packages\yt-dlp.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-125365-g9a01c1cb6a-win64-gpl\bin\ffmpeg.exe");
+            if (File.Exists(wingetPath))
+            {
+                ffmpegPath = wingetPath;
+            }
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            Arguments = arguments,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var proc = new Process { StartInfo = psi };
+        session.ActiveProcess = proc;
+
+        using var reg = token.Register(() =>
+        {
+            try { if (!proc.HasExited) proc.Kill(true); } catch { }
+        });
+
+        try
+        {
+            proc.Start();
+            var sw = Stopwatch.StartNew();
+            long lastBytes = 0;
+
+            string? line;
+            while ((line = await proc.StandardError.ReadLineAsync()) != null)
+            {
+                if (token.IsCancellationRequested) break;
+
+                // FFmpeg output format example:
+                // size=    2677KiB time=00:00:05.01 bitrate=4371.7kbits/s speed=7.46x
+                var sizeMatch = Regex.Match(line, @"size=\s*(\d+)(KiB|kB|B)", RegexOptions.IgnoreCase);
+                if (sizeMatch.Success)
+                {
+                    long val = long.Parse(sizeMatch.Groups[1].Value);
+                    string unit = sizeMatch.Groups[2].Value.ToUpperInvariant();
+                    long currentBytes = unit.Contains("K") ? val * 1024 : val;
+
+                    if (currentBytes > 0)
+                    {
+                        dl.DownloadedBytes = currentBytes;
+                        double elapsed = sw.Elapsed.TotalSeconds;
+                        if (elapsed >= 0.5)
+                        {
+                            long delta = currentBytes - lastBytes;
+                            dl.SpeedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsed);
+                            lastBytes = currentBytes;
+                            sw.Restart();
+                        }
+
+                        if (dl.TotalBytes > 0)
+                        {
+                            dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
+                            if (dl.SpeedMbps > 0.01)
+                            {
+                                long remaining = dl.TotalBytes - dl.DownloadedBytes;
+                                dl.EtaSeconds = (int)(remaining / (dl.SpeedMbps * 1024 * 1024));
+                            }
+                        }
+
+                        dl.StatusDetail = $"Streaming via FFmpeg ({dl.ProgressPercentage:F1}%)...";
+                        dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / {MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s";
+
+                        // Update synthetic segment progress
+                        if (session.Workers.Count >= 2)
+                        {
+                            session.Workers[0].Progress.DownloadedBytes = currentBytes / 2;
+                            session.Workers[1].Progress.DownloadedBytes = currentBytes / 2;
+                            session.Workers[0].Progress.IsActive = true;
+                            session.Workers[1].Progress.IsActive = true;
+                            _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+                        }
+
+                        DownloadProgressChanged?.Invoke(dl);
+                    }
+                }
+            }
+
+            await proc.WaitForExitAsync();
+
+            if (proc.ExitCode == 0 && !token.IsCancellationRequested)
+            {
+                if (File.Exists(dl.SavePath))
+                {
+                    var fi = new FileInfo(dl.SavePath);
+                    dl.TotalBytes = fi.Length;
+                    dl.DownloadedBytes = fi.Length;
+                }
+
+                dl.Status = DownloadStatus.Completed;
+                dl.SpeedMbps = 0;
+                dl.ProgressPercentage = 100.0;
+                dl.StatusDetail = "Media stream downloaded & muxed successfully";
+                dl.Subline = $"{MediaFormatItem.FormatBytes(dl.TotalBytes)} • Completed";
+                DownloadProgressChanged?.Invoke(dl);
+
+                var scanResult = await _safetyScanner.ScanFileAsync(dl.SavePath);
+                dl.Sha256Hash = scanResult.Sha256Hash;
+                await _repository.SaveDownloadAsync(dl);
+                DownloadCompleted?.Invoke(dl, scanResult);
+                DownloadStatusChanged?.Invoke(dl);
+            }
+            else if (token.IsCancellationRequested)
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                dl.StatusDetail = "Paused by user";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+            }
+            else
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                dl.StatusDetail = "FFmpeg stream transfer interrupted";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = "Paused by user";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
+        }
+        catch (Exception ex)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = $"Error: {ex.Message}";
+            await _repository.SaveDownloadAsync(dl);
+            DownloadStatusChanged?.Invoke(dl);
+        }
+        finally
+        {
+            _sessions.TryRemove(dl.Id, out _);
+        }
+    }
+
     public async Task PauseDownloadAsync(string downloadId)
     {
         if (_sessions.TryGetValue(downloadId, out var session))
@@ -288,6 +488,10 @@ public class DownloadEngine : IDownloadEngine
             session.Cts.Cancel();
             try
             {
+                if (session.ActiveProcess != null && !session.ActiveProcess.HasExited)
+                {
+                    session.ActiveProcess.Kill(true);
+                }
                 if (session.RunnerTask != null)
                 {
                     await Task.WhenAny(session.RunnerTask, Task.Delay(800));
@@ -313,6 +517,10 @@ public class DownloadEngine : IDownloadEngine
             session.Cts.Cancel();
             try
             {
+                if (session.ActiveProcess != null && !session.ActiveProcess.HasExited)
+                {
+                    session.ActiveProcess.Kill(true);
+                }
                 if (session.RunnerTask != null)
                 {
                     await Task.WhenAny(session.RunnerTask, Task.Delay(800));
@@ -342,6 +550,14 @@ public class DownloadEngine : IDownloadEngine
         if (_sessions.TryGetValue(downloadId, out var session))
         {
             session.Cts.Cancel();
+            try
+            {
+                if (session.ActiveProcess != null && !session.ActiveProcess.HasExited)
+                {
+                    session.ActiveProcess.Kill(true);
+                }
+            }
+            catch { }
             session.Download.Status = DownloadStatus.Paused;
             session.Download.SpeedMbps = 0;
             session.Download.StatusDetail = "Cancelled";

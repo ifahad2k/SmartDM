@@ -29,6 +29,9 @@ public partial class DownloadModel : ObservableObject
     private string _url = string.Empty;
 
     [ObservableProperty]
+    private string? _audioUrl;
+
+    [ObservableProperty]
     private string _formatId = string.Empty;
 
     [ObservableProperty]

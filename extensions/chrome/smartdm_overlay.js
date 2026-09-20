@@ -125,40 +125,45 @@
         const formats = [];
 
         (ytResponse.streamingData.formats || []).forEach(f => {
-          formats.push({
-            formatId: String(f.itag || ('fmt_' + formats.length)),
-            resolution: f.qualityLabel || (f.height ? f.height + 'p' : (f.quality || 'Direct Stream')),
-            ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
-            fileSize: parseInt(f.contentLength || 0, 10),
-            fps: f.fps || 30,
-            isAudioOnly: false,
-            title: title,
-            url: f.url || null
-          });
+          if (f.url && f.url.startsWith('http')) {
+            formats.push({
+              formatId: String(f.itag || ('fmt_' + formats.length)),
+              resolution: f.qualityLabel || (f.height ? f.height + 'p' : (f.quality || 'Direct Stream')),
+              ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+              fileSize: parseInt(f.contentLength || 0, 10),
+              fps: f.fps || 30,
+              isAudioOnly: false,
+              title: title,
+              url: f.url
+            });
+          }
         });
 
         (ytResponse.streamingData.adaptiveFormats || []).forEach(f => {
-          const mime = (f.mimeType || '').toLowerCase();
-          const isAudio = mime.startsWith('audio/');
-          const kbps = Math.round((f.bitrate || 0) / 1000);
-          const resLabel = isAudio 
-            ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : 'Source Quality') + ')')
-            : (f.qualityLabel || (f.height ? f.height + 'p' : (f.width ? f.width + 'x' + f.height : 'Adaptive Stream')));
+          if (f.url && f.url.startsWith('http')) {
+            const mime = (f.mimeType || '').toLowerCase();
+            const isAudio = mime.startsWith('audio/');
+            const kbps = Math.round((f.bitrate || 0) / 1000);
+            const resLabel = isAudio 
+              ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : 'Source Quality') + ')')
+              : (f.qualityLabel || (f.height ? f.height + 'p' : (f.width ? f.width + 'x' + f.height : 'Adaptive Stream')));
 
-          formats.push({
-            formatId: String(f.itag || ('fmt_' + formats.length)),
-            resolution: resLabel,
-            ext: mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
-            fileSize: parseInt(f.contentLength || 0, 10),
-            tbr: kbps,
-            fps: f.fps || 0,
-            isAudioOnly: isAudio,
-            title: title,
-            url: f.url || null
-          });
+            formats.push({
+              formatId: String(f.itag || ('fmt_' + formats.length)),
+              resolution: resLabel,
+              ext: mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+              fileSize: parseInt(f.contentLength || 0, 10),
+              tbr: kbps,
+              fps: f.fps || 0,
+              isAudioOnly: isAudio,
+              title: title,
+              url: f.url
+            });
+          }
         });
 
-        if (formats.length > 0) {
+        const hasDirectUrls = formats.some(f => f.url && f.url.startsWith('http'));
+        if (formats.length > 0 && hasDirectUrls) {
           return { success: true, status: 'ok', title: title, formats: formats };
         }
       }
@@ -377,6 +382,20 @@
       });
     }
 
+    // Append Dynamic HD Thumbnail Option for media item
+    if (rawItems.length > 0 && !rawItems.some(item => item.title.includes('Thumbnail'))) {
+      const firstItem = rawItems[0];
+      rawItems.push({
+        title: 'Thumbnail (Cover Image / HD)',
+        badge: 'Image (JPG)',
+        url: firstItem.url,
+        videoUrl: null,
+        audioUrl: null,
+        formatId: 'thumbnail',
+        fileName: derivePageTitleFilename('jpg')
+      });
+    }
+
     // Deduplicate items by title
     const seen = new Set();
     const items = [];
@@ -408,13 +427,88 @@
         if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
         container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
 
+        // Find best audio URL and size
+        let bestAudioUrl = null;
+        let bestAudioSize = 0;
+        (formats || []).forEach(f => {
+          if (f.isAudioOnly && f.url && f.url.startsWith('http')) {
+            if (!bestAudioUrl || f.formatId === '140') {
+              bestAudioUrl = f.url;
+              bestAudioSize = f.fileSize || 0;
+            }
+          }
+        });
+
+        // Prepare full formats array to transmit to SmartDM desktop app
+        const formatsList = (formats || []).map(f => ({
+          formatId: String(f.formatId || ''),
+          resolution: f.resolution || f.qualityLabel || (f.isAudioOnly ? 'Audio Only' : 'Video'),
+          ext: (f.ext || 'mp4').toLowerCase(),
+          fileSize: f.fileSize || 0,
+          isAudioOnly: !!f.isAudioOnly,
+          url: f.url || f.videoUrl || null,
+          audioUrl: f.audioUrl || (!f.isAudioOnly ? bestAudioUrl : null)
+        }));
+
+        if (!formatsList.some(f => f.formatId === 'bestaudio/best' || (f.isAudioOnly && f.ext === 'mp3'))) {
+          formatsList.push({
+            formatId: 'bestaudio/best',
+            resolution: 'Audio (MP3 / High Quality)',
+            ext: 'mp3',
+            fileSize: bestAudioSize,
+            isAudioOnly: true,
+            url: bestAudioUrl || item.audioUrl || item.url || null,
+            audioUrl: null
+          });
+        }
+
+        let thumbUrl = null;
+        try {
+          const ogImg = document.querySelector('meta[property="og:image"]');
+          if (ogImg && ogImg.content) thumbUrl = ogImg.content;
+          if (!thumbUrl) {
+            const linkImg = document.querySelector('link[rel="image_src"]');
+            if (linkImg && linkImg.href) thumbUrl = linkImg.href;
+          }
+          if (!thumbUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'))) {
+            const vidMatch = videoUrl.match(/[?&]v=([^&#]+)/) || videoUrl.match(/youtu\.be\/([^?&#]+)/) || videoUrl.match(/\/shorts\/([^?&#]+)/);
+            if (vidMatch) thumbUrl = `https://i.ytimg.com/vi/${vidMatch[1]}/maxresdefault.jpg`;
+          }
+        } catch(e) {}
+
+        if (!formatsList.some(f => f.formatId === 'thumbnail')) {
+          formatsList.push({
+            formatId: 'thumbnail',
+            resolution: 'Thumbnail (Cover Image / HD)',
+            ext: 'jpg',
+            fileSize: 0,
+            isAudioOnly: false,
+            url: thumbUrl,
+            audioUrl: null
+          });
+        }
+
+        let directDownloadUrl = null;
+        if (item.formatId === 'thumbnail') {
+          directDownloadUrl = thumbUrl || item.url || videoUrl;
+        } else if (item.formatId === 'bestaudio/best') {
+          directDownloadUrl = bestAudioUrl || item.audioUrl || item.url || videoUrl;
+        } else {
+          directDownloadUrl = (item.url && item.url.startsWith('http') && item.url !== videoUrl)
+            ? item.url
+            : ((item.videoUrl && item.videoUrl.startsWith('http') && item.videoUrl !== videoUrl) ? item.videoUrl : videoUrl);
+        }
+
+        const audioUrlToSend = item.audioUrl || (!item.isAudioOnly && item.formatId !== 'thumbnail' ? bestAudioUrl : null);
+
         runtime.sendMessage({
           type: 'START_MEDIA_DOWNLOAD',
-          url: videoUrl,
+          url: directDownloadUrl,
           videoUrl: item.videoUrl,
-          audioUrl: item.audioUrl,
+          audioUrl: audioUrlToSend,
           formatId: item.formatId,
-          fileName: item.fileName
+          fileName: item.fileName,
+          formats: formatsList
         }, () => {
           setTimeout(() => popover.classList.remove('active'), 800);
         });
