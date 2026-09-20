@@ -433,21 +433,22 @@
       const isHls = ext === 'm3u8' || url.includes('.m3u8');
       let qStr = quality ? String(quality).trim() : '';
       if (qStr && !qStr.endsWith('p') && /^\d+$/.test(qStr)) qStr += 'p';
-      let qLabel = qStr || (isHls ? 'Master HLS' : 'Video');
+      let qLabel = qStr || (isHls ? 'Master' : 'Video');
       const hNum = parseInt(qLabel, 10);
       if (hNum >= 720 && !qLabel.includes('HD')) qLabel += ' HD';
-      qLabel += isHls ? ' (Stream)' : ' (MP4)';
+      qLabel += ' (MP4)';
 
       formats.push({
         formatId: 'tube_' + (quality || formats.length),
         resolution: qLabel,
         height: hNum || (isHls ? 1080 : 720),
-        ext: isHls ? 'm3u8' : 'mp4',
+        ext: 'mp4',
         fileSize: 0,
         isAudioOnly: false,
         title: pageTitle,
         url: url
       });
+
     };
 
     try {
@@ -661,7 +662,7 @@
       }
     };
 
-    // Guaranteed safety timeout (3500ms): UI will NEVER hang or spin indefinitely
+    // Guaranteed safety timeout (9000ms): Allows desktop YoutubeExplode deciphering to finish without hanging
     setTimeout(() => {
       if (!isHandled) {
         buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
@@ -673,7 +674,8 @@
           }
         }, 500);
       }
-    }, 3500);
+    }, 9000);
+
 
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
     const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
@@ -779,10 +781,12 @@
       if (resolution === '0' || resolution === '0p' || resolution.includes('0x0') || isOpaqueTokenOrHash(resolution)) {
         resolution = fmt.height ? `${fmt.height}p` : 'Video Stream';
       }
-      const ext = (fmt.ext || fmt.Ext || 'MP4').toUpperCase();
+      let ext = (fmt.ext || fmt.Ext || 'MP4').toUpperCase();
+      if (ext === 'M3U8') ext = 'MP4';
       let cleanTitle = resolution;
       if (fmt.fps && fmt.fps > 30) cleanTitle += ` ${fmt.fps}fps`;
       if (!cleanTitle.toUpperCase().includes(ext)) cleanTitle += ` (${ext})`;
+
       cleanTitle = cleanTitle.replace(/\(([^)]+)\)\s*\(\1\)/gi, '($1)');
 
       const fSize = fmt.fileSize || fmt.FileSize || 0;
@@ -889,10 +893,12 @@
         const formatsList = (formats || []).map(f => {
           const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
           const fUrl = f.directUrl || f.DirectUrl || f.url || f.Url || f.videoUrl || f.VideoUrl || null;
+          let fExt = (f.ext || f.Ext || 'mp4').toLowerCase();
+          if (fExt === 'm3u8') fExt = 'mp4';
           return {
             formatId: String(f.formatId || f.FormatId || ''),
             resolution: f.resolution || f.Resolution || f.qualityLabel || (isAud ? 'Audio Only' : 'Video'),
-            ext: (f.ext || f.Ext || 'mp4').toLowerCase(),
+            ext: fExt,
             fileSize: f.fileSize || f.FileSize || 0,
             isAudioOnly: isAud,
             title: finalBaseTitle,
@@ -901,6 +907,7 @@
             audioUrl: f.audioUrl || f.AudioUrl || (!isAud ? bestAudioUrl : null)
           };
         });
+
 
         if (!formatsList.some(f => f.formatId === 'bestaudio/best' || (f.isAudioOnly && f.ext === 'mp3'))) {
           formatsList.push({

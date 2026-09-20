@@ -282,13 +282,16 @@ public class DownloadEngine : IDownloadEngine
             await Task.WhenAll(workerTasks);
             monitorCts.Cancel();
 
-            if (!token.IsCancellationRequested)
+            long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+            bool hasBytes = (dl.TotalBytes > 0 && totalDownloaded >= dl.TotalBytes) || (dl.TotalBytes <= 0 && totalDownloaded > 0);
+
+            if (!token.IsCancellationRequested && hasBytes)
             {
                 // Download successfully completed
                 dl.Status = DownloadStatus.Completed;
                 dl.SpeedMbps = 0;
                 dl.ProgressPercentage = 100.0;
-                dl.DownloadedBytes = dl.TotalBytes > 0 ? dl.TotalBytes : session.Workers.Sum(w => w.Progress.DownloadedBytes);
+                dl.DownloadedBytes = dl.TotalBytes > 0 ? dl.TotalBytes : totalDownloaded;
                 dl.StatusDetail = "Reconstructing file & performing integrity scan...";
 
                 DownloadProgressChanged?.Invoke(dl);
@@ -313,6 +316,15 @@ public class DownloadEngine : IDownloadEngine
                 DownloadCompleted?.Invoke(dl, scanResult);
                 DownloadStatusChanged?.Invoke(dl);
             }
+            else if (!token.IsCancellationRequested)
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                string? firstWorkerError = session.Workers.FirstOrDefault(w => !string.IsNullOrEmpty(w.LastError))?.LastError;
+                dl.StatusDetail = !string.IsNullOrEmpty(firstWorkerError) ? $"Segment error: {firstWorkerError}" : "Segment transfer interrupted or 0 bytes received";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -321,6 +333,7 @@ public class DownloadEngine : IDownloadEngine
         catch (Exception ex)
         {
             dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
             dl.StatusDetail = $"Error: {ex.Message}";
             await _repository.SaveDownloadAsync(dl);
             DownloadStatusChanged?.Invoke(dl);
@@ -337,6 +350,13 @@ public class DownloadEngine : IDownloadEngine
         var dl = session.Download;
         var token = session.Cts.Token;
 
+        // Force extension to .mp4 if it's .m3u8 or HLS stream so FFmpeg remuxes into a single playable MP4 container
+        if (dl.SavePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+        {
+            dl.SavePath = Path.ChangeExtension(dl.SavePath, ".mp4");
+            dl.Title = Path.GetFileName(dl.SavePath);
+        }
+
         // Initialize synthetic segment workers for Transfer Monitor UI
         session.Workers.Clear();
         session.Workers.Add(new SegmentWorker(_httpClient, dl.Url, dl.SavePath, 1, 0, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, 0));
@@ -352,7 +372,6 @@ public class DownloadEngine : IDownloadEngine
         string uaString = !string.IsNullOrWhiteSpace(dl.UserAgent)
             ? dl.UserAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-        string userAgent = $"-user_agent \"{uaString}\"";
 
         string customHeaders = "";
         if (!string.IsNullOrEmpty(referer))
@@ -382,22 +401,6 @@ public class DownloadEngine : IDownloadEngine
             }
         }
 
-        string headerParam = !string.IsNullOrEmpty(customHeaders) ? $"-headers \"{customHeaders}\" " : "";
-
-        string arguments;
-        if (!string.IsNullOrWhiteSpace(dl.AudioUrl))
-        {
-            arguments = $"-y {headerParam}{userAgent} -i \"{dl.Url}\" {headerParam}{userAgent} -i \"{dl.AudioUrl}\" -c:v copy -c:a aac -movflags +faststart \"{dl.SavePath}\"";
-        }
-        else if (dl.Category == "Audio" && dl.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
-        {
-            arguments = $"-y {headerParam}{userAgent} -i \"{dl.Url}\" -vn -acodec libmp3lame -q:a 2 \"{dl.SavePath}\"";
-        }
-        else
-        {
-            arguments = $"-y {headerParam}{userAgent} -i \"{dl.Url}\" -c copy \"{dl.SavePath}\"";
-        }
-
         string ffmpegPath = "ffmpeg";
         string? envFfmpeg = Environment.GetEnvironmentVariable("FFMPEG_PATH");
         if (!string.IsNullOrEmpty(envFfmpeg) && File.Exists(envFfmpeg))
@@ -418,11 +421,66 @@ public class DownloadEngine : IDownloadEngine
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = arguments,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        psi.ArgumentList.Add("-y");
+        psi.ArgumentList.Add("-nostdin");
+        if (!string.IsNullOrEmpty(customHeaders))
+
+        {
+            psi.ArgumentList.Add("-headers");
+            psi.ArgumentList.Add(customHeaders);
+        }
+        if (!string.IsNullOrEmpty(uaString))
+        {
+            psi.ArgumentList.Add("-user_agent");
+            psi.ArgumentList.Add(uaString);
+        }
+        psi.ArgumentList.Add("-i");
+        psi.ArgumentList.Add(dl.Url);
+
+        if (!string.IsNullOrWhiteSpace(dl.AudioUrl))
+        {
+            if (!string.IsNullOrEmpty(customHeaders))
+            {
+                psi.ArgumentList.Add("-headers");
+                psi.ArgumentList.Add(customHeaders);
+            }
+            if (!string.IsNullOrEmpty(uaString))
+            {
+                psi.ArgumentList.Add("-user_agent");
+                psi.ArgumentList.Add(uaString);
+            }
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(dl.AudioUrl);
+            psi.ArgumentList.Add("-c:v");
+            psi.ArgumentList.Add("copy");
+            psi.ArgumentList.Add("-c:a");
+            psi.ArgumentList.Add("aac");
+            psi.ArgumentList.Add("-movflags");
+            psi.ArgumentList.Add("+faststart");
+        }
+        else if (dl.Category == "Audio" && dl.SavePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            psi.ArgumentList.Add("-vn");
+            psi.ArgumentList.Add("-acodec");
+            psi.ArgumentList.Add("libmp3lame");
+            psi.ArgumentList.Add("-q:a");
+            psi.ArgumentList.Add("2");
+        }
+        else
+        {
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("copy");
+            psi.ArgumentList.Add("-bsf:a");
+            psi.ArgumentList.Add("aac_adtstoasc");
+            psi.ArgumentList.Add("-movflags");
+            psi.ArgumentList.Add("+faststart");
+        }
+        psi.ArgumentList.Add(dl.SavePath);
 
         using var proc = new Process { StartInfo = psi };
         session.ActiveProcess = proc;
@@ -439,69 +497,91 @@ public class DownloadEngine : IDownloadEngine
             long lastBytes = 0;
 
             string? line;
+            string? lastError = null;
             while ((line = await proc.StandardError.ReadLineAsync()) != null)
             {
                 if (token.IsCancellationRequested) break;
 
+                if (line.Contains("403 Forbidden", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Server returned 403", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Error opening input", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Invalid data found", StringComparison.OrdinalIgnoreCase))
+                {
+                    lastError = line.Trim();
+                }
+
                 // FFmpeg output format example:
-                // size=    2677KiB time=00:00:05.01 bitrate=4371.7kbits/s speed=7.46x
+                // frame=  462 fps=0.0 q=-1.0 size=    2677KiB time=00:00:05.01 bitrate=4371.7kbits/s speed=7.46x
                 var sizeMatch = Regex.Match(line, @"size=\s*(\d+)(KiB|kB|B)", RegexOptions.IgnoreCase);
+                var timeMatch = Regex.Match(line, @"time=\s*(\d+:\d+:\d+\.\d+)", RegexOptions.IgnoreCase);
+
+                long currentBytes = 0;
                 if (sizeMatch.Success)
                 {
                     long val = long.Parse(sizeMatch.Groups[1].Value);
                     string unit = sizeMatch.Groups[2].Value.ToUpperInvariant();
-                    long currentBytes = unit.Contains("K") ? val * 1024 : val;
+                    currentBytes = unit.Contains("K") ? val * 1024 : val;
+                }
 
-                    if (currentBytes > 0)
+                if (currentBytes > 0)
+                {
+                    dl.DownloadedBytes = currentBytes;
+                    double elapsed = sw.Elapsed.TotalSeconds;
+                    if (elapsed >= 0.5)
                     {
-                        dl.DownloadedBytes = currentBytes;
-                        double elapsed = sw.Elapsed.TotalSeconds;
-                        if (elapsed >= 0.5)
-                        {
-                            long delta = currentBytes - lastBytes;
-                            dl.SpeedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsed);
-                            lastBytes = currentBytes;
-                            sw.Restart();
-                        }
+                        long delta = currentBytes - lastBytes;
+                        dl.SpeedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsed);
+                        lastBytes = currentBytes;
+                        sw.Restart();
+                    }
 
-                        if (dl.TotalBytes > 0)
-                        {
-                            dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
-                            if (dl.SpeedMbps > 0.01)
-                            {
-                                long remaining = dl.TotalBytes - dl.DownloadedBytes;
-                                dl.EtaSeconds = (int)(remaining / (dl.SpeedMbps * 1024 * 1024));
-                            }
-                        }
+                    string timeStr = timeMatch.Success ? timeMatch.Groups[1].Value : "";
 
+                    if (dl.TotalBytes > 0)
+                    {
+                        dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
+                        if (dl.SpeedMbps > 0.01)
+                        {
+                            long remaining = dl.TotalBytes - dl.DownloadedBytes;
+                            dl.EtaSeconds = (int)(remaining / (dl.SpeedMbps * 1024 * 1024));
+                        }
                         dl.StatusDetail = $"Streaming via FFmpeg ({dl.ProgressPercentage:F1}%)...";
                         dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / {MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s";
-
-                        // Update synthetic segment progress
-                        if (session.Workers.Count >= 2)
-                        {
-                            session.Workers[0].Progress.DownloadedBytes = currentBytes / 2;
-                            session.Workers[1].Progress.DownloadedBytes = currentBytes / 2;
-                            session.Workers[0].Progress.IsActive = true;
-                            session.Workers[1].Progress.IsActive = true;
-                            _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
-                        }
-
-                        DownloadProgressChanged?.Invoke(dl);
                     }
+                    else
+                    {
+                        // Live HLS stream with unknown total size: display streamed bytes, speed, and time
+                        dl.StatusDetail = !string.IsNullOrEmpty(timeStr)
+                            ? $"Streaming via FFmpeg: {timeStr} ({MediaFormatItem.FormatBytes(dl.DownloadedBytes)})..."
+                            : $"Streaming via FFmpeg: {MediaFormatItem.FormatBytes(dl.DownloadedBytes)}...";
+                        dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} • {dl.SpeedMbps:F1} MB/s";
+                        // Active visual pulse so UI shows ongoing transfer rather than static 0%
+                        dl.ProgressPercentage = Math.Min(99.0, Math.Max(1.0, (dl.DownloadedBytes % (100 * 1024 * 1024)) / (double)(100 * 1024 * 1024) * 100.0));
+                    }
+
+                    // Update synthetic segment progress for visualizer
+                    if (session.Workers.Count >= 2)
+                    {
+                        session.Workers[0].Progress.DownloadedBytes = currentBytes / 2;
+                        session.Workers[1].Progress.DownloadedBytes = currentBytes / 2;
+                        session.Workers[0].Progress.IsActive = true;
+                        session.Workers[1].Progress.IsActive = true;
+                        _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
+                    }
+
+                    DownloadProgressChanged?.Invoke(dl);
                 }
             }
 
             await proc.WaitForExitAsync();
 
-            if (proc.ExitCode == 0 && !token.IsCancellationRequested)
+            bool fileHasData = File.Exists(dl.SavePath) && new FileInfo(dl.SavePath).Length > 0;
+            if (proc.ExitCode == 0 && !token.IsCancellationRequested && fileHasData)
             {
-                if (File.Exists(dl.SavePath))
-                {
-                    var fi = new FileInfo(dl.SavePath);
-                    dl.TotalBytes = fi.Length;
-                    dl.DownloadedBytes = fi.Length;
-                }
+                var fi = new FileInfo(dl.SavePath);
+                dl.TotalBytes = fi.Length;
+                dl.DownloadedBytes = fi.Length;
+
 
                 dl.Status = DownloadStatus.Completed;
                 dl.SpeedMbps = 0;
@@ -528,7 +608,7 @@ public class DownloadEngine : IDownloadEngine
             {
                 dl.Status = DownloadStatus.Paused;
                 dl.SpeedMbps = 0;
-                dl.StatusDetail = "FFmpeg stream transfer interrupted";
+                dl.StatusDetail = !string.IsNullOrEmpty(lastError) ? $"Stream error: {lastError}" : "FFmpeg stream transfer interrupted";
                 await _repository.SaveDownloadAsync(dl);
                 DownloadStatusChanged?.Invoke(dl);
             }

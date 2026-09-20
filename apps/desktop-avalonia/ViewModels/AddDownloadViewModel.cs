@@ -141,6 +141,7 @@ public partial class AddDownloadViewModel : ViewModelBase
                 nameWithoutExt = string.Join("_", fallback.Split(Path.GetInvalidFileNameChars())).Trim();
             }
             string newExt = value.Ext.ToLowerInvariant();
+            if (newExt == "m3u8") newExt = "mp4";
             FileName = $"{nameWithoutExt}.{newExt}";
             
             if (!string.IsNullOrWhiteSpace(SavePath))
@@ -149,6 +150,7 @@ public partial class AddDownloadViewModel : ViewModelBase
                 SavePath = Path.Combine(dir, FileName);
             }
         }
+
 
         if (value.FileSize > 0)
         {
@@ -237,7 +239,7 @@ public partial class AddDownloadViewModel : ViewModelBase
                 {
                     FormatId = dto.FormatId,
                     Resolution = dto.Resolution,
-                    Ext = dto.Ext,
+                    Ext = dto.Ext.Equals("m3u8", StringComparison.OrdinalIgnoreCase) ? "mp4" : dto.Ext,
                     FileSize = dto.FileSize,
                     IsAudioOnly = dto.IsAudioOnly,
                     DisplayLabel = dto.Resolution,
@@ -521,7 +523,11 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(FileName))
         {
-            FileName = "download_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+            FileName = "download_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + ".mp4";
+        }
+        else if (FileName.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+        {
+            FileName = Path.ChangeExtension(FileName, ".mp4");
         }
 
         string finalSavePath = SavePath;
@@ -529,6 +535,11 @@ public partial class AddDownloadViewModel : ViewModelBase
         {
             finalSavePath = Path.Combine(finalSavePath, FileName);
         }
+        else if (finalSavePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+        {
+            finalSavePath = Path.ChangeExtension(finalSavePath, ".mp4");
+        }
+
 
         string icon = Category switch
         {

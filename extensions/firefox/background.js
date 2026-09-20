@@ -31,9 +31,10 @@ function sanitizeStreamUrl(rawUrl) {
     const u = new URL(rawUrl);
     if (u.searchParams.has('bytestart')) u.searchParams.delete('bytestart');
     if (u.searchParams.has('byteend')) u.searchParams.delete('byteend');
-    if (u.searchParams.has('range') && !u.hostname.includes('googlevideo.com')) {
+    if (u.searchParams.has('range')) {
       u.searchParams.delete('range');
     }
+
     return u.href;
   } catch (e) {
     return rawUrl;
@@ -440,8 +441,9 @@ async function appendCookiesAndSend(request, sendResponse) {
 
   if (activePort) {
     try {
-      const timeoutMs = isFormatQuery ? 7000 : 3000;
+      const timeoutMs = isFormatQuery ? 8000 : 3000;
       const reqController = new AbortController();
+
       const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
       const res = await fetch(`http://127.0.0.1:${activePort}/api/browser`, {
         method: 'POST',
@@ -733,21 +735,22 @@ async function fetchPageMediaFormats(pageUrl) {
       const isHls = ext === 'm3u8' || u.includes('.m3u8');
       let qStr = q ? String(q).trim() : '';
       if (qStr && !qStr.endsWith('p') && /^\d+$/.test(qStr)) qStr += 'p';
-      let qLabel = qStr || (isHls ? 'Master HLS' : 'Video');
+      let qLabel = qStr || (isHls ? 'Master' : 'Video');
       const hNum = parseInt(qLabel, 10);
       if (hNum >= 720 && !qLabel.includes('HD')) qLabel += ' HD';
-      qLabel += isHls ? ' (Stream)' : ' (MP4)';
+      qLabel += ' (MP4)';
 
       formats.push({
         formatId: 'tube_' + (q || formats.length),
         resolution: qLabel,
         height: hNum || (isHls ? 1080 : 720),
-        ext: isHls ? 'm3u8' : 'mp4',
+        ext: 'mp4',
         fileSize: 0,
         isAudioOnly: false,
         title: title,
         url: u
       });
+
     };
 
     // 1. Pornhub / MindGeek mediaDefinitions

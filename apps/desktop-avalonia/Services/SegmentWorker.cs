@@ -18,6 +18,7 @@ public class SegmentWorker
     private readonly string? _userAgent;
     private readonly string? _cookies;
     public SegmentProgress Progress { get; }
+    public string? LastError { get; private set; }
 
     private long _bytesSinceLastCheck;
     private Stopwatch _speedStopwatch = new();
@@ -127,10 +128,17 @@ public class SegmentWorker
         {
             // Paused or canceled
         }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            Debug.WriteLine($"Segment {Progress.SegmentIndex} worker error: {ex.Message}");
+            Progress.IsActive = false;
+        }
         finally
         {
             Progress.IsActive = false;
             Progress.SpeedMbps = 0;
         }
+
     }
 }
