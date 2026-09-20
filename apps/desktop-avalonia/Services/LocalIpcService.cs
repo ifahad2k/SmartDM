@@ -192,6 +192,7 @@ public class LocalIpcService : ILocalIpcService
             string? audioUrl = null;
             string? formatId = null;
             string? fileName = null;
+            string? title = null;
             string? cookies = null;
             string? userAgent = null;
             List<MediaFormatDto>? formats = null;
@@ -204,6 +205,7 @@ public class LocalIpcService : ILocalIpcService
                 formatId = fmtElem.ValueKind == JsonValueKind.String ? fmtElem.GetString() : fmtElem.ToString();
             }
             if (root.TryGetProperty("fileName", out var fnElem)) fileName = fnElem.GetString();
+            if (root.TryGetProperty("title", out var titleElem)) title = titleElem.GetString();
             if (root.TryGetProperty("cookies", out var cElem)) cookies = cElem.GetString();
             if (root.TryGetProperty("userAgent", out var uaElem)) userAgent = uaElem.GetString();
 
@@ -231,6 +233,7 @@ public class LocalIpcService : ILocalIpcService
                     {
                         dto.IsAudioOnly = ia.ValueKind == JsonValueKind.True;
                     }
+                    if (item.TryGetProperty("title", out var tElemItem)) dto.Title = tElemItem.GetString();
                     if (item.TryGetProperty("url", out var u)) dto.DirectUrl = u.GetString();
                     else if (item.TryGetProperty("directUrl", out var du)) dto.DirectUrl = du.GetString();
                     if (item.TryGetProperty("audioUrl", out var au)) dto.AudioUrl = au.GetString();
@@ -247,6 +250,7 @@ public class LocalIpcService : ILocalIpcService
                     AudioUrl = audioUrl,
                     FormatId = formatId,
                     FileName = fileName,
+                    Title = title,
                     Cookies = cookies,
                     UserAgent = userAgent,
                     Formats = formats

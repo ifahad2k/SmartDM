@@ -11,6 +11,7 @@ public class MediaFormatDto
     public string Ext { get; set; } = "mp4";
     public long FileSize { get; set; }
     public bool IsAudioOnly { get; set; }
+    public string? Title { get; set; }
     public string? DirectUrl { get; set; }
     public string? AudioUrl { get; set; }
 }
@@ -22,6 +23,7 @@ public class BrowserDownloadRequest
     public string? AudioUrl { get; set; }
     public string? FormatId { get; set; }
     public string? FileName { get; set; }
+    public string? Title { get; set; }
     public string? Cookies { get; set; }
     public string? UserAgent { get; set; }
     public List<MediaFormatDto>? Formats { get; set; }

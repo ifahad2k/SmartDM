@@ -139,7 +139,7 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<ThreadMetric> ActiveThreads { get; } = new();
     public ObservableCollection<double> SparklineHistory { get; } = new();
 
-    public event Action<string?, string?, string?, List<MediaFormatDto>?>? RequestOpenAddDialog;
+    public event Action<string?, string?, string?, List<MediaFormatDto>?, string?>? RequestOpenAddDialog;
     public event Action<DownloadModel?>? RequestOpenMonitor;
     public event Action<DownloadModel?>? RequestOpenInspector;
     public event Action<DownloadModel>? RequestOpenMoveRename;
@@ -308,7 +308,7 @@ public partial class MainViewModel : ViewModelBase
     {
         Dispatcher.UIThread.Post(() =>
         {
-            RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats);
+            RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats, req.Title);
         });
     }
 
@@ -889,7 +889,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null, null, null);
+    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null, null, null, null);
 
     [RelayCommand]
     public void OpenMonitor(DownloadModel? dl) => RequestOpenMonitor?.Invoke(dl);

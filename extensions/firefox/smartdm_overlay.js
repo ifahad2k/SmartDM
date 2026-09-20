@@ -53,6 +53,86 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  function isGenericTitle(t) {
+    if (!t || typeof t !== 'string') return true;
+    const clean = t.replace(/^\(\d+\)\s*/, '').trim().toLowerCase();
+    return !clean ||
+      clean === 'youtube' ||
+      clean === 'youtube music' ||
+      clean === 'home' ||
+      clean === 'feed' ||
+      clean === 'subscriptions' ||
+      clean === 'library' ||
+      clean === 'trending' ||
+      clean === 'watch later' ||
+      clean === 'video' ||
+      clean === 'media stream' ||
+      clean === 'download' ||
+      clean === 'downloads' ||
+      clean.length < 2;
+  }
+
+  function extractWatchPageTitle() {
+    try {
+      const selectors = [
+        'h1.ytd-watch-metadata yt-formatted-string',
+        '#title h1 yt-formatted-string',
+        'h1.title yt-formatted-string',
+        'h1.title',
+        'h1'
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const t = (el.textContent || '').trim();
+          if (t && !isGenericTitle(t)) return t;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function extractCardTitle(containerEl) {
+    if (!containerEl) return null;
+    try {
+      const card = containerEl.closest(
+        'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ' +
+        'ytd-grid-video-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ' +
+        'ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, ' +
+        '.videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb'
+      ) || containerEl;
+
+      const titleSelectors = [
+        '#video-title',
+        '#video-title-link',
+        'yt-formatted-string#video-title',
+        '.yt-lockup-metadata-view-model-wiz__title',
+        'h3 a',
+        'h3'
+      ];
+      for (const sel of titleSelectors) {
+        const el = card.querySelector(sel);
+        if (el) {
+          const t = (el.getAttribute('title') || el.textContent || '').trim();
+          if (t && !isGenericTitle(t)) return t;
+        }
+      }
+
+      const img = card.querySelector('img[alt]');
+      if (img) {
+        const alt = (img.getAttribute('alt') || '').trim();
+        if (alt && !isGenericTitle(alt)) return alt;
+      }
+
+      const link = card.querySelector('a[title]');
+      if (link) {
+        const t = (link.getAttribute('title') || '').trim();
+        if (t && !isGenericTitle(t)) return t;
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function derivePageTitleFilename(ext = 'mp4') {
     try {
       let rawTitle = document.title || '';
@@ -64,15 +144,18 @@
         } catch (e) {}
       }
       if (rawTitle) {
-        let clean = rawTitle.replace(/\s*[\-\|\:·]\s*(YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook).*$/i, '').trim();
-        if (!clean || clean.length < 2) clean = rawTitle;
-        clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
-        if (clean.length > 0) {
-          const lowerExt = '.' + ext.toLowerCase();
-          if (!clean.toLowerCase().endsWith(lowerExt)) {
-            return `${clean}${lowerExt}`;
+        let clean = rawTitle.replace(/^\(\d+\)\s*/, '').trim();
+        clean = clean.replace(/\s*[\-\|\:·•]\s*(YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook).*$/i, '').trim();
+        if (clean.toLowerCase().endsWith(' - youtube')) clean = clean.substring(0, clean.length - 10).trim();
+        if (clean.toLowerCase().endsWith(' | youtube')) clean = clean.substring(0, clean.length - 10).trim();
+        if (clean.toLowerCase().endsWith(' youtube')) clean = clean.substring(0, clean.length - 8).trim();
+
+        if (!isGenericTitle(clean)) {
+          clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
+          if (clean.length > 0) {
+            const lowerExt = '.' + ext.toLowerCase();
+            return clean.toLowerCase().endsWith(lowerExt) ? clean : `${clean}${lowerExt}`;
           }
-          return clean;
         }
       }
     } catch (e) {}
@@ -337,9 +420,33 @@
   }
 
   // --- RENDER DYNAMIC FORMAT DROPDOWN ITEMS ---
-  function renderFormatDropdown(container, formats, videoUrl, popover) {
+  function renderFormatDropdown(container, formats, videoUrl, popover, mediaTitle = null) {
     container.innerHTML = '';
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+
+    // Determine the authoritative base title for all formats
+    let authoritativeTitle = null;
+    if (mediaTitle && !isGenericTitle(mediaTitle)) {
+      authoritativeTitle = mediaTitle.trim();
+    } else {
+      const firstFmtWithTitle = (formats || []).find(f => (f.title || f.Title) && !isGenericTitle(f.title || f.Title));
+      if (firstFmtWithTitle) {
+        authoritativeTitle = (firstFmtWithTitle.title || firstFmtWithTitle.Title).trim();
+      }
+    }
+
+    if (!authoritativeTitle || isGenericTitle(authoritativeTitle)) {
+      const pageFn = derivePageTitleFilename('mp4');
+      const baseCandidate = pageFn.replace(/\.mp4$/i, '').trim();
+      if (!isGenericTitle(baseCandidate)) {
+        authoritativeTitle = baseCandidate;
+      } else {
+        authoritativeTitle = 'video';
+      }
+    }
+
+    const cleanBaseName = authoritativeTitle.replace(/\.[a-z0-9]+$/i, '').replace(/[\\/:*?""<>|]/g, '_').trim();
+    const finalBaseTitle = cleanBaseName.length > 0 ? cleanBaseName : 'video';
 
     const rawItems = [];
 
@@ -360,8 +467,12 @@
       const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
       let fmtTitle = fmt.title || fmt.Title;
-      let itemFileName = fmtTitle ? (fmtTitle.toLowerCase().endsWith('.' + ext.toLowerCase()) ? fmtTitle : `${fmtTitle}.${ext.toLowerCase()}`) : derivePageTitleFilename(ext.toLowerCase());
-      itemFileName = itemFileName.replace(/[\\/:*?""<>|]/g, '_');
+      if (!fmtTitle || isGenericTitle(fmtTitle)) {
+        fmtTitle = finalBaseTitle;
+      }
+      let base = fmtTitle.replace(/\.[a-z0-9]+$/i, '').replace(/[\\/:*?""<>|]/g, '_').trim();
+      if (!base || isGenericTitle(base)) base = finalBaseTitle;
+      const itemFileName = `${base}.${ext.toLowerCase()}`;
 
       const streamUrl = fmt.directUrl || fmt.DirectUrl || fmt.url || fmt.Url || videoUrl;
       const fmtId = String(fmt.formatId || fmt.FormatId || '');
@@ -387,7 +498,7 @@
         videoUrl: firstItem.videoUrl || null,
         audioUrl: firstItem.audioUrl || null,
         formatId: 'bestaudio/best',
-        fileName: derivePageTitleFilename('mp3')
+        fileName: `${finalBaseTitle}.mp3`
       });
     }
 
@@ -401,7 +512,7 @@
         videoUrl: null,
         audioUrl: null,
         formatId: 'thumbnail',
-        fileName: derivePageTitleFilename('jpg')
+        fileName: `${finalBaseTitle}.jpg`
       });
     }
 
@@ -461,6 +572,7 @@
             ext: (f.ext || f.Ext || 'mp4').toLowerCase(),
             fileSize: f.fileSize || f.FileSize || 0,
             isAudioOnly: isAud,
+            title: finalBaseTitle,
             url: fUrl,
             directUrl: fUrl,
             audioUrl: f.audioUrl || f.AudioUrl || (!isAud ? bestAudioUrl : null)
@@ -474,6 +586,7 @@
             ext: 'mp3',
             fileSize: bestAudioSize,
             isAudioOnly: true,
+            title: finalBaseTitle,
             url: bestAudioUrl || item.audioUrl || item.url || null,
             directUrl: bestAudioUrl || item.audioUrl || item.url || null,
             audioUrl: null
@@ -501,6 +614,7 @@
             ext: 'jpg',
             fileSize: 0,
             isAudioOnly: false,
+            title: finalBaseTitle,
             url: thumbUrl,
             audioUrl: null
           });
@@ -526,6 +640,7 @@
           audioUrl: audioUrlToSend,
           formatId: item.formatId,
           fileName: item.fileName,
+          title: finalBaseTitle,
           formats: formatsList
         }, () => {
           setTimeout(() => popover.classList.remove('active'), 800);
@@ -720,8 +835,9 @@
       `;
 
       fetchMediaFormats(videoUrl, mediaEl, (res) => {
+        const pageTitle = extractWatchPageTitle() || (res && res.title) || null;
         if (res && res.formats && res.formats.length > 0) {
-          renderFormatDropdown(content, res.formats, videoUrl, popover);
+          renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
         } else {
           content.innerHTML = '<div class="status-text" style="color:#f87171;">No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span></div>';
         }
@@ -780,13 +896,12 @@
 
       // Prefer attaching directly to the thumbnail visual container if present
       const targetMount = cardContainer.querySelector('ytd-thumbnail, #thumbnail, .yt-lockup-view-model__visual, .video-thumbnail, .thumb') || cardContainer;
-      targetMount.setAttribute(ATTR_THUMB_ATTACHED, 'true');
-
-      attachThumbnailBadge(targetMount, getCanonicalUrl(videoUrl));
+      const cardTitle = extractCardTitle(cardContainer);
+      attachThumbnailBadge(targetMount, getCanonicalUrl(videoUrl), cardTitle);
     });
   }
 
-  function attachThumbnailBadge(containerEl, videoUrl) {
+  function attachThumbnailBadge(containerEl, videoUrl, cardTitle = null) {
     if (window.getComputedStyle(containerEl).position === 'static') {
       containerEl.style.position = 'relative';
     }
@@ -922,8 +1037,9 @@
       `;
 
       fetchMediaFormats(videoUrl, null, (res) => {
+        const resolvedTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || extractCardTitle(containerEl) || null);
         if (res && res.formats && res.formats.length > 0) {
-          renderFormatDropdown(content, res.formats, videoUrl, popover);
+          renderFormatDropdown(content, res.formats, videoUrl, popover, resolvedTitle);
         } else {
           content.innerHTML = '<div class="status-text" style="color:#f87171;">No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span></div>';
         }

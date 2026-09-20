@@ -312,6 +312,31 @@ sealed class Program
         }
         Console.WriteLine($"[PASS] Switched to Thumbnail -> FileName: {browserVm.FileName}, Category: {browserVm.Category}");
 
+        // Test 4: Generic notification filename rejection (e.g. "(311) YouTube.mp4")
+        Console.WriteLine("[TEST 4] Verifying generic filename rejection (e.g. '(311) YouTube.mp4')...");
+        var ytFormatsWithTitle = new System.Collections.Generic.List<Services.MediaFormatDto>
+        {
+            new() { FormatId = "1080p60", Resolution = "1080p60", Ext = "mp4", FileSize = 433020000L, Title = "iPhone 18 Pro TEARDOWN: They aren't going to like this..." }
+        };
+
+        var genericVm = new ViewModels.AddDownloadViewModel(
+            initialUrl: "https://www.youtube.com/watch?v=Pc1JzImPw_M",
+            initialFileName: "(311) YouTube.mp4",
+            initialFormatId: "1080p60",
+            initialFormats: ytFormatsWithTitle,
+            initialTitle: "iPhone 18 Pro TEARDOWN: They aren't going to like this..."
+        );
+
+        if (genericVm.FileName.Contains("YouTube", StringComparison.OrdinalIgnoreCase) || genericVm.FileName.Contains("(311)"))
+        {
+            throw new Exception($"Generic filename '(311) YouTube.mp4' was not rejected! Result: {genericVm.FileName}");
+        }
+        if (!genericVm.FileName.StartsWith("iPhone 18 Pro TEARDOWN", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception($"Expected filename to start with 'iPhone 18 Pro TEARDOWN', but was: {genericVm.FileName}");
+        }
+        Console.WriteLine($"[PASS] Generic '(311) YouTube.mp4' successfully rejected and replaced with real title: '{genericVm.FileName}'");
+
         Console.WriteLine("=== SmartDM 2.0 Dynamic Media Format Resolution Test PASSED Successfully! ===");
     }
 

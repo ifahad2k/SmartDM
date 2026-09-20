@@ -75,6 +75,29 @@ public partial class AddDownloadViewModel : ViewModelBase
     [ObservableProperty]
     private string _selectedFormatId = string.Empty;
 
+    private string? _authoritativeTitle;
+
+    public static bool IsGenericOrInvalidFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return true;
+        string clean = name.Trim();
+        string lower = Path.GetFileNameWithoutExtension(clean).ToLowerInvariant();
+
+        // Strip notification badge e.g. "(311) " or "(1) "
+        lower = System.Text.RegularExpressions.Regex.Replace(lower, @"^\(\d+\)\s*", "").Trim();
+
+        return lower == "youtube" ||
+               lower == "youtube music" ||
+               lower == "watch" ||
+               lower == "videoplayback" ||
+               lower == "video" ||
+               lower == "media stream" ||
+               lower == "download" ||
+               lower == "downloads" ||
+               lower == "bin" ||
+               lower.Length < 2;
+    }
+
     partial void OnSelectedFormatChanged(MediaFormatItem? value)
     {
         if (value == null) return;
@@ -90,6 +113,11 @@ public partial class AddDownloadViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(FileName))
         {
             string nameWithoutExt = Path.GetFileNameWithoutExtension(FileName);
+            if (IsGenericOrInvalidFileName(nameWithoutExt))
+            {
+                string fallback = !IsGenericOrInvalidFileName(_authoritativeTitle) ? _authoritativeTitle! : "video";
+                nameWithoutExt = string.Join("_", fallback.Split(Path.GetInvalidFileNameChars())).Trim();
+            }
             string newExt = value.Ext.ToLowerInvariant();
             FileName = $"{nameWithoutExt}.{newExt}";
             
@@ -134,7 +162,8 @@ public partial class AddDownloadViewModel : ViewModelBase
         string? initialUrl = null,
         string? initialFileName = null,
         string? initialFormatId = null,
-        List<MediaFormatDto>? initialFormats = null)
+        List<MediaFormatDto>? initialFormats = null,
+        string? initialTitle = null)
     {
         _probeService = probeService ?? new HttpProbeService();
         _catalogService = catalogService ?? new FileCatalogService();
@@ -143,9 +172,28 @@ public partial class AddDownloadViewModel : ViewModelBase
         SavePath = downloadsDir;
         UpdateDriveSpace(SavePath);
 
-        if (!string.IsNullOrWhiteSpace(initialFileName))
+        if (!IsGenericOrInvalidFileName(initialTitle))
         {
-            FileName = initialFileName.Trim();
+            _authoritativeTitle = initialTitle!.Trim();
+        }
+        else if (initialFormats != null)
+        {
+            var firstWithTitle = initialFormats.FirstOrDefault(f => !IsGenericOrInvalidFileName(f.Title));
+            if (firstWithTitle != null)
+            {
+                _authoritativeTitle = firstWithTitle.Title!.Trim();
+            }
+        }
+
+        if (!IsGenericOrInvalidFileName(initialFileName))
+        {
+            FileName = initialFileName!.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(_authoritativeTitle))
+        {
+            string safeTitle = string.Join("_", _authoritativeTitle.Split(Path.GetInvalidFileNameChars())).Trim();
+            string ext = (!string.IsNullOrWhiteSpace(initialFormatId) && initialFormatId.Contains("bestaudio")) ? "mp3" : "mp4";
+            FileName = $"{safeTitle}.{ext}";
         }
 
         bool hasRealFormats = initialFormats != null && initialFormats.Count > 0 &&
@@ -189,6 +237,12 @@ public partial class AddDownloadViewModel : ViewModelBase
             if (string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(initialUrl))
             {
                 Url = initialUrl.Trim();
+            }
+
+            // If filename is still generic and we have a YouTube URL, resolve video title in background
+            if (IsGenericOrInvalidFileName(FileName) && !string.IsNullOrWhiteSpace(initialUrl))
+            {
+                _ = TryResolveYouTubeFormatsAsync(initialUrl.Trim());
             }
         }
         else if (!string.IsNullOrWhiteSpace(initialUrl))
@@ -296,6 +350,7 @@ public partial class AddDownloadViewModel : ViewModelBase
                 return false;
             }
 
+            _authoritativeTitle = res.Title;
             string cleanTitle = string.Join("_", res.Title.Split(Path.GetInvalidFileNameChars())).Trim();
 
             AvailableFormats.Clear();

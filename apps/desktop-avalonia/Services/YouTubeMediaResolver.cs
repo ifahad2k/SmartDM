@@ -117,6 +117,7 @@ public static class YouTubeMediaResolver
                     Ext = ext,
                     FileSize = totalBytes,
                     IsAudioOnly = false,
+                    Title = title,
                     DirectUrl = stream.Url,
                     AudioUrl = isVideoOnly ? bestAudioUrl : null
                 });
@@ -132,6 +133,7 @@ public static class YouTubeMediaResolver
                     Ext = "mp3",
                     FileSize = bestAudioSize,
                     IsAudioOnly = true,
+                    Title = title,
                     DirectUrl = bestAudioUrl,
                     AudioUrl = null
                 });
@@ -145,6 +147,7 @@ public static class YouTubeMediaResolver
                 Ext = "jpg",
                 FileSize = 0,
                 IsAudioOnly = false,
+                Title = title,
                 DirectUrl = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg",
                 AudioUrl = null
             });
@@ -255,6 +258,7 @@ public static class YouTubeMediaResolver
                                 Ext = ext,
                                 FileSize = totalSize,
                                 IsAudioOnly = false,
+                                Title = title,
                                 DirectUrl = streamUrl,
                                 AudioUrl = defaultAudioUrl
                             });
@@ -284,6 +288,7 @@ public static class YouTubeMediaResolver
                             Ext = ext,
                             FileSize = clen,
                             IsAudioOnly = false,
+                            Title = title,
                             DirectUrl = streamUrl,
                             AudioUrl = null
                         });
@@ -301,6 +306,7 @@ public static class YouTubeMediaResolver
                     Ext = "mp3",
                     FileSize = defaultAudioSize,
                     IsAudioOnly = true,
+                    Title = title,
                     DirectUrl = defaultAudioUrl,
                     AudioUrl = null
                 });
@@ -313,6 +319,7 @@ public static class YouTubeMediaResolver
                     Ext = "jpg",
                     FileSize = 0,
                     IsAudioOnly = false,
+                    Title = title,
                     DirectUrl = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg",
                     AudioUrl = null
                 });
