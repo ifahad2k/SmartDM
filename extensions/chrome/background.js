@@ -461,27 +461,38 @@ function extractYtInitialPlayerResponse(text) {
   return null;
 }
 
+function extractYouTubeVideoId(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has('v')) {
+      const v = u.searchParams.get('v');
+      if (v && v.length >= 5) return v;
+    }
+    if (u.pathname.includes('/shorts/')) {
+      const segs = u.pathname.split('/shorts/')[1].split('/');
+      if (segs[0] && segs[0].length >= 5) return segs[0];
+    }
+    if (u.hostname.includes('youtu.be')) {
+      const id = u.pathname.replace(/^\//, '').split('?')[0].split('/')[0];
+      if (id && id.length >= 5) return id;
+    }
+  } catch (e) {}
+  const match = url.match(/[?&]v=([^&#]+)/) || url.match(/\/shorts\/([^?&#/]+)/) || url.match(/youtu\.be\/([^?&#/]+)/);
+  if (match && match[1] && match[1].length >= 5) return match[1];
+  return null;
+}
+
 async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
   try {
     if (!videoUrl) return null;
-    let videoId = null;
-    let canonicalUrl = videoUrl;
-    if (videoUrl.includes('/watch?v=')) {
-      const parts = videoUrl.split('/watch?v=')[1];
-      videoId = parts.split('&')[0].split('#')[0];
-      canonicalUrl = 'https://www.youtube.com/watch?v=' + videoId;
-    } else if (videoUrl.includes('/shorts/')) {
-      videoId = videoUrl.split('/shorts/')[1].split('/')[0].split('?')[0].split('#')[0];
-      canonicalUrl = 'https://www.youtube.com/shorts/' + videoId;
-    } else if (videoUrl.includes('youtu.be/')) {
-      videoId = videoUrl.split('youtu.be/')[1].split('?')[0].split('#')[0];
-      canonicalUrl = 'https://www.youtube.com/watch?v=' + videoId;
-    }
-    if (!videoId || videoId.length < 5) return null;
+    const videoId = extractYouTubeVideoId(videoUrl);
+    if (!videoId) return null;
 
-    const cookieHeader = await getYouTubeCookiesHeader();
-    const headers = { 'Content-Type': 'application/json' };
-    if (cookieHeader) headers['Cookie'] = cookieHeader;
+    const headers = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'com.google.android.youtube/1.56.21 (Linux; U; Android 11)'
+    };
 
     const parseFormats = (data) => {
       if (data && data.streamingData) {
@@ -489,7 +500,6 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
         const title = videoDetails.title || 'YouTube Video';
         const streamingData = data.streamingData;
         const formats = [];
-        const hlsUrl = streamingData.hlsManifestUrl || null;
 
         let defaultAudioUrl = null;
         let defaultAudioSize = 0;
@@ -522,16 +532,16 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
 
         adaptive.forEach(f => {
           if (f.url && f.url.startsWith('http')) {
-            const mime = (f.mimeType || '').includes('audio/') ? 'audio/' : ((f.mimeType || '').includes('video/') ? 'video/' : '');
-            const isAudio = mime.startsWith('audio/');
-            const isVideo = mime.startsWith('video/');
+            const mime = (f.mimeType || '').toLowerCase();
+            const isAudio = mime.includes('audio/');
+            const isVideo = mime.includes('video/');
             const kbps = Math.round((f.bitrate || 0) / 1000);
             const videoSize = parseInt(f.contentLength || 0, 10);
             const totalSize = isVideo && defaultAudioSize > 0 ? videoSize + defaultAudioSize : videoSize;
             formats.push({
               formatId: String(f.itag || ('fmt_' + formats.length)),
-              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || 'High Res'),
-              ext: (f.mimeType || '').includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || (f.height ? f.height + 'p' : 'Video')),
+              ext: mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
               formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
               fileSize: totalSize,
               tbr: kbps,
@@ -545,52 +555,61 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
           }
         });
 
-        const hasDirectUrls = formats.some(f => f.url && f.url.startsWith('http'));
-        if (formats.length > 0 && hasDirectUrls) {
+        if (formats.length > 0) {
+          // Append MP3 option
+          formats.push({
+            formatId: 'bestaudio/best',
+            resolution: 'Audio (MP3 / High Quality)',
+            ext: 'mp3',
+            formatNote: 'MP3 High Quality',
+            fileSize: defaultAudioSize,
+            isAudioOnly: true,
+            title: title,
+            url: defaultAudioUrl
+          });
+
+          // Append HD Thumbnail option
+          formats.push({
+            formatId: 'thumbnail',
+            resolution: 'Thumbnail (Cover Image / HD)',
+            ext: 'jpg',
+            formatNote: 'HD Cover Image',
+            fileSize: 0,
+            isAudioOnly: false,
+            title: title,
+            url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+          });
+
           return { success: true, status: 'ok', title: title, formats: formats };
         }
       }
       return null;
     };
 
-    // 1. Direct API Clients (ANDROID_VR yields direct stream URLs without signature cipher)
-    const clients = [
-      { clientName: 'ANDROID_VR', clientVersion: '1.56.21', androidSdkVersion: 32 },
-      { clientName: 'ANDROID', clientVersion: '19.11.38' },
-      { clientName: 'WEB', clientVersion: '2.20240101.00.00' }
-    ];
-
-    for (const clientObj of clients) {
-      try {
-        const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify({
-            videoId: videoId,
-            contentCheckOk: true,
-            racyCheckOk: true,
-            context: { client: clientObj }
-          })
-        });
-        const data = await res.json();
-        const parsed = parseFormats(data);
-        if (parsed) return parsed;
-      } catch (e) {}
-    }
-
-    // 2. Fallback: Fetch Watch Page HTML (100% Reliable as it mimics browser)
+    // 1. Primary: ANDROID_VR client (returns direct streaming URLs for all 26 adaptive resolutions)
     try {
-      const htmlHeaders = {
-        'User-Agent': navigator.userAgent,
-        'Accept-Language': 'en-US,en;q=0.9',
-      };
-      if (cookieHeader) htmlHeaders['Cookie'] = cookieHeader;
-      const htmlRes = await fetch(canonicalUrl, { headers: htmlHeaders });
-      const htmlText = await htmlRes.text();
-      const playerRes = extractYtInitialPlayerResponse(htmlText);
-      const parsedHTML = parseFormats(playerRes);
-      if (parsedHTML) return parsedHTML;
-    } catch(e) {}
+      const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          videoId: videoId,
+          contentCheckOk: true,
+          racyCheckOk: true,
+          context: {
+            client: {
+              clientName: 'ANDROID_VR',
+              clientVersion: '1.56.21',
+              androidSdkVersion: 32
+            }
+          }
+        })
+      });
+      const data = await res.json();
+      const parsed = parseFormats(data);
+      if (parsed) return parsed;
+    } catch (e) {
+      console.warn('ANDROID_VR fetch failed:', e);
+    }
 
   } catch (e) {
     console.warn('Service worker YouTube fetch error:', e);
@@ -615,6 +634,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } else {
           appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, sendResponse);
         }
+      }).catch(() => {
+        appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, sendResponse);
       });
       return true; // Async response
     }

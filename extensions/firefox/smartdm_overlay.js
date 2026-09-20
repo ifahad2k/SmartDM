@@ -257,31 +257,42 @@
       }
     };
 
-    // Tier 1: Fast DOM & Page Context Check
-    const domRes = parsePageMetadataFromDOM();
-    if (domRes && domRes.formats && domRes.formats.length > 0) {
-      notifyCallbacks(domRes);
-      return;
-    }
-
-    // Tier 2: Check captured network media list & active <video> tag
+    // STEP 1: Query Extension Service Worker / SmartDM Native Backend for specific video formats
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
-    runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-      let netMedia = (netRes && netRes.media) ? netRes.media : [];
-      let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
-      if (mediaEl && (!liveSrc || liveSrc.startsWith('blob:'))) {
-        const sourceChild = mediaEl.querySelector('source');
-        if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
-          liveSrc = sourceChild.src;
-        }
+    runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+      if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
+        notifyCallbacks(res);
+        return;
       }
 
-      // If active media element or network stream exists
-      if (liveSrc || netMedia.length > 0) {
+      // STEP 2: Fast DOM & Page Context Check (if on watch/video page matching videoUrl)
+      const domRes = parsePageMetadataFromDOM();
+      if (domRes && domRes.formats && domRes.formats.length > 0) {
+        notifyCallbacks(domRes);
+        return;
+      }
+
+      // STEP 3: Fallback for generic HTML5 video elements & network streams (non-YouTube)
+      runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        let netMedia = (netRes && netRes.media) ? netRes.media : [];
+        let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
+        if (mediaEl && (!liveSrc || liveSrc.startsWith('blob:'))) {
+          const sourceChild = mediaEl.querySelector('source');
+          if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
+            liveSrc = sourceChild.src;
+          }
+        }
+
+        const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
+        if (isYouTube) {
+          notifyCallbacks({ success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+          return;
+        }
+
         const formats = [];
         const title = derivePageTitleFilename() || 'Media Stream';
 
-        if (liveSrc && liveSrc.startsWith('http')) {
+        if (liveSrc && liveSrc.startsWith('http') && !liveSrc.includes('googlevideo.com')) {
           const h = mediaEl ? (mediaEl.videoHeight || 0) : 0;
           const w = mediaEl ? (mediaEl.videoWidth || 0) : 0;
           const resText = (h > 0 && w > 0) ? `${h}p (${w}x${h})` : (h > 0 ? `${h}p` : 'Source Stream');
@@ -297,11 +308,11 @@
         }
 
         netMedia.forEach((m, idx) => {
-          if (liveSrc && m.url === liveSrc) return;
+          if (m.url.includes('googlevideo.com') || (liveSrc && m.url === liveSrc)) return;
           const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'mp4').toLowerCase();
           const isAudio = (m.contentType && m.contentType.includes('audio/')) || m.url.includes('.m4a') || m.url.includes('.mp3');
           let resLabel = m.customTitle || '';
-          if (!resLabel) {
+          if (!resLabel || resLabel.includes('Video Stream (mp4)')) {
             if (m.height && m.height > 0) resLabel = m.width ? `${m.height}p (${m.width}x${m.height} ${ext.toUpperCase()})` : `${m.height}p (${ext.toUpperCase()})`;
             else resLabel = isAudio ? `Audio Stream ${idx + 1} (${ext.toUpperCase()})` : `Media Stream ${idx + 1} (${ext.toUpperCase()})`;
           }
@@ -318,16 +329,8 @@
 
         if (formats.length > 0) {
           notifyCallbacks({ success: true, status: 'ok', title: title, formats: formats });
-          return;
-        }
-      }
-
-      // Tier 3: Service Worker / Native Backend Handshake
-      runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
-          notifyCallbacks(res);
         } else {
-          notifyCallbacks({ success: false, status: 'error', message: (res && res.error) ? res.error : 'Could not extract media formats.' });
+          notifyCallbacks({ success: false, status: 'error', message: 'No media formats detected.' });
         }
       });
     });
@@ -341,29 +344,35 @@
     const rawItems = [];
 
     (formats || []).forEach(fmt => {
-      let resolution = fmt.resolution || fmt.qualityLabel || (fmt.isAudioOnly ? 'Audio Only' : 'Video');
+      const isAud = fmt.isAudioOnly || fmt.IsAudioOnly;
+      let resolution = fmt.resolution || fmt.Resolution || fmt.qualityLabel || (isAud ? 'Audio Only' : 'Video');
       if (resolution === '0' || resolution === '0p' || resolution.includes('0x0')) {
         resolution = fmt.height ? `${fmt.height}p` : 'Source Stream';
       }
-      const ext = (fmt.ext || 'MP4').toUpperCase();
+      const ext = (fmt.ext || fmt.Ext || 'MP4').toUpperCase();
       let cleanTitle = resolution;
       if (fmt.fps && fmt.fps > 30) cleanTitle += ` ${fmt.fps}fps`;
       if (!cleanTitle.toUpperCase().includes(ext)) cleanTitle += ` (${ext})`;
       cleanTitle = cleanTitle.replace(/\(([^)]+)\)\s*\(\1\)/gi, '($1)');
 
-      const formattedSize = formatSize(fmt.fileSize);
+      const fSize = fmt.fileSize || fmt.FileSize || 0;
+      const formattedSize = formatSize(fSize);
       const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
-      let itemFileName = fmt.title ? (fmt.title.toLowerCase().endsWith('.' + ext.toLowerCase()) ? fmt.title : `${fmt.title}.${ext.toLowerCase()}`) : derivePageTitleFilename(ext.toLowerCase());
+      let fmtTitle = fmt.title || fmt.Title;
+      let itemFileName = fmtTitle ? (fmtTitle.toLowerCase().endsWith('.' + ext.toLowerCase()) ? fmtTitle : `${fmtTitle}.${ext.toLowerCase()}`) : derivePageTitleFilename(ext.toLowerCase());
       itemFileName = itemFileName.replace(/[\\/:*?""<>|]/g, '_');
+
+      const streamUrl = fmt.directUrl || fmt.DirectUrl || fmt.url || fmt.Url || videoUrl;
+      const fmtId = String(fmt.formatId || fmt.FormatId || '');
 
       rawItems.push({
         title: cleanTitle,
         badge: sizeText,
-        url: fmt.url || videoUrl,
-        videoUrl: fmt.videoUrl || fmt.url || videoUrl,
-        audioUrl: fmt.audioUrl || null,
-        formatId: fmt.formatId,
+        url: streamUrl,
+        videoUrl: streamUrl,
+        audioUrl: fmt.audioUrl || fmt.AudioUrl || null,
+        formatId: fmtId,
         fileName: itemFileName
       });
     });
@@ -431,24 +440,32 @@
         let bestAudioUrl = null;
         let bestAudioSize = 0;
         (formats || []).forEach(f => {
-          if (f.isAudioOnly && f.url && f.url.startsWith('http')) {
-            if (!bestAudioUrl || f.formatId === '140') {
-              bestAudioUrl = f.url;
-              bestAudioSize = f.fileSize || 0;
+          const isAud = f.isAudioOnly || f.IsAudioOnly;
+          const aUrl = f.directUrl || f.DirectUrl || f.url || f.Url;
+          const fid = String(f.formatId || f.FormatId || '');
+          if (isAud && aUrl && aUrl.startsWith('http')) {
+            if (!bestAudioUrl || fid === '140') {
+              bestAudioUrl = aUrl;
+              bestAudioSize = f.fileSize || f.FileSize || 0;
             }
           }
         });
 
         // Prepare full formats array to transmit to SmartDM desktop app
-        const formatsList = (formats || []).map(f => ({
-          formatId: String(f.formatId || ''),
-          resolution: f.resolution || f.qualityLabel || (f.isAudioOnly ? 'Audio Only' : 'Video'),
-          ext: (f.ext || 'mp4').toLowerCase(),
-          fileSize: f.fileSize || 0,
-          isAudioOnly: !!f.isAudioOnly,
-          url: f.url || f.videoUrl || null,
-          audioUrl: f.audioUrl || (!f.isAudioOnly ? bestAudioUrl : null)
-        }));
+        const formatsList = (formats || []).map(f => {
+          const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
+          const fUrl = f.directUrl || f.DirectUrl || f.url || f.Url || f.videoUrl || f.VideoUrl || null;
+          return {
+            formatId: String(f.formatId || f.FormatId || ''),
+            resolution: f.resolution || f.Resolution || f.qualityLabel || (isAud ? 'Audio Only' : 'Video'),
+            ext: (f.ext || f.Ext || 'mp4').toLowerCase(),
+            fileSize: f.fileSize || f.FileSize || 0,
+            isAudioOnly: isAud,
+            url: fUrl,
+            directUrl: fUrl,
+            audioUrl: f.audioUrl || f.AudioUrl || (!isAud ? bestAudioUrl : null)
+          };
+        });
 
         if (!formatsList.some(f => f.formatId === 'bestaudio/best' || (f.isAudioOnly && f.ext === 'mp3'))) {
           formatsList.push({
@@ -458,6 +475,7 @@
             fileSize: bestAudioSize,
             isAudioOnly: true,
             url: bestAudioUrl || item.audioUrl || item.url || null,
+            directUrl: bestAudioUrl || item.audioUrl || item.url || null,
             audioUrl: null
           });
         }

@@ -145,6 +145,48 @@ public class LocalIpcService : ILocalIpcService
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
 
+            string type = root.TryGetProperty("type", out var tElem) ? tElem.GetString() ?? "" : "";
+            if (string.IsNullOrEmpty(type) && root.TryGetProperty("action", out var actElem))
+            {
+                type = actElem.GetString() ?? "";
+            }
+
+            if (type.Equals("GET_MEDIA_FORMATS", StringComparison.OrdinalIgnoreCase) ||
+                type.Equals("extractMediaInfo", StringComparison.OrdinalIgnoreCase))
+            {
+                string? queryUrl = null;
+                if (root.TryGetProperty("url", out var qUrlElem)) queryUrl = qUrlElem.GetString();
+
+                if (!string.IsNullOrEmpty(queryUrl))
+                {
+                    var ytRes = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(queryUrl);
+                    if (ytRes.Success && ytRes.Formats.Count > 0)
+                    {
+                        var jsonPayload = JsonSerializer.Serialize(new
+                        {
+                            status = "ok",
+                            success = true,
+                            title = ytRes.Title,
+                            formats = ytRes.Formats
+                        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+                        byte[] ytBytes = Encoding.UTF8.GetBytes(jsonPayload);
+                        resp.ContentType = "application/json";
+                        resp.StatusCode = 200;
+                        resp.ContentLength64 = ytBytes.Length;
+                        await resp.OutputStream.WriteAsync(ytBytes);
+                        return;
+                    }
+                }
+
+                byte[] notFoundBytes = Encoding.UTF8.GetBytes("{\"status\":\"error\",\"message\":\"Could not extract media formats.\"}");
+                resp.ContentType = "application/json";
+                resp.StatusCode = 200;
+                resp.ContentLength64 = notFoundBytes.Length;
+                await resp.OutputStream.WriteAsync(notFoundBytes);
+                return;
+            }
+
             string? url = null;
             string? videoUrl = null;
             string? audioUrl = null;
