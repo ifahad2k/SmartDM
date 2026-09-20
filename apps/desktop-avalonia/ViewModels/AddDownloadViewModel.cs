@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -57,13 +59,59 @@ public partial class AddDownloadViewModel : ViewModelBase
     private long _probedTotalBytes = -1;
     private bool _probedAcceptsRanges = true;
 
+    public ObservableCollection<MediaFormatItem> AvailableFormats { get; } = new();
+
+    [ObservableProperty]
+    private MediaFormatItem? _selectedFormat;
+
+    [ObservableProperty]
+    private bool _isMediaFormatSelectorVisible = false;
+
+    [ObservableProperty]
+    private string _selectedFormatId = string.Empty;
+
+    partial void OnSelectedFormatChanged(MediaFormatItem? value)
+    {
+        if (value == null) return;
+
+        SelectedFormatId = value.FormatId;
+
+        // Update file extension if switched between video/audio or formats
+        if (!string.IsNullOrWhiteSpace(FileName))
+        {
+            string nameWithoutExt = Path.GetFileNameWithoutExtension(FileName);
+            string newExt = value.Ext.ToLowerInvariant();
+            FileName = $"{nameWithoutExt}.{newExt}";
+            
+            if (!string.IsNullOrWhiteSpace(SavePath))
+            {
+                string dir = Directory.Exists(SavePath) ? SavePath : (Path.GetDirectoryName(SavePath) ?? SavePath);
+                SavePath = Path.Combine(dir, FileName);
+            }
+        }
+
+        if (value.FileSize > 0)
+        {
+            _probedTotalBytes = value.FileSize;
+            UpdateDriveSpace(SavePath);
+        }
+
+        Category = value.IsAudioOnly ? "Audio" : "Media";
+    }
+
     public ObservableCollection<MirrorNode> MirrorNodes { get; } = new();
 
     public Func<string, string, Task<string?>>? RequestSaveFilePicker { get; set; }
     public event Action<DownloadModel>? DownloadCreated;
     public event Action? RequestClose;
 
-    public AddDownloadViewModel(IHttpProbeService? probeService = null, IFileCatalogService? catalogService = null, string? initialUrl = null, string? initialFileName = null)
+    public AddDownloadViewModel(
+        IHttpProbeService? probeService = null,
+        IFileCatalogService? catalogService = null,
+        string? initialUrl = null,
+        string? initialFileName = null,
+        string? initialFormatId = null,
+        List<MediaFormatDto>? initialFormats = null)
     {
         _probeService = probeService ?? new HttpProbeService();
         _catalogService = catalogService ?? new FileCatalogService();
@@ -75,6 +123,38 @@ public partial class AddDownloadViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(initialFileName))
         {
             FileName = initialFileName.Trim();
+        }
+
+        if (initialFormats != null && initialFormats.Count > 0)
+        {
+            AvailableFormats.Clear();
+            foreach (var dto in initialFormats)
+            {
+                string sizeStr = dto.FileSize > 0 ? MediaFormatItem.FormatBytes(dto.FileSize) : "Direct Stream";
+                var item = new MediaFormatItem
+                {
+                    FormatId = dto.FormatId,
+                    Resolution = dto.Resolution,
+                    Ext = dto.Ext,
+                    FileSize = dto.FileSize,
+                    IsAudioOnly = dto.IsAudioOnly,
+                    DisplayLabel = dto.Resolution,
+                    FormattedSize = sizeStr,
+                    DirectUrl = dto.DirectUrl,
+                    AudioUrl = dto.AudioUrl
+                };
+                AvailableFormats.Add(item);
+            }
+
+            IsMediaFormatSelectorVisible = true;
+
+            MediaFormatItem? match = null;
+            if (!string.IsNullOrWhiteSpace(initialFormatId))
+            {
+                match = AvailableFormats.FirstOrDefault(f => f.FormatId.Equals(initialFormatId, StringComparison.OrdinalIgnoreCase));
+            }
+
+            SelectedFormat = match ?? AvailableFormats.FirstOrDefault();
         }
 
         if (!string.IsNullOrWhiteSpace(initialUrl))
@@ -276,6 +356,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         {
             Title = FileName,
             Url = Url.Trim(),
+            FormatId = SelectedFormatId,
             Domain = Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var u) ? u.Host : "Remote Host",
             TotalBytes = _probedTotalBytes,
             DownloadedBytes = 0,

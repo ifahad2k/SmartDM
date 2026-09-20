@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -145,28 +146,51 @@ public class LocalIpcService : ILocalIpcService
             var root = doc.RootElement;
 
             string? url = null;
+            string? videoUrl = null;
+            string? audioUrl = null;
+            string? formatId = null;
             string? fileName = null;
             string? cookies = null;
             string? userAgent = null;
+            List<MediaFormatDto>? formats = null;
 
             if (root.TryGetProperty("url", out var urlElem)) url = urlElem.GetString();
-            if (!string.IsNullOrEmpty(url) && root.TryGetProperty("videoUrl", out var vElem) && !string.IsNullOrEmpty(vElem.GetString()))
-            {
-                url = vElem.GetString();
-            }
-
+            if (root.TryGetProperty("videoUrl", out var vElem)) videoUrl = vElem.GetString();
+            if (root.TryGetProperty("audioUrl", out var aElem)) audioUrl = aElem.GetString();
+            if (root.TryGetProperty("formatId", out var fmtElem)) formatId = fmtElem.GetString();
             if (root.TryGetProperty("fileName", out var fnElem)) fileName = fnElem.GetString();
             if (root.TryGetProperty("cookies", out var cElem)) cookies = cElem.GetString();
             if (root.TryGetProperty("userAgent", out var uaElem)) userAgent = uaElem.GetString();
+
+            if (root.TryGetProperty("formats", out var formatsElem) && formatsElem.ValueKind == JsonValueKind.Array)
+            {
+                formats = new List<MediaFormatDto>();
+                foreach (var item in formatsElem.EnumerateArray())
+                {
+                    var dto = new MediaFormatDto();
+                    if (item.TryGetProperty("formatId", out var fid)) dto.FormatId = fid.GetString() ?? "";
+                    if (item.TryGetProperty("resolution", out var res)) dto.Resolution = res.GetString() ?? "";
+                    if (item.TryGetProperty("ext", out var ext)) dto.Ext = ext.GetString() ?? "mp4";
+                    if (item.TryGetProperty("fileSize", out var fs)) dto.FileSize = fs.GetInt64();
+                    if (item.TryGetProperty("isAudioOnly", out var ia)) dto.IsAudioOnly = ia.GetBoolean();
+                    if (item.TryGetProperty("url", out var u)) dto.DirectUrl = u.GetString();
+                    if (item.TryGetProperty("audioUrl", out var au)) dto.AudioUrl = au.GetString();
+                    formats.Add(dto);
+                }
+            }
 
             if (!string.IsNullOrEmpty(url))
             {
                 DownloadRequestedFromBrowser?.Invoke(new BrowserDownloadRequest
                 {
                     Url = url,
+                    VideoUrl = videoUrl,
+                    AudioUrl = audioUrl,
+                    FormatId = formatId,
                     FileName = fileName,
                     Cookies = cookies,
-                    UserAgent = userAgent
+                    UserAgent = userAgent,
+                    Formats = formats
                 });
             }
 
