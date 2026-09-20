@@ -365,8 +365,12 @@ public class DownloadEngine : IDownloadEngine
                 if (elapsedSec > 0)
                 {
                     long delta = currentDownloaded - lastDownloaded;
-                    double speedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
-                    dl.SpeedMbps = speedMbps;
+                    double rawSpeed = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
+
+                    // Exponential Moving Average (EMA) smoothing removes packet arrival jitter
+                    dl.SpeedMbps = dl.SpeedMbps <= 0.05
+                        ? rawSpeed
+                        : (dl.SpeedMbps * 0.72) + (rawSpeed * 0.28);
 
                     if (dl.TotalBytes > 0)
                     {
@@ -374,9 +378,9 @@ public class DownloadEngine : IDownloadEngine
                         dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
 
                         long remainingBytes = dl.TotalBytes - dl.DownloadedBytes;
-                        if (speedMbps > 0.01)
+                        if (dl.SpeedMbps > 0.05)
                         {
-                            dl.EtaSeconds = (int)(remainingBytes / (speedMbps * 1024 * 1024));
+                            dl.EtaSeconds = (int)(remainingBytes / (dl.SpeedMbps * 1024 * 1024));
                         }
                     }
                     else
@@ -611,35 +615,61 @@ public class DownloadEngine : IDownloadEngine
         int audioThreads = Math.Min(8, Math.Max(1, (int)(audioSize / (128 * 1024))));
         dl.ParallelThreads = videoThreads + audioThreads;
 
-        // 1. Create Video Segment Workers (1-16)
-        long videoChunkSize = videoSize / videoThreads;
+        // 1. Build Dynamic Chunk Queue for Video (1 MB to 3 MB chunks to prevent CDN throttle & eliminate stragglers)
+        var videoQueue = new System.Collections.Concurrent.ConcurrentQueue<ChunkRange>();
+        long vSliceSize = Math.Clamp(videoSize / 48, 1048576, 3145728);
         long vOffset = 0;
-        for (int i = 0; i < videoThreads; i++)
+        while (vOffset < videoSize)
         {
-            long start = vOffset;
-            long end = (i == videoThreads - 1) ? videoSize - 1 : (vOffset + videoChunkSize - 1);
-            var worker = new SegmentWorker(_httpClient, dl.Url, videoStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader);
-            session.Workers.Add(worker);
+            long end = Math.Min(vOffset + vSliceSize - 1, videoSize - 1);
+            videoQueue.Enqueue(new ChunkRange(vOffset, end));
             vOffset = end + 1;
         }
 
-        // 2. Create Audio Segment Workers (17-24)
-        long audioChunkSize = audioSize / audioThreads;
+        // 2. Build Dynamic Chunk Queue for Audio (512 KB to 2 MB chunks)
+        var audioQueue = new System.Collections.Concurrent.ConcurrentQueue<ChunkRange>();
+        long aSliceSize = Math.Clamp(audioSize / 16, 524288, 2097152);
         long aOffset = 0;
+        while (aOffset < audioSize)
+        {
+            long end = Math.Min(aOffset + aSliceSize - 1, audioSize - 1);
+            audioQueue.Enqueue(new ChunkRange(aOffset, end));
+            aOffset = end + 1;
+        }
+
+        // 3. Create Video Workers
+        long videoPerWorker = videoSize / videoThreads;
+        for (int i = 0; i < videoThreads; i++)
+        {
+            long start = i * videoPerWorker;
+            long end = (i == videoThreads - 1) ? videoSize - 1 : (i + 1) * videoPerWorker - 1;
+            var worker = new SegmentWorker(_httpClient, dl.Url, videoStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader);
+            session.Workers.Add(worker);
+        }
+
+        // 4. Create Audio Workers
+        long audioPerWorker = audioSize / audioThreads;
         for (int i = 0; i < audioThreads; i++)
         {
-            long start = aOffset;
-            long end = (i == audioThreads - 1) ? audioSize - 1 : (aOffset + audioChunkSize - 1);
+            long start = i * audioPerWorker;
+            long end = (i == audioThreads - 1) ? audioSize - 1 : (i + 1) * audioPerWorker - 1;
             var worker = new SegmentWorker(_httpClient, dl.AudioUrl!, audioStagingPath, videoThreads + i + 1, start, end, 0, referer, uaString, cookieHeader);
             session.Workers.Add(worker);
-            aOffset = end + 1;
         }
 
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
-        var workerTasks = session.Workers.Select(w => w.ExecuteAsync(token)).ToList();
+        var workerTasks = new List<Task>();
+        for (int i = 0; i < videoThreads; i++)
+        {
+            workerTasks.Add(session.Workers[i].ExecuteChunkQueueAsync(videoQueue, token));
+        }
+        for (int i = 0; i < audioThreads; i++)
+        {
+            workerTasks.Add(session.Workers[videoThreads + i].ExecuteChunkQueueAsync(audioQueue, token));
+        }
 
-        // Telemetry monitor loop
+        // Telemetry monitor loop with Exponential Moving Average (EMA) smoothing
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var monitorTask = Task.Run(async () =>
         {
@@ -650,7 +680,7 @@ public class DownloadEngine : IDownloadEngine
             {
                 try
                 {
-                    await Task.Delay(500, monitorCts.Token);
+                    await Task.Delay(400, monitorCts.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -663,15 +693,20 @@ public class DownloadEngine : IDownloadEngine
                 if (elapsedSec > 0)
                 {
                     long delta = currentDownloaded - lastDownloaded;
-                    double speedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
-                    dl.SpeedMbps = speedMbps;
+                    double rawSpeed = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
+
+                    // Exponential Moving Average (EMA) removes packet arrival jitter
+                    dl.SpeedMbps = dl.SpeedMbps <= 0.05
+                        ? rawSpeed
+                        : (dl.SpeedMbps * 0.72) + (rawSpeed * 0.28);
+
                     dl.DownloadedBytes = Math.Min(dl.TotalBytes, currentDownloaded);
                     dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
 
                     long remainingBytes = dl.TotalBytes - dl.DownloadedBytes;
-                    if (speedMbps > 0.01)
+                    if (dl.SpeedMbps > 0.05)
                     {
-                        dl.EtaSeconds = (int)(remainingBytes / (speedMbps * 1024 * 1024));
+                        dl.EtaSeconds = (int)(remainingBytes / (dl.SpeedMbps * 1024 * 1024));
                     }
 
                     dl.StatusDetail = $"Accelerated {dl.ParallelThreads}-Stream Transfer ({dl.SpeedMbps:F1} MB/s)...";
@@ -693,8 +728,9 @@ public class DownloadEngine : IDownloadEngine
 
             long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
             bool hasBytes = totalDownloaded >= dl.TotalBytes;
+            bool hasError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || !videoQueue.IsEmpty || !audioQueue.IsEmpty;
 
-            if (!token.IsCancellationRequested && hasBytes)
+            if (!token.IsCancellationRequested && hasBytes && !hasError)
             {
                 dl.StatusDetail = "Muxing high-speed video & audio streams...";
                 dl.SpeedMbps = 0;
@@ -884,21 +920,31 @@ public class DownloadEngine : IDownloadEngine
         session.Workers.Clear();
         int threadCount = Math.Min(16, Math.Max(1, (int)(audioSize / (128 * 1024))));
         dl.ParallelThreads = threadCount;
-        long chunkSize = audioSize / threadCount;
-        long currentOffset = 0;
+
+        // Build Dynamic Chunk Queue for Audio (512 KB to 2 MB chunks)
+        var audioQueue = new System.Collections.Concurrent.ConcurrentQueue<ChunkRange>();
+        long aSliceSize = Math.Clamp(audioSize / 32, 524288, 2097152);
+        long aOffset = 0;
+        while (aOffset < audioSize)
+        {
+            long end = Math.Min(aOffset + aSliceSize - 1, audioSize - 1);
+            audioQueue.Enqueue(new ChunkRange(aOffset, end));
+            aOffset = end + 1;
+        }
+
+        long audioPerWorker = audioSize / threadCount;
         for (int i = 0; i < threadCount; i++)
         {
-            long start = currentOffset;
-            long end = (i == threadCount - 1) ? audioSize - 1 : (currentOffset + chunkSize - 1);
+            long start = i * audioPerWorker;
+            long end = (i == threadCount - 1) ? audioSize - 1 : (i + 1) * audioPerWorker - 1;
             var worker = new SegmentWorker(_httpClient, dl.Url, audioStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader);
             session.Workers.Add(worker);
-            currentOffset = end + 1;
         }
 
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
-        var workerTasks = session.Workers.Select(w => w.ExecuteAsync(token)).ToList();
+        var workerTasks = session.Workers.Select(w => w.ExecuteChunkQueueAsync(audioQueue, token)).ToList();
 
-        // Telemetry monitor loop
+        // Telemetry monitor loop with Exponential Moving Average (EMA) smoothing
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var monitorTask = Task.Run(async () =>
         {
@@ -907,7 +953,7 @@ public class DownloadEngine : IDownloadEngine
 
             while (!monitorCts.Token.IsCancellationRequested)
             {
-                try { await Task.Delay(500, monitorCts.Token); } catch { break; }
+                try { await Task.Delay(400, monitorCts.Token); } catch { break; }
 
                 long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
                 double elapsedSec = sw.Elapsed.TotalSeconds;
@@ -915,15 +961,20 @@ public class DownloadEngine : IDownloadEngine
                 if (elapsedSec > 0)
                 {
                     long delta = currentDownloaded - lastDownloaded;
-                    double speedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
-                    dl.SpeedMbps = speedMbps;
+                    double rawSpeed = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
+
+                    // Exponential Moving Average (EMA) removes packet arrival jitter
+                    dl.SpeedMbps = dl.SpeedMbps <= 0.05
+                        ? rawSpeed
+                        : (dl.SpeedMbps * 0.72) + (rawSpeed * 0.28);
+
                     dl.DownloadedBytes = Math.Min(dl.TotalBytes, currentDownloaded);
                     dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
 
                     long remainingBytes = dl.TotalBytes - dl.DownloadedBytes;
-                    if (speedMbps > 0.01)
+                    if (dl.SpeedMbps > 0.05)
                     {
-                        dl.EtaSeconds = (int)(remainingBytes / (speedMbps * 1024 * 1024));
+                        dl.EtaSeconds = (int)(remainingBytes / (dl.SpeedMbps * 1024 * 1024));
                     }
 
                     dl.StatusDetail = $"Accelerated Audio Transfer ({dl.SpeedMbps:F1} MB/s)...";
@@ -944,8 +995,9 @@ public class DownloadEngine : IDownloadEngine
 
             long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
             bool hasBytes = totalDownloaded >= dl.TotalBytes;
+            bool hasError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || !audioQueue.IsEmpty;
 
-            if (!token.IsCancellationRequested && hasBytes)
+            if (!token.IsCancellationRequested && hasBytes && !hasError)
             {
                 dl.StatusDetail = "Converting audio to MP3...";
                 dl.SpeedMbps = 0;
@@ -1267,7 +1319,10 @@ public class DownloadEngine : IDownloadEngine
                     if (elapsed >= 0.5)
                     {
                         long delta = currentBytes - lastBytes;
-                        dl.SpeedMbps = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsed);
+                        double rawSpeed = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsed);
+                        dl.SpeedMbps = dl.SpeedMbps <= 0.05
+                            ? rawSpeed
+                            : (dl.SpeedMbps * 0.72) + (rawSpeed * 0.28);
                         lastBytes = currentBytes;
                         sw.Restart();
                     }
