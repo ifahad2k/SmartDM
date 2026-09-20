@@ -68,6 +68,12 @@ public static class YouTubeMediaResolver
         return null;
     }
 
+    public static bool IsYouTubeUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        return !string.IsNullOrEmpty(ExtractYouTubeVideoId(url));
+    }
+
     public static async Task<YouTubeResolveResult> ResolveYouTubeFormatsAsync(string targetUrl)
     {
         var result = new YouTubeResolveResult();

@@ -53,6 +53,32 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  function isOpaqueTokenOrHash(str) {
+    if (!str || typeof str !== 'string') return true;
+    const clean = str.replace(/\.[a-z0-9]+$/i, '').trim();
+    if (!clean || clean.length < 3) return true;
+    if (/^AQ[A-Za-z0-9_-]{10,}$/i.test(clean)) return true;
+    if (clean.length >= 25 && !clean.includes(' ') && /^[A-Za-z0-9_.+=\/-]+$/.test(clean)) return true;
+    if (/^[0-9a-f]{24,}$/i.test(clean)) return true;
+    if (/^(seg|fragment|chunk|track|stream|video|audio)[_-]?\d+/i.test(clean)) return true;
+    return false;
+  }
+
+  function sanitizeCleanTitle(str) {
+    if (!str || typeof str !== 'string') return '';
+    let clean = str.replace(/^\(\d+\)\s*/, '').trim();
+    clean = clean.replace(/\s*[\-\|\:·•]\s*(Facebook|Pornhub\.com|Pornhub|YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit).*$/i, '').trim();
+    if (clean.toLowerCase().endsWith(' - youtube')) clean = clean.substring(0, clean.length - 10).trim();
+    if (clean.toLowerCase().endsWith(' | youtube')) clean = clean.substring(0, clean.length - 10).trim();
+    if (clean.toLowerCase().endsWith(' youtube')) clean = clean.substring(0, clean.length - 8).trim();
+    if (clean.toLowerCase().endsWith(' - pornhub.com')) clean = clean.substring(0, clean.length - 14).trim();
+    if (clean.toLowerCase().endsWith(' - pornhub')) clean = clean.substring(0, clean.length - 10).trim();
+    if (clean.toLowerCase().endsWith(' | pornhub')) clean = clean.substring(0, clean.length - 10).trim();
+    if (clean.toLowerCase().endsWith(' - facebook')) clean = clean.substring(0, clean.length - 11).trim();
+    clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
+    return clean;
+  }
+
   function isGenericTitle(t) {
     if (!t || typeof t !== 'string') return true;
     const clean = t.replace(/^\(\d+\)\s*/, '').trim().toLowerCase();
@@ -69,7 +95,108 @@
       clean === 'media stream' ||
       clean === 'download' ||
       clean === 'downloads' ||
-      clean.length < 2;
+      clean === 'facebook' ||
+      clean === 'pornhub' ||
+      clean === 'pornhub.com' ||
+      clean === 'video stream' ||
+      clean === 'stream' ||
+      clean.length < 2 ||
+      isOpaqueTokenOrHash(clean);
+  }
+
+  function findActiveVideoElement() {
+    try {
+      const videos = Array.from(document.querySelectorAll('video'));
+      if (videos.length === 0) return null;
+      // 1. Playing and unpaused
+      const playing = videos.find(v => !v.paused && !v.ended && v.currentTime > 0);
+      if (playing) return playing;
+      // 2. Has active HTTP stream src
+      const withSrc = videos.find(v => (v.currentSrc || v.src) && !(v.currentSrc || v.src).startsWith('blob:'));
+      if (withSrc) return withSrc;
+      // 3. Largest video on the page
+      videos.sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight));
+      return videos[0];
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function extractSemanticPageTitle() {
+    try {
+      // 1. OpenGraph meta title
+      const ogTitle = document.querySelector('meta[property="og:title"], meta[name="og:title"]');
+      if (ogTitle && ogTitle.content) {
+        const t = ogTitle.content.trim();
+        if (!isGenericTitle(t)) return sanitizeCleanTitle(t);
+      }
+
+      // 2. Twitter card title
+      const twTitle = document.querySelector('meta[name="twitter:title"], meta[property="twitter:title"]');
+      if (twTitle && twTitle.content) {
+        const t = twTitle.content.trim();
+        if (!isGenericTitle(t)) return sanitizeCleanTitle(t);
+      }
+
+      // 3. JSON-LD schema (VideoObject, NewsArticle, etc.)
+      const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (const s of ldScripts) {
+        if (s.textContent && (s.textContent.includes('VideoObject') || s.textContent.includes('"name"') || s.textContent.includes('"headline"'))) {
+          try {
+            const data = JSON.parse(s.textContent);
+            const item = Array.isArray(data) ? data[0] : (data['@graph'] ? data['@graph'].find(g => g.name || g.headline) : data);
+            if (item) {
+              const cand = item.name || item.headline;
+              if (cand && typeof cand === 'string' && !isGenericTitle(cand)) {
+                return sanitizeCleanTitle(cand);
+              }
+            }
+          } catch(e) {}
+        }
+      }
+
+      // 4. In-page semantic headings / social post captions
+      const headingSelectors = [
+        'h1.ytd-watch-metadata yt-formatted-string',
+        '#title h1 yt-formatted-string',
+        'h1.title yt-formatted-string',
+        'h1.title span',
+        '.inlineFree',
+        'h1.title',
+        '[role="article"] [dir="auto"]',
+        '[role="article"] h2',
+        '[role="article"] h3',
+        '[data-ad-preview]',
+        '.userContent',
+        'h1',
+        'h2'
+      ];
+      for (const sel of headingSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const t = (el.textContent || '').trim();
+          if (t && t.length >= 3 && !isGenericTitle(t)) {
+            const shortT = t.length > 90 ? t.substring(0, 90).trim() : t;
+            return sanitizeCleanTitle(shortT);
+          }
+        }
+      }
+
+      // 5. Cleaned document.title
+      let rawTitle = document.title || '';
+      if (window.top !== window.self) {
+        try {
+          if (window.top.document && window.top.document.title) {
+            rawTitle = window.top.document.title;
+          }
+        } catch (e) {}
+      }
+      if (rawTitle) {
+        const clean = sanitizeCleanTitle(rawTitle);
+        if (!isGenericTitle(clean)) return clean;
+      }
+    } catch(e) {}
+    return null;
   }
 
   function extractWatchPageTitle() {
@@ -85,11 +212,11 @@
         const el = document.querySelector(sel);
         if (el) {
           const t = (el.textContent || '').trim();
-          if (t && !isGenericTitle(t)) return t;
+          if (t && !isGenericTitle(t)) return sanitizeCleanTitle(t);
         }
       }
     } catch (e) {}
-    return null;
+    return extractSemanticPageTitle();
   }
 
   function extractCardTitle(containerEl) {
@@ -114,51 +241,31 @@
         const el = card.querySelector(sel);
         if (el) {
           const t = (el.getAttribute('title') || el.textContent || '').trim();
-          if (t && !isGenericTitle(t)) return t;
+          if (t && !isGenericTitle(t)) return sanitizeCleanTitle(t);
         }
       }
 
       const img = card.querySelector('img[alt]');
       if (img) {
         const alt = (img.getAttribute('alt') || '').trim();
-        if (alt && !isGenericTitle(alt)) return alt;
+        if (alt && !isGenericTitle(alt)) return sanitizeCleanTitle(alt);
       }
 
       const link = card.querySelector('a[title]');
       if (link) {
         const t = (link.getAttribute('title') || '').trim();
-        if (t && !isGenericTitle(t)) return t;
+        if (t && !isGenericTitle(t)) return sanitizeCleanTitle(t);
       }
     } catch (e) {}
     return null;
   }
 
   function derivePageTitleFilename(ext = 'mp4') {
-    try {
-      let rawTitle = document.title || '';
-      if (window.top !== window.self) {
-        try {
-          if (window.top.document && window.top.document.title) {
-            rawTitle = window.top.document.title;
-          }
-        } catch (e) {}
-      }
-      if (rawTitle) {
-        let clean = rawTitle.replace(/^\(\d+\)\s*/, '').trim();
-        clean = clean.replace(/\s*[\-\|\:·•]\s*(YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook).*$/i, '').trim();
-        if (clean.toLowerCase().endsWith(' - youtube')) clean = clean.substring(0, clean.length - 10).trim();
-        if (clean.toLowerCase().endsWith(' | youtube')) clean = clean.substring(0, clean.length - 10).trim();
-        if (clean.toLowerCase().endsWith(' youtube')) clean = clean.substring(0, clean.length - 8).trim();
-
-        if (!isGenericTitle(clean)) {
-          clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
-          if (clean.length > 0) {
-            const lowerExt = '.' + ext.toLowerCase();
-            return clean.toLowerCase().endsWith(lowerExt) ? clean : `${clean}${lowerExt}`;
-          }
-        }
-      }
-    } catch (e) {}
+    const semTitle = extractSemanticPageTitle();
+    if (semTitle && !isGenericTitle(semTitle)) {
+      const lowerExt = '.' + ext.toLowerCase();
+      return semTitle.toLowerCase().endsWith(lowerExt) ? semTitle : `${semTitle}${lowerExt}`;
+    }
     return 'video.' + ext.toLowerCase();
   }
 
@@ -314,8 +421,86 @@
   }
 
   // --- DYNAMIC FORMAT EXTRACTION ENGINE (3 TIERS) ---
+  // --- UNIVERSAL FALLBACK & INTENT SENSOR ---
+  function buildFallbackFormats(videoUrl, mediaEl, callback) {
+    const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+    if (!mediaEl) mediaEl = findActiveVideoElement();
+
+    runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+      let netMedia = (netRes && netRes.media) ? netRes.media : [];
+      let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
+      if (mediaEl && (!liveSrc || liveSrc.startsWith('blob:'))) {
+        const sourceChild = mediaEl.querySelector('source');
+        if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
+          liveSrc = sourceChild.src;
+        }
+      }
+
+      const isYouTube = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
+      if (isYouTube) {
+        callback({ success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+        return;
+      }
+
+      const formats = [];
+      const pageTitle = extractSemanticPageTitle() || 'video';
+
+      if (liveSrc && liveSrc.startsWith('http') && !liveSrc.includes('googlevideo.com')) {
+        const h = mediaEl ? (mediaEl.videoHeight || 0) : 0;
+        const w = mediaEl ? (mediaEl.videoWidth || 0) : 0;
+        let resText = 'Source Stream';
+        if (h >= 1080) resText = '1080p Full HD';
+        else if (h >= 720) resText = '720p HD';
+        else if (h >= 480) resText = '480p SD';
+        else if (h > 0) resText = `${h}p`;
+        if (w > 0 && h > 0) resText += ` (${w}x${h})`;
+
+        formats.push({
+          formatId: 'live_stream',
+          resolution: resText,
+          ext: liveSrc.includes('.webm') ? 'webm' : 'mp4',
+          fileSize: 0,
+          isAudioOnly: false,
+          title: pageTitle,
+          url: liveSrc
+        });
+      }
+
+      netMedia.forEach((m, idx) => {
+        if (m.url.includes('googlevideo.com') || (liveSrc && m.url === liveSrc)) return;
+        const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'mp4').toLowerCase();
+        const isAudio = (m.contentType && m.contentType.includes('audio/')) || m.url.includes('.m4a') || m.url.includes('.mp3');
+        let resLabel = m.customTitle || '';
+        if (!resLabel || isOpaqueTokenOrHash(resLabel) || resLabel.includes('Video Stream (mp4)')) {
+          if (m.height && m.height > 0) {
+            resLabel = m.height >= 720 ? `${m.height}p HD (${ext.toUpperCase()})` : `${m.height}p (${ext.toUpperCase()})`;
+          } else {
+            resLabel = isAudio ? `Audio Stream ${idx + 1} (${ext.toUpperCase()})` : `Video Stream ${idx + 1} (${ext.toUpperCase()})`;
+          }
+        }
+        formats.push({
+          formatId: 'net_' + idx,
+          resolution: resLabel,
+          ext: ext,
+          fileSize: m.contentLength || 0,
+          isAudioOnly: isAudio,
+          title: pageTitle,
+          url: m.url
+        });
+      });
+
+      if (formats.length > 0) {
+        callback({ success: true, status: 'ok', title: pageTitle, formats: formats });
+      } else {
+        callback({ success: false, status: 'error', message: 'No media formats detected.' });
+      }
+    });
+  }
+
+  // --- DYNAMIC FORMAT EXTRACTION ENGINE (3 TIERS) ---
   function fetchMediaFormats(videoUrl, mediaEl, callback) {
     if (!videoUrl) videoUrl = window.location.href;
+    if (!mediaEl) mediaEl = findActiveVideoElement();
 
     if (mediaFormatCache[videoUrl] && mediaFormatCache[videoUrl].status === 'done') {
       callback(mediaFormatCache[videoUrl].data);
@@ -329,7 +514,10 @@
 
     mediaFormatCache[videoUrl] = { status: 'loading', callbacks: [callback] };
 
+    let isHandled = false;
     const notifyCallbacks = (result) => {
+      if (isHandled) return;
+      isHandled = true;
       const entry = mediaFormatCache[videoUrl];
       if (result && result.formats && result.formats.length > 0) {
         mediaFormatCache[videoUrl] = { status: 'done', data: result, callbacks: [] };
@@ -340,82 +528,41 @@
       }
     };
 
-    // STEP 1: Query Extension Service Worker / SmartDM Native Backend for specific video formats
+    // Safety timeout: UI will never hang indefinitely
+    setTimeout(() => {
+      if (!isHandled) {
+        buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
+          notifyCallbacks(fallbackRes);
+        });
+      }
+    }, 1200);
+
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+    const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
+
+    // For all non-YouTube sites (Facebook, Pornhub, Vimeo, etc.), build immediately from DOM & detected stream graph
+    if (!isYouTube) {
+      buildFallbackFormats(videoUrl, mediaEl, (result) => {
+        notifyCallbacks(result);
+      });
+      return;
+    }
+
+    // For YouTube URLs, query SmartDM desktop app / service worker
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
       if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
         notifyCallbacks(res);
         return;
       }
 
-      // STEP 2: Fast DOM & Page Context Check (if on watch/video page matching videoUrl)
+      // Fast DOM & Page Context Check for YouTube
       const domRes = parsePageMetadataFromDOM();
       if (domRes && domRes.formats && domRes.formats.length > 0) {
         notifyCallbacks(domRes);
         return;
       }
 
-      // STEP 3: Fallback for generic HTML5 video elements & network streams (non-YouTube)
-      runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-        let netMedia = (netRes && netRes.media) ? netRes.media : [];
-        let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
-        if (mediaEl && (!liveSrc || liveSrc.startsWith('blob:'))) {
-          const sourceChild = mediaEl.querySelector('source');
-          if (sourceChild && sourceChild.src && !sourceChild.src.startsWith('blob:')) {
-            liveSrc = sourceChild.src;
-          }
-        }
-
-        const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
-        if (isYouTube) {
-          notifyCallbacks({ success: false, status: 'error', message: 'Could not extract YouTube formats.' });
-          return;
-        }
-
-        const formats = [];
-        const title = derivePageTitleFilename() || 'Media Stream';
-
-        if (liveSrc && liveSrc.startsWith('http') && !liveSrc.includes('googlevideo.com')) {
-          const h = mediaEl ? (mediaEl.videoHeight || 0) : 0;
-          const w = mediaEl ? (mediaEl.videoWidth || 0) : 0;
-          const resText = (h > 0 && w > 0) ? `${h}p (${w}x${h})` : (h > 0 ? `${h}p` : 'Source Stream');
-          formats.push({
-            formatId: 'live_stream',
-            resolution: resText,
-            ext: liveSrc.includes('.webm') ? 'webm' : 'mp4',
-            fileSize: 0,
-            isAudioOnly: false,
-            title: title,
-            url: liveSrc
-          });
-        }
-
-        netMedia.forEach((m, idx) => {
-          if (m.url.includes('googlevideo.com') || (liveSrc && m.url === liveSrc)) return;
-          const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'mp4').toLowerCase();
-          const isAudio = (m.contentType && m.contentType.includes('audio/')) || m.url.includes('.m4a') || m.url.includes('.mp3');
-          let resLabel = m.customTitle || '';
-          if (!resLabel || resLabel.includes('Video Stream (mp4)')) {
-            if (m.height && m.height > 0) resLabel = m.width ? `${m.height}p (${m.width}x${m.height} ${ext.toUpperCase()})` : `${m.height}p (${ext.toUpperCase()})`;
-            else resLabel = isAudio ? `Audio Stream ${idx + 1} (${ext.toUpperCase()})` : `Media Stream ${idx + 1} (${ext.toUpperCase()})`;
-          }
-          formats.push({
-            formatId: 'net_' + idx,
-            resolution: resLabel,
-            ext: ext,
-            fileSize: m.contentLength || 0,
-            isAudioOnly: isAudio,
-            title: m.filename || title,
-            url: m.url
-          });
-        });
-
-        if (formats.length > 0) {
-          notifyCallbacks({ success: true, status: 'ok', title: title, formats: formats });
-        } else {
-          notifyCallbacks({ success: false, status: 'error', message: 'No media formats detected.' });
-        }
-      });
+      notifyCallbacks({ success: false, status: 'error', message: 'Could not extract YouTube formats.' });
     });
   }
 
@@ -453,8 +600,8 @@
     (formats || []).forEach(fmt => {
       const isAud = fmt.isAudioOnly || fmt.IsAudioOnly;
       let resolution = fmt.resolution || fmt.Resolution || fmt.qualityLabel || (isAud ? 'Audio Only' : 'Video');
-      if (resolution === '0' || resolution === '0p' || resolution.includes('0x0')) {
-        resolution = fmt.height ? `${fmt.height}p` : 'Source Stream';
+      if (resolution === '0' || resolution === '0p' || resolution.includes('0x0') || isOpaqueTokenOrHash(resolution)) {
+        resolution = fmt.height ? `${fmt.height}p` : 'Video Stream';
       }
       const ext = (fmt.ext || fmt.Ext || 'MP4').toUpperCase();
       let cleanTitle = resolution;
@@ -1037,7 +1184,7 @@
       `;
 
       fetchMediaFormats(videoUrl, null, (res) => {
-        const resolvedTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || extractCardTitle(containerEl) || null);
+        const resolvedTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || extractCardTitle(containerEl) || extractSemanticPageTitle() || null);
         if (res && res.formats && res.formats.length > 0) {
           renderFormatDropdown(content, res.formats, videoUrl, popover, resolvedTitle);
         } else {

@@ -86,16 +86,35 @@ public partial class AddDownloadViewModel : ViewModelBase
         // Strip notification badge e.g. "(311) " or "(1) "
         lower = System.Text.RegularExpressions.Regex.Replace(lower, @"^\(\d+\)\s*", "").Trim();
 
-        return lower == "youtube" ||
-               lower == "youtube music" ||
-               lower == "watch" ||
-               lower == "videoplayback" ||
-               lower == "video" ||
-               lower == "media stream" ||
-               lower == "download" ||
-               lower == "downloads" ||
-               lower == "bin" ||
-               lower.Length < 2;
+        if (lower == "youtube" ||
+            lower == "youtube music" ||
+            lower == "watch" ||
+            lower == "videoplayback" ||
+            lower == "video" ||
+            lower == "media stream" ||
+            lower == "download" ||
+            lower == "downloads" ||
+            lower == "facebook" ||
+            lower == "pornhub" ||
+            lower == "bin" ||
+            lower.Length < 2)
+        {
+            return true;
+        }
+
+        // Detect Facebook CDN tokens (e.g. AQPEv8rliM4qIQGkbci...)
+        if (lower.StartsWith("aq") && lower.Length >= 12 && !lower.Contains(' '))
+        {
+            return true;
+        }
+
+        // Detect opaque random hashes or segment tokens (> 25 chars without spaces)
+        if (lower.Length >= 25 && !lower.Contains(' ') && System.Text.RegularExpressions.Regex.IsMatch(lower, @"^[a-z0-9_\-\+\/\=]+$"))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     partial void OnSelectedFormatChanged(MediaFormatItem? value)

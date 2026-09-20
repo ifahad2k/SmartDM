@@ -159,22 +159,35 @@ public class LocalIpcService : ILocalIpcService
 
                 if (!string.IsNullOrEmpty(queryUrl))
                 {
-                    var ytRes = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(queryUrl);
-                    if (ytRes.Success && ytRes.Formats.Count > 0)
+                    if (YouTubeMediaResolver.IsYouTubeUrl(queryUrl))
                     {
-                        var jsonPayload = JsonSerializer.Serialize(new
+                        var ytRes = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(queryUrl);
+                        if (ytRes.Success && ytRes.Formats.Count > 0)
                         {
-                            status = "ok",
-                            success = true,
-                            title = ytRes.Title,
-                            formats = ytRes.Formats
-                        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                            var jsonPayload = JsonSerializer.Serialize(new
+                            {
+                                status = "ok",
+                                success = true,
+                                title = ytRes.Title,
+                                formats = ytRes.Formats
+                            }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-                        byte[] ytBytes = Encoding.UTF8.GetBytes(jsonPayload);
+                            byte[] ytBytes = Encoding.UTF8.GetBytes(jsonPayload);
+                            resp.ContentType = "application/json";
+                            resp.StatusCode = 200;
+                            resp.ContentLength64 = ytBytes.Length;
+                            await resp.OutputStream.WriteAsync(ytBytes);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        // Immediate non-blocking response for non-YouTube queries (handled by browser media graph)
+                        byte[] nonYtBytes = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"success\":false,\"message\":\"Non-YouTube media streams are handled by browser media graph.\"}");
                         resp.ContentType = "application/json";
                         resp.StatusCode = 200;
-                        resp.ContentLength64 = ytBytes.Length;
-                        await resp.OutputStream.WriteAsync(ytBytes);
+                        resp.ContentLength64 = nonYtBytes.Length;
+                        await resp.OutputStream.WriteAsync(nonYtBytes);
                         return;
                     }
                 }

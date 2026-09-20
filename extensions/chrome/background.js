@@ -14,6 +14,38 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   detectedMediaMap.delete(tabId);
 });
 
+function isOpaqueTokenOrHash(str) {
+  if (!str || typeof str !== 'string') return true;
+  const clean = str.replace(/\.[a-z0-9]+$/i, '').trim();
+  if (!clean || clean.length < 3) return true;
+  if (/^AQ[A-Za-z0-9_-]{10,}$/i.test(clean)) return true;
+  if (clean.length >= 25 && !clean.includes(' ') && /^[A-Za-z0-9_.+=\/-]+$/.test(clean)) return true;
+  if (/^[0-9a-f]{24,}$/i.test(clean)) return true;
+  if (/^(seg|fragment|chunk|track|stream|video|audio)[_-]?\d+/i.test(clean)) return true;
+  return false;
+}
+
+function sanitizeStreamUrl(rawUrl) {
+  if (!rawUrl) return '';
+  try {
+    const u = new URL(rawUrl);
+    // Facebook CDN stream range deduplication
+    if (u.hostname.includes('fbcdn.net') || u.hostname.includes('facebook.com')) {
+      u.searchParams.delete('bytestart');
+      u.searchParams.delete('byteend');
+      return u.href;
+    }
+    // Google Video range parameter removal
+    if (u.hostname.includes('googlevideo.com') || u.pathname.includes('videoplayback')) {
+      u.searchParams.delete('range');
+      return u.href;
+    }
+    return rawUrl;
+  } catch (e) {
+    return rawUrl;
+  }
+}
+
 function parseM3u8Formats(m3u8Text, baseUrl) {
   const lines = m3u8Text.split('\n');
   const formats = [];
@@ -183,10 +215,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                              (!isFbMedia && !isGoogleVideo && (url.includes('bytestart=') || url.includes('byteend=') || url.includes('range=')));
       if (isSegmentChunk) return;
 
-      let targetUrl = details.url;
+      let targetUrl = sanitizeStreamUrl(details.url);
       if (isGoogleVideo) {
-        // Strip range parameter to target the full stream
-        targetUrl = targetUrl.replace(/&range=[^&]+/g, '').replace(/\?range=[^&]+&?/g, '?');
         if (!contentLength || contentLength === 0) {
           const clenMatch = targetUrl.match(/[?&]clen=(\d+)/);
           if (clenMatch) contentLength = parseInt(clenMatch[1], 10);
@@ -280,16 +310,28 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         if (!mediaList.some((m) => m.url === targetUrl)) {
           if (mediaList.length >= 35) mediaList.shift();
 
-          let title = getFilenameFromUrl(targetUrl);
+          let rawName = getFilenameFromUrl(targetUrl);
+          let title = rawName;
           let badge = 'Media';
           let customTitle = null;
-          if (isGoogleVideo) {
+
+          if (isFbMedia) {
+            badge = 'Facebook Video';
+            customTitle = 'Video Stream (MP4)';
+            title = 'facebook_video.mp4';
+          } else if (isGoogleVideo) {
             const itagMatch = targetUrl.match(/[?&]itag=(\d+)/);
             const itag = itagMatch ? itagMatch[1] : '';
             const isAudio = (contentType && contentType.includes('audio/')) || itag === '140' || itag === '251' || itag === '139';
             badge = isAudio ? 'Audio Stream' : (itag ? `Video Stream (itag ${itag})` : 'Video Stream');
             customTitle = isAudio ? `Audio Stream (${itag || 'm4a'})` : `Video Stream (${itag || 'mp4'})`;
             title = isAudio ? `audio_${itag || 'stream'}.m4a` : `video_${itag || 'stream'}.mp4`;
+          } else if (isOpaqueTokenOrHash(rawName)) {
+            const ext = rawName.includes('.') ? rawName.substring(rawName.lastIndexOf('.')) : '.mp4';
+            const isAudio = contentType && contentType.includes('audio/');
+            badge = isAudio ? 'Audio Stream' : 'Direct Video';
+            customTitle = isAudio ? 'Audio Stream' : 'Video Stream (MP4)';
+            title = (isAudio ? 'audio_stream' : 'video_stream') + ext;
           }
 
           mediaList.push({
@@ -378,15 +420,19 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  // 1. Direct Loopback IPC to running SmartDM Avalonia Desktop App (port 18420-18425)
+  // 1. Direct Loopback IPC to running SmartDM Avalonia Desktop App (port 18420-18425) with 350ms timeout
   const ports = [18420, 18421, 18422, 18423, 18424, 18425];
   for (const port of ports) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 350);
       const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         if (sendResponse) sendResponse(data || { success: true, status: 'ok' });
@@ -395,7 +441,13 @@ async function appendCookiesAndSend(request, sendResponse) {
     } catch (e) {}
   }
 
-  // 2. Fallback to Native Messaging Host if desktop app was launched via browser host
+  // Never call native messaging for format queries - avoid blocking stalls
+  if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo') {
+    if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
+    return;
+  }
+
+  // 2. Fallback to Native Messaging Host for download requests if desktop app was launched via browser host
   try {
     chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
       if (chrome.runtime.lastError || !response || response.status === 'error') {
@@ -621,32 +673,49 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
     const tabId = sender.tab ? sender.tab.id : null;
-    const media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
+    let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
+    if (media.length === 0 && detectedMediaMap.size > 0) {
+      const allEntries = Array.from(detectedMediaMap.values());
+      if (allEntries.length > 0) media = allEntries[allEntries.length - 1] || [];
+    }
     sendResponse({ success: true, media: media });
     return false;
   }
 
   if (request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo') {
     const url = request.url;
-    // Query SmartDM desktop app first (native YoutubeExplode + Innertube engine)
-    appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, (desktopRes) => {
-      if (desktopRes && (desktopRes.status === 'ok' || desktopRes.success) && desktopRes.formats && desktopRes.formats.length > 0) {
-        sendResponse(desktopRes);
-      } else if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
-        fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
-          if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
-            sendResponse(ytRes);
-          } else {
-            sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract media formats.' });
-          }
-        }).catch(() => {
-          sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract media formats.' });
-        });
-      } else {
-        sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract media formats.' });
-      }
-    });
-    return true; // Async response
+    const isYouTube = url && (url.includes('youtube.com') || url.includes('youtu.be'));
+
+    if (isYouTube) {
+      // Query SmartDM desktop app first (native YoutubeExplode + Innertube engine)
+      appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, (desktopRes) => {
+        if (desktopRes && (desktopRes.status === 'ok' || desktopRes.success) && desktopRes.formats && desktopRes.formats.length > 0) {
+          sendResponse(desktopRes);
+        } else {
+          fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
+            if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
+              sendResponse(ytRes);
+            } else {
+              sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+            }
+          }).catch(() => {
+            sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+          });
+        }
+      });
+      return true; // Async response for YouTube
+    }
+
+    // For all non-YouTube sites (Pornhub, Facebook, Vimeo, Twitter/X, Dailymotion, etc.):
+    // INSTANT (0ms) response from memory graph without desktop polling or native messaging hang!
+    const tabId = sender.tab ? sender.tab.id : null;
+    let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
+    if (media.length === 0 && detectedMediaMap.size > 0) {
+      const allEntries = Array.from(detectedMediaMap.values());
+      if (allEntries.length > 0) media = allEntries[allEntries.length - 1] || [];
+    }
+    sendResponse({ success: true, status: 'ok', media: media });
+    return false; // Instant synchronous response
   }
 
   if (request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
