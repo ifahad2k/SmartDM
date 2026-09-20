@@ -220,10 +220,17 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    private static Bitmap LoadIcon(string filename)
+    private static Bitmap? LoadIcon(string filename)
     {
-        var uri = new Uri($"avares://SmartDm.Desktop.Avalonia/Assets/Icons/{filename}");
-        return new Bitmap(AssetLoader.Open(uri));
+        try
+        {
+            var uri = new Uri($"avares://SmartDm.Desktop.Avalonia/Assets/Icons/{filename}");
+            return new Bitmap(AssetLoader.Open(uri));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void AddCat(string id, string title, string iconName, int count, bool isSelected = false)
@@ -1060,5 +1067,38 @@ public partial class MainViewModel : ViewModelBase
     {
         IsDarkMode = !IsDarkMode;
         RequestThemeChange?.Invoke(IsDarkMode);
+    }
+
+    [RelayCommand]
+    public async Task PauseAllAsync()
+    {
+        var activeDownloads = _allMasterDownloads
+            .Where(d => d.Status == DownloadStatus.Active && !d.IsStorage)
+            .ToList();
+
+        foreach (var dl in activeDownloads)
+        {
+            dl.Status = DownloadStatus.Paused;
+            dl.SpeedMbps = 0;
+            dl.StatusDetail = "Paused by user";
+            await _engine.PauseDownloadAsync(dl.Id);
+        }
+        RefreshEngineMetrics();
+    }
+
+    [RelayCommand]
+    public async Task ResumeAllAsync()
+    {
+        var pausedDownloads = _allMasterDownloads
+            .Where(d => (d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Queued) && !d.IsStorage)
+            .ToList();
+
+        foreach (var dl in pausedDownloads)
+        {
+            dl.Status = DownloadStatus.Active;
+            dl.StatusDetail = "Resuming...";
+            await _engine.ResumeDownloadAsync(dl.Id, dl);
+        }
+        RefreshEngineMetrics();
     }
 }

@@ -55,18 +55,5 @@ public partial class TransferMonitorWindow : Window
             }
         }
     }
-
-    private void OnHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-        {
-            if (e.Source is Button || (e.Source is Visual visual && visual.FindAncestorOfType<Button>() != null))
-            {
-                return;
-            }
-
-            BeginMoveDrag(e);
-        }
-    }
 }
 

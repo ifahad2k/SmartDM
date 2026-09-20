@@ -42,6 +42,12 @@ sealed class Program
             return;
         }
 
+        if (args != null && System.Linq.Enumerable.Contains(args, "--test-pause-stop"))
+        {
+            RunPauseStopSelfTestAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
     }
 
@@ -498,6 +504,132 @@ sealed class Program
         double speed2 = (bytes2 / (1024.0 * 1024.0)) / sw2.Elapsed.TotalSeconds;
         Console.WriteLine($"16 Parallel Sockets: Downloaded {bytes2 / (1024 * 1024)} MB in {sw2.Elapsed.TotalSeconds:F2}s -> Speed: {speed2:F2} MB/s");
         Console.WriteLine($"\nSpeedup: {speed2 / speed1:F1}x faster with 16 parallel sockets!");
+    }
+
+    private static async System.Threading.Tasks.Task RunPauseStopSelfTestAsync()
+    {
+        Console.WriteLine("=== Starting SmartDM 2.0 Download Pause & Stop Verification Test ===");
+
+        string tempDb = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"smartdm_pause_test_{Guid.NewGuid():N}.db");
+        var repo = new Services.SqliteDatabaseRepository(tempDb);
+        await repo.InitializeAsync();
+        var engine = new Services.DownloadEngine(repo, new Services.SafetyScannerService());
+
+        // 1. Staging Preservation Test on Pause vs Purge on Cancel
+        Console.WriteLine("[TEST 1] Verifying Staging File Preservation on Pause vs Purge on Cancel...");
+        string dlId = "dl_pause_staging_" + Guid.NewGuid().ToString("N");
+        var dlModel = new Models.DownloadModel
+        {
+            Id = dlId,
+            Title = "pause_test_video.mp4",
+            Url = "https://example.com/stream.mp4",
+            Status = Models.DownloadStatus.Active,
+            SpeedMbps = 15.5,
+            TotalBytes = 10000000,
+            DownloadedBytes = 5000000,
+            SavePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "pause_test_video.mp4")
+        };
+        await repo.SaveDownloadAsync(dlModel);
+
+        string stagingDir = Services.DownloadEngine.GetDownloadStagingDirectory(dlId);
+        string chunkFile = System.IO.Path.Combine(stagingDir, "video_stream.tmp");
+        await System.IO.File.WriteAllTextAsync(chunkFile, "partial_chunk_data");
+
+        // Execute Pause
+        await engine.PauseDownloadAsync(dlId);
+
+        if (!System.IO.File.Exists(chunkFile))
+        {
+            throw new Exception("FAIL: Staging fragment was deleted on pause! Partial progress lost.");
+        }
+        Console.WriteLine("[PASS] Staging file successfully preserved after PauseDownloadAsync.");
+
+        var savedDl = System.Linq.Enumerable.First(await repo.GetAllDownloadsAsync(), d => d.Id == dlId);
+        if (savedDl.Status != Models.DownloadStatus.Paused || savedDl.SpeedMbps != 0)
+        {
+            throw new Exception($"FAIL: Download status was not set to Paused or speed not 0: Status={savedDl.Status}, Speed={savedDl.SpeedMbps}");
+        }
+        Console.WriteLine("[PASS] Database repository correctly updated: Status=Paused, Speed=0.");
+
+        // Execute Cancel / Stop
+        await engine.CancelDownloadAsync(dlId);
+        if (System.IO.Directory.Exists(stagingDir))
+        {
+            throw new Exception("FAIL: Staging directory was not purged on CancelDownloadAsync!");
+        }
+        Console.WriteLine("[PASS] Staging directory purged on CancelDownloadAsync.");
+
+        // 2. TransferMonitorViewModel Pause/Resume/Stop State Machine Test
+        Console.WriteLine("[TEST 2] Verifying TransferMonitorViewModel Pause & Resume Lifecycle...");
+        var monitorDl = new Models.DownloadModel
+        {
+            Id = "dl_monitor_" + Guid.NewGuid().ToString("N"),
+            Title = "monitor_test_media.mp4",
+            Url = "https://example.com/media.mp4",
+            Status = Models.DownloadStatus.Active,
+            SpeedMbps = 22.4,
+            TotalBytes = 20000000,
+            DownloadedBytes = 10000000
+        };
+
+        var monitorVm = new ViewModels.TransferMonitorViewModel(monitorDl, engine);
+        if (monitorVm.IsPaused) throw new Exception("FAIL: Monitor initialized with IsPaused=true for active download.");
+        if (monitorVm.PauseButtonText != "Pause") throw new Exception($"FAIL: Unexpected PauseButtonText: {monitorVm.PauseButtonText}");
+        if (monitorVm.PauseButtonIcon != "/Assets/Icons/pause-gray.png") throw new Exception($"FAIL: Unexpected PauseButtonIcon: {monitorVm.PauseButtonIcon}");
+        Console.WriteLine("[PASS] Initial state: Active, PauseButtonText='Pause', PauseButtonIcon='pause-gray.png'");
+
+        // Click Pause
+        await monitorVm.TogglePauseCommand.ExecuteAsync(null);
+        if (!monitorVm.IsPaused) throw new Exception("FAIL: IsPaused was not set to true on Pause.");
+        if (monitorVm.PauseButtonText != "Resume") throw new Exception($"FAIL: PauseButtonText was not 'Resume': {monitorVm.PauseButtonText}");
+        if (monitorVm.PauseButtonIcon != "/Assets/Icons/play-gray.png") throw new Exception($"FAIL: PauseButtonIcon was not 'play-gray.png': {monitorVm.PauseButtonIcon}");
+        if (monitorDl.Status != Models.DownloadStatus.Paused || monitorDl.SpeedMbps != 0)
+        {
+            throw new Exception($"FAIL: DownloadModel status not Paused or speed not 0: Status={monitorDl.Status}, Speed={monitorDl.SpeedMbps}");
+        }
+        Console.WriteLine("[PASS] Paused state: IsPaused=true, PauseButtonText='Resume', PauseButtonIcon='play-gray.png', Speed=0");
+
+        // Click Resume
+        await monitorVm.TogglePauseCommand.ExecuteAsync(null);
+        if (monitorVm.IsPaused) throw new Exception("FAIL: IsPaused was not set to false on Resume.");
+        if (monitorVm.PauseButtonText != "Pause") throw new Exception($"FAIL: PauseButtonText was not 'Pause': {monitorVm.PauseButtonText}");
+        if (monitorVm.PauseButtonIcon != "/Assets/Icons/pause-gray.png") throw new Exception($"FAIL: PauseButtonIcon was not 'pause-gray.png': {monitorVm.PauseButtonIcon}");
+        if (monitorDl.Status != Models.DownloadStatus.Active) throw new Exception($"FAIL: DownloadModel status was not Active: {monitorDl.Status}");
+        Console.WriteLine("[PASS] Resumed state: IsPaused=false, PauseButtonText='Pause', PauseButtonIcon='pause-gray.png'");
+
+        // Click Stop
+        await monitorVm.StopCommand.ExecuteAsync(null);
+        if (monitorDl.Status != Models.DownloadStatus.Paused || monitorDl.SpeedMbps != 0 || (monitorDl.StatusDetail != "Stopped by user" && monitorDl.StatusDetail != "Cancelled"))
+        {
+            throw new Exception($"FAIL: StopCommand did not properly set status to Paused / 'Stopped by user' or 'Cancelled': Status={monitorDl.Status}, Detail={monitorDl.StatusDetail}");
+        }
+        Console.WriteLine($"[PASS] Stopped state: Status=Paused, StatusDetail='{monitorDl.StatusDetail}', Speed=0");
+
+        // 3. MainViewModel PauseAllCommand & ResumeAllCommand Test
+        Console.WriteLine("[TEST 3] Verifying MainViewModel PauseAllCommand & ResumeAllCommand...");
+        var mainVm = new ViewModels.MainViewModel(isDemoMode: true);
+
+        // Execute PauseAll
+        await mainVm.PauseAllCommand.ExecuteAsync(null);
+        var activeRemaining = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(mainVm.Downloads, d => d.Status == Models.DownloadStatus.Active && !d.IsStorage));
+        if (activeRemaining.Count > 0)
+        {
+            throw new Exception($"FAIL: Found {activeRemaining.Count} active downloads remaining after PauseAllCommand!");
+        }
+        Console.WriteLine("[PASS] PauseAllCommand successfully paused all active downloads.");
+
+        // Execute ResumeAll
+        await mainVm.ResumeAllCommand.ExecuteAsync(null);
+        var resumedActive = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(mainVm.Downloads, d => d.Status == Models.DownloadStatus.Active && !d.IsStorage));
+        if (resumedActive.Count == 0)
+        {
+            throw new Exception("FAIL: No downloads were resumed by ResumeAllCommand!");
+        }
+        Console.WriteLine($"[PASS] ResumeAllCommand successfully resumed {resumedActive.Count} downloads.");
+
+        try { System.IO.File.Delete(tempDb); } catch { }
+
+        Console.WriteLine("=== SmartDM 2.0 Download Pause & Stop Verification Test PASSED! ===");
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

@@ -143,10 +143,13 @@ public partial class TransferMonitorViewModel : ViewModelBase
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PauseButtonIcon))]
     private bool _isPaused;
 
     [ObservableProperty]
     private string _pauseButtonText = "Pause";
+
+    public string PauseButtonIcon => IsPaused ? "/Assets/Icons/play-gray.png" : "/Assets/Icons/pause-gray.png";
 
     public string SegmentsBadge => $"{Download?.ParallelThreads ?? 16} SEGMENTS";
 
@@ -268,9 +271,16 @@ public partial class TransferMonitorViewModel : ViewModelBase
             }
         }
 
+        if (download.Status == DownloadStatus.Paused)
+        {
+            IsPaused = true;
+            PauseButtonText = "Resume";
+        }
+
         if (_engine != null)
         {
             _engine.DownloadProgressChanged += OnEngineProgressChanged;
+            _engine.DownloadStatusChanged += OnEngineStatusChanged;
             _engine.DownloadCompleted += OnEngineCompleted;
         }
 
@@ -306,9 +316,12 @@ public partial class TransferMonitorViewModel : ViewModelBase
     private void OnEngineProgressChanged(DownloadModel updated)
     {
         if (Download == null || updated.Id != Download.Id) return;
+        if (IsPaused || Download.Status == DownloadStatus.Paused) return;
 
         Dispatcher.UIThread.Post(() =>
         {
+            if (IsPaused || Download.Status == DownloadStatus.Paused) return;
+
             if (!ReferenceEquals(Download, updated))
             {
                 Download.DownloadedBytes = updated.DownloadedBytes;
@@ -318,12 +331,6 @@ public partial class TransferMonitorViewModel : ViewModelBase
                 Download.EtaSeconds = updated.EtaSeconds;
                 Download.Status = updated.Status;
                 Download.StatusDetail = updated.StatusDetail;
-            }
-
-            if (Download.Status == DownloadStatus.Active && IsPaused)
-            {
-                IsPaused = false;
-                PauseButtonText = "Pause";
             }
 
             if (updated.SpeedMbps > PeakSpeedMbps)
@@ -361,6 +368,38 @@ public partial class TransferMonitorViewModel : ViewModelBase
         });
     }
 
+    private void OnEngineStatusChanged(DownloadModel updated)
+    {
+        if (Download == null || updated.Id != Download.Id) return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            Download.Status = updated.Status;
+            Download.StatusDetail = updated.StatusDetail;
+
+            if (updated.Status == DownloadStatus.Paused)
+            {
+                IsPaused = true;
+                PauseButtonText = "Resume";
+                Download.SpeedMbps = 0;
+                foreach (var t in ThreadMetrics)
+                {
+                    t.IsActive = false;
+                    t.SpeedMbps = 0;
+                }
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                OnPropertyChanged(nameof(PauseButtonIcon));
+            }
+            else if (updated.Status == DownloadStatus.Active)
+            {
+                IsPaused = false;
+                PauseButtonText = "Pause";
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                OnPropertyChanged(nameof(PauseButtonIcon));
+            }
+        });
+    }
+
     private void OnEngineCompleted(DownloadModel completed, SafetyScanResult scan)
     {
         if (Download != null && completed.Id == Download.Id)
@@ -386,16 +425,19 @@ public partial class TransferMonitorViewModel : ViewModelBase
 
         IsPaused = !IsPaused;
         PauseButtonText = IsPaused ? "Resume" : "Pause";
+        OnPropertyChanged(nameof(PauseButtonIcon));
 
         if (IsPaused)
         {
             Download.Status = DownloadStatus.Paused;
             Download.SpeedMbps = 0;
+            Download.StatusDetail = "Paused by user";
             foreach (var t in ThreadMetrics)
             {
                 t.IsActive = false;
                 t.SpeedMbps = 0;
             }
+            OnPropertyChanged(nameof(SocketsTelemetryBadge));
             if (_engine != null)
             {
                 await _engine.PauseDownloadAsync(Download.Id);
@@ -404,10 +446,12 @@ public partial class TransferMonitorViewModel : ViewModelBase
         else
         {
             Download.Status = DownloadStatus.Active;
+            Download.StatusDetail = "Resuming download...";
             foreach (var t in ThreadMetrics)
             {
                 t.IsActive = true;
             }
+            OnPropertyChanged(nameof(SocketsTelemetryBadge));
             if (_engine != null)
             {
                 await _engine.ResumeDownloadAsync(Download.Id, Download);
@@ -416,11 +460,23 @@ public partial class TransferMonitorViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Stop()
+    private async Task StopAsync()
     {
         if (Download != null)
         {
-            _ = _engine?.CancelDownloadAsync(Download.Id);
+            Download.Status = DownloadStatus.Paused;
+            Download.SpeedMbps = 0;
+            Download.StatusDetail = "Stopped by user";
+            foreach (var t in ThreadMetrics)
+            {
+                t.IsActive = false;
+                t.SpeedMbps = 0;
+            }
+            OnPropertyChanged(nameof(SocketsTelemetryBadge));
+            if (_engine != null)
+            {
+                await _engine.CancelDownloadAsync(Download.Id);
+            }
         }
         RequestClose?.Invoke();
     }
@@ -459,6 +515,7 @@ public partial class TransferMonitorViewModel : ViewModelBase
         if (_engine != null)
         {
             _engine.DownloadProgressChanged -= OnEngineProgressChanged;
+            _engine.DownloadStatusChanged -= OnEngineStatusChanged;
             _engine.DownloadCompleted -= OnEngineCompleted;
         }
         RequestClose?.Invoke();

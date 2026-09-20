@@ -827,7 +827,6 @@ public class DownloadEngine : IDownloadEngine
                 dl.StatusDetail = "Paused by user";
                 await _repository.SaveDownloadAsync(dl);
                 DownloadStatusChanged?.Invoke(dl);
-                CleanupStagingDirectory(session.StagingDirectory);
             }
         }
         catch (OperationCanceledException)
@@ -837,7 +836,6 @@ public class DownloadEngine : IDownloadEngine
             dl.StatusDetail = "Paused by user";
             await _repository.SaveDownloadAsync(dl);
             DownloadStatusChanged?.Invoke(dl);
-            CleanupStagingDirectory(session.StagingDirectory);
         }
         catch (Exception ex)
         {
@@ -1091,7 +1089,6 @@ public class DownloadEngine : IDownloadEngine
                 dl.StatusDetail = "Paused by user";
                 await _repository.SaveDownloadAsync(dl);
                 DownloadStatusChanged?.Invoke(dl);
-                CleanupStagingDirectory(session.StagingDirectory);
             }
         }
         catch (OperationCanceledException)
@@ -1101,7 +1098,6 @@ public class DownloadEngine : IDownloadEngine
             dl.StatusDetail = "Paused by user";
             await _repository.SaveDownloadAsync(dl);
             DownloadStatusChanged?.Invoke(dl);
-            CleanupStagingDirectory(session.StagingDirectory);
         }
         catch (Exception ex)
         {
@@ -1407,7 +1403,6 @@ public class DownloadEngine : IDownloadEngine
                 dl.StatusDetail = "Paused by user";
                 await _repository.SaveDownloadAsync(dl);
                 DownloadStatusChanged?.Invoke(dl);
-                CleanupStagingDirectory(session.StagingDirectory);
             }
             else
             {
@@ -1426,7 +1421,6 @@ public class DownloadEngine : IDownloadEngine
             dl.StatusDetail = "Paused by user";
             await _repository.SaveDownloadAsync(dl);
             DownloadStatusChanged?.Invoke(dl);
-            CleanupStagingDirectory(session.StagingDirectory);
         }
         catch (Exception ex)
         {
@@ -1476,6 +1470,19 @@ public class DownloadEngine : IDownloadEngine
             await _repository.SaveDownloadAsync(session.Download);
             DownloadStatusChanged?.Invoke(session.Download);
             _sessions.TryRemove(downloadId, out _);
+        }
+        else
+        {
+            var all = await _repository.GetAllDownloadsAsync();
+            var target = all.FirstOrDefault(d => d.Id == downloadId);
+            if (target != null && target.Status != DownloadStatus.Completed && target.Status != DownloadStatus.Quarantined)
+            {
+                target.Status = DownloadStatus.Paused;
+                target.SpeedMbps = 0;
+                target.StatusDetail = "Paused by user";
+                await _repository.SaveDownloadAsync(target);
+                DownloadStatusChanged?.Invoke(target);
+            }
         }
     }
 
@@ -1537,6 +1544,19 @@ public class DownloadEngine : IDownloadEngine
             await _repository.SaveDownloadAsync(session.Download);
             DownloadStatusChanged?.Invoke(session.Download);
             _sessions.TryRemove(downloadId, out _);
+        }
+        else
+        {
+            var all = await _repository.GetAllDownloadsAsync();
+            var target = all.FirstOrDefault(d => d.Id == downloadId);
+            if (target != null && target.Status != DownloadStatus.Completed && target.Status != DownloadStatus.Quarantined)
+            {
+                target.Status = DownloadStatus.Paused;
+                target.SpeedMbps = 0;
+                target.StatusDetail = "Cancelled";
+                await _repository.SaveDownloadAsync(target);
+                DownloadStatusChanged?.Invoke(target);
+            }
         }
         CleanupStagingDirectory(GetDownloadStagingDirectory(downloadId));
     }

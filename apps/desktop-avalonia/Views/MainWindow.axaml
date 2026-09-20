@@ -110,10 +110,10 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="Resume All">
+                    <Button Command="{Binding ResumeAllCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="Resume All">
                         <Image Source="/Assets/Icons/play-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
                     </Button>
-                    <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="Pause All">
+                    <Button Command="{Binding PauseAllCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="Pause All">
                         <Image Source="/Assets/Icons/pause-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
                     </Button>
                     <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="User Profile">
@@ -455,9 +455,14 @@
                                                             <Image Source="/Assets/Icons/play-gray.png" Width="13" Height="13" />
                                                         </MenuItem.Icon>
                                                     </MenuItem>
-                                                    <MenuItem Header="Stop Download" Command="{Binding PauseCommand}">
+                                                    <MenuItem Header="Pause Download" Command="{Binding PauseCommand}">
                                                         <MenuItem.Icon>
                                                             <Image Source="/Assets/Icons/pause-gray.png" Width="13" Height="13" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="Stop Download" Command="{Binding CancelCommand}">
+                                                        <MenuItem.Icon>
+                                                            <Image Source="/Assets/Icons/stop-gray.png" Width="13" Height="13" />
                                                         </MenuItem.Icon>
                                                     </MenuItem>
                                                     <MenuItem Header="Refresh download address" Command="{Binding RefreshUrlCommand}">
