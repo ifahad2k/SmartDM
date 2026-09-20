@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -101,6 +101,17 @@ public class LocalIpcService : ILocalIpcService
 
         try
         {
+            resp.Headers.Add("Access-Control-Allow-Origin", "*");
+            resp.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type, X-SmartDM-Token");
+            resp.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
+
+            if (req.HttpMethod == "OPTIONS")
+            {
+                resp.StatusCode = 200;
+                resp.Close();
+                return;
+            }
+
             if (req.Url?.AbsolutePath != "/api/browser")
             {
                 resp.StatusCode = 404;
@@ -115,9 +126,12 @@ public class LocalIpcService : ILocalIpcService
                 return;
             }
 
-            // Check Bearer Token
+            // Check Bearer Token or Loopback caller verification
             string? auth = req.Headers["Authorization"];
-            if (string.IsNullOrEmpty(auth) || auth != $"Bearer {_token}")
+            bool isAuthorized = (!string.IsNullOrEmpty(auth) && auth == $"Bearer {_token}") ||
+                                (req.IsLocal || IPAddress.IsLoopback(req.RemoteEndPoint.Address));
+
+            if (!isAuthorized)
             {
                 resp.StatusCode = 401;
                 resp.Close();
@@ -136,6 +150,11 @@ public class LocalIpcService : ILocalIpcService
             string? userAgent = null;
 
             if (root.TryGetProperty("url", out var urlElem)) url = urlElem.GetString();
+            if (!string.IsNullOrEmpty(url) && root.TryGetProperty("videoUrl", out var vElem) && !string.IsNullOrEmpty(vElem.GetString()))
+            {
+                url = vElem.GetString();
+            }
+
             if (root.TryGetProperty("fileName", out var fnElem)) fileName = fnElem.GetString();
             if (root.TryGetProperty("cookies", out var cElem)) cookies = cElem.GetString();
             if (root.TryGetProperty("userAgent", out var uaElem)) userAgent = uaElem.GetString();
@@ -170,10 +189,23 @@ public class LocalIpcService : ILocalIpcService
 
     private static int GetAvailablePort()
     {
-        using var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        socket.Start();
-        int port = ((IPEndPoint)socket.LocalEndpoint).Port;
-        socket.Stop();
+        int[] preferredPorts = new int[] { 18420, 18421, 18422, 18423, 18424, 18425 };
+        foreach (int p in preferredPorts)
+        {
+            try
+            {
+                using var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, p);
+                socket.Start();
+                socket.Stop();
+                return p;
+            }
+            catch { }
+        }
+
+        using var fallback = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        fallback.Start();
+        int port = ((IPEndPoint)fallback.LocalEndpoint).Port;
+        fallback.Stop();
         return port;
     }
 

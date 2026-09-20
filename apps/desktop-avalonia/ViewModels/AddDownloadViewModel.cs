@@ -63,7 +63,7 @@ public partial class AddDownloadViewModel : ViewModelBase
     public event Action<DownloadModel>? DownloadCreated;
     public event Action? RequestClose;
 
-    public AddDownloadViewModel(IHttpProbeService? probeService = null, IFileCatalogService? catalogService = null, string? initialUrl = null)
+    public AddDownloadViewModel(IHttpProbeService? probeService = null, IFileCatalogService? catalogService = null, string? initialUrl = null, string? initialFileName = null)
     {
         _probeService = probeService ?? new HttpProbeService();
         _catalogService = catalogService ?? new FileCatalogService();
@@ -71,6 +71,11 @@ public partial class AddDownloadViewModel : ViewModelBase
         string downloadsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
         SavePath = downloadsDir;
         UpdateDriveSpace(SavePath);
+
+        if (!string.IsNullOrWhiteSpace(initialFileName))
+        {
+            FileName = initialFileName.Trim();
+        }
 
         if (!string.IsNullOrWhiteSpace(initialUrl))
         {

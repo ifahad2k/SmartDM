@@ -355,12 +355,31 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
-    if (chrome.runtime.lastError) {
-      if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      else console.error('Error sending native message:', chrome.runtime.lastError.message);
+  chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, async (response) => {
+    if (chrome.runtime.lastError || !response || response.status === 'error') {
+      console.warn('Native host unavailable, falling back to direct loopback IPC:', chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Error response');
+      const ports = [18420, 18421, 18422, 18423, 18424, 18425];
+      let httpSuccess = false;
+      for (const port of ports) {
+        try {
+          const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (sendResponse) sendResponse(data || { success: true, status: 'ok' });
+            httpSuccess = true;
+            break;
+          }
+        } catch (e) {}
+      }
+      if (!httpSuccess) {
+        if (sendResponse) sendResponse({ success: false, error: 'Could not connect to SmartDM desktop app.' });
+      }
     } else {
-      if (sendResponse) sendResponse(response || { success: true });
+      if (sendResponse) sendResponse(response || { success: true, status: 'ok' });
       else console.log('Received response from native host:', response);
     }
   });

@@ -139,7 +139,7 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<ThreadMetric> ActiveThreads { get; } = new();
     public ObservableCollection<double> SparklineHistory { get; } = new();
 
-    public event Action? RequestOpenAddDialog;
+    public event Action<string?, string?>? RequestOpenAddDialog;
     public event Action<DownloadModel?>? RequestOpenMonitor;
     public event Action<DownloadModel?>? RequestOpenInspector;
     public event Action<DownloadModel>? RequestOpenMoveRename;
@@ -306,30 +306,9 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnBrowserDownloadRequested(BrowserDownloadRequest req)
     {
-        Dispatcher.UIThread.Post(async () =>
+        Dispatcher.UIThread.Post(() =>
         {
-            var probe = await _probeService.ProbeUrlAsync(req.Url);
-            string fileName = req.FileName ?? probe.FileName;
-            string saveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-            string savePath = Path.Combine(saveDir, fileName);
-
-            var newDl = new DownloadModel
-            {
-                Title = fileName,
-                Url = req.Url,
-                Domain = Uri.TryCreate(req.Url, UriKind.Absolute, out var u) ? u.Host : "Remote Host",
-                TotalBytes = probe.TotalBytes,
-                DownloadedBytes = 0,
-                SpeedMbps = 0,
-                ProgressPercentage = 0,
-                Status = DownloadStatus.Queued,
-                Category = probe.SuggestedCategory,
-                SavePath = savePath,
-                ParallelThreads = probe.AcceptsRanges ? 16 : 1,
-                StatusDetail = "Added via Browser Extension"
-            };
-
-            AddNewDownload(newDl);
+            RequestOpenAddDialog?.Invoke(req.Url, req.FileName);
         });
     }
 
@@ -910,7 +889,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void OpenAddDialog() => RequestOpenAddDialog?.Invoke();
+    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null);
 
     [RelayCommand]
     public void OpenMonitor(DownloadModel? dl) => RequestOpenMonitor?.Invoke(dl);
