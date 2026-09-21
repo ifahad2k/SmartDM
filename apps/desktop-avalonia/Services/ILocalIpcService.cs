@@ -36,4 +36,5 @@ public interface ILocalIpcService
     Task StartAsync();
     void Stop();
     event Action<BrowserDownloadRequest>? DownloadRequestedFromBrowser;
+    event Action? WindowRestoreRequested;
 }

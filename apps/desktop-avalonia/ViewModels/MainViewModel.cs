@@ -264,32 +264,48 @@ public partial class MainViewModel : ViewModelBase
 
     private async Task InitializeProductionAsync()
     {
-        await _repository.InitializeAsync();
-        await _settingsService.LoadAppSettingsAsync();
-
-        // 1. Load real downloads from SQLite
-        var stored = await _repository.GetAllDownloadsAsync();
-        foreach (var dl in stored)
+        try
         {
-            WireDownloadCallbacks(dl);
-            _allMasterDownloads.Add(dl);
+            App.LogStartup("InitializeProductionAsync ENTER");
+            await _repository.InitializeAsync();
+            App.LogStartup("_repository.InitializeAsync DONE");
+            await _settingsService.LoadAppSettingsAsync();
+            App.LogStartup("_settingsService.LoadAppSettingsAsync DONE");
+
+            // 1. Load real downloads from SQLite
+            var stored = await _repository.GetAllDownloadsAsync();
+            App.LogStartup($"Loaded {stored.Count} downloads from SQLite");
+            foreach (var dl in stored)
+            {
+                WireDownloadCallbacks(dl);
+                _allMasterDownloads.Add(dl);
+            }
+
+            // 2. Wire engine events
+            _engine.DownloadProgressChanged += OnEngineProgressChanged;
+            _engine.DownloadStatusChanged += OnEngineStatusChanged;
+            _engine.DownloadCompleted += OnEngineCompleted;
+
+            // 3. Start local browser IPC daemon
+            _ipcService.DownloadRequestedFromBrowser += OnBrowserDownloadRequested;
+            _ipcService.WindowRestoreRequested += OnWindowRestoreRequested;
+            App.LogStartup("Starting _ipcService...");
+            await _ipcService.StartAsync();
+            App.LogStartup("_ipcService.StartAsync DONE");
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                UpdateCounts();
+                ApplyFilters();
+                RefreshEngineMetrics();
+                App.LogStartup("Dispatcher.UIThread initial update DONE");
+            });
+            App.LogStartup("InitializeProductionAsync EXIT");
         }
-
-        // 2. Wire engine events
-        _engine.DownloadProgressChanged += OnEngineProgressChanged;
-        _engine.DownloadStatusChanged += OnEngineStatusChanged;
-        _engine.DownloadCompleted += OnEngineCompleted;
-
-        // 3. Start local browser IPC daemon
-        _ipcService.DownloadRequestedFromBrowser += OnBrowserDownloadRequested;
-        await _ipcService.StartAsync();
-
-        Dispatcher.UIThread.Post(() =>
+        catch (Exception ex)
         {
-            UpdateCounts();
-            ApplyFilters();
-            RefreshEngineMetrics();
-        });
+            App.LogStartup($"FATAL EXCEPTION in InitializeProductionAsync: {ex}");
+        }
     }
 
     private void WireDownloadCallbacks(DownloadModel dl)
@@ -339,6 +355,14 @@ public partial class MainViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() =>
         {
             RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats, req.Title, req.Referer, req.UserAgent, req.Cookies);
+        });
+    }
+
+    private void OnWindowRestoreRequested()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            App.RestoreCurrentMainWindow();
         });
     }
 

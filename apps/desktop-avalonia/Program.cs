@@ -48,7 +48,81 @@ sealed class Program
             return;
         }
 
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
+        App.LogStartup($"Main ENTER with {args?.Length ?? 0} args: {(args != null ? string.Join(' ', args) : "")}");
+
+        // If an instance is already running, activate its window and exit
+        if (TryActivateExistingInstance())
+        {
+            App.LogStartup("Existing instance activated and brought to foreground. Exiting new process.");
+            return;
+        }
+
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "crash.log"), e.ExceptionObject?.ToString() ?? "");
+            }
+            catch { }
+            App.LogStartup($"UNHANDLED EXCEPTION: {e.ExceptionObject}");
+        };
+
+        try
+        {
+            App.LogStartup("Calling StartWithClassicDesktopLifetime...");
+            int exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
+            App.LogStartup($"StartWithClassicDesktopLifetime RETURNED cleanly with exitCode={exitCode}");
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "crash.log"), ex.ToString());
+            }
+            catch { }
+            App.LogStartup($"CATCH in Main: {ex}");
+            throw;
+        }
+        finally
+        {
+            App.LogStartup("Main FINALLY block reached");
+        }
+    }
+
+    private static bool TryActivateExistingInstance()
+    {
+        try
+        {
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string ipcPath = System.IO.Path.Combine(userProfile, ".smartdm", "ipc.info");
+            if (!System.IO.File.Exists(ipcPath)) return false;
+
+            string[] lines = System.IO.File.ReadAllLines(ipcPath);
+            if (lines.Length < 2 || !int.TryParse(lines[0].Trim(), out int port)) return false;
+            string token = lines[1].Trim();
+
+            using var handler = new System.Net.Http.SocketsHttpHandler { ConnectTimeout = TimeSpan.FromMilliseconds(400) };
+            using var client = new System.Net.Http.HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(800) };
+            using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"http://127.0.0.1:{port}/api/browser");
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            req.Content = new System.Net.Http.StringContent("{\"type\":\"RESTORE_WINDOW\"}", System.Text.Encoding.UTF8, "application/json");
+
+            var resp = client.Send(req);
+            if (resp.IsSuccessStatusCode)
+            {
+                Console.WriteLine("[SmartDM] Existing instance activated and brought to foreground.");
+                return true;
+            }
+        }
+        catch
+        {
+            // Existing instance not running or unreachable
+        }
+        return false;
     }
 
     private static async System.Threading.Tasks.Task RunBackendSelfTestAsync()

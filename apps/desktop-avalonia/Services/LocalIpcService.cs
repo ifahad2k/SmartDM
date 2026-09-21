@@ -19,6 +19,7 @@ public class LocalIpcService : ILocalIpcService
     private CancellationTokenSource? _cts;
 
     public event Action<BrowserDownloadRequest>? DownloadRequestedFromBrowser;
+    public event Action? WindowRestoreRequested;
 
     public Task StartAsync()
     {
@@ -149,6 +150,19 @@ public class LocalIpcService : ILocalIpcService
             if (string.IsNullOrEmpty(type) && root.TryGetProperty("action", out var actElem))
             {
                 type = actElem.GetString() ?? "";
+            }
+
+            if (type.Equals("SHOW_WINDOW", StringComparison.OrdinalIgnoreCase) ||
+                type.Equals("RESTORE_WINDOW", StringComparison.OrdinalIgnoreCase) ||
+                type.Equals("ACTIVATE_WINDOW", StringComparison.OrdinalIgnoreCase))
+            {
+                WindowRestoreRequested?.Invoke();
+                byte[] okBytes = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"action\":\"RESTORE_WINDOW\"}");
+                resp.ContentType = "application/json";
+                resp.StatusCode = 200;
+                resp.ContentLength64 = okBytes.Length;
+                await resp.OutputStream.WriteAsync(okBytes);
+                return;
             }
 
             if (type.Equals("GET_MEDIA_FORMATS", StringComparison.OrdinalIgnoreCase) ||

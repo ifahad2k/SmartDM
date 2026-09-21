@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -18,14 +19,34 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
+    public static void LogStartup(string msg)
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "startup.log"), $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
+        }
+        catch { }
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
+        LogStartup("OnFrameworkInitializationCompleted ENTER");
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            desktop.ShutdownMode = global::Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+            LogStartup("Set desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown");
+            desktop.Exit += (s, e) => LogStartup($"desktop.Exit fired! ExitCode={e.ApplicationExitCode}");
+
             bool isDemo = desktop.Args != null && (desktop.Args.Contains("--snapshot") || desktop.Args.Contains("--snapshot-settings") || desktop.Args.Contains("--demo"));
+            LogStartup($"isDemo={isDemo}, args={(desktop.Args != null ? string.Join(' ', desktop.Args) : "<null>")}");
+
             _ = EngineDaemonLauncher.EnsureDaemonRunningAsync();
             DownloadEngine.CleanupOrphanStagingDirectories();
+            LogStartup("Starting MainViewModel creation...");
             var mainVm = new MainViewModel(isDemoMode: isDemo);
+            LogStartup("MainViewModel created successfully");
 
             // Apply saved theme preference on launch
             string initialTheme = mainVm.SettingsService?.CurrentSettings?.Theme ?? "System Default";
@@ -36,10 +57,42 @@ public partial class App : Application
             else
                 RequestedThemeVariant = ThemeVariant.Default;
 
-            var mainWindow = new MainWindow
+            LogStartup("Creating MainWindow...");
+            MainWindow mainWindow;
+            try
             {
-                DataContext = mainVm
+                mainWindow = new MainWindow();
+                LogStartup("MainWindow instantiated");
+                mainWindow.DataContext = mainVm;
+                LogStartup("mainWindow.DataContext assigned");
+            }
+            catch (Exception ex)
+            {
+                LogStartup($"FATAL EXCEPTION in new MainWindow(): {ex}");
+                throw;
+            }
+
+            mainWindow.Opened += (s, e) =>
+            {
+                LogStartup("mainWindow.Opened event fired");
+                mainWindow.WindowState = global::Avalonia.Controls.WindowState.Normal;
+                mainWindow.Activate();
+                mainWindow.Focus();
+                if (OperatingSystem.IsWindows())
+                {
+                    try
+                    {
+                        var handle = mainWindow.TryGetPlatformHandle()?.Handle;
+                        if (handle.HasValue && handle.Value != IntPtr.Zero)
+                        {
+                            BringWindowToTop(handle.Value);
+                            SetForegroundWindow(handle.Value);
+                        }
+                    }
+                    catch { }
+                }
             };
+            mainWindow.Closing += (s, e) => LogStartup($"mainWindow.Closing event fired. IsCancel={e.Cancel}");
 
             if (isDemo && desktop.Args != null && (desktop.Args.Contains("--snapshot") || desktop.Args.Contains("--snapshot-settings")))
             {
@@ -406,10 +459,13 @@ public partial class App : Application
                 dialog.Show();
             };
 
+            LogStartup("Setting desktop.MainWindow...");
             desktop.MainWindow = mainWindow;
+            LogStartup("desktop.MainWindow set. NOT calling mainWindow.Show() directly as Avalonia does it automatically.");
         }
 
         base.OnFrameworkInitializationCompleted();
+        LogStartup("OnFrameworkInitializationCompleted EXIT");
     }
 
     public static bool IsExiting { get; private set; } = false;
@@ -424,8 +480,33 @@ public partial class App : Application
             _mainWindow.Show();
             _mainWindow.WindowState = global::Avalonia.Controls.WindowState.Normal;
             _mainWindow.Activate();
+            _mainWindow.Focus();
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    var handle = _mainWindow.TryGetPlatformHandle()?.Handle;
+                    if (handle.HasValue && handle.Value != IntPtr.Zero)
+                    {
+                        BringWindowToTop(handle.Value);
+                        SetForegroundWindow(handle.Value);
+                    }
+                }
+                catch { }
+            }
         }
     }
+
+    public static void RestoreCurrentMainWindow()
+    {
+        (Current as App)?.RestoreMainWindow();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
 
     public void OnOpenSmartDmClicked(object? sender, EventArgs e) => RestoreMainWindow();
     public void OnAddDownloadClicked(object? sender, EventArgs e) => _mainVm?.OpenAddDialogCommand.Execute(null);
