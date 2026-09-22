@@ -837,22 +837,32 @@ sealed class Program
         string ipcInfoPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm", "ipc.info");
         bool existing = System.IO.File.Exists(ipcInfoPath);
 
-        Services.LocalIpcService? ipc = null;
         int port = 18420;
-        if (!existing)
+        if (existing)
+        {
+            string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
+            if (lines.Length > 0 && int.TryParse(lines[0], out int parsedPort)) port = parsedPort;
+        }
+
+        bool serverAlive = false;
+        try
+        {
+            using var pingClient = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromMilliseconds(600) };
+            var ping = await pingClient.GetAsync($"http://127.0.0.1:{port}/api/browser");
+            if (ping.IsSuccessStatusCode) serverAlive = true;
+        }
+        catch { }
+
+        Services.LocalIpcService? ipc = null;
+        if (!serverAlive)
         {
             ipc = new Services.LocalIpcService();
             await ipc.StartAsync();
             string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
             port = int.Parse(lines[0]);
         }
-        else
-        {
-            string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
-            if (lines.Length > 0 && int.TryParse(lines[0], out int parsedPort)) port = parsedPort;
-        }
 
-        Console.WriteLine($"[INFO] Testing LocalIpcService on port: {port}");
+        Console.WriteLine($"[INFO] Testing LocalIpcService on port: {port} (external instance: {serverAlive})");
 
         using var client = new System.Net.Http.HttpClient();
 
