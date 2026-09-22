@@ -45,6 +45,30 @@
     }
   }
 
+  function isGenericPageUrl(url) {
+    if (!url) return true;
+    try {
+      const u = new URL(url);
+      const p = u.pathname.replace(/\/+$/, '');
+      return !p || p === '' || p === '/' || p === '/feed' || p === '/home' || p === '/reels';
+    } catch(e) {
+      return true;
+    }
+  }
+
+  function getMediaCacheKey(videoUrl, mediaEl) {
+    if (mediaEl) {
+      if (!mediaEl._smartdm_uid) {
+        mediaEl._smartdm_uid = 'vid_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+      }
+      return mediaEl._smartdm_uid;
+    }
+    if (videoUrl && !isGenericPageUrl(videoUrl)) {
+      return videoUrl;
+    }
+    return 'req_' + Math.random().toString(36).substring(2, 9);
+  }
+
   function formatSize(bytes) {
     if (!bytes || bytes <= 0) return null;
     const k = 1024;
@@ -629,7 +653,7 @@
           formatId: 'net_' + idx,
           resolution: resLabel,
           ext: ext === 'm3u8' ? 'mp4' : ext,
-          fileSize: m.contentLength || 0,
+          fileSize: (m.contentLength && m.contentLength >= 1048576) ? m.contentLength : 0,
           isAudioOnly: isAudio,
           title: pageTitle,
           url: m.url
@@ -649,28 +673,30 @@
     if (!videoUrl) videoUrl = window.location.href;
     if (!mediaEl) mediaEl = findActiveVideoElement();
 
-    if (mediaFormatCache[videoUrl] && mediaFormatCache[videoUrl].status === 'done') {
-      callback(mediaFormatCache[videoUrl].data);
+    const cacheKey = getMediaCacheKey(videoUrl, mediaEl);
+
+    if (mediaFormatCache[cacheKey] && mediaFormatCache[cacheKey].status === 'done') {
+      callback(mediaFormatCache[cacheKey].data);
       return;
     }
 
-    if (mediaFormatCache[videoUrl] && mediaFormatCache[videoUrl].status === 'loading') {
-      mediaFormatCache[videoUrl].callbacks.push(callback);
+    if (mediaFormatCache[cacheKey] && mediaFormatCache[cacheKey].status === 'loading') {
+      mediaFormatCache[cacheKey].callbacks.push(callback);
       return;
     }
 
-    mediaFormatCache[videoUrl] = { status: 'loading', callbacks: [callback] };
+    mediaFormatCache[cacheKey] = { status: 'loading', callbacks: [callback] };
 
     let isHandled = false;
     const notifyCallbacks = (result) => {
       if (isHandled) return;
       isHandled = true;
-      const entry = mediaFormatCache[videoUrl];
+      const entry = mediaFormatCache[cacheKey];
       if (result && result.formats && result.formats.length > 0) {
-        mediaFormatCache[videoUrl] = { status: 'done', data: result, callbacks: [] };
+        mediaFormatCache[cacheKey] = { status: 'done', data: result, callbacks: [] };
         if (entry && entry.callbacks) entry.callbacks.forEach(cb => { try { cb(result); } catch(e) {} });
       } else {
-        delete mediaFormatCache[videoUrl];
+        delete mediaFormatCache[cacheKey];
         if (entry && entry.callbacks) entry.callbacks.forEach(cb => { try { cb(result); } catch(e) {} });
       }
     };
@@ -736,24 +762,14 @@
       return;
     }
 
-    // 2. For YouTube URLs:
-    // If on YouTube watch page, check in-page DOM metadata first for instantaneous (0ms) display!
-    const isOnWatchPage = window.location.href.includes('/watch') || window.location.href.includes('/shorts/');
-    if (isOnWatchPage && (videoUrl === window.location.href || videoUrl.includes(window.location.search))) {
-      const domRes = parsePageMetadataFromDOM();
-      if (domRes && domRes.formats && domRes.formats.length > 0) {
-        notifyCallbacks(domRes);
-      }
-    }
-
-    // Query SmartDM desktop app (YoutubeExplode engine with sub-5ms PNA loopback)
+    // 2. For YouTube URLs: Query SmartDM desktop app first (full 18 resolutions up to 4K + 60fps)
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
       if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
         notifyCallbacks(res);
         return;
       }
 
-      // Fast DOM & Page Context Check for YouTube if not already done
+      // Fast DOM & Page Context Check for YouTube if desktop app is not connected
       const domRes = parsePageMetadataFromDOM();
       if (domRes && domRes.formats && domRes.formats.length > 0) {
         notifyCallbacks(domRes);
@@ -813,7 +829,7 @@
       cleanTitle = cleanTitle.replace(/\(([^)]+)\)\s*\(\1\)/gi, '($1)');
 
       const fSize = fmt.fileSize || fmt.FileSize || 0;
-      const formattedSize = formatSize(fSize);
+      const formattedSize = (fSize >= 1048576 || (isAud && fSize >= 102400)) ? formatSize(fSize) : null;
       const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
       let fmtTitle = fmt.title || fmt.Title;
@@ -1186,7 +1202,15 @@
       e.preventDefault();
       e.stopPropagation();
 
-      const videoUrl = getCanonicalUrl(window.location.href);
+      let videoUrl = getCanonicalUrl(window.location.href);
+      const parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], .x1lliihq, article, div[id*="feed_subtitle"]');
+      if (parentCard) {
+        const postLink = parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
+        if (postLink && postLink.href) {
+          videoUrl = getCanonicalUrl(postLink.href);
+        }
+      }
+
       const isActive = popover.classList.contains('active');
       if (isActive) {
         popover.classList.remove('active');
@@ -1202,7 +1226,8 @@
       `;
 
       fetchMediaFormats(videoUrl, mediaEl, (res) => {
-        const pageTitle = extractWatchPageTitle() || (res && res.title) || null;
+        const cardTitle = parentCard ? (extractCardTitle(parentCard) || extractSemanticPageTitle()) : extractWatchPageTitle();
+        const pageTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || (res && res.title) || null);
         if (res && res.formats && res.formats.length > 0) {
           renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
         } else {

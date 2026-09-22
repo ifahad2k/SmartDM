@@ -339,6 +339,13 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           let badge = 'Media';
           let customTitle = null;
 
+          const isAudio = (contentType && contentType.includes('audio/')) || targetUrl.includes('.m4a') || targetUrl.includes('.mp3');
+          let reportedLength = contentLength;
+          // If contentLength is a small fragment (< 1MB) for video, don't report false chunk sizes (like ~136KB) to UI
+          if (!isAudio && reportedLength > 0 && reportedLength < 1048576) {
+            reportedLength = 0;
+          }
+
           if (isFbMedia) {
             badge = 'Facebook Video';
             customTitle = 'Video Stream (MP4)';
@@ -346,26 +353,43 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           } else if (isGoogleVideo) {
             const itagMatch = targetUrl.match(/[?&]itag=(\d+)/);
             const itag = itagMatch ? itagMatch[1] : '';
-            const isAudio = (contentType && contentType.includes('audio/')) || itag === '140' || itag === '251' || itag === '139';
-            badge = isAudio ? 'Audio Stream' : (itag ? `Video Stream (itag ${itag})` : 'Video Stream');
-            customTitle = isAudio ? `Audio Stream (${itag || 'm4a'})` : `Video Stream (${itag || 'mp4'})`;
-            title = isAudio ? `audio_${itag || 'stream'}.m4a` : `video_${itag || 'stream'}.mp4`;
+            const isGvAudio = (contentType && contentType.includes('audio/')) || itag === '140' || itag === '251' || itag === '139';
+            badge = isGvAudio ? 'Audio Stream' : (itag ? `Video Stream (itag ${itag})` : 'Video Stream');
+            customTitle = isGvAudio ? `Audio Stream (${itag || 'm4a'})` : `Video Stream (${itag || 'mp4'})`;
+            title = isGvAudio ? `audio_${itag || 'stream'}.m4a` : `video_${itag || 'stream'}.mp4`;
           } else if (isOpaqueTokenOrHash(rawName)) {
             const ext = rawName.includes('.') ? rawName.substring(rawName.lastIndexOf('.')) : '.mp4';
-            const isAudio = contentType && contentType.includes('audio/');
             badge = isAudio ? 'Audio Stream' : 'Direct Video';
             customTitle = isAudio ? 'Audio Stream' : 'Video Stream (MP4)';
             title = (isAudio ? 'audio_stream' : 'video_stream') + ext;
           }
 
-          mediaList.push({
+          const mediaItem = {
             url: targetUrl,
             contentType: contentType,
-            contentLength: contentLength,
+            contentLength: reportedLength,
             filename: title,
             customTitle: customTitle || title,
             customBadge: badge
-          });
+          };
+          mediaList.push(mediaItem);
+
+          // Asynchronously probe full stream size using Range: bytes=0-0 to get real total size without loading stream
+          if (!isAudio && targetUrl && targetUrl.startsWith('http') && reportedLength === 0) {
+            fetch(targetUrl, { method: 'GET', headers: { 'Range': 'bytes=0-0' } })
+              .then(r => {
+                const cr = r.headers.get('content-range');
+                if (cr) {
+                  const m = cr.match(/\/(\d+)/);
+                  if (m) {
+                    const total = parseInt(m[1], 10);
+                    if (total > 1048576) {
+                      mediaItem.contentLength = total;
+                    }
+                  }
+                }
+              }).catch(() => {});
+          }
         }
       }
     },
@@ -403,10 +427,10 @@ let cachedActivePort = 18420;
 
 async function probePort(port) {
   const probeController = new AbortController();
-  const probeTimer = setTimeout(() => probeController.abort(), 200);
+  const probeTimer = setTimeout(() => probeController.abort(), 600);
   try {
     const probeRes = await fetch(`http://127.0.0.1:${port}/api/browser`, {
-      method: 'OPTIONS',
+      method: 'GET',
       signal: probeController.signal
     });
     clearTimeout(probeTimer);

@@ -105,7 +105,7 @@ public class LocalIpcService : ILocalIpcService
         {
             resp.Headers.Add("Access-Control-Allow-Origin", "*");
             resp.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type, X-SmartDM-Token, Access-Control-Request-Private-Network");
-            resp.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
+            resp.Headers.Add("Access-Control-Allow-Methods", "POST, GET, HEAD, OPTIONS");
             resp.Headers.Add("Access-Control-Allow-Private-Network", "true");
 
             if (req.HttpMethod == "OPTIONS")
@@ -119,6 +119,20 @@ public class LocalIpcService : ILocalIpcService
             if (req.Url?.AbsolutePath != "/api/browser")
             {
                 resp.StatusCode = 404;
+                resp.Close();
+                return;
+            }
+
+            if (req.HttpMethod == "GET" || req.HttpMethod == "HEAD")
+            {
+                byte[] pingBytes = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"version\":\"2.0\"}");
+                resp.ContentType = "application/json";
+                resp.StatusCode = 200;
+                resp.ContentLength64 = pingBytes.Length;
+                if (req.HttpMethod == "GET")
+                {
+                    await resp.OutputStream.WriteAsync(pingBytes);
+                }
                 resp.Close();
                 return;
             }

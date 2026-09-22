@@ -844,7 +844,14 @@ sealed class Program
 
         using var client = new System.Net.Http.HttpClient();
 
-        // 1. Send OPTIONS with Access-Control-Request-Private-Network
+        // 1. Send GET for fast liveness probe
+        var getReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"http://127.0.0.1:{port}/api/browser");
+        getReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
+        var getResp = await client.SendAsync(getReq);
+        Console.WriteLine($"[GET LIVENESS] Status: {getResp.StatusCode}");
+        if (getResp.StatusCode != System.Net.HttpStatusCode.OK) throw new Exception("GET /api/browser did not return 200 OK!");
+
+        // 2. Send OPTIONS with Access-Control-Request-Private-Network
         var optReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Options, $"http://127.0.0.1:{port}/api/browser");
         optReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
         optReq.Headers.Add("Access-Control-Request-Private-Network", "true");
