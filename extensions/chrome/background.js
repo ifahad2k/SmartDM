@@ -370,8 +370,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             const fbEfg = parseFacebookEfg(targetUrl);
             let efgStr = '';
             if (fbEfg) {
-              if (fbEfg.video_id) fbVideoId = String(fbEfg.video_id);
-              else if (fbEfg.fbid) fbVideoId = String(fbEfg.fbid);
+              const efgVid = fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id;
+              if (efgVid) fbVideoId = String(efgVid);
 
               try { efgStr = JSON.stringify(fbEfg).toLowerCase(); } catch(e) {}
               const encTag = ((fbEfg.vencode_tag || fbEfg.encode_tag || fbEfg.audio_tag || fbEfg.tag || '') + ' ' + efgStr).toLowerCase();
@@ -469,8 +469,9 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             existing.timestamp = Date.now();
             if (isFbMedia && !existing.fbVideoId) {
               const fbEfg = parseFacebookEfg(targetUrl);
-              if (fbEfg && (fbEfg.video_id || fbEfg.fbid)) {
-                existing.fbVideoId = String(fbEfg.video_id || fbEfg.fbid);
+              const efgVid = fbEfg ? (fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id) : null;
+              if (efgVid) {
+                existing.fbVideoId = String(efgVid);
               }
             }
           }
