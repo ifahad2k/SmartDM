@@ -104,12 +104,14 @@ public class LocalIpcService : ILocalIpcService
         try
         {
             resp.Headers.Add("Access-Control-Allow-Origin", "*");
-            resp.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type, X-SmartDM-Token");
+            resp.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type, X-SmartDM-Token, Access-Control-Request-Private-Network");
             resp.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
+            resp.Headers.Add("Access-Control-Allow-Private-Network", "true");
 
             if (req.HttpMethod == "OPTIONS")
             {
                 resp.StatusCode = 200;
+                resp.ContentLength64 = 0;
                 resp.Close();
                 return;
             }

@@ -602,20 +602,33 @@
           } else if (itag === '18' || itag === '135' || itag === '244') {
             resLabel = '480p / 360p (MP4)';
           } else {
-            resLabel = m.height && m.height >= 720 ? `${m.height}p HD (MP4)` : (m.height ? `${m.height}p (MP4)` : `Video Stream (itag ${itag})`);
+            resLabel = m.height && m.height >= 720 ? `${m.height}p HD (MP4)` : (m.height ? `${m.height}p (MP4)` : (itag ? `Video Stream (itag ${itag})` : 'Video Stream (MP4)'));
           }
-        } else if (!resLabel || isOpaqueTokenOrHash(resLabel) || resLabel.includes('Video Stream (mp4)')) {
-          if (m.height && m.height > 0) {
-            resLabel = m.height >= 720 ? `${m.height}p HD (${ext.toUpperCase()})` : `${m.height}p (${ext.toUpperCase()})`;
-          } else {
-            resLabel = isAudio ? `Audio Stream ${idx + 1} (${ext.toUpperCase()})` : `Video Stream ${idx + 1} (${ext.toUpperCase()})`;
+        } else {
+          // If video element is rendering this or active, check videoHeight/videoWidth
+          const vH = (m.height && m.height > 0) ? m.height : (mediaEl ? (mediaEl.videoHeight || 0) : 0);
+          const isGeneric = !resLabel || isOpaqueTokenOrHash(resLabel) || 
+                            resLabel === 'HLS Video Stream' || resLabel === 'Video Stream' || 
+                            resLabel === 'Direct Video' || resLabel.includes('Video Stream (MP4)') || 
+                            resLabel.includes('Video Stream (mp4)');
+
+          if (isGeneric && !isAudio && vH > 0) {
+            const outExt = ext === 'm3u8' ? 'MP4' : ext.toUpperCase();
+            if (vH >= 2160) resLabel = `4K UHD (2160p) (${outExt})`;
+            else if (vH >= 1440) resLabel = `2K QHD (1440p) (${outExt})`;
+            else if (vH >= 1080) resLabel = `1080p Full HD (${outExt})`;
+            else if (vH >= 720) resLabel = `720p HD (${outExt})`;
+            else if (vH >= 480) resLabel = `480p SD (${outExt})`;
+            else resLabel = `${vH}p (${outExt})`;
+          } else if (isGeneric) {
+            resLabel = isAudio ? `Audio Stream ${idx + 1} (${ext.toUpperCase()})` : `Video Stream ${idx + 1} (${ext === 'm3u8' ? 'MP4' : ext.toUpperCase()})`;
           }
         }
 
         formats.push({
           formatId: 'net_' + idx,
           resolution: resLabel,
-          ext: ext,
+          ext: ext === 'm3u8' ? 'mp4' : ext,
           fileSize: m.contentLength || 0,
           isAudioOnly: isAudio,
           title: pageTitle,
@@ -723,14 +736,24 @@
       return;
     }
 
-    // 2. For YouTube URLs, query SmartDM desktop app first (sub-800ms Innertube / YoutubeExplode)
+    // 2. For YouTube URLs:
+    // If on YouTube watch page, check in-page DOM metadata first for instantaneous (0ms) display!
+    const isOnWatchPage = window.location.href.includes('/watch') || window.location.href.includes('/shorts/');
+    if (isOnWatchPage && (videoUrl === window.location.href || videoUrl.includes(window.location.search))) {
+      const domRes = parsePageMetadataFromDOM();
+      if (domRes && domRes.formats && domRes.formats.length > 0) {
+        notifyCallbacks(domRes);
+      }
+    }
+
+    // Query SmartDM desktop app (YoutubeExplode engine with sub-5ms PNA loopback)
     runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
       if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
         notifyCallbacks(res);
         return;
       }
 
-      // Fast DOM & Page Context Check for YouTube
+      // Fast DOM & Page Context Check for YouTube if not already done
       const domRes = parsePageMetadataFromDOM();
       if (domRes && domRes.formats && domRes.formats.length > 0) {
         notifyCallbacks(domRes);

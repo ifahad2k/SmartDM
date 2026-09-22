@@ -1,5 +1,6 @@
 const NATIVE_HOST_NAME = 'io.smartdm.host';
 const detectedMediaMap = new Map(); // tabId -> Array<{ url, type, contentType, contentLength }>
+const tabUrlMap = new Map(); // tabId -> url
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -9,9 +10,18 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Clean up tab media on tab close
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tab && tab.url) {
+      tabUrlMap.set(tabId, tab.url);
+    }
+  });
+}
+
+// Clean up tab media and tracked URL on tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
   detectedMediaMap.delete(tabId);
+  tabUrlMap.delete(tabId);
 });
 
 function isOpaqueTokenOrHash(str) {
@@ -168,12 +178,21 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       const headers = details.responseHeaders || [];
       let contentType = '';
       let contentLength = 0;
+      let contentRangeTotal = 0;
 
       headers.forEach((h) => {
         const name = h.name.toLowerCase();
         if (name === 'content-type') contentType = h.value.toLowerCase();
         if (name === 'content-length') contentLength = parseInt(h.value, 10) || 0;
+        if (name === 'content-range') {
+          const m = h.value.match(/\/(\d+)/);
+          if (m) contentRangeTotal = parseInt(m[1], 10) || 0;
+        }
       });
+
+      if (contentRangeTotal > 0 && (!contentLength || contentLength < contentRangeTotal)) {
+        contentLength = contentRangeTotal;
+      }
 
       const url = details.url.toLowerCase();
 
@@ -195,6 +214,11 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.msi') || url.includes('.pdf') || contentType.includes('bittorrent') ||
                               contentType.includes('zip') || contentType.includes('x-rar');
       if (isNonMediaAsset) return;
+
+      // Filter out tiny video tracking beacons, range probes, and init fragments (< 64KB)
+      if (contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
+        return;
+      }
 
       // Ignore small UI sound effects (< 300KB or audio files named success/failure/no_input/open)
       if (url.includes('.mp3') || url.includes('.wav') || url.includes('.ogg')) {
@@ -234,9 +258,15 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
         const mediaList = detectedMediaMap.get(details.tabId);
 
+        const tabUrl = tabUrlMap.get(details.tabId) || details.initiator || null;
+        const fetchOpts = {};
+        if (tabUrl && !tabUrl.startsWith('chrome') && !tabUrl.startsWith('moz')) {
+          fetchOpts.referrer = tabUrl;
+        }
+
         // If this is an m3u8 playlist, fetch and parse variants BEFORE adding to mediaList
         if (targetUrl.includes('.m3u8')) {
-          fetch(targetUrl)
+          fetch(targetUrl, fetchOpts)
             .then((r) => r.text())
             .then((text) => {
               if (text.includes('#EXT-X-STREAM-INF')) {
@@ -274,7 +304,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
         // If this is an mpd manifest, fetch and parse representations BEFORE adding
         if (targetUrl.includes('.mpd')) {
-          fetch(targetUrl)
+          fetch(targetUrl, fetchOpts)
             .then((r) => r.text())
             .then((text) => {
               const mpdFormats = parseMpdFormats(text, targetUrl);
@@ -369,6 +399,44 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+let cachedActivePort = 18420;
+
+async function probePort(port) {
+  const probeController = new AbortController();
+  const probeTimer = setTimeout(() => probeController.abort(), 200);
+  try {
+    const probeRes = await fetch(`http://127.0.0.1:${port}/api/browser`, {
+      method: 'OPTIONS',
+      signal: probeController.signal
+    });
+    clearTimeout(probeTimer);
+    if (probeRes.ok || probeRes.status === 200 || probeRes.status === 204) {
+      return port;
+    }
+  } catch(e) {
+    clearTimeout(probeTimer);
+  }
+  throw new Error(`Port ${port} unavailable`);
+}
+
+async function getActivePort() {
+  if (cachedActivePort) {
+    try {
+      return await probePort(cachedActivePort);
+    } catch(e) {
+      cachedActivePort = null;
+    }
+  }
+  const ports = [18420, 18421, 18422, 18423, 18424, 18425];
+  try {
+    const foundPort = await Promise.any(ports.map(p => probePort(p)));
+    cachedActivePort = foundPort;
+    return foundPort;
+  } catch(e) {
+    return null;
+  }
+}
+
 async function appendCookiesAndSend(request, sendResponse) {
   request.userAgent = navigator.userAgent;
   request.referer = request.referer || request.pageUrl || null;
@@ -418,26 +486,9 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  // 1. Discover active SmartDM desktop app port (port 18420-18425) via fast OPTIONS probe
+  // 1. Discover active SmartDM desktop app port (port 18420-18425) via fast parallel OPTIONS probe
   const isFormatQuery = request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo';
-  const ports = [18420, 18421, 18422, 18423, 18424, 18425];
-  let activePort = null;
-
-  for (const port of ports) {
-    try {
-      const probeController = new AbortController();
-      const probeTimer = setTimeout(() => probeController.abort(), 120);
-      const probeRes = await fetch(`http://127.0.0.1:${port}/api/browser`, {
-        method: 'OPTIONS',
-        signal: probeController.signal
-      });
-      clearTimeout(probeTimer);
-      if (probeRes.ok || probeRes.status === 200 || probeRes.status === 204) {
-        activePort = port;
-        break;
-      }
-    } catch(e) {}
-  }
+  const activePort = await getActivePort();
 
   if (activePort) {
     try {

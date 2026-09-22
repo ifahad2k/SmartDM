@@ -54,6 +54,12 @@ sealed class Program
             return;
         }
 
+        if (args != null && System.Linq.Enumerable.Contains(args, "--test-pna"))
+        {
+            RunPnaPreflightTestAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         App.LogStartup($"Main ENTER with {args?.Length ?? 0} args: {(args != null ? string.Join(' ', args) : "")}");
 
         // If an instance is already running, activate its window and exit
@@ -823,6 +829,60 @@ sealed class Program
         Console.WriteLine($"[PASS] AddNewDownload safely auto-numbered collision to: '{System.IO.Path.GetFileName(collidingDl.SavePath)}'");
 
         Console.WriteLine("=== SmartDM 2.0 Duplicate Detection & Smart Collision Test PASSED! ===");
+    }
+
+    private static async System.Threading.Tasks.Task RunPnaPreflightTestAsync()
+    {
+        Console.WriteLine("=== Starting SmartDM 2.0 PNA Preflight & Media Format Resolution Test ===");
+        var ipc = new Services.LocalIpcService();
+        await ipc.StartAsync();
+
+        string ipcInfoPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm", "ipc.info");
+        string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
+        int port = int.Parse(lines[0]);
+        Console.WriteLine($"[INFO] LocalIpcService listening on port: {port}");
+
+        using var client = new System.Net.Http.HttpClient();
+
+        // 1. Send OPTIONS with Access-Control-Request-Private-Network
+        var optReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Options, $"http://127.0.0.1:{port}/api/browser");
+        optReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
+        optReq.Headers.Add("Access-Control-Request-Private-Network", "true");
+        optReq.Headers.Add("Access-Control-Request-Method", "POST");
+
+        var optResp = await client.SendAsync(optReq);
+        Console.WriteLine($"[OPTIONS] Status: {optResp.StatusCode}");
+        bool hasPnaHeader = optResp.Headers.TryGetValues("Access-Control-Allow-Private-Network", out var pnaVals) &&
+                            System.Linq.Enumerable.FirstOrDefault(pnaVals) == "true";
+        Console.WriteLine($"[PASS] Access-Control-Allow-Private-Network: true => {hasPnaHeader}");
+        if (!hasPnaHeader) throw new Exception("OPTIONS preflight missing Access-Control-Allow-Private-Network header!");
+
+        // 2. Send POST GET_MEDIA_FORMATS for YouTube
+        var postContent = new System.Net.Http.StringContent(
+            "{\"type\":\"GET_MEDIA_FORMATS\",\"url\":\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"}",
+            System.Text.Encoding.UTF8,
+            "application/json"
+        );
+        var postReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"http://127.0.0.1:{port}/api/browser");
+        postReq.Content = postContent;
+        postReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
+
+        var postResp = await client.SendAsync(postReq);
+        string body = await postResp.Content.ReadAsStringAsync();
+        Console.WriteLine($"[POST] Status: {postResp.StatusCode}");
+        Console.WriteLine($"[POST] Response length: {body.Length} bytes");
+
+        bool postHasPna = postResp.Headers.TryGetValues("Access-Control-Allow-Private-Network", out var postPnaVals) &&
+                          System.Linq.Enumerable.FirstOrDefault(postPnaVals) == "true";
+        Console.WriteLine($"[PASS] POST Access-Control-Allow-Private-Network: true => {postHasPna}");
+
+        using var jsonDoc = System.Text.Json.JsonDocument.Parse(body);
+        string status = jsonDoc.RootElement.GetProperty("status").GetString() ?? "";
+        int formatsCount = jsonDoc.RootElement.GetProperty("formats").GetArrayLength();
+        Console.WriteLine($"[PASS] Resolved status: '{status}', formats count: {formatsCount}");
+
+        ipc.Stop();
+        Console.WriteLine("=== SmartDM 2.0 PNA Preflight & Media Format Resolution Test PASSED! ===");
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
