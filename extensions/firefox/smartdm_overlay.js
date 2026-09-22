@@ -75,12 +75,14 @@
   document.addEventListener('play', (e) => {
     if (e.target && e.target.tagName === 'VIDEO') {
       e.target._smartdm_play_time = Date.now();
+      e.target._smartdm_assigned_stream = null;
     }
   }, true);
 
   document.addEventListener('playing', (e) => {
     if (e.target && e.target.tagName === 'VIDEO') {
       e.target._smartdm_play_time = Date.now();
+      e.target._smartdm_assigned_stream = null;
     }
   }, true);
 
@@ -571,6 +573,65 @@
     return null;
   }
 
+  // --- FACEBOOK DOM & SCRIPT EXTRACTOR ---
+  function extractFacebookMediaFromDOM(targetVideoId = null, pageTitle = 'facebook_video') {
+    const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
+    if (!isFb) return null;
+
+    const formats = [];
+    const seen = new Set();
+
+    const addDirect = (url, quality, ext = 'mp4', audioUrl = null) => {
+      if (!url || typeof url !== 'string' || !url.startsWith('http')) return;
+      let cleanUrl = url.replace(/\\\/+/g, '/').replace(/\\u0026/g, '&').replace(/\\/g, '');
+      if (seen.has(cleanUrl)) return;
+      seen.add(cleanUrl);
+
+      formats.push({
+        formatId: 'fb_' + (quality.toLowerCase().includes('hd') ? 'hd' : (quality.toLowerCase().includes('audio') ? 'audio' : 'sd')),
+        resolution: quality.includes('(') ? quality : `${quality} (MP4)`,
+        ext: ext,
+        fileSize: 0,
+        isAudioOnly: quality.toLowerCase().includes('audio'),
+        title: pageTitle,
+        url: cleanUrl,
+        directUrl: cleanUrl,
+        videoUrl: cleanUrl,
+        audioUrl: audioUrl
+      });
+    };
+
+    try {
+      const scripts = document.querySelectorAll('script');
+      for (const s of scripts) {
+        const text = s.textContent || '';
+        if (!text || text.length < 30) continue;
+        const hasFbMediaKeys = text.includes('playable_url') || text.includes('browser_native') || text.includes('hd_src') || text.includes('sd_src');
+        if (!hasFbMediaKeys) continue;
+
+        // If targetVideoId is specified, ensure this script block is associated with that video
+        if (targetVideoId && !text.includes(targetVideoId)) continue;
+
+        // 1. Progressive HD URLs (contains both video and audio)
+        const hdMatches = text.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+        for (const m of hdMatches) {
+          addDirect(m[1], '1080p / 720p HD', 'mp4');
+        }
+
+        // 2. Progressive SD URLs (contains both video and audio)
+        const sdMatches = text.matchAll(/(?:"playable_url"|"browser_native_sd_url"|"sd_src"|"sd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+        for (const m of sdMatches) {
+          addDirect(m[1], 'Standard Definition (SD)', 'mp4');
+        }
+      }
+    } catch (e) {}
+
+    if (formats.length > 0) {
+      return { success: true, status: 'ok', title: pageTitle, formats: formats };
+    }
+    return null;
+  }
+
   // --- UNIVERSAL TUBE & HTML5 DOM PARSER ---
   function extractTubeFormatsFromDOM(pageTitle = 'video') {
     const formats = [];
@@ -691,7 +752,8 @@
   function buildFallbackFormats(videoUrl, mediaEl, callback) {
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
     if (!mediaEl) mediaEl = findActiveVideoElement();
-    const pageTitle = extractSemanticPageTitle() || 'video';
+    const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
+    const pageTitle = isFb ? 'facebook_video' : (extractSemanticPageTitle() || 'video');
 
     // 1. First check in-page Tube formats from DOM scripts (Pornhub, XVideos, XHamster, etc.)
     const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
@@ -700,9 +762,108 @@
       return;
     }
 
-    // 2. Query detected network streams from background
+    // 2. For Facebook, extract video ID and check in-page DOM scripts first
+    let fbTargetId = null;
+    if (isFb) {
+      if (videoUrl) {
+        const m = videoUrl.match(/\/(?:reel|videos)\/(\d+)/) || videoUrl.match(/[?&](?:v|video_id|fbid|story_fbid)=(\d+)/);
+        if (m) fbTargetId = m[1];
+      }
+      if (!fbTargetId && window.location.pathname.includes('/reel/')) {
+        const m = window.location.pathname.match(/\/reel\/(\d+)/);
+        if (m) fbTargetId = m[1];
+      }
+      if (!fbTargetId && mediaEl && mediaEl.closest) {
+        const parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], article');
+        if (parentCard) {
+          const link = parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch"], a[href*="fbid="]');
+          if (link && link.href) {
+            const m = link.href.match(/\/(?:reel|videos)\/(\d+)/) || link.href.match(/[?&](?:v|video_id|fbid)=(\d+)/);
+            if (m) fbTargetId = m[1];
+          }
+        }
+      }
+
+      const fbDomFormats = extractFacebookMediaFromDOM(fbTargetId, pageTitle);
+      if (fbDomFormats && fbDomFormats.formats && fbDomFormats.formats.length > 0) {
+        callback(fbDomFormats);
+        return;
+      }
+    }
+
+    // 3. Query detected network streams from background
     runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
       let netMedia = (netRes && netRes.media) ? netRes.media : [];
+
+      // Dedicated Facebook stream isolation & dual video+audio pairing
+      if (isFb) {
+        const fbStreams = netMedia.filter(m => m.url && (m.url.includes('fbcdn.net') || m.url.includes('facebook.com')));
+        
+        let relevantFb = fbStreams;
+        if (fbTargetId) {
+          const matched = fbStreams.filter(m => m.fbVideoId === fbTargetId);
+          if (matched.length > 0) relevantFb = matched;
+        }
+
+        // Separate video and audio streams
+        const videoStreams = relevantFb.filter(m => !m.isAudio);
+        const audioStreams = relevantFb.filter(m => m.isAudio);
+
+        const fbFormats = [];
+
+        if (videoStreams.length > 0) {
+          const primaryVideo = videoStreams[videoStreams.length - 1]; // latest captured video stream
+          const primaryAudio = audioStreams.length > 0 ? audioStreams[audioStreams.length - 1] : null;
+
+          const vH = mediaEl ? (mediaEl.videoHeight || 0) : 0;
+          let resText = vH >= 1080 ? '1080p Full HD (MP4)' : (vH >= 720 ? '720p HD (MP4)' : (vH > 0 ? `${vH}p (MP4)` : 'HD Video (MP4)'));
+
+          fbFormats.push({
+            formatId: 'fb_video',
+            resolution: resText,
+            ext: 'mp4',
+            fileSize: (primaryVideo.contentLength || 0) + (primaryAudio ? (primaryAudio.contentLength || 0) : 0),
+            isAudioOnly: false,
+            title: pageTitle,
+            url: primaryVideo.url,
+            videoUrl: primaryVideo.url,
+            audioUrl: primaryAudio ? primaryAudio.url : null
+          });
+        }
+
+        if (audioStreams.length > 0) {
+          const primaryAudio = audioStreams[audioStreams.length - 1];
+          fbFormats.push({
+            formatId: 'fb_audio',
+            resolution: 'Audio (MP3 / High Quality)',
+            ext: 'mp3',
+            fileSize: primaryAudio.contentLength || 0,
+            isAudioOnly: true,
+            title: pageTitle,
+            url: primaryAudio.url,
+            videoUrl: null,
+            audioUrl: primaryAudio.url
+          });
+        } else if (videoStreams.length > 0) {
+          const primaryVideo = videoStreams[videoStreams.length - 1];
+          fbFormats.push({
+            formatId: 'fb_audio',
+            resolution: 'Audio (MP3 / High Quality)',
+            ext: 'mp3',
+            fileSize: 0,
+            isAudioOnly: true,
+            title: pageTitle,
+            url: primaryVideo.url,
+            videoUrl: null,
+            audioUrl: primaryVideo.url
+          });
+        }
+
+        if (fbFormats.length > 0) {
+          callback({ success: true, status: 'ok', title: pageTitle, formats: fbFormats });
+          return;
+        }
+      }
 
       // Per-element stream prioritization: match mediaEl with its own stream
       let prioritizedMedia = netMedia;
@@ -1359,11 +1520,15 @@
       e.stopPropagation();
 
       let videoUrl = getCanonicalUrl(window.location.href);
-      const parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], .x1lliihq, article, div[id*="feed_subtitle"]');
-      if (parentCard) {
-        const postLink = extractFacebookPermalink(parentCard) || parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
-        if (postLink) {
-          videoUrl = typeof postLink === 'string' ? postLink : getCanonicalUrl(postLink.href);
+      const isFbReels = window.location.hostname.includes('facebook.com') && window.location.pathname.includes('/reel/');
+      let parentCard = null;
+      if (!isFbReels) {
+        parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], article, div[id*="feed_subtitle"]');
+        if (parentCard) {
+          const postLink = extractFacebookPermalink(parentCard) || parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
+          if (postLink) {
+            videoUrl = typeof postLink === 'string' ? postLink : getCanonicalUrl(postLink.href);
+          }
         }
       }
 

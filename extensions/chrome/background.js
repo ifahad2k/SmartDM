@@ -51,6 +51,27 @@ function sanitizeStreamUrl(rawUrl) {
   }
 }
 
+function parseFacebookEfg(rawUrl) {
+  if (!rawUrl) return null;
+  try {
+    const u = new URL(rawUrl);
+    let efg = u.searchParams.get('efg');
+    if (!efg) return null;
+    efg = decodeURIComponent(efg).replace(/ /g, '+');
+    while (efg.length % 4 !== 0) efg += '=';
+    let jsonStr = '';
+    if (typeof atob !== 'undefined') {
+      jsonStr = atob(efg);
+    } else if (typeof Buffer !== 'undefined') {
+      jsonStr = Buffer.from(efg, 'base64').toString('utf8');
+    }
+    if (jsonStr && jsonStr.startsWith('{')) {
+      return JSON.parse(jsonStr);
+    }
+  } catch (e) {}
+  return null;
+}
+
 function parseM3u8Formats(m3u8Text, baseUrl) {
   const lines = m3u8Text.split('\n');
   const formats = [];
@@ -340,16 +361,51 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           let customTitle = null;
 
           const isAudio = (contentType && contentType.includes('audio/')) || targetUrl.includes('.m4a') || targetUrl.includes('.mp3');
+          let isFbAudio = false;
+          let isFbVideo = false;
+          let fbVideoId = null;
+
+          if (isFbMedia) {
+            const fbEfg = parseFacebookEfg(targetUrl);
+            if (fbEfg) {
+              if (fbEfg.video_id) fbVideoId = String(fbEfg.video_id);
+              const encTag = (fbEfg.encode_tag || '').toLowerCase();
+              if (encTag.includes('audio')) isFbAudio = true;
+              if (encTag.includes('video')) isFbVideo = true;
+            }
+
+            if (!isFbAudio && !isFbVideo) {
+              const uLower = targetUrl.toLowerCase();
+              if (contentType.includes('audio/') || uLower.includes('mime=audio') || uLower.includes('_audio') || uLower.includes('/audio/') || uLower.includes('audiocodecs')) {
+                isFbAudio = true;
+              } else if (contentType.includes('video/') || uLower.includes('mime=video') || uLower.includes('_video') || uLower.includes('/video/') || uLower.includes('videocodecs')) {
+                isFbVideo = true;
+              }
+            }
+
+            if (!fbVideoId) {
+              const idMatch = targetUrl.match(/[?&](?:video_id|v|fbid|story_fbid)=(\d+)/) || targetUrl.match(/\/(\d{10,})\b/);
+              if (idMatch) fbVideoId = idMatch[1];
+            }
+          }
+
+          const isFinalAudio = isFbMedia ? isFbAudio : isAudio;
           let reportedLength = contentLength;
           // If contentLength is a small fragment (< 1MB) for video, don't report false chunk sizes (like ~136KB) to UI
-          if (!isAudio && reportedLength > 0 && reportedLength < 1048576) {
+          if (!isFinalAudio && reportedLength > 0 && reportedLength < 1048576) {
             reportedLength = 0;
           }
 
           if (isFbMedia) {
-            badge = 'Facebook Video';
-            customTitle = 'Video Stream (MP4)';
-            title = 'facebook_video.mp4';
+            if (isFbAudio) {
+              badge = 'Audio Stream';
+              customTitle = 'Audio Stream (MP3 / High Quality)';
+              title = 'facebook_audio.mp4';
+            } else {
+              badge = 'Facebook Video';
+              customTitle = 'Video Stream (MP4)';
+              title = 'facebook_video.mp4';
+            }
           } else if (isGoogleVideo) {
             const itagMatch = targetUrl.match(/[?&]itag=(\d+)/);
             const itag = itagMatch ? itagMatch[1] : '';
@@ -359,9 +415,9 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             title = isGvAudio ? `audio_${itag || 'stream'}.m4a` : `video_${itag || 'stream'}.mp4`;
           } else if (isOpaqueTokenOrHash(rawName)) {
             const ext = rawName.includes('.') ? rawName.substring(rawName.lastIndexOf('.')) : '.mp4';
-            badge = isAudio ? 'Audio Stream' : 'Direct Video';
-            customTitle = isAudio ? 'Audio Stream' : 'Video Stream (MP4)';
-            title = (isAudio ? 'audio_stream' : 'video_stream') + ext;
+            badge = isFinalAudio ? 'Audio Stream' : 'Direct Video';
+            customTitle = isFinalAudio ? 'Audio Stream' : 'Video Stream (MP4)';
+            title = (isFinalAudio ? 'audio_stream' : 'video_stream') + ext;
           }
 
           const mediaItem = {
@@ -371,12 +427,15 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             filename: title,
             customTitle: customTitle || title,
             customBadge: badge,
+            isAudio: isFinalAudio,
+            isVideo: isFbMedia ? isFbVideo : !isFinalAudio,
+            fbVideoId: fbVideoId || null,
             timestamp: Date.now()
           };
           mediaList.push(mediaItem);
 
           // Asynchronously probe full stream size using Range: bytes=0-0 to get real total size without loading stream
-          if (!isAudio && targetUrl && targetUrl.startsWith('http') && reportedLength === 0) {
+          if (!isFinalAudio && targetUrl && targetUrl.startsWith('http') && reportedLength === 0) {
             fetch(targetUrl, { method: 'GET', headers: { 'Range': 'bytes=0-0' } })
               .then(r => {
                 const cr = r.headers.get('content-range');
