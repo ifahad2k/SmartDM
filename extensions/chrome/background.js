@@ -370,7 +370,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             contentLength: reportedLength,
             filename: title,
             customTitle: customTitle || title,
-            customBadge: badge
+            customBadge: badge,
+            timestamp: Date.now()
           };
           mediaList.push(mediaItem);
 
@@ -516,7 +517,7 @@ async function appendCookiesAndSend(request, sendResponse) {
 
   if (activePort) {
     try {
-      const timeoutMs = isFormatQuery ? 8000 : 3000;
+      const timeoutMs = isFormatQuery ? 20000 : 4000;
       const reqController = new AbortController();
 
       const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
@@ -900,7 +901,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const allEntries = Array.from(detectedMediaMap.values());
       if (allEntries.length > 0) media = allEntries[allEntries.length - 1] || [];
     }
-    sendResponse({ success: true, media: media });
+    // Return newest media streams first so the currently active/played video is prioritized
+    const sortedMedia = media.slice().reverse();
+    sendResponse({ success: true, media: sortedMedia });
     return false;
   }
 

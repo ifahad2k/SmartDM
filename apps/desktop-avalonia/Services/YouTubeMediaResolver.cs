@@ -87,14 +87,31 @@ public static class YouTubeMediaResolver
             return cached.Result;
         }
 
-        // Native YoutubeExplode Resolver with signature deciphering
+        // Native YoutubeExplode Resolver with signature deciphering (Concurrent execution for 2x speed)
         try
         {
-            var video = await _ytClient.Videos.GetAsync(videoId);
-            string title = !string.IsNullOrWhiteSpace(video.Title) ? video.Title : "YouTube Video";
-            result.Title = title;
+            var manifestTask = _ytClient.Videos.Streams.GetManifestAsync(videoId).AsTask();
+            var videoTask = _ytClient.Videos.GetAsync(videoId).AsTask();
 
-            var streamManifest = await _ytClient.Videos.Streams.GetManifestAsync(videoId);
+            YoutubeExplode.Videos.Streams.StreamManifest streamManifest;
+            try
+            {
+                streamManifest = await manifestTask;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to get stream manifest for {videoId}: {ex.Message}");
+                return result;
+            }
+
+            string title = "YouTube Video";
+            try
+            {
+                var video = await videoTask;
+                if (!string.IsNullOrWhiteSpace(video.Title)) title = video.Title;
+            }
+            catch { }
+            result.Title = title;
 
             // Find best audio stream (prefer m4a/mp4 for broad muxing compatibility)
             var audioStreams = streamManifest.GetAudioOnlyStreams().OrderByDescending(s => s.Bitrate).ToList();

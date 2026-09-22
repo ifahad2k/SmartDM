@@ -69,6 +69,27 @@
     return 'req_' + Math.random().toString(36).substring(2, 9);
   }
 
+  // Track video element playback timestamps across feeds and reels
+  document.addEventListener('play', (e) => {
+    if (e.target && e.target.tagName === 'VIDEO') {
+      e.target._smartdm_play_time = Date.now();
+    }
+  }, true);
+
+  document.addEventListener('playing', (e) => {
+    if (e.target && e.target.tagName === 'VIDEO') {
+      e.target._smartdm_play_time = Date.now();
+    }
+  }, true);
+
+  document.addEventListener('timeupdate', (e) => {
+    if (e.target && e.target.tagName === 'VIDEO' && !e.target.paused) {
+      if (!e.target._smartdm_play_time) {
+        e.target._smartdm_play_time = Date.now();
+      }
+    }
+  }, true);
+
   function formatSize(bytes) {
     if (!bytes || bytes <= 0) return null;
     const k = 1024;
@@ -187,9 +208,6 @@
         'h1.title span',
         '.inlineFree',
         'h1.title',
-        '[role="article"] [dir="auto"]',
-        '[role="article"] h2',
-        '[role="article"] h3',
         '[data-ad-preview]',
         '.userContent',
         'h1',
@@ -243,15 +261,119 @@
     return extractSemanticPageTitle();
   }
 
+  function extractFacebookCaption(containerEl) {
+    if (!containerEl) return null;
+    try {
+      // 1. Direct Facebook Comet message preview attributes
+      const msgSelectors = [
+        '[data-ad-preview="message"]',
+        '[data-ad-comet-preview="message"]',
+        '[data-testid="post_message"]',
+        '.userContent'
+      ];
+      for (const sel of msgSelectors) {
+        const el = containerEl.querySelector(sel);
+        if (el) {
+          const t = (el.textContent || '').trim();
+          if (t && t.length >= 3 && !isGenericTitle(t)) {
+            const shortT = t.length > 90 ? t.substring(0, 90).trim() : t;
+            return sanitizeCleanTitle(shortT);
+          }
+        }
+      }
+
+      // 2. Scan [dir="auto"] elements, ignoring author headers (h2, h3, h4, header), action buttons, and follow tags
+      const textEls = containerEl.querySelectorAll('[dir="auto"]');
+      const candidates = [];
+      for (const el of textEls) {
+        if (el.closest('h2, h3, h4, header, [role="toolbar"], button, [aria-label*="Like"], [aria-label*="Comment"], [aria-label*="Share"], [aria-label*="Follow"]')) {
+          continue;
+        }
+        const text = (el.textContent || '').trim();
+        if (!text || isGenericTitle(text)) continue;
+        const lower = text.toLowerCase();
+        if (lower === 'follow' || lower === 'sponsored' || lower === 'public' || lower === 'suggested for you') continue;
+        if (text.length >= 6) candidates.push(text);
+      }
+
+      if (candidates.length > 0) {
+        // Pick the longest caption or first substantive sentence
+        const best = candidates.find(c => c.length > 15 && c.includes(' ')) || candidates[0];
+        if (best) {
+          const shortT = best.length > 90 ? best.substring(0, 90).trim() : best;
+          return sanitizeCleanTitle(shortT);
+        }
+      }
+
+      // 3. Reels caption containers
+      const reelDesc = containerEl.querySelector('.x1lliihq span[dir="auto"], div.x1lliihq [dir="auto"]');
+      if (reelDesc) {
+        const t = (reelDesc.textContent || '').trim();
+        if (t && t.length >= 6 && !isGenericTitle(t)) {
+          const shortT = t.length > 90 ? t.substring(0, 90).trim() : t;
+          return sanitizeCleanTitle(shortT);
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  function extractFacebookPermalink(cardEl) {
+    if (!cardEl) return null;
+    try {
+      const linkSelectors = [
+        'a[href*="/reel/"]',
+        'a[href*="/videos/"]',
+        'a[href*="/watch/"]',
+        'a[href*="/watch?"]',
+        'a[href*="/posts/"]',
+        'a[href*="/share/p/"]',
+        'a[href*="/permalink.php"]',
+        'a[href*="/story.php"]',
+        'a[href*="facebook.com"][href*="fbid="]',
+        'a[href*="facebook.com"][href*="story_fbid="]',
+        'a[href*="facebook.com"][href*="video_id="]'
+      ];
+      for (const sel of linkSelectors) {
+        const el = cardEl.querySelector(sel);
+        if (el && el.href) {
+          return getCanonicalUrl(el.href);
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+
   function extractCardTitle(containerEl) {
     if (!containerEl) return null;
     try {
+      const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
+      if (isFb) {
+        const fbCaption = extractFacebookCaption(containerEl);
+        if (fbCaption) return fbCaption;
+      }
+
       const card = containerEl.closest(
         'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ' +
         'ytd-grid-video-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ' +
         'ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, ' +
         '.videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb'
       ) || containerEl;
+
+      if (isFb) {
+        const fbCardCaption = extractFacebookCaption(card);
+        if (fbCardCaption) return fbCardCaption;
+
+        // If literally no text caption exists in the post/reel, use author + " - Video"
+        const authorEl = card.querySelector('h2 a, h3 a, h2, h3, [role="link"]');
+        if (authorEl) {
+          const author = (authorEl.textContent || '').trim();
+          if (author && !isGenericTitle(author)) {
+            return sanitizeCleanTitle(author + ' - Video');
+          }
+        }
+        return 'facebook_video';
+      }
 
       const titleSelectors = [
         '#video-title',
@@ -576,6 +698,23 @@
     // 2. Query detected network streams from background
     runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
       let netMedia = (netRes && netRes.media) ? netRes.media : [];
+
+      // Per-element stream prioritization: match mediaEl with its own stream
+      let prioritizedMedia = netMedia;
+      if (mediaEl && mediaEl._smartdm_assigned_stream) {
+        prioritizedMedia = [mediaEl._smartdm_assigned_stream, ...netMedia.filter(m => m.url !== mediaEl._smartdm_assigned_stream.url)];
+      } else if (mediaEl && mediaEl._smartdm_play_time && netMedia.length > 0) {
+        const closest = netMedia.slice().sort((a, b) => {
+          const diffA = Math.abs((a.timestamp || 0) - mediaEl._smartdm_play_time);
+          const diffB = Math.abs((b.timestamp || 0) - mediaEl._smartdm_play_time);
+          return diffA - diffB;
+        })[0];
+        if (closest) {
+          mediaEl._smartdm_assigned_stream = closest;
+          prioritizedMedia = [closest, ...netMedia.filter(m => m.url !== closest.url)];
+        }
+      }
+
       let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
       if (mediaEl && (!liveSrc || liveSrc.startsWith('blob:'))) {
         const sourceChild = mediaEl.querySelector('source');
@@ -607,7 +746,7 @@
         });
       }
 
-      netMedia.forEach((m, idx) => {
+      prioritizedMedia.forEach((m, idx) => {
         if (liveSrc && m.url === liveSrc) return;
         const isGv = m.url.includes('googlevideo.com') || m.url.includes('videoplayback');
         const ext = (m.filename && m.filename.includes('.') ? m.filename.substring(m.filename.lastIndexOf('.') + 1) : 'mp4').toLowerCase();
@@ -701,7 +840,7 @@
       }
     };
 
-    // Guaranteed safety timeout (9000ms): Allows desktop YoutubeExplode deciphering to finish without hanging
+    // Guaranteed safety timeout (22000ms): Allows desktop YoutubeExplode deciphering to finish without hanging
     setTimeout(() => {
       if (!isHandled) {
         buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
@@ -713,7 +852,7 @@
           }
         }, 500);
       }
-    }, 9000);
+    }, 22000);
 
 
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
@@ -1205,9 +1344,9 @@
       let videoUrl = getCanonicalUrl(window.location.href);
       const parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], .x1lliihq, article, div[id*="feed_subtitle"]');
       if (parentCard) {
-        const postLink = parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
-        if (postLink && postLink.href) {
-          videoUrl = getCanonicalUrl(postLink.href);
+        const postLink = extractFacebookPermalink(parentCard) || parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
+        if (postLink) {
+          videoUrl = typeof postLink === 'string' ? postLink : getCanonicalUrl(postLink.href);
         }
       }
 
@@ -1226,8 +1365,13 @@
       `;
 
       fetchMediaFormats(videoUrl, mediaEl, (res) => {
-        const cardTitle = parentCard ? (extractCardTitle(parentCard) || extractSemanticPageTitle()) : extractWatchPageTitle();
-        const pageTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || (res && res.title) || null);
+        let cardTitle = null;
+        if (parentCard) {
+          cardTitle = extractCardTitle(parentCard);
+        }
+        const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
+        const fallbackTitle = isFb ? 'facebook_video' : extractWatchPageTitle();
+        const pageTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || fallbackTitle);
         if (res && res.formats && res.formats.length > 0) {
           renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
         } else {
