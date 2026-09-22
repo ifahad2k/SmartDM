@@ -834,13 +834,25 @@ sealed class Program
     private static async System.Threading.Tasks.Task RunPnaPreflightTestAsync()
     {
         Console.WriteLine("=== Starting SmartDM 2.0 PNA Preflight & Media Format Resolution Test ===");
-        var ipc = new Services.LocalIpcService();
-        await ipc.StartAsync();
-
         string ipcInfoPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm", "ipc.info");
-        string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
-        int port = int.Parse(lines[0]);
-        Console.WriteLine($"[INFO] LocalIpcService listening on port: {port}");
+        bool existing = System.IO.File.Exists(ipcInfoPath);
+
+        Services.LocalIpcService? ipc = null;
+        int port = 18420;
+        if (!existing)
+        {
+            ipc = new Services.LocalIpcService();
+            await ipc.StartAsync();
+            string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
+            port = int.Parse(lines[0]);
+        }
+        else
+        {
+            string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
+            if (lines.Length > 0 && int.TryParse(lines[0], out int parsedPort)) port = parsedPort;
+        }
+
+        Console.WriteLine($"[INFO] Testing LocalIpcService on port: {port}");
 
         using var client = new System.Net.Http.HttpClient();
 
@@ -888,7 +900,7 @@ sealed class Program
         int formatsCount = jsonDoc.RootElement.GetProperty("formats").GetArrayLength();
         Console.WriteLine($"[PASS] Resolved status: '{status}', formats count: {formatsCount}");
 
-        ipc.Stop();
+        ipc?.Stop();
         Console.WriteLine("=== SmartDM 2.0 PNA Preflight & Media Format Resolution Test PASSED! ===");
     }
 
