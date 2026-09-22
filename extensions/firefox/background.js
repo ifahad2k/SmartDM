@@ -237,7 +237,9 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       if (isNonMediaAsset) return;
 
       // Filter out tiny video tracking beacons, range probes, and init fragments (< 64KB)
-      if (contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
+      // Never drop Facebook media chunks since Facebook audio init fragments and DASH chunks can be < 64KB
+      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com');
+      if (!isFbMedia && contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
         return;
       }
 
@@ -248,7 +250,6 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       }
 
       // Filter out HLS/DASH segment chunks (preserve full stream URLs)
-      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com');
       const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
       const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
                              (url.includes('.m4s') && !url.includes('master'));
@@ -367,19 +368,30 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
           if (isFbMedia) {
             const fbEfg = parseFacebookEfg(targetUrl);
+            let efgStr = '';
             if (fbEfg) {
               if (fbEfg.video_id) fbVideoId = String(fbEfg.video_id);
-              const encTag = (fbEfg.encode_tag || '').toLowerCase();
-              if (encTag.includes('audio')) isFbAudio = true;
-              if (encTag.includes('video')) isFbVideo = true;
+              else if (fbEfg.fbid) fbVideoId = String(fbEfg.fbid);
+
+              try { efgStr = JSON.stringify(fbEfg).toLowerCase(); } catch(e) {}
+              const encTag = ((fbEfg.vencode_tag || fbEfg.encode_tag || fbEfg.audio_tag || fbEfg.tag || '') + ' ' + efgStr).toLowerCase();
+              if (encTag.includes('audio') || encTag.includes('_a1_') || encTag.includes('_a2_') || encTag.includes('_a3_') || encTag.includes('ac3') || encTag.includes('aac') || encTag.includes('opus')) {
+                isFbAudio = true;
+                isFbVideo = false;
+              } else if (encTag.includes('video') || encTag.includes('_v1_') || encTag.includes('_v2_') || encTag.includes('_v3_') || encTag.includes('_v4_') || encTag.includes('720p') || encTag.includes('1080p') || encTag.includes('480p') || encTag.includes('360p')) {
+                isFbVideo = true;
+                isFbAudio = false;
+              }
             }
 
             if (!isFbAudio && !isFbVideo) {
               const uLower = targetUrl.toLowerCase();
-              if (contentType.includes('audio/') || uLower.includes('mime=audio') || uLower.includes('_audio') || uLower.includes('/audio/') || uLower.includes('audiocodecs')) {
+              if (contentType.includes('audio/') || uLower.includes('mime=audio') || uLower.includes('_audio') || uLower.includes('/audio/') || uLower.includes('audiocodecs') || uLower.includes('frag_2_audio') || uLower.includes('_a1_') || uLower.includes('.m4a') || uLower.includes('.mp3')) {
                 isFbAudio = true;
-              } else if (contentType.includes('video/') || uLower.includes('mime=video') || uLower.includes('_video') || uLower.includes('/video/') || uLower.includes('videocodecs')) {
+                isFbVideo = false;
+              } else if (contentType.includes('video/') || uLower.includes('mime=video') || uLower.includes('_video') || uLower.includes('/video/') || uLower.includes('videocodecs') || uLower.includes('frag_2_video') || uLower.includes('_v1_') || uLower.includes('_v2_') || uLower.includes('_v3_') || uLower.includes('_v4_')) {
                 isFbVideo = true;
+                isFbAudio = false;
               }
             }
 
@@ -449,6 +461,18 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                   }
                 }
               }).catch(() => {});
+          }
+        } else {
+          // If the stream URL was already detected, update its activity timestamp and metadata
+          const existing = mediaList.find((m) => m.url === targetUrl);
+          if (existing) {
+            existing.timestamp = Date.now();
+            if (isFbMedia && !existing.fbVideoId) {
+              const fbEfg = parseFacebookEfg(targetUrl);
+              if (fbEfg && (fbEfg.video_id || fbEfg.fbid)) {
+                existing.fbVideoId = String(fbEfg.video_id || fbEfg.fbid);
+              }
+            }
           }
         }
       }

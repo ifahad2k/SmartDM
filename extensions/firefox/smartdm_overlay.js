@@ -145,6 +145,10 @@
       clean === 'download' ||
       clean === 'downloads' ||
       clean === 'facebook' ||
+      clean === 'facebook_video' ||
+      clean === 'facebook_reel' ||
+      clean === 'facebook video' ||
+      clean === 'facebook reel' ||
       clean === 'pornhub' ||
       clean === 'pornhub.com' ||
       clean === 'video stream' ||
@@ -265,6 +269,44 @@
     return extractSemanticPageTitle();
   }
 
+  function findFacebookPostCard(el) {
+    if (!el) return null;
+    return el.closest('div[role="article"], div[data-pagelet^="FeedUnit_"], article');
+  }
+
+  function extractFacebookPostVideoId(mediaEl) {
+    if (!mediaEl) return null;
+    try {
+      // 1. Direct attribute on mediaEl or its parent
+      const directId = mediaEl.getAttribute('data-video-id') || (mediaEl.parentElement && mediaEl.parentElement.getAttribute('data-video-id'));
+      if (directId && /^\d+$/.test(directId)) return directId;
+
+      // 2. Search strictly within the post card
+      const card = findFacebookPostCard(mediaEl);
+      if (card) {
+        const ft = card.getAttribute('data-ft');
+        if (ft) {
+          const vMatch = ft.match(/"video_id":\s*"?(\d+)"?/) || ft.match(/"mf_story_key":\s*"?(\d+)"?/);
+          if (vMatch) return vMatch[1];
+        }
+        const videoLinks = card.querySelectorAll('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch"], a[href*="fbid="], a[href*="video_id="]');
+        for (const a of videoLinks) {
+          const m = (a.href || '').match(/\/(?:reel|videos)\/(\d+)/) || (a.href || '').match(/[?&](?:v|video_id|fbid|story_fbid)=(\d+)/);
+          if (m && m[1]) return m[1];
+        }
+      }
+
+      // 3. Check page URL if on /reel/ or /watch/
+      if (window.location.pathname.includes('/reel/')) {
+        const m = window.location.pathname.match(/\/reel\/(\d+)/);
+        if (m) return m[1];
+      }
+      const urlMatch = window.location.href.match(/[?&]v=(\d+)/) || window.location.pathname.match(/\/videos\/(\d+)/);
+      if (urlMatch) return urlMatch[1];
+    } catch (e) {}
+    return null;
+  }
+
   function extractFacebookCaption(containerEl) {
     if (!containerEl) return null;
     try {
@@ -273,6 +315,7 @@
         '[data-ad-preview="message"]',
         '[data-ad-comet-preview="message"]',
         '[data-testid="post_message"]',
+        'div[dir="auto"][style*="text-align"]',
         '.userContent'
       ];
       for (const sel of msgSelectors) {
@@ -286,22 +329,22 @@
         }
       }
 
-      // 2. Scan [dir="auto"] elements, ignoring author headers (h2, h3, h4, header), action buttons, and follow tags
+      // 2. Scan [dir="auto"] elements, ignoring author headers, action buttons, toolbars
       const textEls = containerEl.querySelectorAll('[dir="auto"]');
       const candidates = [];
       for (const el of textEls) {
-        if (el.closest('h2, h3, h4, header, [role="toolbar"], button, [aria-label*="Like"], [aria-label*="Comment"], [aria-label*="Share"], [aria-label*="Follow"]')) {
+        if (el.closest('h2, h3, h4, header, [role="toolbar"], button, [role="button"], [aria-label*="Like"], [aria-label*="Comment"], [aria-label*="Share"], [aria-label*="Follow"], [role="navigation"]')) {
           continue;
         }
         const text = (el.textContent || '').trim();
         if (!text || isGenericTitle(text)) continue;
         const lower = text.toLowerCase();
-        if (lower === 'follow' || lower === 'sponsored' || lower === 'public' || lower === 'suggested for you') continue;
+        if (lower === 'follow' || lower === 'sponsored' || lower === 'public' || lower === 'suggested for you' || lower.includes('original audio')) continue;
+        if (/^\d+[\d.,KkMmbB\s]*(likes|comments|views|shares)?$/i.test(text)) continue;
         if (text.length >= 6) candidates.push(text);
       }
 
       if (candidates.length > 0) {
-        // Pick the longest caption or first substantive sentence
         const best = candidates.find(c => c.length > 15 && c.includes(' ')) || candidates[0];
         if (best) {
           const shortT = best.length > 90 ? best.substring(0, 90).trim() : best;
@@ -320,6 +363,76 @@
       }
     } catch(e) {}
     return null;
+  }
+
+  function extractFacebookMediaTitle(mediaEl, cardContainer) {
+    try {
+      const isReels = window.location.pathname.includes('/reel/');
+
+      // 1. For Reels: check DOM caption container in [role="main"] or active reel slide
+      if (isReels) {
+        const mainEl = (mediaEl && mediaEl.closest('[role="main"]')) || document.querySelector('[role="main"]') || document.body;
+        if (mainEl) {
+          const spans = mainEl.querySelectorAll('span[dir="auto"], div[dir="auto"]');
+          for (const s of spans) {
+            if (s.closest('h2, h3, h4, header, button, [role="button"], [role="toolbar"], a[href*="/audio/"]')) continue;
+            const txt = (s.textContent || '').trim();
+            if (!txt || txt.length < 5 || isGenericTitle(txt)) continue;
+            const lower = txt.toLowerCase();
+            if (lower.startsWith('original audio') || lower.includes('audio') || lower === 'follow' || lower === 'sponsored') continue;
+            if (/^\d+[\d.,KkMmbB\s]*(likes|comments|views|shares)?$/i.test(txt)) continue;
+            return sanitizeCleanTitle(txt.length > 90 ? txt.substring(0, 90).trim() : txt);
+          }
+        }
+
+        const metaDesc = document.querySelector('meta[property="og:description"], meta[name="description"]');
+        if (metaDesc && metaDesc.content) {
+          let content = metaDesc.content.trim();
+          const reelPrefix = content.match(/Facebook Reels from [^:]+:\s*(.*)/i);
+          if (reelPrefix && reelPrefix[1]) content = reelPrefix[1].trim();
+          if (content && content.length >= 5 && !isGenericTitle(content)) {
+            return sanitizeCleanTitle(content.length > 90 ? content.substring(0, 90).trim() : content);
+          }
+        }
+
+        let docTitle = document.title || '';
+        docTitle = docTitle.replace(/\s*\|\s*Facebook.*$/i, '').trim();
+        docTitle = docTitle.replace(/^[^\-—·•:]+[\-—·•:]\s*/i, '').trim();
+        docTitle = docTitle.replace(/.*on Reels\s*$/i, '').trim();
+        if (docTitle && docTitle.length >= 5 && !isGenericTitle(docTitle)) {
+          return sanitizeCleanTitle(docTitle.length > 90 ? docTitle.substring(0, 90).trim() : docTitle);
+        }
+      }
+
+      // 2. For Feed Posts: check inside the specific card
+      const card = cardContainer || (mediaEl ? findFacebookPostCard(mediaEl) : null);
+      if (card) {
+        const caption = extractFacebookCaption(card);
+        if (caption && !isGenericTitle(caption)) return caption;
+      }
+
+      // 3. Check OpenGraph title / description
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle && ogTitle.content) {
+        let t = ogTitle.content.trim().replace(/\s*\|\s*Facebook.*$/i, '').trim();
+        if (t && t.length >= 5 && !isGenericTitle(t)) {
+          return sanitizeCleanTitle(t.length > 90 ? t.substring(0, 90).trim() : t);
+        }
+      }
+
+      // 4. Fallback to author name + " - Video" if available
+      if (card) {
+        const authorEl = card.querySelector('h2 a, h3 a, h2, h3, strong, [role="heading"]');
+        if (authorEl) {
+          const author = (authorEl.textContent || '').trim();
+          if (author && author.length >= 2 && !isGenericTitle(author)) {
+            return sanitizeCleanTitle(author + ' - Video');
+          }
+        }
+      }
+    } catch (e) {}
+
+    return isReels ? 'facebook_reel' : 'facebook_video';
   }
 
   function extractFacebookPermalink(cardEl) {
@@ -353,8 +466,7 @@
     try {
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
       if (isFb) {
-        const fbCaption = extractFacebookCaption(containerEl);
-        if (fbCaption) return fbCaption;
+        return extractFacebookMediaTitle(null, containerEl);
       }
 
       const card = containerEl.closest(
@@ -753,7 +865,7 @@
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
     if (!mediaEl) mediaEl = findActiveVideoElement();
     const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
-    const pageTitle = isFb ? 'facebook_video' : (extractSemanticPageTitle() || 'video');
+    const pageTitle = isFb ? extractFacebookMediaTitle(mediaEl, null) : (extractSemanticPageTitle() || 'video');
 
     // 1. First check in-page Tube formats from DOM scripts (Pornhub, XVideos, XHamster, etc.)
     const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
@@ -765,23 +877,10 @@
     // 2. For Facebook, extract video ID and check in-page DOM scripts first
     let fbTargetId = null;
     if (isFb) {
-      if (videoUrl) {
+      fbTargetId = extractFacebookPostVideoId(mediaEl);
+      if (!fbTargetId && videoUrl) {
         const m = videoUrl.match(/\/(?:reel|videos)\/(\d+)/) || videoUrl.match(/[?&](?:v|video_id|fbid|story_fbid)=(\d+)/);
         if (m) fbTargetId = m[1];
-      }
-      if (!fbTargetId && window.location.pathname.includes('/reel/')) {
-        const m = window.location.pathname.match(/\/reel\/(\d+)/);
-        if (m) fbTargetId = m[1];
-      }
-      if (!fbTargetId && mediaEl && mediaEl.closest) {
-        const parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], article');
-        if (parentCard) {
-          const link = parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch"], a[href*="fbid="]');
-          if (link && link.href) {
-            const m = link.href.match(/\/(?:reel|videos)\/(\d+)/) || link.href.match(/[?&](?:v|video_id|fbid)=(\d+)/);
-            if (m) fbTargetId = m[1];
-          }
-        }
       }
 
       const fbDomFormats = extractFacebookMediaFromDOM(fbTargetId, pageTitle);
@@ -798,23 +897,50 @@
       // Dedicated Facebook stream isolation & dual video+audio pairing
       if (isFb) {
         const fbStreams = netMedia.filter(m => m.url && (m.url.includes('fbcdn.net') || m.url.includes('facebook.com')));
-        
-        let relevantFb = fbStreams;
+        const allVideoStreams = fbStreams.filter(m => !m.isAudio);
+        const allAudioStreams = fbStreams.filter(m => m.isAudio);
+
+        let relevantVideo = allVideoStreams;
         if (fbTargetId) {
-          const matched = fbStreams.filter(m => m.fbVideoId === fbTargetId);
-          if (matched.length > 0) relevantFb = matched;
+          const matched = allVideoStreams.filter(m => m.fbVideoId === fbTargetId);
+          if (matched.length > 0) relevantVideo = matched;
         }
 
-        // Separate video and audio streams
-        const videoStreams = relevantFb.filter(m => !m.isAudio);
-        const audioStreams = relevantFb.filter(m => m.isAudio);
+        // Match video stream to mediaEl
+        let primaryVideo = null;
+        if (relevantVideo.length > 0) {
+          if (mediaEl && mediaEl._smartdm_play_time) {
+            primaryVideo = relevantVideo.reduce((prev, curr) => {
+              const diffPrev = Math.abs(prev.timestamp - mediaEl._smartdm_play_time);
+              const diffCurr = Math.abs(curr.timestamp - mediaEl._smartdm_play_time);
+              return diffCurr < diffPrev ? curr : prev;
+            }, relevantVideo[0]);
+          } else {
+            primaryVideo = relevantVideo[relevantVideo.length - 1];
+          }
+        }
+
+        // Match audio stream for primaryVideo
+        let primaryAudio = null;
+        if (primaryVideo) {
+          if (fbTargetId) {
+            const matchedAudio = allAudioStreams.filter(m => m.fbVideoId === fbTargetId);
+            if (matchedAudio.length > 0) primaryAudio = matchedAudio[matchedAudio.length - 1];
+          }
+          if (!primaryAudio && allAudioStreams.length > 0) {
+            primaryAudio = allAudioStreams.reduce((prev, curr) => {
+              const diffPrev = Math.abs(prev.timestamp - primaryVideo.timestamp);
+              const diffCurr = Math.abs(curr.timestamp - primaryVideo.timestamp);
+              return diffCurr < diffPrev ? curr : prev;
+            }, allAudioStreams[0]);
+          }
+        } else if (allAudioStreams.length > 0) {
+          primaryAudio = allAudioStreams[allAudioStreams.length - 1];
+        }
 
         const fbFormats = [];
 
-        if (videoStreams.length > 0) {
-          const primaryVideo = videoStreams[videoStreams.length - 1]; // latest captured video stream
-          const primaryAudio = audioStreams.length > 0 ? audioStreams[audioStreams.length - 1] : null;
-
+        if (primaryVideo) {
           const vH = mediaEl ? (mediaEl.videoHeight || 0) : 0;
           let resText = vH >= 1080 ? '1080p Full HD (MP4)' : (vH >= 720 ? '720p HD (MP4)' : (vH > 0 ? `${vH}p (MP4)` : 'HD Video (MP4)'));
 
@@ -831,8 +957,7 @@
           });
         }
 
-        if (audioStreams.length > 0) {
-          const primaryAudio = audioStreams[audioStreams.length - 1];
+        if (primaryAudio) {
           fbFormats.push({
             formatId: 'fb_audio',
             resolution: 'Audio (MP3 / High Quality)',
@@ -844,8 +969,7 @@
             videoUrl: null,
             audioUrl: primaryAudio.url
           });
-        } else if (videoStreams.length > 0) {
-          const primaryVideo = videoStreams[videoStreams.length - 1];
+        } else if (primaryVideo) {
           fbFormats.push({
             formatId: 'fb_audio',
             resolution: 'Audio (MP3 / High Quality)',
@@ -1034,6 +1158,7 @@
     // 1. For non-YouTube sites:
     if (!isYouTube) {
       const isExternalWatchUrl = videoUrl !== window.location.href && 
+        !videoUrl.includes('facebook.com') && !videoUrl.includes('fb.watch') &&
         (videoUrl.includes('/view_video.php') || videoUrl.includes('/video/') || videoUrl.includes('/videos/') || videoUrl.includes('/watch'));
 
       // If clicked from a thumbnail on a listing/search page, fetch watch page HTML directly
@@ -1520,16 +1645,21 @@
       e.stopPropagation();
 
       let videoUrl = getCanonicalUrl(window.location.href);
-      const isFbReels = window.location.hostname.includes('facebook.com') && window.location.pathname.includes('/reel/');
+      const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
+      const isFbReels = isFb && window.location.pathname.includes('/reel/');
       let parentCard = null;
-      if (!isFbReels) {
-        parentCard = mediaEl.closest('[role="article"], [data-pagelet], [data-video-id], article, div[id*="feed_subtitle"]');
-        if (parentCard) {
-          const postLink = extractFacebookPermalink(parentCard) || parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
-          if (postLink) {
-            videoUrl = typeof postLink === 'string' ? postLink : getCanonicalUrl(postLink.href);
+      if (isFb) {
+        if (!isFbReels) {
+          parentCard = findFacebookPostCard(mediaEl);
+          if (parentCard) {
+            const postLink = extractFacebookPermalink(parentCard) || parentCard.querySelector('a[href*="/reel/"], a[href*="/videos/"], a[href*="/watch/"], a[href*="/permalink/"], a[href*="facebook.com/watch"]');
+            if (postLink) {
+              videoUrl = typeof postLink === 'string' ? postLink : getCanonicalUrl(postLink.href);
+            }
           }
         }
+      } else {
+        parentCard = mediaEl.closest('[role="article"], article, div[id*="feed_subtitle"]');
       }
 
       const isActive = popover.classList.contains('active');
@@ -1548,12 +1678,13 @@
 
       fetchMediaFormats(videoUrl, mediaEl, (res) => {
         let cardTitle = null;
-        if (parentCard) {
+        if (isFb) {
+          cardTitle = extractFacebookMediaTitle(mediaEl, parentCard);
+        } else if (parentCard) {
           cardTitle = extractCardTitle(parentCard);
         }
-        const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
-        const fallbackTitle = isFb ? 'facebook_video' : extractWatchPageTitle();
-        const pageTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || fallbackTitle);
+        const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : extractWatchPageTitle();
+        const pageTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !isGenericTitle(res.title)) ? res.title : fallbackTitle);
         if (res && res.formats && res.formats.length > 0) {
           renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
         } else {
