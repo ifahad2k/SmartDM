@@ -18,6 +18,6 @@ public interface IFileCatalogService
     Task InitializeAsync();
     Task IndexFileAsync(string filePath, string? sourceUrl = null, string? sha256 = null);
     Task<CatalogMatch?> FindDuplicateAsync(string? url, string? fileName);
-    string GenerateUniquePath(string targetPath);
+    string GenerateUniquePath(string targetPath, System.Func<string, bool>? isPathInUse = null);
     Task ScanCommonFoldersAsync(CancellationToken ct = default);
 }

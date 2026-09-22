@@ -21,6 +21,8 @@ public partial class AddDownloadViewModel : ViewModelBase
 {
     private readonly IHttpProbeService _probeService;
     private readonly IFileCatalogService _catalogService;
+    private readonly Func<string, DownloadModel?>? _findActiveDownloadByUrl;
+    private readonly Func<string, bool>? _isPathInUse;
 
     public IFileCatalogService CatalogService => _catalogService;
     public event Action<CatalogMatch, Action>? RequestOpenDuplicateDialog;
@@ -190,10 +192,14 @@ public partial class AddDownloadViewModel : ViewModelBase
         string? initialTitle = null,
         string? initialReferer = null,
         string? initialUserAgent = null,
-        string? initialCookies = null)
+        string? initialCookies = null,
+        Func<string, DownloadModel?>? findActiveDownloadByUrl = null,
+        Func<string, bool>? isPathInUse = null)
     {
         _probeService = probeService ?? new HttpProbeService();
         _catalogService = catalogService ?? new FileCatalogService();
+        _findActiveDownloadByUrl = findActiveDownloadByUrl;
+        _isPathInUse = isPathInUse;
         _initialReferer = initialReferer;
         _initialUserAgent = initialUserAgent;
         _initialCookies = initialCookies;
@@ -564,6 +570,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         {
             Title = FileName,
             Url = targetUrl,
+            SourcePageUrl = Url.Trim(),
             AudioUrl = SelectedFormat?.AudioUrl,
             FormatId = SelectedFormatId,
             Domain = Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var u) ? u.Host : "Remote Host",
@@ -587,7 +594,40 @@ public partial class AddDownloadViewModel : ViewModelBase
             FooterRight = "Allocated"
         };
 
-        // 1. System-wide Duplicate Detection in Catalog Database
+        // 1. Check for Active / Queued / Paused Transfers
+        if (_findActiveDownloadByUrl != null)
+        {
+            var activeDl = _findActiveDownloadByUrl(model.Url) ?? _findActiveDownloadByUrl(Url.Trim());
+            if (activeDl != null)
+            {
+                string progressInfo = activeDl.ProgressPercentage > 0
+                    ? $"Currently {activeDl.Status} ({activeDl.ProgressPercentage:F1}% Complete - {activeDl.FormattedDownloaded} of {activeDl.FormattedTotalBytes})"
+                    : $"Currently {activeDl.Status} (Transfer in progress)";
+
+                string driveLetter = !string.IsNullOrEmpty(activeDl.SavePath) && activeDl.SavePath.Length >= 2 && activeDl.SavePath[1] == ':'
+                    ? activeDl.SavePath.Substring(0, 2)
+                    : "C:";
+
+                var activeMatch = new CatalogMatch(
+                    FileName: activeDl.Title ?? Path.GetFileName(activeDl.SavePath),
+                    FilePath: activeDl.SavePath,
+                    FileSize: activeDl.TotalBytes > 0 ? activeDl.TotalBytes : activeDl.DownloadedBytes,
+                    SourceUrl: activeDl.Url,
+                    MatchReason: progressInfo,
+                    DriveLetter: driveLetter,
+                    ExistsOnDisk: File.Exists(activeDl.SavePath)
+                );
+
+                RequestOpenDuplicateDialog?.Invoke(activeMatch, () =>
+                {
+                    // User opted to download again -> check target folder collision
+                    CheckTargetFolderCollision(model);
+                });
+                return;
+            }
+        }
+
+        // 2. System-wide Duplicate Detection in Catalog Database (for completed files on disk)
         var duplicate = await _catalogService.FindDuplicateAsync(model.Url, model.Title);
         if (duplicate != null)
         {
@@ -599,16 +639,17 @@ public partial class AddDownloadViewModel : ViewModelBase
             return;
         }
 
-        // 2. Check destination folder collision
+        // 3. Check destination folder collision
         CheckTargetFolderCollision(model);
     }
 
     private void CheckTargetFolderCollision(DownloadModel model)
     {
         string targetPath = model.SavePath;
-        if (File.Exists(targetPath))
+        bool isColliding = File.Exists(targetPath) || (_isPathInUse?.Invoke(targetPath) == true);
+        if (isColliding)
         {
-            string autoNumPath = _catalogService.GenerateUniquePath(targetPath);
+            string autoNumPath = _catalogService.GenerateUniquePath(targetPath, _isPathInUse);
             RequestOpenFileCollisionDialog?.Invoke(targetPath, autoNumPath, (resolution, chosenPath) =>
             {
                 if (resolution == Views.CollisionResolution.Cancel)

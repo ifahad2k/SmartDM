@@ -368,7 +368,19 @@ public partial class App : Application
 
             mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies) =>
             {
-                var addVm = new AddDownloadViewModel(mainVm.ProbeService, mainVm.CatalogService, initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies);
+                var addVm = new AddDownloadViewModel(
+                    mainVm.ProbeService,
+                    mainVm.CatalogService,
+                    initialUrl,
+                    initialFileName,
+                    formatId,
+                    formats,
+                    initialTitle,
+                    referer,
+                    userAgent,
+                    cookies,
+                    mainVm.FindActiveDownloadByUrl,
+                    mainVm.IsPathInUse);
                 var dialog = new AddDownloadDialog
                 {
                     DataContext = addVm

@@ -209,9 +209,10 @@ public class FileCatalogService : IFileCatalogService
         return null;
     }
 
-    public string GenerateUniquePath(string targetPath)
+    public string GenerateUniquePath(string targetPath, Func<string, bool>? isPathInUse = null)
     {
-        if (string.IsNullOrWhiteSpace(targetPath) || !File.Exists(targetPath))
+        bool inUse = !string.IsNullOrWhiteSpace(targetPath) && (File.Exists(targetPath) || (isPathInUse != null && isPathInUse(targetPath)));
+        if (string.IsNullOrWhiteSpace(targetPath) || !inUse)
         {
             return targetPath;
         }
@@ -225,11 +226,19 @@ public class FileCatalogService : IFileCatalogService
         string fileNameWithoutExt = Path.GetFileNameWithoutExtension(targetPath);
         string ext = Path.GetExtension(targetPath);
 
+        // Strip any existing " (1)", " (2)" suffix to avoid "video (1) (1).mp4"
+        var matchSuffix = System.Text.RegularExpressions.Regex.Match(fileNameWithoutExt, @"^(.*?)\s*\(\d+\)$");
+        if (matchSuffix.Success)
+        {
+            fileNameWithoutExt = matchSuffix.Groups[1].Value.Trim();
+        }
+
         int counter = 1;
         while (counter < 1000)
         {
             string candidate = Path.Combine(dir, $"{fileNameWithoutExt} ({counter}){ext}");
-            if (!File.Exists(candidate))
+            bool candidateInUse = File.Exists(candidate) || (isPathInUse != null && isPathInUse(candidate));
+            if (!candidateInUse)
             {
                 return candidate;
             }

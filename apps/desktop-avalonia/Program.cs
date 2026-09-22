@@ -48,6 +48,12 @@ sealed class Program
             return;
         }
 
+        if (args != null && System.Linq.Enumerable.Contains(args, "--test-duplicates"))
+        {
+            RunDuplicateDetectionTest();
+            return;
+        }
+
         App.LogStartup($"Main ENTER with {args?.Length ?? 0} args: {(args != null ? string.Join(' ', args) : "")}");
 
         // If an instance is already running, activate its window and exit
@@ -704,6 +710,119 @@ sealed class Program
         try { System.IO.File.Delete(tempDb); } catch { }
 
         Console.WriteLine("=== SmartDM 2.0 Download Pause & Stop Verification Test PASSED! ===");
+    }
+
+    private static void RunDuplicateDetectionTest()
+    {
+        Console.WriteLine("=== Starting SmartDM 2.0 Duplicate Detection & Smart Collision Test ===");
+
+        // TEST 1: GenerateUniquePath and suffix cleanups
+        Console.WriteLine("[TEST 1] Verifying FileCatalogService.GenerateUniquePath with in-use predicate...");
+        var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "smartdm_test_unique_" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(tempDir);
+        try
+        {
+            var catalog = new Services.FileCatalogService();
+            string originalFile = System.IO.Path.Combine(tempDir, "video.mp4");
+            System.IO.File.WriteAllText(originalFile, "dummy");
+
+            // File exists on disk
+            string unique1 = catalog.GenerateUniquePath(originalFile);
+            if (System.IO.Path.GetFileName(unique1) != "video (1).mp4")
+            {
+                throw new Exception($"FAIL: Expected 'video (1).mp4', got '{System.IO.Path.GetFileName(unique1)}'");
+            }
+            Console.WriteLine("[PASS] Physical file collision resolved to 'video (1).mp4'.");
+
+            // File doesn't exist on disk, but inUse predicate returns true
+            string nonExistentFile = System.IO.Path.Combine(tempDir, "stream.mp4");
+            var inUseSet = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase) { nonExistentFile };
+            string uniqueInUse = catalog.GenerateUniquePath(nonExistentFile, path => inUseSet.Contains(path));
+            if (System.IO.Path.GetFileName(uniqueInUse) != "stream (1).mp4")
+            {
+                throw new Exception($"FAIL: Expected 'stream (1).mp4', got '{System.IO.Path.GetFileName(uniqueInUse)}'");
+            }
+            Console.WriteLine("[PASS] In-use predicate collision resolved to 'stream (1).mp4'.");
+
+            // Suffix chaining prevention: "video (1).mp4" should become "video (2).mp4", NOT "video (1) (1).mp4"
+            string chainedFile = System.IO.Path.Combine(tempDir, "video (1).mp4");
+            inUseSet.Add(chainedFile);
+            string uniqueChained = catalog.GenerateUniquePath(chainedFile, path => inUseSet.Contains(path));
+            if (System.IO.Path.GetFileName(uniqueChained) != "video (2).mp4")
+            {
+                throw new Exception($"FAIL: Suffix chaining bug! Expected 'video (2).mp4', got '{System.IO.Path.GetFileName(uniqueChained)}'");
+            }
+            Console.WriteLine("[PASS] Suffix chaining prevented: 'video (1).mp4' -> 'video (2).mp4'.");
+        }
+        finally
+        {
+            try { System.IO.Directory.Delete(tempDir, true); } catch { }
+        }
+
+        // TEST 2: MainViewModel Active Download Tracking
+        Console.WriteLine("[TEST 2] Verifying MainViewModel.FindActiveDownloadByUrl & IsPathInUse...");
+        var mainVm = new ViewModels.MainViewModel(isDemoMode: true);
+        string testUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        string targetPath = @"C:\Users\test\Downloads\rickroll.mp4";
+
+        var activeDl = new Models.DownloadModel
+        {
+            Title = "rickroll.mp4",
+            Url = "https://rr3---sn-4g5edn6s.googlevideo.com/videoplayback?expire=123",
+            SourcePageUrl = testUrl,
+            SavePath = targetPath,
+            Status = Models.DownloadStatus.Active,
+            DownloadedBytes = 5 * 1024 * 1024,
+            TotalBytes = 10 * 1024 * 1024,
+            ProgressPercentage = 50.0
+        };
+        mainVm.Downloads.Add(activeDl);
+
+        var field = typeof(ViewModels.MainViewModel).GetField("_allMasterDownloads", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var allList = field?.GetValue(mainVm) as System.Collections.Generic.List<Models.DownloadModel>;
+        allList?.Insert(0, activeDl);
+
+        // 1. Find by YouTube URL (matches via YouTube Video ID)
+        var matchByYtUrl = mainVm.FindActiveDownloadByUrl("https://youtu.be/dQw4w9WgXcQ");
+        if (matchByYtUrl == null || matchByYtUrl != activeDl)
+        {
+            throw new Exception("FAIL: FindActiveDownloadByUrl failed to match YouTube short URL to active download!");
+        }
+        Console.WriteLine("[PASS] Active download matched by YouTube short link to active transfer.");
+
+        // 2. Find by direct stream URL
+        var matchByDirectUrl = mainVm.FindActiveDownloadByUrl("https://rr3---sn-4g5edn6s.googlevideo.com/videoplayback?expire=123");
+        if (matchByDirectUrl == null || matchByDirectUrl != activeDl)
+        {
+            throw new Exception("FAIL: FindActiveDownloadByUrl failed to match direct stream URL!");
+        }
+        Console.WriteLine("[PASS] Active download matched by direct URL.");
+
+        // 3. IsPathInUse detects active download's SavePath
+        if (!mainVm.IsPathInUse(targetPath))
+        {
+            throw new Exception($"FAIL: IsPathInUse returned false for active download path: {targetPath}");
+        }
+        Console.WriteLine("[PASS] IsPathInUse correctly detected active download destination.");
+
+        // 4. AddNewDownload prevents destination collision
+        Console.WriteLine("[TEST 3] Verifying AddNewDownload auto-numbering when path in use...");
+        var collidingDl = new Models.DownloadModel
+        {
+            Title = "rickroll.mp4",
+            Url = "https://example.com/another_video.mp4",
+            SavePath = targetPath,
+            Status = Models.DownloadStatus.Queued
+        };
+        mainVm.AddNewDownload(collidingDl);
+
+        if (collidingDl.SavePath == targetPath)
+        {
+            throw new Exception($"FAIL: AddNewDownload did not auto-number colliding download! Still: {collidingDl.SavePath}");
+        }
+        Console.WriteLine($"[PASS] AddNewDownload safely auto-numbered collision to: '{System.IO.Path.GetFileName(collidingDl.SavePath)}'");
+
+        Console.WriteLine("=== SmartDM 2.0 Duplicate Detection & Smart Collision Test PASSED! ===");
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

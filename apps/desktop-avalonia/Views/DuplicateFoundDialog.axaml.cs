@@ -42,6 +42,19 @@ public partial class DuplicateFoundDialog : Window
         string sizeStr = FormatBytes(match.FileSize);
         MatchReasonText.Text = $"Drive {match.DriveLetter} • {sizeStr} • {match.MatchReason}";
 
+        if (!match.ExistsOnDisk)
+        {
+            VerifiedStatusBadge.Text = "⚡ In Progress";
+            HeaderPromptText.Text = "SmartDM detected this download is currently in progress or queued.";
+            OpenFileButton.IsVisible = false;
+        }
+        else
+        {
+            VerifiedStatusBadge.Text = "✓ Verified on Disk";
+            HeaderPromptText.Text = "SmartDM catalog search found this exact file already saved in your storage.";
+            OpenFileButton.IsVisible = true;
+        }
+
         // Select suitable icon
         string ext = Path.GetExtension(match.FileName).ToLowerInvariant();
         string iconPath = ext switch
@@ -88,13 +101,24 @@ public partial class DuplicateFoundDialog : Window
 
     private void OnOpenLocationClicked(object? sender, RoutedEventArgs e)
     {
-        if (_match != null && File.Exists(_match.FilePath))
+        if (_match != null && !string.IsNullOrWhiteSpace(_match.FilePath))
         {
             try
             {
-                if (OperatingSystem.IsWindows())
+                if (File.Exists(_match.FilePath))
                 {
-                    Process.Start("explorer.exe", $"/select,\"{_match.FilePath}\"");
+                    if (OperatingSystem.IsWindows())
+                    {
+                        Process.Start("explorer.exe", $"/select,\"{_match.FilePath}\"");
+                    }
+                    else
+                    {
+                        string? dir = Path.GetDirectoryName(_match.FilePath);
+                        if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                        {
+                            Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
+                        }
+                    }
                 }
                 else
                 {

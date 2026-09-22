@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -350,8 +351,21 @@ public partial class MainViewModel : ViewModelBase
         dl.OnSelect = d => SelectDownload(d);
     }
 
+    private readonly ConcurrentDictionary<string, DateTime> _recentBrowserRequests = new();
+
     private void OnBrowserDownloadRequested(BrowserDownloadRequest req)
     {
+        if (!string.IsNullOrWhiteSpace(req.Url))
+        {
+            var now = DateTime.UtcNow;
+            if (_recentBrowserRequests.TryGetValue(req.Url, out var lastTime) && (now - lastTime).TotalMilliseconds < 1500)
+            {
+                // Suppress rapid duplicate clicks from browser extension
+                return;
+            }
+            _recentBrowserRequests[req.Url] = now;
+        }
+
         Dispatcher.UIThread.Post(() =>
         {
             RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats, req.Title, req.Referer, req.UserAgent, req.Cookies);
@@ -792,8 +806,131 @@ public partial class MainViewModel : ViewModelBase
         ScheduledCount = _allMasterDownloads.Count(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused) && !d.IsStorage);
     }
 
+    public DownloadModel? FindActiveDownloadByUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+
+        var normalizedUrl = url.Trim();
+        string? targetYtId = YouTubeMediaResolver.ExtractYouTubeVideoId(normalizedUrl);
+
+        string? targetBaseUrl = null;
+        if (targetYtId == null && Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var parsedUri))
+        {
+            targetBaseUrl = $"{parsedUri.Scheme}://{parsedUri.Authority}{parsedUri.AbsolutePath}";
+        }
+
+        lock (_allMasterDownloads)
+        {
+            foreach (var dl in _allMasterDownloads)
+            {
+                if (dl.Status != DownloadStatus.Active &&
+                    dl.Status != DownloadStatus.Queued &&
+                    dl.Status != DownloadStatus.Paused)
+                {
+                    continue;
+                }
+
+                // 1. Direct URL or SourcePageUrl match
+                if (string.Equals(dl.Url, normalizedUrl, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(dl.SourcePageUrl) && string.Equals(dl.SourcePageUrl, normalizedUrl, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return dl;
+                }
+
+                // 2. YouTube Video ID match
+                if (!string.IsNullOrEmpty(targetYtId))
+                {
+                    string? dlYtId = YouTubeMediaResolver.ExtractYouTubeVideoId(dl.SourcePageUrl ?? dl.Url);
+                    if (!string.IsNullOrEmpty(dlYtId) && string.Equals(targetYtId, dlYtId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return dl;
+                    }
+                }
+
+                // 3. Base URL match (without query tokens)
+                if (targetBaseUrl != null && !string.IsNullOrWhiteSpace(dl.Url) &&
+                    Uri.TryCreate(dl.Url, UriKind.Absolute, out var dlUri))
+                {
+                    string dlBaseUrl = $"{dlUri.Scheme}://{dlUri.Authority}{dlUri.AbsolutePath}";
+                    if (string.Equals(targetBaseUrl, dlBaseUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return dl;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public bool IsPathInUse(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        string normalizedPath;
+        try
+        {
+            normalizedPath = Path.GetFullPath(path);
+        }
+        catch
+        {
+            normalizedPath = path;
+        }
+
+        if (File.Exists(normalizedPath))
+        {
+            return true;
+        }
+
+        lock (_allMasterDownloads)
+        {
+            foreach (var dl in _allMasterDownloads)
+            {
+                if (dl.Status == DownloadStatus.Completed || dl.Status == DownloadStatus.Quarantined)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(dl.SavePath))
+                {
+                    try
+                    {
+                        string dlFullPath = Path.GetFullPath(dl.SavePath);
+                        if (string.Equals(normalizedPath, dlFullPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        return false;
+    }
+
     public void AddNewDownload(DownloadModel newDl)
     {
+        // Smart guard: If the path is actively in use by another running/queued download, auto-number it
+        if (IsPathInUse(newDl.SavePath))
+        {
+            bool activeTransferUsingPath = false;
+            lock (_allMasterDownloads)
+            {
+                activeTransferUsingPath = _allMasterDownloads.Any(d =>
+                    (d.Status == DownloadStatus.Active || d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused) &&
+                    !string.IsNullOrWhiteSpace(d.SavePath) &&
+                    string.Equals(Path.GetFullPath(d.SavePath), Path.GetFullPath(newDl.SavePath), StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (activeTransferUsingPath)
+            {
+                newDl.SavePath = _catalogService.GenerateUniquePath(newDl.SavePath, IsPathInUse);
+                newDl.Title = Path.GetFileName(newDl.SavePath);
+                newDl.FooterDetail = "Target: " + newDl.SavePath;
+            }
+        }
+
         WireDownloadCallbacks(newDl);
         _allMasterDownloads.Insert(0, newDl);
         _ = _catalogService.IndexFileAsync(newDl.SavePath, newDl.Url);

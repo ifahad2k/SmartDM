@@ -6,7 +6,10 @@
         x:DataType="vm:AddDownloadViewModel"
         Icon="/Assets/SDM_2.0_logo.png"
         Title="SmartDM 2.0 • Add New Download Task"
-        Width="780" Height="680"
+        Width="800"
+        SizeToContent="Height"
+        MinHeight="480"
+        MaxHeight="660"
         WindowStartupLocation="CenterScreen"
         CanResize="False"
         ExtendClientAreaToDecorationsHint="True"
@@ -14,7 +17,7 @@
         ExtendClientAreaTitleBarHeightHint="36"
         Background="{DynamicResource ElevatedBackground}">
 
-    <Grid RowDefinitions="36,*">
+    <Grid RowDefinitions="36,*,Auto">
         <!-- Unified Native Titlebar (Extended Client Area) -->
         <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0" PointerPressed="OnTitleBarPointerPressed">
             <Grid ColumnDefinitions="Auto,*,Auto">
@@ -31,7 +34,7 @@
         </Border>
 
         <!-- Dialog Body -->
-        <ScrollViewer Grid.Row="1" Padding="22">
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="22,16,22,12">
             <StackPanel Spacing="16">
                 <!-- Source URL -->
                 <StackPanel Spacing="6">
@@ -161,23 +164,23 @@
                         </Grid>
                     </StackPanel>
                 </Border>
-
-                <!-- Action Buttons -->
-                <Border BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="0,14,0,0">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Button Grid.Column="0" Command="{Binding CancelCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Cancel" />
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
-                            <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Add to Queue" />
-                            <Button Command="{Binding StartDownloadCommand}" Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="18,8" FontSize="12.5" FontWeight="Bold">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <Image Source="/Assets/Icons/play-white.png" Width="12" Height="12" VerticalAlignment="Center" />
-                                    <TextBlock Text="Start Download Now (Enter)" FontWeight="Bold" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
             </StackPanel>
         </ScrollViewer>
+
+        <!-- Pinned Bottom Action Bar (Row 2 - Zero Dead Space) -->
+        <Border Grid.Row="2" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="22,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Command="{Binding CancelCommand}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Cancel" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                    <Button Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Add to Queue" />
+                    <Button Command="{Binding StartDownloadCommand}" Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="18,8" FontSize="12.5" FontWeight="Bold">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="/Assets/Icons/play-white.png" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="Start Download Now (Enter)" FontWeight="Bold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

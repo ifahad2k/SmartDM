@@ -29,6 +29,9 @@ public partial class DownloadModel : ObservableObject
     private string _url = string.Empty;
 
     [ObservableProperty]
+    private string? _sourcePageUrl;
+
+    [ObservableProperty]
     private string? _audioUrl;
 
     [ObservableProperty]
@@ -230,6 +233,17 @@ public partial class DownloadModel : ObservableObject
     [RelayCommand]
     public void SelectItem() => OnSelect?.Invoke(this);
 
+    public static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        int digitGroups = (int)(Math.Log10(bytes) / Math.Log10(1024));
+        digitGroups = Math.Clamp(digitGroups, 0, units.Length - 1);
+        return $"{bytes / Math.Pow(1024, digitGroups):F1} {units[digitGroups]}";
+    }
+
+    public string FormattedDownloaded => FormatBytes(DownloadedBytes);
+    public string FormattedTotalBytes => FormatBytes(TotalBytes);
     public string FormattedProgress => $"{DownloadedBytes / (1024.0 * 1024 * 1024):F2} GB / {TotalBytes / (1024.0 * 1024 * 1024):F2} GB";
 
     public string FormattedEta => Status == DownloadStatus.Active && SpeedMbps > 0 ? $"ETA ~{EtaSeconds}s" : "--";
