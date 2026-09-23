@@ -288,10 +288,8 @@
   function findFacebookPostCard(el) {
     if (!el) return null;
     return el.closest(
-      'div[role="article"], div[data-pagelet^="FeedUnit_"], article, ' +
-      'div[data-testid="fbfeed_story"], div[data-testid="post_container"], ' +
-      'div[data-visualcompletion="ignore-dynamic"], div[class*="x1yztbdb"], ' +
-      'div[class*="x1jx94hy"], div[role="feed"] > div'
+      'div[role="article"], [data-pagelet^="FeedUnit_"], article, ' +
+      '[data-testid="fbfeed_story"], [data-testid="post_container"]'
     );
   }
 
@@ -400,7 +398,7 @@
   function extractFacebookCaption(containerEl) {
     if (!containerEl) return null;
     try {
-      // 1. Direct Facebook Comet message preview attributes
+      // 1. Direct Facebook message preview attributes
       const msgSelectors = [
         '[data-ad-preview="message"]',
         '[data-ad-comet-preview="message"]',
@@ -412,43 +410,43 @@
         const el = containerEl.querySelector(sel);
         if (el) {
           const t = (el.textContent || '').trim();
-          if (t && t.length >= 3 && !isGenericTitle(t)) {
+          if (t && t.length >= 2 && !isGenericTitle(t)) {
             const shortT = t.length > 90 ? t.substring(0, 90).trim() : t;
             return sanitizeCleanTitle(shortT);
           }
         }
       }
 
-      // 2. Scan [dir="auto"] elements, ignoring author headers, action buttons, toolbars
+      // 2. Scan [dir="auto"] elements inside this specific post card
       const textEls = containerEl.querySelectorAll('[dir="auto"]');
       const candidates = [];
       for (const el of textEls) {
-        if (el.closest('h2, h3, h4, header, [role="toolbar"], button, [role="button"], [aria-label*="Like"], [aria-label*="Comment"], [aria-label*="Share"], [aria-label*="Follow"], [role="navigation"]')) {
+        if (el.closest('h1, h2, h3, h4, header, [role="toolbar"], button, [role="button"], [aria-label*="Like"], [aria-label*="Comment"], [aria-label*="Share"], [aria-label*="Follow"], [role="navigation"], form, a[role="link"]')) {
           continue;
         }
         const text = (el.textContent || '').trim();
-        if (!text || isGenericTitle(text)) continue;
+        if (!text || text.length < 2 || isGenericTitle(text)) continue;
         const lower = text.toLowerCase();
         if (lower === 'follow' || lower === 'sponsored' || lower === 'public' || lower === 'suggested for you' || lower.includes('original audio')) continue;
-        if (/^\d+[\d.,KkMmbB\s]*(likes|comments|views|shares)?$/i.test(text)) continue;
-        if (text.length >= 6) candidates.push(text);
+        if (/^\d+[\d.,KkMmbB\s]*(likes|comments|views|shares|reactions)?$/i.test(text)) continue;
+        if (/^(just now|\d+\s*[smhdw]|yesterday|at \d+:\d+)/i.test(text)) continue;
+        candidates.push(text);
       }
 
       if (candidates.length > 0) {
-        const best = candidates.find(c => c.length > 15 && c.includes(' ')) || candidates[0];
+        const best = candidates.find(c => c.length > 10 && c.includes(' ')) || candidates[0];
         if (best) {
           const shortT = best.length > 90 ? best.substring(0, 90).trim() : best;
           return sanitizeCleanTitle(shortT);
         }
       }
 
-      // 3. Reels caption containers
-      const reelDesc = containerEl.querySelector('.x1lliihq span[dir="auto"], div.x1lliihq [dir="auto"]');
-      if (reelDesc) {
-        const t = (reelDesc.textContent || '').trim();
-        if (t && t.length >= 6 && !isGenericTitle(t)) {
-          const shortT = t.length > 90 ? t.substring(0, 90).trim() : t;
-          return sanitizeCleanTitle(shortT);
+      // 3. Fallback: Author Name from this specific card
+      const authorEl = containerEl.querySelector('h2 a, h3 a, h4 a, strong a, [role="heading"] a, h2, h3, strong');
+      if (authorEl) {
+        const author = (authorEl.textContent || '').trim();
+        if (author && author.length >= 2 && !isGenericTitle(author) && !author.toLowerCase().includes('reel')) {
+          return sanitizeCleanTitle(author + ' - Video');
         }
       }
     } catch(e) {}
@@ -502,40 +500,28 @@
       }
 
       // 2. Check if mediaEl is in a Facebook Reels carousel card on the feed
-      const reelCard = (cardContainer && cardContainer.querySelector && cardContainer.querySelector('a[href*="/reel/"]') && !(cardContainer.getAttribute('data-pagelet') || '').startsWith('FeedUnit_'))
-        ? cardContainer
-        : (mediaEl ? findFacebookReelCard(mediaEl) : null);
+      const reelCard = mediaEl ? findFacebookReelCard(mediaEl) : null;
       if (reelCard) {
         const reelTitle = extractFacebookReelCardTitle(reelCard);
         if (reelTitle && !isGenericTitle(reelTitle)) return reelTitle;
       }
 
       // 3. For Feed Posts: check inside the specific card
-      const card = cardContainer || (mediaEl ? findFacebookPostCard(mediaEl) : null);
+      const card = (cardContainer && cardContainer.closest && (cardContainer.matches('div[role="article"], [data-pagelet^="FeedUnit_"], article') ? cardContainer : cardContainer.closest('div[role="article"], [data-pagelet^="FeedUnit_"], article')))
+        || (mediaEl ? findFacebookPostCard(mediaEl) : null);
       if (card) {
         const caption = extractFacebookCaption(card);
         if (caption && !isGenericTitle(caption)) return caption;
       }
 
-      // 4. Check OpenGraph title / description
-      const ogTitle = document.querySelector('meta[property="og:title"]');
-      if (ogTitle && ogTitle.content) {
-        let t = ogTitle.content.trim().replace(/\s*\|\s*Facebook.*$/i, '').trim();
-        if (t && t.length >= 5 && !isGenericTitle(t)) {
-          return sanitizeCleanTitle(t.length > 90 ? t.substring(0, 90).trim() : t);
-        }
-      }
-
-      // 5. Fallback to author name + " - Video" if available (ignoring carousel headers)
-      if (card) {
-        const isCarousel = card.querySelectorAll && card.querySelectorAll('a[href*="/reel/"]').length > 1;
-        if (!isCarousel) {
-          const authorEl = card.querySelector('h2 a, h3 a, h2, h3, strong, [role="heading"]');
-          if (authorEl) {
-            const author = (authorEl.textContent || '').trim();
-            if (author && author.length >= 2 && !isGenericTitle(author) && !author.toLowerCase().includes('reel')) {
-              return sanitizeCleanTitle(author + ' - Video');
-            }
+      // 4. Check OpenGraph title ONLY on direct permalink pages
+      const isPermalink = window.location.pathname.includes('/videos/') || window.location.pathname.includes('/watch') || window.location.pathname.includes('/posts/');
+      if (isPermalink) {
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        if (ogTitle && ogTitle.content) {
+          let t = ogTitle.content.trim().replace(/\s*\|\s*Facebook.*$/i, '').trim();
+          if (t && t.length >= 5 && !isGenericTitle(t)) {
+            return sanitizeCleanTitle(t.length > 90 ? t.substring(0, 90).trim() : t);
           }
         }
       }
@@ -823,14 +809,10 @@
     };
 
     try {
+      if (!targetVideoId) return null;
       const allScripts = Array.from(document.querySelectorAll('script'));
-      let candidateScripts = [];
-      if (targetVideoId) {
-        candidateScripts = allScripts.filter(s => (s.textContent || '').includes(targetVideoId));
-      }
-      if (candidateScripts.length === 0) {
-        candidateScripts = allScripts;
-      }
+      const candidateScripts = allScripts.filter(s => (s.textContent || '').includes(targetVideoId));
+      if (candidateScripts.length === 0) return null;
 
       for (const s of candidateScripts) {
         const text = s.textContent || '';
