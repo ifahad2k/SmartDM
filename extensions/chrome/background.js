@@ -134,68 +134,182 @@ function parseM3u8Formats(m3u8Text, baseUrl) {
   return formats;
 }
 
+function extractDashManifestFromText(text, targetVideoId = null) {
+  if (!text) return null;
+  const markers = ['"dash_manifest"', '"video_dash_manifest"'];
+  for (const marker of markers) {
+    let idx = 0;
+    while ((idx = text.indexOf(marker, idx)) !== -1) {
+      if (targetVideoId) {
+        const proxStart = Math.max(0, idx - 10000);
+        const proxEnd = Math.min(text.length, idx + 10000);
+        const chunk = text.substring(proxStart, proxEnd);
+        if (!chunk.includes(targetVideoId)) {
+          idx += marker.length;
+          continue;
+        }
+      }
+      
+      const colonIdx = text.indexOf(':', idx);
+      if (colonIdx === -1) { idx += marker.length; continue; }
+      const quoteStart = text.indexOf('"', colonIdx);
+      if (quoteStart === -1) { idx += marker.length; continue; }
+      
+      let quoteEnd = -1;
+      for (let i = quoteStart + 1; i < text.length; i++) {
+        if (text[i] === '"' && text[i - 1] !== '\\') {
+          quoteEnd = i;
+          break;
+        }
+      }
+      if (quoteEnd > quoteStart) {
+        let raw = text.substring(quoteStart + 1, quoteEnd);
+        try {
+          raw = JSON.parse('"' + raw + '"');
+        } catch(e) {
+          raw = raw.replace(/\\"/g, '"').replace(/\\\/+/g, '/').replace(/\\n/g, '\n').replace(/\\u0026/g, '&');
+        }
+        if (raw && (raw.includes('<MPD') || raw.includes('&lt;MPD'))) {
+          return raw;
+        }
+      }
+      idx += marker.length;
+    }
+  }
+  return null;
+}
+
 function parseMpdFormats(mpdText, baseUrl) {
   const formats = [];
   try {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(mpdText, "text/xml");
+    if (!mpdText || typeof mpdText !== 'string') return [];
     
     // Check DRM / ContentProtection - if present, return empty (encrypted)
-    const drmNode = xmlDoc.querySelector('ContentProtection');
-    if (drmNode) return [];
+    if (mpdText.includes('<ContentProtection') || mpdText.includes('&lt;ContentProtection')) {
+      return [];
+    }
 
-    const adaptSets = xmlDoc.querySelectorAll('AdaptationSet');
+    let cleanText = mpdText;
+    if (cleanText.includes('&lt;MPD')) {
+      cleanText = cleanText.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    }
+
+    let durationSec = 0;
+    const durMatch = cleanText.match(/mediaPresentationDuration=["']PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?["']/);
+    if (durMatch) {
+      const h = parseFloat(durMatch[1] || 0);
+      const m = parseFloat(durMatch[2] || 0);
+      const s = parseFloat(durMatch[3] || 0);
+      durationSec = h * 3600 + m * 60 + s;
+    }
+
+    const adaptMatches = [...cleanText.matchAll(/<AdaptationSet\b([^>]*)>([\s\S]*?)<\/AdaptationSet>/gi)];
     let audioUrl = null;
-    let videoReps = [];
+    let audioBw = 0;
+    const videoReps = [];
 
-    adaptSets.forEach(set => {
-      const mime = (set.getAttribute('mimeType') || '').toLowerCase();
-      const contentType = (set.getAttribute('contentType') || '').toLowerCase();
-      const isVideo = mime.includes('video') || contentType === 'video';
-      const isAudio = mime.includes('audio') || contentType === 'audio';
+    adaptMatches.forEach(aMatch => {
+      const setAttrs = aMatch[1].toLowerCase();
+      const setBody = aMatch[2];
+      const isVideo = setAttrs.includes('video') || setAttrs.includes('mimetype="video') || setAttrs.includes("mimetype='video");
+      const isAudio = setAttrs.includes('audio') || setAttrs.includes('mimetype="audio') || setAttrs.includes("mimetype='audio");
 
-      const reps = set.querySelectorAll('Representation');
-      reps.forEach(rep => {
-        const bandwidth = parseInt(rep.getAttribute('bandwidth') || '0', 10);
-        const width = parseInt(rep.getAttribute('width') || '0', 10);
-        const height = parseInt(rep.getAttribute('height') || '0', 10);
-        
+      const repMatches = [...setBody.matchAll(/<Representation\b([^>]*)>([\s\S]*?)<\/Representation>/gi)];
+      repMatches.forEach(rMatch => {
+        const repAttrs = rMatch[1];
+        const repBody = rMatch[2];
+
+        const wMatch = repAttrs.match(/\bwidth=["'](\d+)["']/i);
+        const hMatch = repAttrs.match(/\bheight=["'](\d+)["']/i);
+        const bwMatch = repAttrs.match(/\bbandwidth=["'](\d+)["']/i);
+
+        const width = wMatch ? parseInt(wMatch[1], 10) : 0;
+        const height = hMatch ? parseInt(hMatch[1], 10) : 0;
+        const bandwidth = bwMatch ? parseInt(bwMatch[1], 10) : 0;
+
         let mediaUrl = '';
-        const baseUrlNode = rep.querySelector('BaseURL') || set.querySelector('BaseURL');
-        if (baseUrlNode) {
-          mediaUrl = baseUrlNode.textContent.trim();
-          if (!mediaUrl.startsWith('http')) {
+        const urlMatch = repBody.match(/<BaseURL\b[^>]*>([^<]+)<\/BaseURL>/i) || setBody.match(/<BaseURL\b[^>]*>([^<]+)<\/BaseURL>/i);
+        if (urlMatch) {
+          mediaUrl = urlMatch[1].trim().replace(/&amp;/g, '&');
+          if (!mediaUrl.startsWith('http') && baseUrl) {
             try { mediaUrl = new URL(mediaUrl, baseUrl).href; } catch(e) {}
           }
         }
 
-        if (mediaUrl) {
+        if (mediaUrl && mediaUrl.startsWith('http')) {
+          mediaUrl = sanitizeStreamUrl(mediaUrl);
           if (isVideo) {
-            videoReps.push({ height, width, bandwidth, url: mediaUrl });
-          } else if (isAudio && !audioUrl) {
-            audioUrl = mediaUrl;
+            const effH = (width > 0 && height > 0) ? Math.min(width, height) : (height || width);
+            videoReps.push({ effectiveHeight: effH, width, height, bandwidth, url: mediaUrl });
+          } else if (isAudio) {
+            if (!audioUrl || bandwidth > audioBw) {
+              audioUrl = mediaUrl;
+              audioBw = bandwidth;
+            }
           }
         }
       });
     });
 
-    videoReps.sort((a, b) => b.height - a.height || b.bandwidth - a.bandwidth);
+    videoReps.sort((a, b) => b.effectiveHeight - a.effectiveHeight || b.bandwidth - a.bandwidth);
+    const seenH = new Set();
     videoReps.forEach(v => {
-      const label = v.height > 0 ? `${v.height}p HD` : 'Video Stream';
+      if (seenH.has(v.effectiveHeight)) return;
+      seenH.add(v.effectiveHeight);
+
+      let label = '';
+      if (v.effectiveHeight >= 2160) label = '4K UHD (2160p) (MP4)';
+      else if (v.effectiveHeight >= 1440) label = '1440p Quad HD (MP4)';
+      else if (v.effectiveHeight >= 1080) label = '1080p Full HD (MP4)';
+      else if (v.effectiveHeight >= 720) label = '720p HD (MP4)';
+      else if (v.effectiveHeight === 640) label = '640p (MP4)';
+      else if (v.effectiveHeight === 540) label = '540p (MP4)';
+      else if (v.effectiveHeight === 480) label = '480p SD (MP4)';
+      else if (v.effectiveHeight === 360) label = '360p SD (MP4)';
+      else label = `${v.effectiveHeight}p (MP4)`;
+
+      let estSize = 0;
+      if (durationSec > 0 && v.bandwidth > 0) {
+        estSize = Math.round(((v.bandwidth + (audioBw || 128000)) * durationSec) / 8);
+      }
+
       const kbps = Math.round(v.bandwidth / 1000);
-      const badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
+      const badge = estSize >= 1048576 ? formatSize(estSize) : (kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps');
 
       formats.push({
+        formatId: 'fb_' + v.effectiveHeight + 'p',
+        resolution: label,
         title: label,
         badge: badge,
         url: v.url,
         videoUrl: v.url,
         audioUrl: audioUrl,
-        height: v.height,
-        bandwidth: v.bandwidth
+        height: v.effectiveHeight,
+        bandwidth: v.bandwidth,
+        ext: 'mp4',
+        isAudioOnly: false,
+        fileSize: estSize
       });
     });
-  } catch(e) {}
+
+    if (audioUrl) {
+      formats.push({
+        formatId: 'fb_audio',
+        resolution: 'Audio (MP3 / High Quality)',
+        title: 'Audio (MP3 / High Quality)',
+        badge: 'Audio Only',
+        url: audioUrl,
+        videoUrl: null,
+        audioUrl: audioUrl,
+        height: -1,
+        ext: 'mp3',
+        isAudioOnly: true,
+        fileSize: 0
+      });
+    }
+  } catch(e) {
+    console.warn('parseMpdFormats error:', e);
+  }
   return formats;
 }
 
@@ -995,6 +1109,23 @@ async function fetchPageMediaFormats(pageUrl) {
     // 5. Facebook video / reel / watch / post permalink
     const isFbUrl = pageUrl && (pageUrl.includes('facebook.com') || pageUrl.includes('fb.watch'));
     if (isFbUrl) {
+      // 1. Check DASH manifest FIRST for complete multi-quality ladder (1440p, 1080p, 720p, 640p, 540p, 480p, 360p)
+      if (html.includes('dash_manifest')) {
+        const rawXml = extractDashManifestFromText(html);
+        if (rawXml) {
+          try {
+            const mpdFmts = parseMpdFormats(rawXml, pageUrl);
+            if (mpdFmts && mpdFmts.length > 0) {
+              mpdFmts.forEach(f => {
+                f.title = title;
+                formats.push(f);
+              });
+              return { success: true, status: 'ok', title: title, formats: formats };
+            }
+          } catch(e) {}
+        }
+      }
+
       let fbHdUrl = null;
       let fbSdUrl = null;
 
@@ -1010,27 +1141,16 @@ async function fetchPageMediaFormats(pageUrl) {
         if (u.startsWith('http') && !fbSdUrl) fbSdUrl = u;
       }
 
-      // Check dash_manifest if progressive direct URLs not found
-      if (!fbHdUrl && !fbSdUrl && html.includes('dash_manifest')) {
-        const dashMatch = html.match(/(?:"dash_manifest"|"video_dash_manifest")\s*:\s*"([^"]+)"/);
-        if (dashMatch && dashMatch[1]) {
-          try {
-            const rawXml = dashMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\/+/g, '/');
-            const mpdFmts = parseMpdFormats(rawXml, pageUrl);
-            if (mpdFmts && mpdFmts.length > 0) {
-              mpdFmts.forEach(f => formats.push(f));
-            }
-          } catch(e) {}
-        }
-      }
-
       const bestFbUrl = fbHdUrl || fbSdUrl;
       if (bestFbUrl) {
         const ladder = [
-          { id: '1080p', label: '1080p Full HD (MP4)', h: 1080, url: fbHdUrl || bestFbUrl },
-          { id: '720p',  label: '720p HD (MP4)',       h: 720,  url: fbHdUrl || bestFbUrl },
-          { id: '480p',  label: '480p SD (MP4)',       h: 480,  url: fbSdUrl || bestFbUrl },
-          { id: '360p',  label: '360p SD (MP4)',       h: 360,  url: fbSdUrl || bestFbUrl }
+          { id: '1440p', label: '1440p Quad HD (MP4)',  h: 1440, url: fbHdUrl || bestFbUrl },
+          { id: '1080p', label: '1080p Full HD (MP4)',  h: 1080, url: fbHdUrl || bestFbUrl },
+          { id: '720p',  label: '720p HD (MP4)',        h: 720,  url: fbHdUrl || bestFbUrl },
+          { id: '640p',  label: '640p (MP4)',           h: 640,  url: fbHdUrl || bestFbUrl },
+          { id: '540p',  label: '540p (MP4)',           h: 540,  url: fbSdUrl || bestFbUrl },
+          { id: '480p',  label: '480p SD (MP4)',        h: 480,  url: fbSdUrl || bestFbUrl },
+          { id: '360p',  label: '360p SD (MP4)',        h: 360,  url: fbSdUrl || bestFbUrl }
         ];
 
         const availableLadder = fbHdUrl ? ladder : ladder.filter(tier => tier.h <= 720);
@@ -1052,7 +1172,7 @@ async function fetchPageMediaFormats(pageUrl) {
         formats.push({
           formatId: 'fb_audio',
           resolution: 'Audio (MP3 / High Quality)',
-          height: 0,
+          height: -1,
           ext: 'mp3',
           fileSize: 0,
           isAudioOnly: true,

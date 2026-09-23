@@ -778,16 +778,227 @@
   }
 
   // --- FACEBOOK DOM & SCRIPT EXTRACTOR ---
+  function extractDashManifestFromText(text, targetVideoId = null) {
+    if (!text) return null;
+    const markers = ['"dash_manifest"', '"video_dash_manifest"'];
+    for (const marker of markers) {
+      let idx = 0;
+      while ((idx = text.indexOf(marker, idx)) !== -1) {
+        if (targetVideoId) {
+          const proxStart = Math.max(0, idx - 10000);
+          const proxEnd = Math.min(text.length, idx + 10000);
+          const chunk = text.substring(proxStart, proxEnd);
+          if (!chunk.includes(targetVideoId)) {
+            idx += marker.length;
+            continue;
+          }
+        }
+        
+        const colonIdx = text.indexOf(':', idx);
+        if (colonIdx === -1) { idx += marker.length; continue; }
+        const quoteStart = text.indexOf('"', colonIdx);
+        if (quoteStart === -1) { idx += marker.length; continue; }
+        
+        let quoteEnd = -1;
+        for (let i = quoteStart + 1; i < text.length; i++) {
+          if (text[i] === '"' && text[i - 1] !== '\\') {
+            quoteEnd = i;
+            break;
+          }
+        }
+        if (quoteEnd > quoteStart) {
+          let raw = text.substring(quoteStart + 1, quoteEnd);
+          try {
+            raw = JSON.parse('"' + raw + '"');
+          } catch(e) {
+            raw = raw.replace(/\\"/g, '"').replace(/\\\/+/g, '/').replace(/\\n/g, '\n').replace(/\\u0026/g, '&');
+          }
+          if (raw && (raw.includes('<MPD') || raw.includes('&lt;MPD'))) {
+            return raw;
+          }
+        }
+        idx += marker.length;
+      }
+    }
+    return null;
+  }
+
+  function parseFacebookDashManifest(mpdText, baseUrl, pageTitle = 'facebook_video') {
+    const formats = [];
+    try {
+      if (!mpdText || typeof mpdText !== 'string') return [];
+      
+      if (mpdText.includes('<ContentProtection') || mpdText.includes('&lt;ContentProtection')) {
+        return [];
+      }
+
+      let cleanText = mpdText;
+      if (cleanText.includes('&lt;MPD')) {
+        cleanText = cleanText.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+      }
+
+      let durationSec = 0;
+      const durMatch = cleanText.match(/mediaPresentationDuration=["']PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?["']/);
+      if (durMatch) {
+        const h = parseFloat(durMatch[1] || 0);
+        const m = parseFloat(durMatch[2] || 0);
+        const s = parseFloat(durMatch[3] || 0);
+        durationSec = h * 3600 + m * 60 + s;
+      }
+
+      const adaptMatches = [...cleanText.matchAll(/<AdaptationSet\b([^>]*)>([\s\S]*?)<\/AdaptationSet>/gi)];
+      let audioUrl = null;
+      let audioBw = 0;
+      const videoReps = [];
+
+      adaptMatches.forEach(aMatch => {
+        const setAttrs = aMatch[1].toLowerCase();
+        const setBody = aMatch[2];
+        const isVideo = setAttrs.includes('video') || setAttrs.includes('mimetype="video') || setAttrs.includes("mimetype='video");
+        const isAudio = setAttrs.includes('audio') || setAttrs.includes('mimetype="audio') || setAttrs.includes("mimetype='audio");
+
+        const repMatches = [...setBody.matchAll(/<Representation\b([^>]*)>([\s\S]*?)<\/Representation>/gi)];
+        repMatches.forEach(rMatch => {
+          const repAttrs = rMatch[1];
+          const repBody = rMatch[2];
+
+          const wMatch = repAttrs.match(/\bwidth=["'](\d+)["']/i);
+          const hMatch = repAttrs.match(/\bheight=["'](\d+)["']/i);
+          const bwMatch = repAttrs.match(/\bbandwidth=["'](\d+)["']/i);
+
+          const width = wMatch ? parseInt(wMatch[1], 10) : 0;
+          const height = hMatch ? parseInt(hMatch[1], 10) : 0;
+          const bandwidth = bwMatch ? parseInt(bwMatch[1], 10) : 0;
+
+          let mediaUrl = '';
+          const urlMatch = repBody.match(/<BaseURL\b[^>]*>([^<]+)<\/BaseURL>/i) || setBody.match(/<BaseURL\b[^>]*>([^<]+)<\/BaseURL>/i);
+          if (urlMatch) {
+            mediaUrl = urlMatch[1].trim().replace(/&amp;/g, '&');
+            if (!mediaUrl.startsWith('http') && baseUrl) {
+              try { mediaUrl = new URL(mediaUrl, baseUrl).href; } catch(e) {}
+            }
+          }
+
+          if (mediaUrl && mediaUrl.startsWith('http')) {
+            mediaUrl = sanitizeStreamUrl(mediaUrl);
+            if (isVideo) {
+              const effH = (width > 0 && height > 0) ? Math.min(width, height) : (height || width);
+              videoReps.push({ effectiveHeight: effH, width, height, bandwidth, url: mediaUrl });
+            } else if (isAudio) {
+              if (!audioUrl || bandwidth > audioBw) {
+                audioUrl = mediaUrl;
+                audioBw = bandwidth;
+              }
+            }
+          }
+        });
+      });
+
+      videoReps.sort((a, b) => b.effectiveHeight - a.effectiveHeight || b.bandwidth - a.bandwidth);
+      const seenH = new Set();
+      videoReps.forEach(v => {
+        if (seenH.has(v.effectiveHeight)) return;
+        seenH.add(v.effectiveHeight);
+
+        let label = '';
+        if (v.effectiveHeight >= 2160) label = '4K UHD (2160p) (MP4)';
+        else if (v.effectiveHeight >= 1440) label = '1440p Quad HD (MP4)';
+        else if (v.effectiveHeight >= 1080) label = '1080p Full HD (MP4)';
+        else if (v.effectiveHeight >= 720) label = '720p HD (MP4)';
+        else if (v.effectiveHeight === 640) label = '640p (MP4)';
+        else if (v.effectiveHeight === 540) label = '540p (MP4)';
+        else if (v.effectiveHeight === 480) label = '480p SD (MP4)';
+        else if (v.effectiveHeight === 360) label = '360p SD (MP4)';
+        else label = `${v.effectiveHeight}p (MP4)`;
+
+        let estSize = 0;
+        if (durationSec > 0 && v.bandwidth > 0) {
+          estSize = Math.round(((v.bandwidth + (audioBw || 128000)) * durationSec) / 8);
+        }
+
+        formats.push({
+          formatId: 'fb_' + v.effectiveHeight + 'p',
+          resolution: label,
+          title: pageTitle,
+          url: v.url,
+          videoUrl: v.url,
+          audioUrl: audioUrl,
+          height: v.effectiveHeight,
+          bandwidth: v.bandwidth,
+          ext: 'mp4',
+          isAudioOnly: false,
+          fileSize: estSize
+        });
+      });
+
+      if (audioUrl) {
+        formats.push({
+          formatId: 'fb_audio',
+          resolution: 'Audio (MP3 / High Quality)',
+          title: pageTitle,
+          url: audioUrl,
+          videoUrl: null,
+          audioUrl: audioUrl,
+          height: -1,
+          ext: 'mp3',
+          isAudioOnly: true,
+          fileSize: 0
+        });
+      }
+    } catch(e) {
+      console.warn('parseFacebookDashManifest error:', e);
+    }
+    return formats;
+  }
+
+  function detectFacebookMaxQualityFromPlayer(mediaEl) {
+    let maxQuality = 0;
+    try {
+      const container = mediaEl ? (mediaEl.closest('[data-video-id], [role="article"], article, div[data-pagelet]') || mediaEl.parentElement) : null;
+      const root = container || document;
+      const elements = root.querySelectorAll('[role="menuitem"], [role="menuitemradio"], div, span');
+      for (const el of elements) {
+        const txt = el.textContent ? el.textContent.trim() : '';
+        if (txt.length >= 3 && txt.length <= 10) {
+          const m = txt.match(/^(\d{3,4})p$/i);
+          if (m) {
+            const q = parseInt(m[1], 10);
+            if (q > maxQuality) maxQuality = q;
+          }
+        }
+      }
+    } catch(e) {}
+    return maxQuality;
+  }
+
   function extractFacebookMediaFromDOM(targetVideoId = null, pageTitle = 'facebook_video') {
     const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
     if (!isFb) return null;
 
+    // 1. Try extracting DASH manifest directly from in-page scripts (instant, 1440p-ready)
+    try {
+      const allScripts = Array.from(document.querySelectorAll('script'));
+      for (const s of allScripts) {
+        const text = s.textContent || '';
+        if (text.includes('dash_manifest')) {
+          const rawXml = extractDashManifestFromText(text, targetVideoId);
+          if (rawXml) {
+            const dashFormats = parseFacebookDashManifest(rawXml, window.location.href, pageTitle);
+            if (dashFormats && dashFormats.length > 0) {
+              return { success: true, status: 'ok', title: pageTitle, formats: dashFormats };
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 2. Direct progressive extraction
     const formats = [];
     const seen = new Set();
 
     const addDirect = (url, quality, ext = 'mp4', audioUrl = null) => {
       if (!url || typeof url !== 'string' || !url.startsWith('http')) return;
-      let cleanUrl = url.replace(/\\\/+/g, '/').replace(/\\u0026/g, '&').replace(/\\/g, '');
+      let cleanUrl = sanitizeStreamUrl(url.replace(/\\\/+/g, '/').replace(/\\u0026/g, '&').replace(/\\/g, ''));
       if (seen.has(cleanUrl)) return;
       seen.add(cleanUrl);
 
@@ -806,37 +1017,34 @@
     };
 
     try {
-      if (!targetVideoId) return null;
-      const allScripts = Array.from(document.querySelectorAll('script'));
-      const candidateScripts = allScripts.filter(s => (s.textContent || '').includes(targetVideoId));
-      if (candidateScripts.length === 0) return null;
+      if (targetVideoId) {
+        const allScripts = Array.from(document.querySelectorAll('script'));
+        const candidateScripts = allScripts.filter(s => (s.textContent || '').includes(targetVideoId));
 
-      for (const s of candidateScripts) {
-        const text = s.textContent || '';
-        if (!text || text.length < 30) continue;
-        const hasFbMediaKeys = text.includes('playable_url') || text.includes('browser_native') || text.includes('hd_src') || text.includes('sd_src');
-        if (!hasFbMediaKeys) continue;
+        for (const s of candidateScripts) {
+          const text = s.textContent || '';
+          if (!text || text.length < 30) continue;
+          const hasFbMediaKeys = text.includes('playable_url') || text.includes('browser_native') || text.includes('hd_src') || text.includes('sd_src');
+          if (!hasFbMediaKeys) continue;
 
-        // Verify targetVideoId is in proximity to media keys (prevent extracting Post #1 from SSR root script)
-        let idIndex = text.indexOf(targetVideoId);
-        while (idIndex !== -1) {
-          const windowStart = Math.max(0, idIndex - 4000);
-          const windowEnd = Math.min(text.length, idIndex + 4000);
-          const chunk = text.substring(windowStart, windowEnd);
-          if (chunk.includes('playable_url') || chunk.includes('browser_native') || chunk.includes('hd_src') || chunk.includes('sd_src')) {
-            // 1. Progressive HD URLs (contains both video and audio)
-            const hdMatches = chunk.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
-            for (const m of hdMatches) {
-              addDirect(m[1], '1080p / 720p HD', 'mp4');
+          let idIndex = text.indexOf(targetVideoId);
+          while (idIndex !== -1) {
+            const windowStart = Math.max(0, idIndex - 4000);
+            const windowEnd = Math.min(text.length, idIndex + 4000);
+            const chunk = text.substring(windowStart, windowEnd);
+            if (chunk.includes('playable_url') || chunk.includes('browser_native') || chunk.includes('hd_src') || chunk.includes('sd_src')) {
+              const hdMatches = chunk.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+              for (const m of hdMatches) {
+                addDirect(m[1], '1080p / 720p HD', 'mp4');
+              }
+
+              const sdMatches = chunk.matchAll(/(?:"playable_url"|"browser_native_sd_url"|"sd_src"|"sd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+              for (const m of sdMatches) {
+                addDirect(m[1], 'Standard Definition (SD)', 'mp4');
+              }
             }
-
-            // 2. Progressive SD URLs (contains both video and audio)
-            const sdMatches = chunk.matchAll(/(?:"playable_url"|"browser_native_sd_url"|"sd_src"|"sd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
-            for (const m of sdMatches) {
-              addDirect(m[1], 'Standard Definition (SD)', 'mp4');
-            }
+            idIndex = text.indexOf(targetVideoId, idIndex + 1);
           }
-          idIndex = text.indexOf(targetVideoId, idIndex + 1);
         }
       }
     } catch (e) {}
@@ -847,10 +1055,13 @@
 
       const ladderFormats = [];
       const ladder = [
-        { id: '1080p', label: '1080p Full HD (MP4)', h: 1080 },
-        { id: '720p',  label: '720p HD (MP4)',       h: 720 },
-        { id: '480p',  label: '480p SD (MP4)',       h: 480 },
-        { id: '360p',  label: '360p SD (MP4)',       h: 360 }
+        { id: '1440p', label: '1440p Quad HD (MP4)',  h: 1440 },
+        { id: '1080p', label: '1080p Full HD (MP4)',  h: 1080 },
+        { id: '720p',  label: '720p HD (MP4)',        h: 720 },
+        { id: '640p',  label: '640p (MP4)',           h: 640 },
+        { id: '540p',  label: '540p (MP4)',           h: 540 },
+        { id: '480p',  label: '480p SD (MP4)',        h: 480 },
+        { id: '360p',  label: '360p SD (MP4)',        h: 360 }
       ];
 
       const availableLadder = isHd ? ladder : ladder.filter(tier => tier.h <= 720);
@@ -872,6 +1083,7 @@
       ladderFormats.push({
         formatId: 'fb_audio',
         resolution: 'Audio (MP3 / High Quality)',
+        height: -1,
         ext: 'mp3',
         fileSize: 0,
         isAudioOnly: true,
@@ -1151,19 +1363,26 @@
             const fbFormats = [];
 
             if (primaryVideo) {
-              const vH = mediaEl ? (mediaEl.videoHeight || 0) : 0;
-              const sourceHeight = vH > 0 ? vH : 1080;
+              const effVH = (mediaEl && mediaEl.videoWidth > 0 && mediaEl.videoHeight > 0)
+                ? Math.min(mediaEl.videoWidth, mediaEl.videoHeight)
+                : (mediaEl ? (mediaEl.videoHeight || 0) : 0);
+              const playerMaxQ = detectFacebookMaxQualityFromPlayer(mediaEl);
+              const sourceHeight = Math.max(effVH, playerMaxQ, 1080);
               const totalStreamSize = (primaryVideo.contentLength || 0) + (primaryAudio ? (primaryAudio.contentLength || 0) : 0);
 
               // Standard multi-format quality ladder (matching user expectation from yt-dlp)
               const ladder = [
-                { id: '1080p', label: '1080p Full HD (MP4)', h: 1080, scale: 1.0 },
-                { id: '720p',  label: '720p HD (MP4)',       h: 720,  scale: 0.65 },
-                { id: '480p',  label: '480p SD (MP4)',       h: 480,  scale: 0.40 },
-                { id: '360p',  label: '360p SD (MP4)',       h: 360,  scale: 0.25 }
+                { id: '2160p', label: '4K UHD (2160p) (MP4)', h: 2160, scale: 2.2 },
+                { id: '1440p', label: '1440p Quad HD (MP4)',  h: 1440, scale: 1.6 },
+                { id: '1080p', label: '1080p Full HD (MP4)',  h: 1080, scale: 1.0 },
+                { id: '720p',  label: '720p HD (MP4)',        h: 720,  scale: 0.65 },
+                { id: '640p',  label: '640p (MP4)',           h: 640,  scale: 0.52 },
+                { id: '540p',  label: '540p (MP4)',           h: 540,  scale: 0.45 },
+                { id: '480p',  label: '480p SD (MP4)',        h: 480,  scale: 0.38 },
+                { id: '360p',  label: '360p SD (MP4)',        h: 360,  scale: 0.25 }
               ];
 
-              let availableLadder = ladder.filter(item => item.h <= Math.max(sourceHeight, 720));
+              let availableLadder = ladder.filter(item => item.h <= Math.max(sourceHeight, 1080));
               if (availableLadder.length === 0) availableLadder = ladder;
 
               availableLadder.forEach(tier => {
@@ -1530,7 +1749,6 @@
   function renderFormatDropdown(container, formats, videoUrl, popover, mediaTitle = null, hasMorePending = false) {
     if (!container) return;
     if (container._smartdm_downloading) return;
-    container.innerHTML = '';
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
 
     // Determine the authoritative base title for all formats
@@ -1644,7 +1862,7 @@
       }
     });
 
-    // Sort items: video items by height descending (1080p, 720p, 480p, 360p), audio items next, thumbnail last
+    // Sort items: video items by height descending (2160p, 1440p, 1080p, 720p...), audio items next, thumbnail last
     items.sort((a, b) => {
       const isThumbA = a.formatId === 'thumbnail';
       const isThumbB = b.formatId === 'thumbnail';
@@ -1660,9 +1878,20 @@
       return;
     }
 
-    items.forEach(item => {
+    const existingDomItems = Array.from(container.querySelectorAll('.format-item'));
+    const isFirstRender = existingDomItems.length === 0;
+
+    if (isFirstRender) {
+      container.innerHTML = '';
+    }
+
+    function createItemElement(item) {
       const div = document.createElement('div');
       div.className = 'format-item';
+      div.dataset.formatKey = item.title;
+      div.dataset.height = String(item.height || 0);
+      div.dataset.isAudio = item.isAudio ? 'true' : 'false';
+      div.dataset.isThumb = (item.formatId === 'thumbnail') ? 'true' : 'false';
       div.innerHTML = `
         <div class="format-info">
           <span class="format-title" title="${item.title}">${item.title}</span>
@@ -1710,7 +1939,6 @@
             audioUrl: f.audioUrl || f.AudioUrl || (!isAud ? bestAudioUrl : null)
           };
         });
-
 
         if (!formatsList.some(f => f.formatId === 'bestaudio/best' || (f.isAudioOnly && f.ext === 'mp3'))) {
           formatsList.push({
@@ -1782,15 +2010,72 @@
         });
       }, true);
 
-      container.appendChild(div);
-    });
+      return div;
+    }
 
+    if (isFirstRender) {
+      items.forEach(item => {
+        container.appendChild(createItemElement(item));
+      });
+    } else {
+      // Seamless in-place insertion for background-resolved qualities
+      items.forEach(item => {
+        const existingEl = container.querySelector('.format-item[data-format-key="' + CSS.escape(item.title) + '"]');
+        if (existingEl) {
+          const badgeEl = existingEl.querySelector('.format-badge');
+          if (badgeEl && item.badge && item.badge !== 'Download' && badgeEl.textContent === 'Download') {
+            badgeEl.textContent = item.badge;
+          }
+          return;
+        }
+
+        const div = createItemElement(item);
+        div.style.animation = 'smartdmFadeIn 0.25s ease-out';
+
+        const currentDom = Array.from(container.querySelectorAll('.format-item'));
+        let insertBeforeEl = null;
+        for (const cur of currentDom) {
+          const curH = parseInt(cur.dataset.height || '-999', 10);
+          const curIsAudio = cur.dataset.isAudio === 'true';
+          const curIsThumb = cur.dataset.isThumb === 'true';
+
+          if (!item.isAudio && item.formatId !== 'thumbnail') {
+            if (curIsAudio || curIsThumb || curH < item.height) {
+              insertBeforeEl = cur;
+              break;
+            }
+          } else if (item.isAudio) {
+            if (curIsThumb) {
+              insertBeforeEl = cur;
+              break;
+            }
+          }
+        }
+
+        if (insertBeforeEl) {
+          container.insertBefore(div, insertBeforeEl);
+        } else {
+          const pendingEl = container.querySelector('.smartdm-pending-notice');
+          if (pendingEl) {
+            container.insertBefore(div, pendingEl);
+          } else {
+            container.appendChild(div);
+          }
+        }
+      });
+    }
+
+    let notice = container.querySelector('.smartdm-pending-notice');
     if (hasMorePending) {
-      const notice = document.createElement('div');
-      notice.className = 'smartdm-pending-notice';
-      notice.style.cssText = 'padding: 6px 12px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; gap: 6px;';
-      notice.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border:2px solid #38bdf8; border-top-color:transparent; border-radius:50%; animation: spin 0.8s linear infinite;"></span> Checking for higher qualities...';
-      container.appendChild(notice);
+      if (!notice) {
+        notice = document.createElement('div');
+        notice.className = 'smartdm-pending-notice';
+        notice.style.cssText = 'padding: 6px 12px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; gap: 6px;';
+        notice.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border:2px solid #38bdf8; border-top-color:transparent; border-radius:50%; animation: spin 0.8s linear infinite;"></span> Checking for higher qualities...';
+        container.appendChild(notice);
+      }
+    } else {
+      if (notice) notice.remove();
     }
   }
 
@@ -1886,7 +2171,7 @@
         .popover {
           position: absolute;
           top: 32px; right: 0;
-          width: 270px;
+          width: 290px;
           background: rgba(15, 23, 42, 0.96);
           backdrop-filter: blur(16px);
           border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1911,7 +2196,7 @@
           margin-bottom: 4px;
         }
         .popover-content {
-          max-height: 220px;
+          max-height: 380px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
@@ -1920,6 +2205,10 @@
         }
         .popover-content::-webkit-scrollbar { width: 4px; }
         .popover-content::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 4px; }
+        @keyframes smartdmFadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
         .format-item {
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2014,25 +2303,43 @@
 
       content._smartdm_downloading = false;
       popover.classList.add('active');
-      content.innerHTML = `
-        <div class="spinner-container">
-          <div class="spinner"></div>
-          <span class="status-text" style="padding:0;">Loading video options...</span>
-        </div>
-      `;
+
+      let cardTitle = null;
+      if (isFb) {
+        cardTitle = extractFacebookMediaTitle(mediaEl, parentCard);
+      } else if (parentCard) {
+        cardTitle = extractCardTitle(parentCard);
+      }
+      const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : extractWatchPageTitle();
+      const pageTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : fallbackTitle;
+
+      // Fast synchronous DOM/DASH extraction (< 1ms)
+      let initialFormats = null;
+      if (isFb) {
+        const fbTargetId = extractFacebookPostVideoId(mediaEl);
+        const domFb = extractFacebookMediaFromDOM(fbTargetId, pageTitle);
+        if (domFb && domFb.formats && domFb.formats.length > 0) {
+          initialFormats = domFb.formats;
+        }
+      }
 
       let currentFormats = [];
+      if (initialFormats && initialFormats.length > 0) {
+        currentFormats = [...initialFormats];
+        renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, true);
+      } else {
+        content.innerHTML = `
+          <div class="spinner-container">
+            <div class="spinner"></div>
+            <span class="status-text" style="padding:0;">Loading video options...</span>
+          </div>
+        `;
+      }
+
       fetchMediaFormats(videoUrl, mediaEl, (res, hasMorePending) => {
         try {
           if (content._smartdm_downloading) return;
-          let cardTitle = null;
-          if (isFb) {
-            cardTitle = extractFacebookMediaTitle(mediaEl, parentCard);
-          } else if (parentCard) {
-            cardTitle = extractCardTitle(parentCard);
-          }
-          const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : extractWatchPageTitle();
-          const pageTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !isGenericTitle(res.title)) ? res.title : fallbackTitle);
+          const resolvedTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !isGenericTitle(res.title)) ? res.title : pageTitle);
           if (res && res.formats && res.formats.length > 0) {
             const existingKeys = new Set(currentFormats.map(f => {
               const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
@@ -2301,7 +2608,7 @@
         .thumb-btn:hover .icon { stroke: #ffffff; }
         .popover {
           position: fixed;
-          width: 250px;
+          width: 290px;
           background: rgba(15, 23, 42, 0.96);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
@@ -2324,7 +2631,11 @@
           padding-bottom: 4px; margin-bottom: 3px;
         }
         .popover-content {
-          max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 2px;
+          max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 2px;
+        }
+        @keyframes smartdmFadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         .format-item {
           background: rgba(255, 255, 255, 0.06);
