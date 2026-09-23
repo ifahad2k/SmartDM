@@ -203,10 +203,8 @@ function parseMpdFormats(mpdText, baseUrl) {
 if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
   chrome.webRequest.onHeadersReceived.addListener(
     (details) => {
-      let targetTabId = details.tabId;
-      if (targetTabId <= 0) {
-        targetTabId = lastActiveTabId || 1;
-      }
+      if (details.tabId <= 0) return;
+      const targetTabId = details.tabId;
 
       const headers = details.responseHeaders || [];
       let contentType = '';
@@ -382,7 +380,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             const fbEfg = parseFacebookEfg(targetUrl);
             let efgStr = '';
             if (fbEfg) {
-              const efgVid = fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id;
+              const efgVid = fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id || fbEfg.media_id || fbEfg.reel_id || fbEfg.video_asset_id;
               if (efgVid) fbVideoId = String(efgVid);
 
               try { efgStr = JSON.stringify(fbEfg).toLowerCase(); } catch(e) {}
@@ -408,8 +406,13 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             }
 
             if (!fbVideoId) {
-              const idMatch = targetUrl.match(/[?&](?:video_id|v|fbid|story_fbid)=(\d+)/) || targetUrl.match(/\/(\d{10,})\b/);
-              if (idMatch) fbVideoId = idMatch[1];
+              const pathMatch = targetUrl.match(/\/(\d{10,})[_\.\/]/);
+              if (pathMatch) {
+                fbVideoId = pathMatch[1];
+              } else {
+                const idMatch = targetUrl.match(/[?&](?:video_id|v|fbid|story_fbid|asset_id|media_id)=(\d+)/);
+                if (idMatch) fbVideoId = idMatch[1];
+              }
             }
           }
 
@@ -994,8 +997,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab ? sender.tab.id : null;
     let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
     if (media.length === 0 && detectedMediaMap.size > 0) {
-      const allEntries = Array.from(detectedMediaMap.values());
-      if (allEntries.length > 0) media = allEntries[allEntries.length - 1] || [];
+      for (const list of detectedMediaMap.values()) {
+        if (list && list.length > 0) {
+          media = list;
+          break;
+        }
+      }
     }
     // Return newest media streams first so the currently active/played video is prioritized
     const sortedMedia = media.slice().reverse();

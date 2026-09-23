@@ -157,12 +157,14 @@
       clean === 'facebook_reel' ||
       clean === 'facebook video' ||
       clean === 'facebook reel' ||
+      clean === 'facebook reels' ||
+      clean.startsWith('reels - video') ||
+      clean.startsWith('reel - video') ||
+      clean.startsWith('reels and short') ||
       clean === 'reels' ||
       clean === 'reel' ||
-      clean === 'reels - video' ||
-      clean === 'reel - video' ||
-      clean === 'reels and short videos' ||
-      clean === 'facebook reels' ||
+      clean.startsWith('facebook video') ||
+      clean.startsWith('facebook reel') ||
       clean === 'pornhub' ||
       clean === 'pornhub.com' ||
       clean === 'video stream' ||
@@ -302,26 +304,18 @@
 
       // 2. Nearest container with role="listitem" or role="group" or data-visualcompletion that has a reel link
       const container = mediaEl.closest('[role="listitem"], [role="group"], [data-visualcompletion="ignore-dynamic"]');
-      if (container && container.querySelector('a[href*="/reel/"]')) return container;
-
-      // 3. Ascend parents looking for a card-level container with exactly one reel link,
-      // stopping before any feed-level or multi-reel carousel container
-      let curr = mediaEl.parentElement;
-      let candidate = null;
-      while (curr && curr !== document.body) {
-        const pagelet = curr.getAttribute('data-pagelet') || '';
-        if (pagelet.startsWith('FeedUnit_') || curr.getAttribute('role') === 'feed') {
-          break;
-        }
-        const reelLinks = curr.querySelectorAll('a[href*="/reel/"]');
-        if (reelLinks.length === 1) {
-          candidate = curr;
-        } else if (reelLinks.length > 1) {
-          break;
-        }
-        curr = curr.parentElement;
+      if (container) {
+        const link = container.querySelector('a[href*="/reel/"]');
+        if (link) return container;
       }
-      if (candidate) return candidate;
+
+      // 3. Fast ancestor check capped at 3 levels maximum (never ascend to document.body!)
+      let curr = mediaEl.parentElement;
+      for (let depth = 0; depth < 3 && curr && curr !== document.body; depth++, curr = curr.parentElement) {
+        const reelLinks = curr.querySelectorAll('a[href*="/reel/"]');
+        if (reelLinks.length === 1) return curr;
+        if (reelLinks.length > 1) break;
+      }
     } catch(e) {}
     return null;
   }
@@ -336,7 +330,7 @@
         const txt = (el.textContent || '').trim();
         if (!txt || txt.length < 3 || isGenericTitle(txt)) continue;
         const lower = txt.toLowerCase();
-        if (lower === 'reels' || lower === 'reel' || lower === 'follow' || lower.startsWith('original audio') || lower.includes('audio')) continue;
+        if (lower.startsWith('reels') || lower.startsWith('reel') || lower === 'follow' || lower.startsWith('original audio') || lower.includes('audio')) continue;
         if (/^\d+[\d.,KkMmbB\s]*(likes|comments|views|shares)?$/i.test(txt)) continue;
         candidates.push(txt);
       }
@@ -353,11 +347,15 @@
           return sanitizeCleanTitle(alt.length > 90 ? alt.substring(0, 90).trim() : alt);
         }
       }
-      const a = reelCard.querySelector('a[href*="/reel/"]');
+      const a = reelCard.tagName === 'A' ? reelCard : reelCard.querySelector('a[href*="/reel/"]');
       if (a) {
         const aria = (a.getAttribute('aria-label') || a.getAttribute('title') || '').trim();
         if (aria && aria.length >= 4 && !isGenericTitle(aria)) {
           return sanitizeCleanTitle(aria.length > 90 ? aria.substring(0, 90).trim() : aria);
+        }
+        if (a.href) {
+          const m = a.href.match(/\/reel\/(\d+)/);
+          if (m && m[1]) return `Facebook_Reel_${m[1]}`;
         }
       }
     } catch(e) {}
@@ -539,12 +537,12 @@
 
       // 5. Fallback to author name + " - Video" if available (ignoring carousel headers)
       if (card) {
-        const isCarouselContainer = (card.getAttribute('data-pagelet') || '').startsWith('FeedUnit_') && card.querySelectorAll('a[href*="/reel/"]').length > 1;
-        if (!isCarouselContainer) {
+        const isCarousel = card.querySelectorAll && card.querySelectorAll('a[href*="/reel/"]').length > 1;
+        if (!isCarousel) {
           const authorEl = card.querySelector('h2 a, h3 a, h2, h3, strong, [role="heading"]');
           if (authorEl) {
             const author = (authorEl.textContent || '').trim();
-            if (author && author.length >= 2 && !isGenericTitle(author)) {
+            if (author && author.length >= 2 && !isGenericTitle(author) && !author.toLowerCase().includes('reel')) {
               return sanitizeCleanTitle(author + ' - Video');
             }
           }
@@ -1014,216 +1012,173 @@
       }
 
       // 3. Query detected network streams from background
-      const queryDetected = (onSuccess) => {
-        let called = false;
-        const timer = setTimeout(() => {
-          if (!called) {
-            called = true;
-            onSuccess([]);
-          }
-        }, 800);
-        try {
-          runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
-            if (called) return;
-            called = true;
-            clearTimeout(timer);
-            if (runtime.lastError) {
-              onSuccess([]);
-              return;
-            }
-            const netMedia = (netRes && netRes.media) ? netRes.media : [];
-            onSuccess(netMedia);
-          });
-        } catch(e) {
-          if (!called) {
-            called = true;
-            clearTimeout(timer);
-            onSuccess([]);
-          }
+      runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
+        if (runtime.lastError) {
+          callback({ success: false, status: 'error', message: 'No media formats detected.' });
+          return;
         }
-      };
+        const netMedia = (netRes && netRes.media) ? netRes.media : [];
 
-      queryDetected((netMedia) => {
         try {
           // Dedicated Facebook stream isolation & dual video+audio pairing
           if (isFb) {
-            const processFacebookStreams = (streamList) => {
-              const fbStreams = (streamList || []).filter(m => m.url && (m.url.includes('fbcdn.net') || m.url.includes('facebook.com')));
-              const allVideoStreams = fbStreams.filter(m => !m.isAudio);
-              const allAudioStreams = fbStreams.filter(m => m.isAudio);
+            const fbStreams = (netMedia || []).filter(m => m.url && (m.url.includes('fbcdn.net') || m.url.includes('facebook.com')));
+            const allVideoStreams = fbStreams.filter(m => !m.isAudio);
+            const allAudioStreams = fbStreams.filter(m => m.isAudio);
 
-              let relevantVideo = allVideoStreams;
-              if (fbTargetId) {
-                const matched = allVideoStreams.filter(m => m.fbVideoId === fbTargetId);
-                if (matched.length > 0) relevantVideo = matched;
+            let relevantVideo = allVideoStreams;
+            if (fbTargetId) {
+              const matched = allVideoStreams.filter(m => m.fbVideoId === fbTargetId);
+              if (matched.length > 0) {
+                relevantVideo = matched;
+              } else {
+                relevantVideo = [];
+              }
+            }
+
+            // Match video stream to mediaEl
+            let primaryVideo = null;
+            if (relevantVideo.length > 0) {
+              if (mediaEl && mediaEl._smartdm_play_time) {
+                primaryVideo = relevantVideo.reduce((prev, curr) => {
+                  const diffPrev = Math.abs((prev.timestamp || 0) - mediaEl._smartdm_play_time);
+                  const diffCurr = Math.abs((curr.timestamp || 0) - mediaEl._smartdm_play_time);
+                  return diffCurr < diffPrev ? curr : prev;
+                }, relevantVideo[0]);
+              } else {
+                primaryVideo = relevantVideo[relevantVideo.length - 1];
+              }
+            }
+
+            // Match audio stream strictly for primaryVideo
+            let primaryAudio = null;
+            if (primaryVideo) {
+              // RULE 1: Exact fbVideoId asset match!
+              // Video and audio DASH streams for the same Facebook media item always share the exact same asset video_id in efg.
+              if (primaryVideo.fbVideoId) {
+                const sameAssetAudio = allAudioStreams.filter(m => m.fbVideoId && m.fbVideoId === primaryVideo.fbVideoId);
+                if (sameAssetAudio.length > 0) {
+                  primaryAudio = sameAssetAudio[sameAssetAudio.length - 1];
+                }
               }
 
-              // Match video stream to mediaEl
-              let primaryVideo = null;
-              if (relevantVideo.length > 0) {
-                if (mediaEl && mediaEl._smartdm_play_time) {
-                  primaryVideo = relevantVideo.reduce((prev, curr) => {
-                    const diffPrev = Math.abs((prev.timestamp || 0) - mediaEl._smartdm_play_time);
-                    const diffCurr = Math.abs((curr.timestamp || 0) - mediaEl._smartdm_play_time);
-                    return diffCurr < diffPrev ? curr : prev;
-                  }, relevantVideo[0]);
-                } else {
-                  primaryVideo = relevantVideo[relevantVideo.length - 1];
+              // RULE 2: If fbTargetId matches
+              if (!primaryAudio && fbTargetId) {
+                const targetAudio = allAudioStreams.filter(m => m.fbVideoId === fbTargetId);
+                if (targetAudio.length > 0) {
+                  primaryAudio = targetAudio[targetAudio.length - 1];
                 }
               }
 
-              // Match audio stream strictly for primaryVideo
-              let primaryAudio = null;
-              if (primaryVideo) {
-                // RULE 1: Exact fbVideoId asset match!
-                // Video and audio DASH streams for the same Facebook media item always share the exact same asset video_id in efg.
-                if (primaryVideo.fbVideoId) {
-                  const sameAssetAudio = allAudioStreams.filter(m => m.fbVideoId && m.fbVideoId === primaryVideo.fbVideoId);
-                  if (sameAssetAudio.length > 0) {
-                    primaryAudio = sameAssetAudio[sameAssetAudio.length - 1];
-                  }
-                }
-
-                // RULE 2: If fbTargetId matches
-                if (!primaryAudio && fbTargetId) {
-                  const targetAudio = allAudioStreams.filter(m => m.fbVideoId === fbTargetId);
-                  if (targetAudio.length > 0) {
-                    primaryAudio = targetAudio[targetAudio.length - 1];
-                  }
-                }
-
-                // RULE 3: Proximity match ONLY among streams that DO NOT belong to a different known video asset!
-                if (!primaryAudio && allAudioStreams.length > 0) {
-                  const eligibleAudio = allAudioStreams.filter(m => {
-                    if (!m.fbVideoId) return true; // generic/unknown id
-                    if (primaryVideo.fbVideoId && m.fbVideoId !== primaryVideo.fbVideoId) return false;
-                    if (fbTargetId && m.fbVideoId !== fbTargetId) return false;
-                    return true;
-                  });
-                  const pool = eligibleAudio.length > 0 ? eligibleAudio : allAudioStreams;
-                  primaryAudio = pool.reduce((prev, curr) => {
+              // RULE 3: Proximity match ONLY among streams that DO NOT belong to a different known video asset!
+              if (!primaryAudio && allAudioStreams.length > 0) {
+                const eligibleAudio = allAudioStreams.filter(m => {
+                  if (m.fbVideoId && primaryVideo.fbVideoId && m.fbVideoId !== primaryVideo.fbVideoId) return false;
+                  if (m.fbVideoId && fbTargetId && m.fbVideoId !== fbTargetId) return false;
+                  return true;
+                });
+                if (eligibleAudio.length > 0) {
+                  primaryAudio = eligibleAudio.reduce((prev, curr) => {
                     const diffPrev = Math.abs((prev.timestamp || 0) - (primaryVideo.timestamp || 0));
                     const diffCurr = Math.abs((curr.timestamp || 0) - (primaryVideo.timestamp || 0));
                     return diffCurr < diffPrev ? curr : prev;
-                  }, pool[0]);
+                  }, eligibleAudio[0]);
                 }
-              } else if (allAudioStreams.length > 0) {
-                primaryAudio = allAudioStreams[allAudioStreams.length - 1];
               }
+            } else if (allAudioStreams.length > 0 && !fbTargetId) {
+              primaryAudio = allAudioStreams[allAudioStreams.length - 1];
+            }
 
-              const fbFormats = [];
+            const fbFormats = [];
 
-              if (primaryVideo) {
-                const vH = mediaEl ? (mediaEl.videoHeight || 0) : 0;
-                const sourceHeight = vH > 0 ? vH : 1080;
-                const totalStreamSize = (primaryVideo.contentLength || 0) + (primaryAudio ? (primaryAudio.contentLength || 0) : 0);
+            if (primaryVideo) {
+              const vH = mediaEl ? (mediaEl.videoHeight || 0) : 0;
+              const sourceHeight = vH > 0 ? vH : 1080;
+              const totalStreamSize = (primaryVideo.contentLength || 0) + (primaryAudio ? (primaryAudio.contentLength || 0) : 0);
 
-                // Standard multi-format quality ladder (matching user expectation from yt-dlp)
-                const ladder = [
-                  { id: '1080p', label: '1080p Full HD (MP4)', h: 1080, scale: 1.0 },
-                  { id: '720p',  label: '720p HD (MP4)',       h: 720,  scale: 0.65 },
-                  { id: '480p',  label: '480p SD (MP4)',       h: 480,  scale: 0.40 },
-                  { id: '360p',  label: '360p SD (MP4)',       h: 360,  scale: 0.25 }
-                ];
+              // Standard multi-format quality ladder (matching user expectation from yt-dlp)
+              const ladder = [
+                { id: '1080p', label: '1080p Full HD (MP4)', h: 1080, scale: 1.0 },
+                { id: '720p',  label: '720p HD (MP4)',       h: 720,  scale: 0.65 },
+                { id: '480p',  label: '480p SD (MP4)',       h: 480,  scale: 0.40 },
+                { id: '360p',  label: '360p SD (MP4)',       h: 360,  scale: 0.25 }
+              ];
 
-                let availableLadder = ladder.filter(item => item.h <= Math.max(sourceHeight, 720));
-                if (availableLadder.length === 0) availableLadder = ladder;
+              let availableLadder = ladder.filter(item => item.h <= Math.max(sourceHeight, 720));
+              if (availableLadder.length === 0) availableLadder = ladder;
 
-                availableLadder.forEach(tier => {
-                  let estSize = 0;
-                  if (totalStreamSize > 0) {
-                    estSize = Math.round(totalStreamSize * tier.scale);
-                  }
-                  fbFormats.push({
-                    formatId: 'fb_' + tier.id,
-                    resolution: tier.label,
-                    height: tier.h,
-                    ext: 'mp4',
-                    fileSize: estSize,
-                    isAudioOnly: false,
-                    title: pageTitle,
-                    url: primaryVideo.url,
-                    videoUrl: primaryVideo.url,
-                    audioUrl: primaryAudio ? primaryAudio.url : null
-                  });
-                });
-              }
-
-              if (primaryAudio) {
+              availableLadder.forEach(tier => {
+                let estSize = 0;
+                if (totalStreamSize > 0) {
+                  estSize = Math.round(totalStreamSize * tier.scale);
+                }
                 fbFormats.push({
-                  formatId: 'fb_audio',
-                  resolution: 'Audio (MP3 / High Quality)',
-                  ext: 'mp3',
-                  fileSize: primaryAudio.contentLength || 0,
-                  isAudioOnly: true,
-                  title: pageTitle,
-                  url: primaryAudio.url,
-                  videoUrl: null,
-                  audioUrl: primaryAudio.url
-                });
-              } else if (primaryVideo) {
-                fbFormats.push({
-                  formatId: 'fb_audio',
-                  resolution: 'Audio (MP3 / High Quality)',
-                  ext: 'mp3',
-                  fileSize: 0,
-                  isAudioOnly: true,
+                  formatId: 'fb_' + tier.id,
+                  resolution: tier.label,
+                  height: tier.h,
+                  ext: 'mp4',
+                  fileSize: estSize,
+                  isAudioOnly: false,
                   title: pageTitle,
                   url: primaryVideo.url,
-                  videoUrl: null,
-                  audioUrl: primaryVideo.url
+                  videoUrl: primaryVideo.url,
+                  audioUrl: primaryAudio ? primaryAudio.url : null
                 });
-              }
-
-              if (fbFormats.length > 0) {
-                callback({ success: true, status: 'ok', title: pageTitle, formats: fbFormats });
-                return;
-              }
-
-              callback({
-                success: false,
-                status: 'error',
-                message: 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
               });
-            };
+            }
 
-            const initialFb = (netMedia || []).filter(m => m.url && (m.url.includes('fbcdn.net') || m.url.includes('facebook.com')));
-            const initialVideos = initialFb.filter(m => !m.isAudio);
+            if (primaryAudio) {
+              fbFormats.push({
+                formatId: 'fb_audio',
+                resolution: 'Audio (MP3 / High Quality)',
+                ext: 'mp3',
+                fileSize: primaryAudio.contentLength || 0,
+                isAudioOnly: true,
+                title: pageTitle,
+                url: primaryAudio.url,
+                videoUrl: null,
+                audioUrl: primaryAudio.url
+              });
+            } else if (primaryVideo) {
+              fbFormats.push({
+                formatId: 'fb_audio',
+                resolution: 'Audio (MP3 / High Quality)',
+                ext: 'mp3',
+                fileSize: 0,
+                isAudioOnly: true,
+                title: pageTitle,
+                url: primaryVideo.url,
+                videoUrl: null,
+                audioUrl: primaryVideo.url
+              });
+            }
 
-            // If Facebook video hasn't buffered yet, attempt a gentle 350ms play probe once
-            if (initialVideos.length === 0) {
-              if (mediaEl && mediaEl.paused) {
-                try {
-                  const origMuted = mediaEl.muted;
-                  mediaEl.muted = true;
-                  const playP = mediaEl.play();
-                  if (playP !== undefined) {
-                    playP.then(() => {
-                      setTimeout(() => {
-                        try { mediaEl.pause(); mediaEl.muted = origMuted; } catch(e) {}
-                      }, 350);
-                    }).catch(() => {});
-                  }
-                } catch(e) {}
-              }
-
-              setTimeout(() => {
-                queryDetected((retryMedia) => {
-                  try {
-                    processFacebookStreams(retryMedia);
-                  } catch(e) {
-                    callback({
-                      success: false,
-                      status: 'error',
-                      message: 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
-                    });
-                  }
-                });
-              }, 400);
+            if (fbFormats.length > 0) {
+              callback({ success: true, status: 'ok', title: pageTitle, formats: fbFormats });
               return;
             }
 
-            processFacebookStreams(netMedia);
+            // If not found yet, gently trigger playback in the background if mediaEl is paused
+            if (mediaEl && mediaEl.paused) {
+              try {
+                const origMuted = mediaEl.muted;
+                mediaEl.muted = true;
+                const playP = mediaEl.play();
+                if (playP !== undefined) {
+                  playP.then(() => {
+                    setTimeout(() => {
+                      try { mediaEl.pause(); mediaEl.muted = origMuted; } catch(e) {}
+                    }, 500);
+                  }).catch(() => {});
+                }
+              } catch(e) {}
+            }
+
+            callback({
+              success: false,
+              status: 'error',
+              message: 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
+            });
             return;
           }
 
@@ -1953,19 +1908,26 @@
       `;
 
       fetchMediaFormats(videoUrl, mediaEl, (res) => {
-        let cardTitle = null;
-        if (isFb) {
-          cardTitle = extractFacebookMediaTitle(mediaEl, parentCard);
-        } else if (parentCard) {
-          cardTitle = extractCardTitle(parentCard);
-        }
-        const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : extractWatchPageTitle();
-        const pageTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !isGenericTitle(res.title)) ? res.title : fallbackTitle);
-        if (res && res.formats && res.formats.length > 0) {
-          renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
-        } else {
-          content.innerHTML = '<div class="status-text" style="color:#f87171;">' + 
-            ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>') + 
+        try {
+          let cardTitle = null;
+          if (isFb) {
+            cardTitle = extractFacebookMediaTitle(mediaEl, parentCard);
+          } else if (parentCard) {
+            cardTitle = extractCardTitle(parentCard);
+          }
+          const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : extractWatchPageTitle();
+          const pageTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !isGenericTitle(res.title)) ? res.title : fallbackTitle);
+          if (res && res.formats && res.formats.length > 0) {
+            renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
+          } else {
+            content.innerHTML = '<div class="status-text" style="color:#f87171;">' + 
+              ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>') + 
+              '</div>';
+          }
+        } catch (uiErr) {
+          console.error('[SmartDM] Format dropdown error:', uiErr);
+          content.innerHTML = '<div class="status-text" style="color:#f87171;">' +
+            ((res && res.message) ? res.message : 'Error rendering formats.<br><span style="font-size:10px; color:#94a3b8;">Play video to detect streams.</span>') +
             '</div>';
         }
       });
