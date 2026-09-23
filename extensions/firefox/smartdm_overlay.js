@@ -1048,9 +1048,7 @@
           callback({
             success: false,
             status: 'error',
-            message: isFb
-              ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
-              : 'No media formats detected.'
+            message: 'No media formats detected for this video.'
           });
           return;
         }
@@ -1219,26 +1217,10 @@
               return;
             }
 
-            // If not found yet, gently trigger playback in the background if mediaEl is paused
-            if (mediaEl && mediaEl.paused) {
-              try {
-                const origMuted = mediaEl.muted;
-                mediaEl.muted = true;
-                const playP = mediaEl.play();
-                if (playP !== undefined) {
-                  playP.then(() => {
-                    setTimeout(() => {
-                      try { mediaEl.pause(); mediaEl.muted = origMuted; } catch(e) {}
-                    }, 500);
-                  }).catch(() => {});
-                }
-              } catch(e) {}
-            }
-
             callback({
               success: false,
               status: 'error',
-              message: 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
+              message: 'No media formats detected for this video.'
             });
             return;
           }
@@ -1339,7 +1321,8 @@
               fileSize: (m.contentLength && m.contentLength >= 1048576) ? m.contentLength : 0,
               isAudioOnly: isAudio,
               title: pageTitle,
-              url: m.url
+              url: m.url,
+              height: (m.height && m.height > 0) ? m.height : (vH || 0)
             });
           });
 
@@ -1356,9 +1339,7 @@
             callback({
               success: false,
               status: 'error',
-              message: isFb
-                ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
-                : 'No media formats detected.'
+              message: 'No media formats detected for this video.'
             });
           }
         } catch(e) {
@@ -1373,9 +1354,7 @@
           callback({
             success: false,
             status: 'error',
-            message: isFb
-              ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
-              : 'No media formats detected.'
+            message: 'No media formats detected for this video.'
           });
         }
       });
@@ -1443,9 +1422,7 @@
             notifyCallbacks({
               success: false,
               status: 'error',
-              message: isFb
-                ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
-                : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>'
+              message: 'No media formats detected for this video.'
             });
           }
         }
@@ -1453,114 +1430,106 @@
 
       const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
 
-      // 1. For Facebook:
-      if (isFb) {
-        const isSpecificFbUrl = videoUrl && (
-          videoUrl.includes('/reel/') ||
-          videoUrl.includes('/videos/') ||
-          videoUrl.includes('/watch') ||
-          videoUrl.includes('/posts/') ||
-          videoUrl.includes('fbid=') ||
-          videoUrl.includes('story_fbid=') ||
-          videoUrl.includes('/permalink') ||
-          videoUrl.includes('/share/')
-        );
+      const isSpecificFbUrl = isFb && videoUrl && (
+        videoUrl.includes('/reel/') ||
+        videoUrl.includes('/videos/') ||
+        videoUrl.includes('/watch') ||
+        videoUrl.includes('/posts/') ||
+        videoUrl.includes('fbid=') ||
+        videoUrl.includes('story_fbid=') ||
+        videoUrl.includes('/permalink') ||
+        videoUrl.includes('/share/')
+      );
 
-        if (isSpecificFbUrl) {
-          runtime.sendMessage({ type: 'GET_PAGE_MEDIA_FORMATS', url: videoUrl }, (pageRes) => {
-            if (pageRes && (pageRes.success || pageRes.status === 'ok') && pageRes.formats && pageRes.formats.length > 0) {
-              notifyCallbacks(pageRes);
-              return;
-            }
-            buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
-              notifyCallbacks(fallbackRes);
-            });
-          });
-          return;
-        }
+      const isExternalWatchUrl = !isFb && !isYouTube && videoUrl !== window.location.href && 
+        (videoUrl.includes('/view_video.php') || videoUrl.includes('/video/') || videoUrl.includes('/videos/') || videoUrl.includes('/watch'));
 
-        buildFallbackFormats(videoUrl, mediaEl, (result) => {
-          notifyCallbacks(result);
-        });
-        return;
-      }
+      let instantDelivered = false;
 
-      // 2. For non-YouTube sites:
-      if (!isYouTube) {
-        const isExternalWatchUrl = videoUrl !== window.location.href && 
-          (videoUrl.includes('/view_video.php') || videoUrl.includes('/video/') || videoUrl.includes('/videos/') || videoUrl.includes('/watch'));
-
-        // If clicked from a thumbnail on a listing/search page, fetch watch page HTML directly
-        if (isExternalWatchUrl) {
-          runtime.sendMessage({ type: 'GET_PAGE_MEDIA_FORMATS', url: videoUrl }, (pageRes) => {
-            if (pageRes && (pageRes.success || pageRes.status === 'ok') && pageRes.formats && pageRes.formats.length > 0) {
-              notifyCallbacks(pageRes);
-              return;
-            }
-
-            // Fallback to in-page scripts / network
-            const pageTitle = extractSemanticPageTitle() || 'video';
-            const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
-            if (tubeFormats && tubeFormats.length > 0) {
-              notifyCallbacks({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
-              return;
-            }
-
-            buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
-              notifyCallbacks(fallbackRes);
-            });
-          });
-          return;
-        }
-
-        // If already on the watch page, first check in-page DOM scripts
-        const pageTitle = extractSemanticPageTitle() || 'video';
-        const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
-        if (tubeFormats && tubeFormats.length > 0) {
-          notifyCallbacks({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
-          return;
-        }
-
-        // If no scripts found, query detected network streams
-        buildFallbackFormats(videoUrl, mediaEl, (result) => {
-          notifyCallbacks(result);
-        });
-        return;
-      }
-
-      // 3. For YouTube URLs: Query SmartDM desktop app for this specific video
-      runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
-          notifyCallbacks(res);
-          return;
-        }
-
-        // Fast DOM Check ONLY on actual watch/shorts page when videoUrl matches
-        const isOnWatchPage = window.location.pathname.includes('/watch') || window.location.pathname.includes('/shorts/');
-        if (isOnWatchPage && window.location.href.includes(videoUrl)) {
-          const domRes = parsePageMetadataFromDOM();
-          if (domRes && domRes.formats && domRes.formats.length > 0) {
-            notifyCallbacks(domRes);
-            return;
+      // STEP 1: INSTANT EXTRACTION (< 5ms)
+      // Deliver the stream that is ALREADY loaded right now in the browser!
+      buildFallbackFormats(videoUrl, mediaEl, (instantRes) => {
+        if (instantRes && instantRes.formats && instantRes.formats.length > 0) {
+          instantDelivered = true;
+          const hasMore = !!(isSpecificFbUrl || isExternalWatchUrl || isYouTube);
+          if (typeof callback === 'function') {
+            callback(instantRes, hasMore);
           }
         }
-
-        // NEVER dump netMedia on YouTube cards! netMedia contains random background preview chunks from other videos.
-        notifyCallbacks({
-          success: false,
-          status: 'error',
-          message: 'Could not resolve YouTube formats.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>'
-        });
       });
+
+      // STEP 2: ASYNCHRONOUS REFINEMENT (in background)
+      // Refine with full quality ladder without blocking the user interface
+      if (isSpecificFbUrl || isExternalWatchUrl) {
+        runtime.sendMessage({ type: 'GET_PAGE_MEDIA_FORMATS', url: videoUrl }, (pageRes) => {
+          if (pageRes && (pageRes.success || pageRes.status === 'ok') && pageRes.formats && pageRes.formats.length > 0) {
+            mediaFormatCache[cacheKey] = { status: 'done', data: pageRes, callbacks: [] };
+            if (typeof callback === 'function') {
+              callback(pageRes, false);
+            }
+            return;
+          }
+          if (instantDelivered) {
+            if (typeof callback === 'function') callback(null, false);
+          } else {
+            buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
+              notifyCallbacks(fallbackRes);
+            });
+          }
+        });
+        return;
+      }
+
+      if (isYouTube) {
+        runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
+          if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
+            mediaFormatCache[cacheKey] = { status: 'done', data: res, callbacks: [] };
+            if (typeof callback === 'function') {
+              callback(res, false);
+            }
+            return;
+          }
+
+          // Fast DOM Check ONLY on actual watch/shorts page when videoUrl matches
+          const isOnWatchPage = window.location.pathname.includes('/watch') || window.location.pathname.includes('/shorts/');
+          if (isOnWatchPage && window.location.href.includes(videoUrl)) {
+            const domRes = parsePageMetadataFromDOM();
+            if (domRes && domRes.formats && domRes.formats.length > 0) {
+              notifyCallbacks(domRes);
+              return;
+            }
+          }
+
+          if (instantDelivered) {
+            if (typeof callback === 'function') callback(null, false);
+          } else {
+            notifyCallbacks({
+              success: false,
+              status: 'error',
+              message: 'Could not resolve YouTube formats.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>'
+            });
+          }
+        });
+        return;
+      }
+
+      // Non-YouTube, non-permalink: if instant not delivered, wait for fallback
+      if (!instantDelivered) {
+        buildFallbackFormats(videoUrl, mediaEl, (res) => {
+          notifyCallbacks(res);
+        });
+      }
     } catch(err) {
       if (typeof callback === 'function') {
-        callback({ success: false, status: 'error', message: 'No media formats detected.' });
+        callback({ success: false, status: 'error', message: 'No media formats detected.' }, false);
       }
     }
   }
 
   // --- RENDER DYNAMIC FORMAT DROPDOWN ITEMS ---
-  function renderFormatDropdown(container, formats, videoUrl, popover, mediaTitle = null) {
+  function renderFormatDropdown(container, formats, videoUrl, popover, mediaTitle = null, hasMorePending = false) {
+    if (!container) return;
+    if (container._smartdm_downloading) return;
     container.innerHTML = '';
     const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
 
@@ -1618,6 +1587,7 @@
 
       const streamUrl = fmt.directUrl || fmt.DirectUrl || fmt.url || fmt.Url || videoUrl;
       const fmtId = String(fmt.formatId || fmt.FormatId || '');
+      const hVal = fmt.height || (parseInt(cleanTitle, 10) || 0);
 
       rawItems.push({
         title: cleanTitle,
@@ -1626,7 +1596,9 @@
         videoUrl: streamUrl,
         audioUrl: fmt.audioUrl || fmt.AudioUrl || null,
         formatId: fmtId,
-        fileName: itemFileName
+        fileName: itemFileName,
+        height: isAud ? -1 : hVal,
+        isAudio: isAud
       });
     });
 
@@ -1640,7 +1612,9 @@
         videoUrl: firstItem.videoUrl || null,
         audioUrl: firstItem.audioUrl || null,
         formatId: 'bestaudio/best',
-        fileName: `${finalBaseTitle}.mp3`
+        fileName: `${finalBaseTitle}.mp3`,
+        height: -1,
+        isAudio: true
       });
     }
 
@@ -1654,7 +1628,9 @@
         videoUrl: null,
         audioUrl: null,
         formatId: 'thumbnail',
-        fileName: `${finalBaseTitle}.jpg`
+        fileName: `${finalBaseTitle}.jpg`,
+        height: -2,
+        isAudio: false
       });
     }
 
@@ -1666,6 +1642,17 @@
         seen.add(item.title);
         items.push(item);
       }
+    });
+
+    // Sort items: video items by height descending (1080p, 720p, 480p, 360p), audio items next, thumbnail last
+    items.sort((a, b) => {
+      const isThumbA = a.formatId === 'thumbnail';
+      const isThumbB = b.formatId === 'thumbnail';
+      if (isThumbA) return 1;
+      if (isThumbB) return -1;
+      if (a.isAudio && !b.isAudio) return 1;
+      if (!a.isAudio && b.isAudio) return -1;
+      return (b.height || 0) - (a.height || 0);
     });
 
     if (items.length === 0) {
@@ -1687,6 +1674,7 @@
         ev.preventDefault();
         ev.stopPropagation();
         if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        container._smartdm_downloading = true;
         container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
 
         // Find best audio URL and size
@@ -1796,6 +1784,14 @@
 
       container.appendChild(div);
     });
+
+    if (hasMorePending) {
+      const notice = document.createElement('div');
+      notice.className = 'smartdm-pending-notice';
+      notice.style.cssText = 'padding: 6px 12px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; gap: 6px;';
+      notice.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border:2px solid #38bdf8; border-top-color:transparent; border-radius:50%; animation: spin 0.8s linear infinite;"></span> Checking for higher qualities...';
+      container.appendChild(notice);
+    }
   }
 
   // --- UNIVERSAL PLAYER OVERLAY INJECTOR ---
@@ -1980,21 +1976,6 @@
 
       if (mediaEl) {
         mediaEl._smartdm_play_time = Date.now();
-        // If mediaEl is paused and hasn't started playing, gently nudge playback to load stream chunks
-        if (mediaEl.paused && (mediaEl.currentTime || 0) === 0) {
-          try {
-            const origMuted = mediaEl.muted;
-            mediaEl.muted = true;
-            const playP = mediaEl.play();
-            if (playP !== undefined && playP.then) {
-              playP.then(() => {
-                setTimeout(() => {
-                  try { mediaEl.pause(); mediaEl.muted = origMuted; } catch(e) {}
-                }, 400);
-              }).catch(() => {});
-            }
-          } catch(e) {}
-        }
       }
 
       let videoUrl = getCanonicalUrl(window.location.href);
@@ -2031,16 +2012,19 @@
         return;
       }
 
+      content._smartdm_downloading = false;
       popover.classList.add('active');
       content.innerHTML = `
         <div class="spinner-container">
           <div class="spinner"></div>
-          <span class="status-text" style="padding:0;">Searching for video formats...</span>
+          <span class="status-text" style="padding:0;">Loading video options...</span>
         </div>
       `;
 
-      fetchMediaFormats(videoUrl, mediaEl, (res) => {
+      let currentFormats = [];
+      fetchMediaFormats(videoUrl, mediaEl, (res, hasMorePending) => {
         try {
+          if (content._smartdm_downloading) return;
           let cardTitle = null;
           if (isFb) {
             cardTitle = extractFacebookMediaTitle(mediaEl, parentCard);
@@ -2050,17 +2034,42 @@
           const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : extractWatchPageTitle();
           const pageTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !isGenericTitle(res.title)) ? res.title : fallbackTitle);
           if (res && res.formats && res.formats.length > 0) {
-            renderFormatDropdown(content, res.formats, videoUrl, popover, pageTitle);
-          } else {
+            const existingKeys = new Set(currentFormats.map(f => {
+              const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
+              const fmtId = (f.formatId || f.FormatId || '').toLowerCase().trim();
+              const h = f.height || 0;
+              const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
+              return `${resStr}_${fmtId}_${h}_${isAud}`;
+            }));
+
+            res.formats.forEach(f => {
+              const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
+              const fmtId = (f.formatId || f.FormatId || '').toLowerCase().trim();
+              const h = f.height || 0;
+              const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
+              const key = `${resStr}_${fmtId}_${h}_${isAud}`;
+              if (!existingKeys.has(key)) {
+                existingKeys.add(key);
+                currentFormats.push(f);
+              }
+            });
+
+            renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, hasMorePending);
+          } else if (!res && hasMorePending === false) {
+            const notice = content.querySelector('.smartdm-pending-notice');
+            if (notice) notice.remove();
+          } else if (currentFormats.length === 0) {
             content.innerHTML = '<div class="status-text" style="color:#f87171;">' + 
               ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>') + 
               '</div>';
           }
         } catch (uiErr) {
           console.error('[SmartDM] Format dropdown error:', uiErr);
-          content.innerHTML = '<div class="status-text" style="color:#f87171;">' +
-            ((res && res.message) ? res.message : 'Error rendering formats.<br><span style="font-size:10px; color:#94a3b8;">Play video to detect streams.</span>') +
-            '</div>';
+          if (currentFormats.length === 0) {
+            content.innerHTML = '<div class="status-text" style="color:#f87171;">' +
+              ((res && res.message) ? res.message : 'Error rendering formats.<br><span style="font-size:10px; color:#94a3b8;">No stream detected.</span>') +
+              '</div>';
+          }
         }
       });
     });
@@ -2398,25 +2407,58 @@
         return;
       }
 
+      content._smartdm_downloading = false;
       popover.classList.add('active');
       positionPopover();
       content.innerHTML = `
         <div class="spinner-container">
           <div class="spinner"></div>
-          <span class="status-text" style="padding:0;">Searching for video formats...</span>
+          <span class="status-text" style="padding:0;">Loading video options...</span>
         </div>
       `;
 
-      fetchMediaFormats(videoUrl, null, (res) => {
-        const isYt = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
-        const fallbackTitle = isYt ? 'YouTube Video' : 'video';
-        const resolvedTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || extractCardTitle(containerEl) || fallbackTitle);
-        if (res && res.formats && res.formats.length > 0) {
-          renderFormatDropdown(content, res.formats, videoUrl, popover, resolvedTitle);
-        } else {
-          content.innerHTML = '<div class="status-text" style="color:#f87171;">' + 
-            ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>') + 
-            '</div>';
+      let currentFormats = [];
+      fetchMediaFormats(videoUrl, null, (res, hasMorePending) => {
+        try {
+          if (content._smartdm_downloading) return;
+          const isYt = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
+          const fallbackTitle = isYt ? 'YouTube Video' : 'video';
+          const resolvedTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || extractCardTitle(containerEl) || fallbackTitle);
+          if (res && res.formats && res.formats.length > 0) {
+            const existingKeys = new Set(currentFormats.map(f => {
+              const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
+              const fmtId = (f.formatId || f.FormatId || '').toLowerCase().trim();
+              const h = f.height || 0;
+              const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
+              return `${resStr}_${fmtId}_${h}_${isAud}`;
+            }));
+
+            res.formats.forEach(f => {
+              const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
+              const fmtId = (f.formatId || f.FormatId || '').toLowerCase().trim();
+              const h = f.height || 0;
+              const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
+              const key = `${resStr}_${fmtId}_${h}_${isAud}`;
+              if (!existingKeys.has(key)) {
+                existingKeys.add(key);
+                currentFormats.push(f);
+              }
+            });
+
+            renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, hasMorePending);
+          } else if (!res && hasMorePending === false) {
+            const notice = content.querySelector('.smartdm-pending-notice');
+            if (notice) notice.remove();
+          } else if (currentFormats.length === 0) {
+            content.innerHTML = '<div class="status-text" style="color:#f87171;">' + 
+              ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>') + 
+              '</div>';
+          }
+        } catch (uiErr) {
+          console.error('[SmartDM] Format dropdown error:', uiErr);
+          if (currentFormats.length === 0) {
+            content.innerHTML = '<div class="status-text" style="color:#f87171;">Error rendering formats.</div>';
+          }
         }
       });
     }, true);
