@@ -10,6 +10,15 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+let lastActiveTabId = null;
+if (chrome.tabs && chrome.tabs.onActivated) {
+  chrome.tabs.onActivated.addListener((activeInfo) => {
+    if (activeInfo && activeInfo.tabId) {
+      lastActiveTabId = activeInfo.tabId;
+    }
+  });
+}
+
 if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tab && tab.url) {
@@ -194,7 +203,10 @@ function parseMpdFormats(mpdText, baseUrl) {
 if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
   chrome.webRequest.onHeadersReceived.addListener(
     (details) => {
-      if (details.tabId <= 0) return;
+      let targetTabId = details.tabId;
+      if (targetTabId <= 0) {
+        targetTabId = lastActiveTabId || 1;
+      }
 
       const headers = details.responseHeaders || [];
       let contentType = '';
@@ -275,12 +287,12 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                          url.includes('.avi') || url.includes('.mkv');
 
       if (isMediaMime || isMediaExt || isGoogleVideo) {
-        if (!detectedMediaMap.has(details.tabId)) {
-          detectedMediaMap.set(details.tabId, []);
+        if (!detectedMediaMap.has(targetTabId)) {
+          detectedMediaMap.set(targetTabId, []);
         }
-        const mediaList = detectedMediaMap.get(details.tabId);
+        const mediaList = detectedMediaMap.get(targetTabId);
 
-        const tabUrl = tabUrlMap.get(details.tabId) || details.initiator || null;
+        const tabUrl = tabUrlMap.get(targetTabId) || details.initiator || null;
         const fetchOpts = {};
         if (tabUrl && !tabUrl.startsWith('chrome') && !tabUrl.startsWith('moz')) {
           fetchOpts.referrer = tabUrl;
