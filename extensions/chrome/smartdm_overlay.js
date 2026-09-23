@@ -1026,12 +1026,15 @@
             const allVideoStreams = fbStreams.filter(m => !m.isAudio);
             const allAudioStreams = fbStreams.filter(m => m.isAudio);
 
+            const isCarouselReel = !!(mediaEl && findFacebookReelCard(mediaEl));
+            const isUnplayedCarousel = isCarouselReel && mediaEl && mediaEl.paused && (mediaEl.currentTime || 0) === 0;
+
             let relevantVideo = allVideoStreams;
             if (fbTargetId) {
               const matched = allVideoStreams.filter(m => m.fbVideoId === fbTargetId);
               if (matched.length > 0) {
                 relevantVideo = matched;
-              } else {
+              } else if (isUnplayedCarousel) {
                 relevantVideo = [];
               }
             }
@@ -1070,22 +1073,20 @@
                 }
               }
 
-              // RULE 3: Proximity match ONLY among streams that DO NOT belong to a different known video asset!
+              // RULE 3: Proximity match among eligible audio streams (never pick another known video's audio!)
               if (!primaryAudio && allAudioStreams.length > 0) {
                 const eligibleAudio = allAudioStreams.filter(m => {
                   if (m.fbVideoId && primaryVideo.fbVideoId && m.fbVideoId !== primaryVideo.fbVideoId) return false;
-                  if (m.fbVideoId && fbTargetId && m.fbVideoId !== fbTargetId) return false;
                   return true;
                 });
-                if (eligibleAudio.length > 0) {
-                  primaryAudio = eligibleAudio.reduce((prev, curr) => {
-                    const diffPrev = Math.abs((prev.timestamp || 0) - (primaryVideo.timestamp || 0));
-                    const diffCurr = Math.abs((curr.timestamp || 0) - (primaryVideo.timestamp || 0));
-                    return diffCurr < diffPrev ? curr : prev;
-                  }, eligibleAudio[0]);
-                }
+                const pool = eligibleAudio.length > 0 ? eligibleAudio : allAudioStreams;
+                primaryAudio = pool.reduce((prev, curr) => {
+                  const diffPrev = Math.abs((prev.timestamp || 0) - (primaryVideo.timestamp || 0));
+                  const diffCurr = Math.abs((curr.timestamp || 0) - (primaryVideo.timestamp || 0));
+                  return diffCurr < diffPrev ? curr : prev;
+                }, pool[0]);
               }
-            } else if (allAudioStreams.length > 0 && !fbTargetId) {
+            } else if (allAudioStreams.length > 0) {
               primaryAudio = allAudioStreams[allAudioStreams.length - 1];
             }
 
