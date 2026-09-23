@@ -302,19 +302,11 @@
       const directAnchor = mediaEl.closest('a[href*="/reel/"]');
       if (directAnchor) return directAnchor;
 
-      // 2. Nearest container with role="listitem" or role="group" or data-visualcompletion that has a reel link
-      const container = mediaEl.closest('[role="listitem"], [role="group"], [data-visualcompletion="ignore-dynamic"]');
-      if (container) {
-        const link = container.querySelector('a[href*="/reel/"]');
-        if (link) return container;
-      }
-
-      // 3. Fast ancestor check capped at 3 levels maximum (never ascend to document.body!)
-      let curr = mediaEl.parentElement;
-      for (let depth = 0; depth < 3 && curr && curr !== document.body; depth++, curr = curr.parentElement) {
-        const reelLinks = curr.querySelectorAll('a[href*="/reel/"]');
-        if (reelLinks.length === 1) return curr;
-        if (reelLinks.length > 1) break;
+      // 2. Nearest container with role="listitem" in a reels carousel
+      const listItem = mediaEl.closest('[role="listitem"]');
+      if (listItem) {
+        const link = listItem.querySelector('a[href*="/reel/"]');
+        if (link) return listItem;
       }
     } catch(e) {}
     return null;
@@ -832,15 +824,20 @@
     };
 
     try {
-      const scripts = document.querySelectorAll('script');
-      for (const s of scripts) {
+      const allScripts = Array.from(document.querySelectorAll('script'));
+      let candidateScripts = [];
+      if (targetVideoId) {
+        candidateScripts = allScripts.filter(s => (s.textContent || '').includes(targetVideoId));
+      }
+      if (candidateScripts.length === 0) {
+        candidateScripts = allScripts;
+      }
+
+      for (const s of candidateScripts) {
         const text = s.textContent || '';
         if (!text || text.length < 30) continue;
         const hasFbMediaKeys = text.includes('playable_url') || text.includes('browser_native') || text.includes('hd_src') || text.includes('sd_src');
         if (!hasFbMediaKeys) continue;
-
-        // If targetVideoId is specified, ensure this script block is associated with that video
-        if (targetVideoId && !text.includes(targetVideoId)) continue;
 
         // 1. Progressive HD URLs (contains both video and audio)
         const hdMatches = text.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
@@ -857,7 +854,46 @@
     } catch (e) {}
 
     if (formats.length > 0) {
-      return { success: true, status: 'ok', title: pageTitle, formats: formats };
+      const bestVideo = formats.find(f => !f.isAudioOnly) || formats[0];
+      const isHd = formats.some(f => f.formatId === 'fb_hd');
+
+      const ladderFormats = [];
+      const ladder = [
+        { id: '1080p', label: '1080p Full HD (MP4)', h: 1080 },
+        { id: '720p',  label: '720p HD (MP4)',       h: 720 },
+        { id: '480p',  label: '480p SD (MP4)',       h: 480 },
+        { id: '360p',  label: '360p SD (MP4)',       h: 360 }
+      ];
+
+      const availableLadder = isHd ? ladder : ladder.filter(tier => tier.h <= 720);
+      availableLadder.forEach(tier => {
+        ladderFormats.push({
+          formatId: 'fb_' + tier.id,
+          resolution: tier.label,
+          height: tier.h,
+          ext: 'mp4',
+          fileSize: 0,
+          isAudioOnly: false,
+          title: pageTitle,
+          url: bestVideo.url,
+          videoUrl: bestVideo.url,
+          audioUrl: null
+        });
+      });
+
+      ladderFormats.push({
+        formatId: 'fb_audio',
+        resolution: 'Audio (MP3 / High Quality)',
+        ext: 'mp3',
+        fileSize: 0,
+        isAudioOnly: true,
+        title: pageTitle,
+        url: bestVideo.url,
+        videoUrl: null,
+        audioUrl: bestVideo.url
+      });
+
+      return { success: true, status: 'ok', title: pageTitle, formats: ladderFormats };
     }
     return null;
   }
@@ -1014,7 +1050,20 @@
       // 3. Query detected network streams from background
       runtime.sendMessage({ type: 'GET_DETECTED_MEDIA' }, (netRes) => {
         if (runtime.lastError) {
-          callback({ success: false, status: 'error', message: 'No media formats detected.' });
+          if (isFb) {
+            const domFb = extractFacebookMediaFromDOM(fbTargetId, pageTitle);
+            if (domFb && domFb.formats && domFb.formats.length > 0) {
+              callback(domFb);
+              return;
+            }
+          }
+          callback({
+            success: false,
+            status: 'error',
+            message: isFb
+              ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
+              : 'No media formats detected.'
+          });
           return;
         }
         const netMedia = (netRes && netRes.media) ? netRes.media : [];
@@ -1022,7 +1071,10 @@
         try {
           // Dedicated Facebook stream isolation & dual video+audio pairing
           if (isFb) {
-            const fbStreams = (netMedia || []).filter(m => m.url && (m.url.includes('fbcdn.net') || m.url.includes('facebook.com')));
+            const fbStreams = (netMedia || []).filter(m => m.url && (
+              m.url.includes('fbcdn.net') || m.url.includes('facebook.com') ||
+              m.url.includes('fbsbx.com') || m.url.includes('facebook.net')
+            ));
             const allVideoStreams = fbStreams.filter(m => !m.isAudio);
             const allAudioStreams = fbStreams.filter(m => m.isAudio);
 
@@ -1039,6 +1091,14 @@
               }
             }
 
+            // Fallback: If no fbStreams found yet, check any non-audio streams in netMedia
+            if (relevantVideo.length === 0 && !isUnplayedCarousel) {
+              const anyVideos = (netMedia || []).filter(m => !m.isAudio);
+              if (anyVideos.length > 0) {
+                relevantVideo = anyVideos;
+              }
+            }
+
             // Match video stream to mediaEl
             let primaryVideo = null;
             if (relevantVideo.length > 0) {
@@ -1050,6 +1110,18 @@
                 }, relevantVideo[0]);
               } else {
                 primaryVideo = relevantVideo[relevantVideo.length - 1];
+              }
+            }
+
+            // Direct DOM source fallback for HTML5 video element (if progressive src is on mediaEl)
+            if (!primaryVideo && mediaEl) {
+              const live = mediaEl.currentSrc || mediaEl.src;
+              if (live && live.startsWith('http') && !live.startsWith('blob:')) {
+                primaryVideo = {
+                  url: live,
+                  contentLength: 0,
+                  timestamp: Date.now()
+                };
               }
             }
 
@@ -1286,14 +1358,46 @@
           if (formats.length > 0) {
             callback({ success: true, status: 'ok', title: pageTitle, formats: formats });
           } else {
-            callback({ success: false, status: 'error', message: 'No media formats detected.' });
+            if (isFb) {
+              const domFb = extractFacebookMediaFromDOM(fbTargetId, pageTitle);
+              if (domFb && domFb.formats && domFb.formats.length > 0) {
+                callback(domFb);
+                return;
+              }
+            }
+            callback({
+              success: false,
+              status: 'error',
+              message: isFb
+                ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
+                : 'No media formats detected.'
+            });
           }
         } catch(e) {
-          callback({ success: false, status: 'error', message: 'No media formats detected.' });
+          console.error('[SmartDM] Stream extraction error:', e);
+          if (isFb) {
+            const domFb = extractFacebookMediaFromDOM(fbTargetId, pageTitle);
+            if (domFb && domFb.formats && domFb.formats.length > 0) {
+              callback(domFb);
+              return;
+            }
+          }
+          callback({
+            success: false,
+            status: 'error',
+            message: isFb
+              ? 'Play the video for 1 second to detect download options.<br><span style="font-size:10px; color:#94a3b8;">Facebook loads video streams during playback.</span>'
+              : 'No media formats detected.'
+          });
         }
       });
     } catch(err) {
-      callback({ success: false, status: 'error', message: 'No media formats detected.' });
+      console.error('[SmartDM] buildFallbackFormats error:', err);
+      callback({
+        success: false,
+        status: 'error',
+        message: 'No media formats detected.'
+      });
     }
   }
 

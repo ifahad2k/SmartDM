@@ -203,8 +203,11 @@ function parseMpdFormats(mpdText, baseUrl) {
 if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
   chrome.webRequest.onHeadersReceived.addListener(
     (details) => {
-      if (details.tabId <= 0) return;
-      const targetTabId = details.tabId;
+      let targetTabId = details.tabId;
+      if (!targetTabId || targetTabId <= 0) {
+        targetTabId = lastActiveTabId;
+      }
+      if (!targetTabId || targetTabId <= 0) return;
 
       const headers = details.responseHeaders || [];
       let contentType = '';
@@ -248,7 +251,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
       // Filter out tiny video tracking beacons, range probes, and init fragments (< 64KB)
       // Never drop Facebook media chunks since Facebook audio init fragments and DASH chunks can be < 64KB
-      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com');
+      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('fbsbx.com') || url.includes('facebook.net');
       if (!isFbMedia && contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
         return;
       }
@@ -284,7 +287,9 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
                          url.includes('.avi') || url.includes('.mkv');
 
-      if (isMediaMime || isMediaExt || isGoogleVideo) {
+      const isFbStream = isFbMedia && (url.includes('/v/') || url.includes('video') || url.includes('bytestart') || url.includes('efg') || url.includes('.mp4') || url.includes('audio') || contentType.includes('video/') || contentType.includes('audio/'));
+
+      if (isMediaMime || isMediaExt || isGoogleVideo || isFbStream) {
         if (!detectedMediaMap.has(targetTabId)) {
           detectedMediaMap.set(targetTabId, []);
         }
@@ -399,7 +404,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
               if (contentType.includes('audio/') || uLower.includes('mime=audio') || uLower.includes('_audio') || uLower.includes('/audio/') || uLower.includes('audiocodecs') || uLower.includes('frag_2_audio') || uLower.includes('_a1_') || uLower.includes('.m4a') || uLower.includes('.mp3')) {
                 isFbAudio = true;
                 isFbVideo = false;
-              } else if (contentType.includes('video/') || uLower.includes('mime=video') || uLower.includes('_video') || uLower.includes('/video/') || uLower.includes('videocodecs') || uLower.includes('frag_2_video') || uLower.includes('_v1_') || uLower.includes('_v2_') || uLower.includes('_v3_') || uLower.includes('_v4_')) {
+              } else {
                 isFbVideo = true;
                 isFbAudio = false;
               }
