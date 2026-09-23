@@ -886,12 +886,17 @@ function sanitizeCleanTitle(str) {
 
 async function fetchPageMediaFormats(pageUrl) {
   try {
-    const res = await fetch(pageUrl, {
+    const isFb = pageUrl && (pageUrl.includes('facebook.com') || pageUrl.includes('fb.watch'));
+    const fetchOpts = {
       headers: {
         'User-Agent': navigator.userAgent,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
-    });
+    };
+    if (isFb) {
+      fetchOpts.credentials = 'include';
+    }
+    const res = await fetch(pageUrl, fetchOpts);
     if (!res.ok) return null;
     const html = await res.text();
 
@@ -984,6 +989,80 @@ async function fetchPageMediaFormats(pageUrl) {
         if (m[2].includes('http') && (m[2].includes('.mp4') || m[2].includes('.m3u8'))) {
           addFmt(m[2], m[1], m[2].includes('.m3u8') ? 'm3u8' : 'mp4');
         }
+      }
+    }
+
+    // 5. Facebook video / reel / watch / post permalink
+    const isFbUrl = pageUrl && (pageUrl.includes('facebook.com') || pageUrl.includes('fb.watch'));
+    if (isFbUrl) {
+      let fbHdUrl = null;
+      let fbSdUrl = null;
+
+      const hdMatches = html.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+      for (const m of hdMatches) {
+        const u = m[1].replace(/\\\/+/g, '/').replace(/\\u0026/g, '&').replace(/\\/g, '');
+        if (u.startsWith('http') && !fbHdUrl) fbHdUrl = u;
+      }
+
+      const sdMatches = html.matchAll(/(?:"playable_url"|"browser_native_sd_url"|"sd_src"|"sd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+      for (const m of sdMatches) {
+        const u = m[1].replace(/\\\/+/g, '/').replace(/\\u0026/g, '&').replace(/\\/g, '');
+        if (u.startsWith('http') && !fbSdUrl) fbSdUrl = u;
+      }
+
+      // Check dash_manifest if progressive direct URLs not found
+      if (!fbHdUrl && !fbSdUrl && html.includes('dash_manifest')) {
+        const dashMatch = html.match(/(?:"dash_manifest"|"video_dash_manifest")\s*:\s*"([^"]+)"/);
+        if (dashMatch && dashMatch[1]) {
+          try {
+            const rawXml = dashMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\/+/g, '/');
+            const mpdFmts = parseMpdFormats(rawXml, pageUrl);
+            if (mpdFmts && mpdFmts.length > 0) {
+              mpdFmts.forEach(f => formats.push(f));
+            }
+          } catch(e) {}
+        }
+      }
+
+      const bestFbUrl = fbHdUrl || fbSdUrl;
+      if (bestFbUrl) {
+        const ladder = [
+          { id: '1080p', label: '1080p Full HD (MP4)', h: 1080, url: fbHdUrl || bestFbUrl },
+          { id: '720p',  label: '720p HD (MP4)',       h: 720,  url: fbHdUrl || bestFbUrl },
+          { id: '480p',  label: '480p SD (MP4)',       h: 480,  url: fbSdUrl || bestFbUrl },
+          { id: '360p',  label: '360p SD (MP4)',       h: 360,  url: fbSdUrl || bestFbUrl }
+        ];
+
+        const availableLadder = fbHdUrl ? ladder : ladder.filter(tier => tier.h <= 720);
+        availableLadder.forEach(tier => {
+          formats.push({
+            formatId: 'fb_' + tier.id,
+            resolution: tier.label,
+            height: tier.h,
+            ext: 'mp4',
+            fileSize: 0,
+            isAudioOnly: false,
+            title: title,
+            url: tier.url,
+            videoUrl: tier.url,
+            audioUrl: null
+          });
+        });
+
+        formats.push({
+          formatId: 'fb_audio',
+          resolution: 'Audio (MP3 / High Quality)',
+          height: 0,
+          ext: 'mp3',
+          fileSize: 0,
+          isAudioOnly: true,
+          title: title,
+          url: bestFbUrl,
+          videoUrl: null,
+          audioUrl: bestFbUrl
+        });
+
+        return { success: true, status: 'ok', title: title, formats: formats };
       }
     }
 

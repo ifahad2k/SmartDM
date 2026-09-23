@@ -80,27 +80,13 @@
   }
 
   // Track video element playback timestamps across feeds and reels
-  document.addEventListener('play', (e) => {
-    if (e.target && e.target.tagName === 'VIDEO') {
-      e.target._smartdm_play_time = Date.now();
-      e.target._smartdm_assigned_stream = null;
-    }
-  }, true);
-
-  document.addEventListener('playing', (e) => {
-    if (e.target && e.target.tagName === 'VIDEO') {
-      e.target._smartdm_play_time = Date.now();
-      e.target._smartdm_assigned_stream = null;
-    }
-  }, true);
-
-  document.addEventListener('timeupdate', (e) => {
-    if (e.target && e.target.tagName === 'VIDEO' && !e.target.paused) {
-      if (!e.target._smartdm_play_time) {
+  ['play', 'playing', 'timeupdate', 'progress'].forEach(evt => {
+    document.addEventListener(evt, (e) => {
+      if (e.target && e.target.tagName === 'VIDEO') {
         e.target._smartdm_play_time = Date.now();
       }
-    }
-  }, true);
+    }, true);
+  });
 
   function formatSize(bytes) {
     if (!bytes || bytes <= 0) return null;
@@ -539,7 +525,9 @@
         'a[href*="/watch/"]',
         'a[href*="/watch?"]',
         'a[href*="/posts/"]',
+        'a[href*="/permalink/"]',
         'a[href*="/share/p/"]',
+        'a[href*="/share/v/"]',
         'a[href*="/permalink.php"]',
         'a[href*="/story.php"]',
         'a[href*="fbid="]',
@@ -550,6 +538,15 @@
         const el = cardEl.querySelector(sel);
         if (el && el.href) {
           return getCanonicalUrl(el.href);
+        }
+      }
+
+      // Check header timestamp permalinks
+      const headerLinks = cardEl.querySelectorAll('header a[href], h2 ~ div a[href], h3 ~ div a[href], h4 ~ div a[href], [role="heading"] ~ div a[href]');
+      for (const a of headerLinks) {
+        const h = a.href || '';
+        if (h && (h.includes('/posts/') || h.includes('/videos/') || h.includes('/reel/') || h.includes('story_fbid') || h.includes('fbid') || h.includes('/permalink'))) {
+          return getCanonicalUrl(h);
         }
       }
     } catch(e) {}
@@ -820,16 +817,26 @@
         const hasFbMediaKeys = text.includes('playable_url') || text.includes('browser_native') || text.includes('hd_src') || text.includes('sd_src');
         if (!hasFbMediaKeys) continue;
 
-        // 1. Progressive HD URLs (contains both video and audio)
-        const hdMatches = text.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
-        for (const m of hdMatches) {
-          addDirect(m[1], '1080p / 720p HD', 'mp4');
-        }
+        // Verify targetVideoId is in proximity to media keys (prevent extracting Post #1 from SSR root script)
+        let idIndex = text.indexOf(targetVideoId);
+        while (idIndex !== -1) {
+          const windowStart = Math.max(0, idIndex - 4000);
+          const windowEnd = Math.min(text.length, idIndex + 4000);
+          const chunk = text.substring(windowStart, windowEnd);
+          if (chunk.includes('playable_url') || chunk.includes('browser_native') || chunk.includes('hd_src') || chunk.includes('sd_src')) {
+            // 1. Progressive HD URLs (contains both video and audio)
+            const hdMatches = chunk.matchAll(/(?:"playable_url_quality_hd"|"browser_native_hd_url"|"hd_src"|"hd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+            for (const m of hdMatches) {
+              addDirect(m[1], '1080p / 720p HD', 'mp4');
+            }
 
-        // 2. Progressive SD URLs (contains both video and audio)
-        const sdMatches = text.matchAll(/(?:"playable_url"|"browser_native_sd_url"|"sd_src"|"sd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
-        for (const m of sdMatches) {
-          addDirect(m[1], 'Standard Definition (SD)', 'mp4');
+            // 2. Progressive SD URLs (contains both video and audio)
+            const sdMatches = chunk.matchAll(/(?:"playable_url"|"browser_native_sd_url"|"sd_src"|"sd_src_no_ratelimit")\s*:\s*"([^"]+)"/g);
+            for (const m of sdMatches) {
+              addDirect(m[1], 'Standard Definition (SD)', 'mp4');
+            }
+          }
+          idIndex = text.indexOf(targetVideoId, idIndex + 1);
         }
       }
     } catch (e) {}
@@ -1090,7 +1097,7 @@
                   return diffCurr < diffPrev ? curr : prev;
                 }, relevantVideo[0]);
               } else {
-                primaryVideo = relevantVideo[relevantVideo.length - 1];
+                primaryVideo = relevantVideo[0];
               }
             }
 
@@ -1114,7 +1121,7 @@
               if (primaryVideo.fbVideoId) {
                 const sameAssetAudio = allAudioStreams.filter(m => m.fbVideoId && m.fbVideoId === primaryVideo.fbVideoId);
                 if (sameAssetAudio.length > 0) {
-                  primaryAudio = sameAssetAudio[sameAssetAudio.length - 1];
+                  primaryAudio = sameAssetAudio[0];
                 }
               }
 
@@ -1122,7 +1129,7 @@
               if (!primaryAudio && fbTargetId) {
                 const targetAudio = allAudioStreams.filter(m => m.fbVideoId === fbTargetId);
                 if (targetAudio.length > 0) {
-                  primaryAudio = targetAudio[targetAudio.length - 1];
+                  primaryAudio = targetAudio[0];
                 }
               }
 
@@ -1140,7 +1147,7 @@
                 }, pool[0]);
               }
             } else if (allAudioStreams.length > 0) {
-              primaryAudio = allAudioStreams[allAudioStreams.length - 1];
+              primaryAudio = allAudioStreams[0];
             }
 
             const fbFormats = [];
@@ -1446,8 +1453,32 @@
 
       const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
 
-      // 1. For Facebook: Jump straight to dedicated Facebook stream extraction (never run tube DOM scanners)
+      // 1. For Facebook:
       if (isFb) {
+        const isSpecificFbUrl = videoUrl && (
+          videoUrl.includes('/reel/') ||
+          videoUrl.includes('/videos/') ||
+          videoUrl.includes('/watch') ||
+          videoUrl.includes('/posts/') ||
+          videoUrl.includes('fbid=') ||
+          videoUrl.includes('story_fbid=') ||
+          videoUrl.includes('/permalink') ||
+          videoUrl.includes('/share/')
+        );
+
+        if (isSpecificFbUrl) {
+          runtime.sendMessage({ type: 'GET_PAGE_MEDIA_FORMATS', url: videoUrl }, (pageRes) => {
+            if (pageRes && (pageRes.success || pageRes.status === 'ok') && pageRes.formats && pageRes.formats.length > 0) {
+              notifyCallbacks(pageRes);
+              return;
+            }
+            buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
+              notifyCallbacks(fallbackRes);
+            });
+          });
+          return;
+        }
+
         buildFallbackFormats(videoUrl, mediaEl, (result) => {
           notifyCallbacks(result);
         });
@@ -1949,6 +1980,21 @@
 
       if (mediaEl) {
         mediaEl._smartdm_play_time = Date.now();
+        // If mediaEl is paused and hasn't started playing, gently nudge playback to load stream chunks
+        if (mediaEl.paused && (mediaEl.currentTime || 0) === 0) {
+          try {
+            const origMuted = mediaEl.muted;
+            mediaEl.muted = true;
+            const playP = mediaEl.play();
+            if (playP !== undefined && playP.then) {
+              playP.then(() => {
+                setTimeout(() => {
+                  try { mediaEl.pause(); mediaEl.muted = origMuted; } catch(e) {}
+                }, 400);
+              }).catch(() => {});
+            }
+          } catch(e) {}
+        }
       }
 
       let videoUrl = getCanonicalUrl(window.location.href);
