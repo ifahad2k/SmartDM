@@ -456,9 +456,8 @@
   }
 
   function extractFacebookMediaTitle(mediaEl, cardContainer) {
+    const isReels = window.location.pathname.includes('/reel/');
     try {
-      const isReels = window.location.pathname.includes('/reel/');
-
       // 1. For Reels: check DOM caption container in [role="main"] or active reel slide
       if (isReels) {
         const mainEl = (mediaEl && mediaEl.closest('[role="main"]')) || document.querySelector('[role="main"]') || document.body;
