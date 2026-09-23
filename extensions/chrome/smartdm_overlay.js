@@ -617,6 +617,99 @@
     return null;
   }
 
+  function extractYouTubeVideoId(url) {
+    if (!url) return null;
+    try {
+      const u = (url.startsWith('//') ? 'https:' + url : url);
+      const m = u.match(/[?&]v=([^&#]+)/) ||
+                u.match(/youtu\.be\/([^?&#/]+)/) ||
+                u.match(/\/(?:shorts|embed|v)\/([^?&#/]+)/);
+      if (m && m[1] && m[1].length >= 5) return m[1];
+    } catch(e) {}
+    return null;
+  }
+
+  function getInstantYouTubeFormats(videoUrl, title = 'YouTube Video') {
+    const vid = extractYouTubeVideoId(videoUrl);
+    const thumbUrl = vid ? `https://i.ytimg.com/vi/${vid}/maxresdefault.jpg` : null;
+    const cleanTitle = (title && !isGenericTitle(title)) ? title.trim() : 'YouTube Video';
+
+    return [
+      {
+        formatId: '1080p',
+        resolution: '1080p Full HD',
+        height: 1080,
+        ext: 'mp4',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: cleanTitle,
+        url: videoUrl,
+        videoUrl: videoUrl,
+        audioUrl: null
+      },
+      {
+        formatId: '720p',
+        resolution: '720p HD',
+        height: 720,
+        ext: 'mp4',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: cleanTitle,
+        url: videoUrl,
+        videoUrl: videoUrl,
+        audioUrl: null
+      },
+      {
+        formatId: '480p',
+        resolution: '480p SD',
+        height: 480,
+        ext: 'mp4',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: cleanTitle,
+        url: videoUrl,
+        videoUrl: videoUrl,
+        audioUrl: null
+      },
+      {
+        formatId: '360p',
+        resolution: '360p SD',
+        height: 360,
+        ext: 'mp4',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: cleanTitle,
+        url: videoUrl,
+        videoUrl: videoUrl,
+        audioUrl: null
+      },
+      {
+        formatId: 'bestaudio/best',
+        resolution: 'Audio (MP3 / High Quality)',
+        height: -1,
+        ext: 'mp3',
+        fileSize: 0,
+        isAudioOnly: true,
+        title: cleanTitle,
+        url: videoUrl,
+        videoUrl: null,
+        audioUrl: videoUrl
+      },
+      {
+        formatId: 'thumbnail',
+        resolution: 'Thumbnail (Cover Image / HD)',
+        height: -2,
+        ext: 'jpg',
+        fileSize: 0,
+        isAudioOnly: false,
+        title: cleanTitle,
+        url: thumbUrl,
+        videoUrl: null,
+        audioUrl: null
+      }
+    ];
+  }
+
   function derivePageTitleFilename(ext = 'mp4') {
     const semTitle = extractSemanticPageTitle();
     if (semTitle && !isGenericTitle(semTitle)) {
@@ -1222,8 +1315,18 @@
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
       const pageTitle = isFb ? extractFacebookMediaTitle(mediaEl, null) : (extractSemanticPageTitle() || 'video');
 
-      // 1. First check in-page Tube formats from DOM scripts (ONLY on non-Facebook sites!)
-      if (!isFb) {
+      // 1. YouTube instant standard format ladder (< 1ms)
+      const isYouTube = (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'))) || window.location.hostname.includes('youtube.com');
+      if (isYouTube) {
+        const ytInstant = getInstantYouTubeFormats(videoUrl, pageTitle);
+        if (ytInstant && ytInstant.length > 0) {
+          callback({ success: true, status: 'ok', title: pageTitle, formats: ytInstant });
+          return;
+        }
+      }
+
+      // 2. First check in-page Tube formats from DOM scripts (ONLY on non-Facebook, non-YouTube sites!)
+      if (!isFb && !isYouTube) {
         const tubeFormats = extractTubeFormatsFromDOM(pageTitle);
         if (tubeFormats && tubeFormats.length > 0) {
           callback({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
@@ -1592,6 +1695,9 @@
     try {
       if (!videoUrl) videoUrl = window.location.href;
 
+      const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
+      const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
+
       const cacheKey = getMediaCacheKey(videoUrl, mediaEl);
 
       if (mediaFormatCache[cacheKey] && mediaFormatCache[cacheKey].status === 'done') {
@@ -1601,7 +1707,8 @@
 
       if (mediaFormatCache[cacheKey] && mediaFormatCache[cacheKey].status === 'loading') {
         const elapsed = Date.now() - (mediaFormatCache[cacheKey].startTime || 0);
-        if (elapsed < 1500) {
+        const maxLoadingAge = isYouTube ? 15000 : 2500;
+        if (elapsed < maxLoadingAge) {
           mediaFormatCache[cacheKey].callbacks.push(callback);
           return;
         }
@@ -1623,9 +1730,6 @@
           if (entry && entry.callbacks) entry.callbacks.forEach(cb => { try { cb(result); } catch(e) {} });
         }
       };
-
-      const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
-      const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
 
       // Safety timeout: 22s for YouTube deciphering, fast 2.5s for social/streaming sites
       const safetyTimeoutMs = isYouTube ? 22000 : 2500;
@@ -1785,10 +1889,35 @@
       }
       let ext = (fmt.ext || fmt.Ext || 'MP4').toUpperCase();
       if (ext === 'M3U8') ext = 'MP4';
-      let cleanTitle = resolution;
-      if (fmt.fps && fmt.fps > 30) cleanTitle += ` ${fmt.fps}fps`;
-      if (!cleanTitle.toUpperCase().includes(ext)) cleanTitle += ` (${ext})`;
 
+      let cleanTitle = resolution;
+      const hVal = fmt.height || (parseInt(resolution, 10) || 0);
+      const is60fps = (fmt.fps && fmt.fps > 30) || resolution.includes('60');
+
+      // Standardize resolution labels across instant and background-resolved formats
+      if (!isAud && fmt.formatId !== 'thumbnail') {
+        if (hVal >= 2160 || resolution.startsWith('2160p') || resolution.includes('4K')) {
+          cleanTitle = is60fps ? '2160p 4K UHD 60fps' : '2160p 4K UHD';
+        } else if (hVal >= 1440 || resolution.startsWith('1440p') || resolution.includes('Quad HD') || resolution.includes('2K')) {
+          cleanTitle = is60fps ? '1440p Quad HD 60fps' : '1440p Quad HD';
+        } else if (hVal >= 1080 || resolution.startsWith('1080p')) {
+          cleanTitle = is60fps ? '1080p Full HD 60fps' : '1080p Full HD';
+        } else if (hVal >= 720 || resolution.startsWith('720p')) {
+          cleanTitle = is60fps ? '720p HD 60fps' : '720p HD';
+        } else if (hVal === 640 || resolution.startsWith('640p')) {
+          cleanTitle = '640p';
+        } else if (hVal === 540 || resolution.startsWith('540p')) {
+          cleanTitle = '540p';
+        } else if (hVal === 480 || resolution.startsWith('480p')) {
+          cleanTitle = '480p SD';
+        } else if (hVal === 360 || resolution.startsWith('360p')) {
+          cleanTitle = '360p SD';
+        }
+      }
+
+      if (!cleanTitle.toUpperCase().includes(ext) && !isAud && fmt.formatId !== 'thumbnail') {
+        cleanTitle += ` (${ext})`;
+      }
       cleanTitle = cleanTitle.replace(/\(([^)]+)\)\s*\(\1\)/gi, '($1)');
 
       const fSize = fmt.fileSize || fmt.FileSize || 0;
@@ -1805,7 +1934,6 @@
 
       const streamUrl = fmt.directUrl || fmt.DirectUrl || fmt.url || fmt.Url || videoUrl;
       const fmtId = String(fmt.formatId || fmt.FormatId || '');
-      const hVal = fmt.height || (parseInt(cleanTitle, 10) || 0);
 
       rawItems.push({
         title: cleanTitle,
@@ -1887,6 +2015,7 @@
 
     function createItemElement(item) {
       const div = document.createElement('div');
+      div._formatData = item;
       div.className = 'format-item';
       div.dataset.formatKey = item.title;
       div.dataset.height = String(item.height || 0);
@@ -1906,108 +2035,140 @@
         container._smartdm_downloading = true;
         container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
 
-        // Find best audio URL and size
-        let bestAudioUrl = null;
-        let bestAudioSize = 0;
-        (formats || []).forEach(f => {
-          const isAud = f.isAudioOnly || f.IsAudioOnly;
-          const aUrl = f.directUrl || f.DirectUrl || f.url || f.Url;
-          const fid = String(f.formatId || f.FormatId || '');
-          if (isAud && aUrl && aUrl.startsWith('http')) {
-            if (!bestAudioUrl || fid === '140') {
-              bestAudioUrl = aUrl;
-              bestAudioSize = f.fileSize || f.FileSize || 0;
+        const activeItem = div._formatData || item;
+        const isYt = (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'))) || window.location.hostname.includes('youtube.com');
+
+        const dispatchDownload = (currentFmtList, targetItem) => {
+          const effectiveFormats = (currentFmtList && currentFmtList.length > 0) ? currentFmtList : formats;
+
+          // Find best audio URL and size
+          let bestAudioUrl = null;
+          let bestAudioSize = 0;
+          (effectiveFormats || []).forEach(f => {
+            const isAud = f.isAudioOnly || f.IsAudioOnly;
+            const aUrl = f.directUrl || f.DirectUrl || f.url || f.Url;
+            const fid = String(f.formatId || f.FormatId || '');
+            if (isAud && aUrl && aUrl.startsWith('http')) {
+              if (!bestAudioUrl || fid === '140') {
+                bestAudioUrl = aUrl;
+                bestAudioSize = f.fileSize || f.FileSize || 0;
+              }
             }
-          }
-        });
-
-        // Prepare full formats array to transmit to SmartDM desktop app
-        const formatsList = (formats || []).map(f => {
-          const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
-          const fUrl = f.directUrl || f.DirectUrl || f.url || f.Url || f.videoUrl || f.VideoUrl || null;
-          let fExt = (f.ext || f.Ext || 'mp4').toLowerCase();
-          if (fExt === 'm3u8') fExt = 'mp4';
-          return {
-            formatId: String(f.formatId || f.FormatId || ''),
-            resolution: f.resolution || f.Resolution || f.qualityLabel || (isAud ? 'Audio Only' : 'Video'),
-            ext: fExt,
-            fileSize: f.fileSize || f.FileSize || 0,
-            isAudioOnly: isAud,
-            title: finalBaseTitle,
-            url: fUrl,
-            directUrl: fUrl,
-            audioUrl: f.audioUrl || f.AudioUrl || (!isAud ? bestAudioUrl : null)
-          };
-        });
-
-        if (!formatsList.some(f => f.formatId === 'bestaudio/best' || (f.isAudioOnly && f.ext === 'mp3'))) {
-          formatsList.push({
-            formatId: 'bestaudio/best',
-            resolution: 'Audio (MP3 / High Quality)',
-            ext: 'mp3',
-            fileSize: bestAudioSize,
-            isAudioOnly: true,
-            title: finalBaseTitle,
-            url: bestAudioUrl || item.audioUrl || item.url || null,
-            directUrl: bestAudioUrl || item.audioUrl || item.url || null,
-            audioUrl: null
           });
-        }
 
-        let thumbUrl = null;
-        try {
-          const ogImg = document.querySelector('meta[property="og:image"]');
-          if (ogImg && ogImg.content) thumbUrl = ogImg.content;
-          if (!thumbUrl) {
-            const linkImg = document.querySelector('link[rel="image_src"]');
-            if (linkImg && linkImg.href) thumbUrl = linkImg.href;
-          }
-          if (!thumbUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'))) {
-            const vidMatch = videoUrl.match(/[?&]v=([^&#]+)/) || videoUrl.match(/youtu\.be\/([^?&#]+)/) || videoUrl.match(/\/shorts\/([^?&#]+)/);
-            if (vidMatch) thumbUrl = `https://i.ytimg.com/vi/${vidMatch[1]}/maxresdefault.jpg`;
-          }
-        } catch(e) {}
-
-        if (!formatsList.some(f => f.formatId === 'thumbnail')) {
-          formatsList.push({
-            formatId: 'thumbnail',
-            resolution: 'Thumbnail (Cover Image / HD)',
-            ext: 'jpg',
-            fileSize: 0,
-            isAudioOnly: false,
-            title: finalBaseTitle,
-            url: thumbUrl,
-            audioUrl: null
+          // Prepare full formats array to transmit to SmartDM desktop app
+          const formatsList = (effectiveFormats || []).map(f => {
+            const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
+            const fUrl = f.directUrl || f.DirectUrl || f.url || f.Url || f.videoUrl || f.VideoUrl || null;
+            let fExt = (f.ext || f.Ext || 'mp4').toLowerCase();
+            if (fExt === 'm3u8') fExt = 'mp4';
+            return {
+              formatId: String(f.formatId || f.FormatId || ''),
+              resolution: f.resolution || f.Resolution || f.qualityLabel || (isAud ? 'Audio Only' : 'Video'),
+              ext: fExt,
+              fileSize: f.fileSize || f.FileSize || 0,
+              isAudioOnly: isAud,
+              title: finalBaseTitle,
+              url: fUrl,
+              directUrl: fUrl,
+              audioUrl: f.audioUrl || f.AudioUrl || (!isAud ? bestAudioUrl : null)
+            };
           });
-        }
 
-        let directDownloadUrl = null;
-        if (item.formatId === 'thumbnail') {
-          directDownloadUrl = thumbUrl || item.url || videoUrl;
-        } else if (item.formatId === 'bestaudio/best') {
-          directDownloadUrl = bestAudioUrl || item.audioUrl || item.url || videoUrl;
+          if (!formatsList.some(f => f.formatId === 'bestaudio/best' || (f.isAudioOnly && f.ext === 'mp3'))) {
+            formatsList.push({
+              formatId: 'bestaudio/best',
+              resolution: 'Audio (MP3 / High Quality)',
+              ext: 'mp3',
+              fileSize: bestAudioSize,
+              isAudioOnly: true,
+              title: finalBaseTitle,
+              url: bestAudioUrl || targetItem.audioUrl || targetItem.url || null,
+              directUrl: bestAudioUrl || targetItem.audioUrl || targetItem.url || null,
+              audioUrl: null
+            });
+          }
+
+          let thumbUrl = null;
+          try {
+            const ogImg = document.querySelector('meta[property="og:image"]');
+            if (ogImg && ogImg.content) thumbUrl = ogImg.content;
+            if (!thumbUrl) {
+              const linkImg = document.querySelector('link[rel="image_src"]');
+              if (linkImg && linkImg.href) thumbUrl = linkImg.href;
+            }
+            if (!thumbUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'))) {
+              const vidMatch = videoUrl.match(/[?&]v=([^&#]+)/) || videoUrl.match(/youtu\.be\/([^?&#]+)/) || videoUrl.match(/\/shorts\/([^?&#]+)/);
+              if (vidMatch) thumbUrl = `https://i.ytimg.com/vi/${vidMatch[1]}/maxresdefault.jpg`;
+            }
+          } catch(e) {}
+
+          if (!formatsList.some(f => f.formatId === 'thumbnail')) {
+            formatsList.push({
+              formatId: 'thumbnail',
+              resolution: 'Thumbnail (Cover Image / HD)',
+              ext: 'jpg',
+              fileSize: 0,
+              isAudioOnly: false,
+              title: finalBaseTitle,
+              url: thumbUrl,
+              audioUrl: null
+            });
+          }
+
+          let directDownloadUrl = null;
+          if (targetItem.formatId === 'thumbnail') {
+            directDownloadUrl = thumbUrl || targetItem.url || videoUrl;
+          } else if (targetItem.formatId === 'bestaudio/best') {
+            directDownloadUrl = bestAudioUrl || targetItem.audioUrl || targetItem.url || videoUrl;
+          } else {
+            directDownloadUrl = (targetItem.url && targetItem.url.startsWith('http') && targetItem.url !== videoUrl)
+              ? targetItem.url
+              : ((targetItem.videoUrl && targetItem.videoUrl.startsWith('http') && targetItem.videoUrl !== videoUrl) ? targetItem.videoUrl : videoUrl);
+          }
+
+          const audioUrlToSend = targetItem.audioUrl || (!targetItem.isAudioOnly && targetItem.formatId !== 'thumbnail' ? bestAudioUrl : null);
+
+          runtime.sendMessage({
+            type: 'START_MEDIA_DOWNLOAD',
+            url: directDownloadUrl,
+            videoUrl: targetItem.videoUrl,
+            audioUrl: audioUrlToSend,
+            formatId: targetItem.formatId,
+            fileName: targetItem.fileName,
+            title: finalBaseTitle,
+            referer: videoUrl || window.location.href,
+            pageUrl: window.location.href,
+            formats: formatsList
+          }, () => {
+            setTimeout(() => popover.classList.remove('active'), 800);
+          });
+        };
+
+        if (isYt && activeItem.formatId !== 'thumbnail' && (!activeItem.directUrl || activeItem.directUrl === videoUrl || activeItem.directUrl.includes('youtube.com'))) {
+          let dispatched = false;
+          const safetyTimer = setTimeout(() => {
+            if (!dispatched) {
+              dispatched = true;
+              dispatchDownload(formats, activeItem);
+            }
+          }, 3500);
+
+          fetchMediaFormats(videoUrl, null, (res) => {
+            if (dispatched) return;
+            if (res && res.formats && res.formats.length > 0) {
+              dispatched = true;
+              clearTimeout(safetyTimer);
+              const matched = res.formats.find(f => {
+                const fH = f.height || parseInt(f.resolution || f.Resolution || '0', 10);
+                return fH > 0 && fH === activeItem.height;
+              }) || res.formats[0];
+              dispatchDownload(res.formats, matched || activeItem);
+            }
+          });
         } else {
-          directDownloadUrl = (item.url && item.url.startsWith('http') && item.url !== videoUrl)
-            ? item.url
-            : ((item.videoUrl && item.videoUrl.startsWith('http') && item.videoUrl !== videoUrl) ? item.videoUrl : videoUrl);
+          dispatchDownload(formats, activeItem);
         }
-
-        const audioUrlToSend = item.audioUrl || (!item.isAudioOnly && item.formatId !== 'thumbnail' ? bestAudioUrl : null);
-
-        runtime.sendMessage({
-          type: 'START_MEDIA_DOWNLOAD',
-          url: directDownloadUrl,
-          videoUrl: item.videoUrl,
-          audioUrl: audioUrlToSend,
-          formatId: item.formatId,
-          fileName: item.fileName,
-          title: finalBaseTitle,
-          referer: videoUrl || window.location.href,
-          pageUrl: window.location.href,
-          formats: formatsList
-        }, () => {
-          setTimeout(() => popover.classList.remove('active'), 800);
-        });
       }, true);
 
       return div;
@@ -2022,6 +2183,7 @@
       items.forEach(item => {
         const existingEl = container.querySelector('.format-item[data-format-key="' + CSS.escape(item.title) + '"]');
         if (existingEl) {
+          existingEl._formatData = item;
           const badgeEl = existingEl.querySelector('.format-badge');
           if (badgeEl && item.badge && item.badge !== 'Download' && badgeEl.textContent === 'Download') {
             badgeEl.textContent = item.badge;
@@ -2259,6 +2421,16 @@
       }
     });
 
+    let hasPrewarmedBanner = false;
+    bannerBtn.addEventListener('mouseenter', () => {
+      if (hasPrewarmedBanner) return;
+      const isYt = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be');
+      if (isYt) {
+        hasPrewarmedBanner = true;
+        fetchMediaFormats(getCanonicalUrl(window.location.href), mediaEl, () => {});
+      }
+    }, { passive: true });
+
     bannerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2270,6 +2442,7 @@
       let videoUrl = getCanonicalUrl(window.location.href);
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
       const isFbReels = isFb && window.location.pathname.includes('/reel/');
+      const isYouTube = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be') || (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')));
       let parentCard = null;
       let reelCard = null;
       if (isFb) {
@@ -2321,6 +2494,8 @@
         if (domFb && domFb.formats && domFb.formats.length > 0) {
           initialFormats = domFb.formats;
         }
+      } else if (isYouTube) {
+        initialFormats = getInstantYouTubeFormats(videoUrl, pageTitle);
       }
 
       let currentFormats = [];
@@ -2350,6 +2525,23 @@
             }));
 
             res.formats.forEach(f => {
+              // Update matching existing formats with real directUrl/audioUrl/fileSize
+              const match = currentFormats.find(cur => {
+                const fH = f.height || parseInt(f.resolution || f.Resolution || '0', 10);
+                const curH = cur.height || parseInt(cur.resolution || cur.Resolution || '0', 10);
+                if (fH > 0 && curH > 0 && fH === curH) return true;
+                const fFmtId = String(f.formatId || f.FormatId || '').toLowerCase();
+                const curFmtId = String(cur.formatId || cur.FormatId || '').toLowerCase();
+                if (fFmtId && curFmtId && (fFmtId === curFmtId || fFmtId.startsWith(curFmtId) || curFmtId.startsWith(fFmtId))) return true;
+                return false;
+              });
+              if (match) {
+                if (f.directUrl || f.DirectUrl) match.directUrl = f.directUrl || f.DirectUrl;
+                if (f.url || f.Url) match.url = f.url || f.Url;
+                if (f.audioUrl || f.AudioUrl) match.audioUrl = f.audioUrl || f.AudioUrl;
+                if ((f.fileSize || f.FileSize) > 0) match.fileSize = f.fileSize || f.FileSize;
+              }
+
               const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
               const fmtId = (f.formatId || f.FormatId || '').toLowerCase().trim();
               const h = f.height || 0;
@@ -2361,7 +2553,7 @@
               }
             });
 
-            renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, hasMorePending);
+            renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, hasMorePending);
           } else if (!res && hasMorePending === false) {
             const notice = content.querySelector('.smartdm-pending-notice');
             if (notice) notice.remove();
@@ -2679,9 +2871,9 @@
         top = Math.max(10, btnRect.top - pHeight - 4);
       }
       popover.style.top = top + 'px';
-      let left = btnRect.right - 250;
+      let left = btnRect.right - 290;
       if (left < 10) left = 10;
-      if (left + 250 > window.innerWidth - 10) left = window.innerWidth - 260;
+      if (left + 290 > window.innerWidth - 10) left = window.innerWidth - 300;
       popover.style.left = left + 'px';
     };
 
@@ -2707,6 +2899,18 @@
     window.addEventListener('scroll', onScrollOrResize, { passive: true, capture: true });
     window.addEventListener('resize', onScrollOrResize, { passive: true });
 
+    let hasPrewarmed = false;
+    const prewarm = () => {
+      if (hasPrewarmed) return;
+      hasPrewarmed = true;
+      const isYt = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
+      if (isYt) {
+        fetchMediaFormats(videoUrl, null, () => {});
+      }
+    };
+    thumbBtn.addEventListener('mouseenter', prewarm, { passive: true });
+    containerEl.addEventListener('mouseenter', prewarm, { passive: true });
+
     thumbBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2721,20 +2925,33 @@
       content._smartdm_downloading = false;
       popover.classList.add('active');
       positionPopover();
-      content.innerHTML = `
-        <div class="spinner-container">
-          <div class="spinner"></div>
-          <span class="status-text" style="padding:0;">Loading video options...</span>
-        </div>
-      `;
+
+      const isYt = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
+      const fallbackTitle = isYt ? 'YouTube Video' : 'video';
+      const resolvedTitle = (cardTitle && !isGenericTitle(cardTitle)) ? cardTitle : (extractCardTitle(containerEl) || fallbackTitle);
+
+      let initialFormats = null;
+      if (isYt) {
+        initialFormats = getInstantYouTubeFormats(videoUrl, resolvedTitle);
+      }
 
       let currentFormats = [];
+      if (initialFormats && initialFormats.length > 0) {
+        currentFormats = [...initialFormats];
+        renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, true);
+      } else {
+        content.innerHTML = `
+          <div class="spinner-container">
+            <div class="spinner"></div>
+            <span class="status-text" style="padding:0;">Loading video options...</span>
+          </div>
+        `;
+      }
+
       fetchMediaFormats(videoUrl, null, (res, hasMorePending) => {
         try {
           if (content._smartdm_downloading) return;
-          const isYt = videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be'));
-          const fallbackTitle = isYt ? 'YouTube Video' : 'video';
-          const resolvedTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : (cardTitle || extractCardTitle(containerEl) || fallbackTitle);
+          const finalTitle = (res && res.title && !isGenericTitle(res.title)) ? res.title : resolvedTitle;
           if (res && res.formats && res.formats.length > 0) {
             const existingKeys = new Set(currentFormats.map(f => {
               const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
@@ -2745,6 +2962,23 @@
             }));
 
             res.formats.forEach(f => {
+              // Update matching existing formats with real directUrl/audioUrl/fileSize
+              const match = currentFormats.find(cur => {
+                const fH = f.height || parseInt(f.resolution || f.Resolution || '0', 10);
+                const curH = cur.height || parseInt(cur.resolution || cur.Resolution || '0', 10);
+                if (fH > 0 && curH > 0 && fH === curH) return true;
+                const fFmtId = String(f.formatId || f.FormatId || '').toLowerCase();
+                const curFmtId = String(cur.formatId || cur.FormatId || '').toLowerCase();
+                if (fFmtId && curFmtId && (fFmtId === curFmtId || fFmtId.startsWith(curFmtId) || curFmtId.startsWith(fFmtId))) return true;
+                return false;
+              });
+              if (match) {
+                if (f.directUrl || f.DirectUrl) match.directUrl = f.directUrl || f.DirectUrl;
+                if (f.url || f.Url) match.url = f.url || f.Url;
+                if (f.audioUrl || f.AudioUrl) match.audioUrl = f.audioUrl || f.AudioUrl;
+                if ((f.fileSize || f.FileSize) > 0) match.fileSize = f.fileSize || f.FileSize;
+              }
+
               const resStr = (f.resolution || f.Resolution || '').toLowerCase().trim();
               const fmtId = (f.formatId || f.FormatId || '').toLowerCase().trim();
               const h = f.height || 0;
@@ -2756,7 +2990,7 @@
               }
             });
 
-            renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, hasMorePending);
+            renderFormatDropdown(content, currentFormats, videoUrl, popover, finalTitle, hasMorePending);
           } else if (!res && hasMorePending === false) {
             const notice = content.querySelector('.smartdm-pending-notice');
             if (notice) notice.remove();

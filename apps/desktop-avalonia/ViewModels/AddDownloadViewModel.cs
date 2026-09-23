@@ -275,10 +275,11 @@ public partial class AddDownloadViewModel : ViewModelBase
                 Url = initialUrl.Trim();
             }
 
-            // If filename is still generic and we have a YouTube URL, resolve video title in background
-            if (IsGenericOrInvalidFileName(FileName) && !string.IsNullOrWhiteSpace(initialUrl))
+            // If we have a YouTube URL and direct streams are not resolved yet, resolve streams dynamically
+            bool isYt = !string.IsNullOrWhiteSpace(initialUrl) && YouTubeMediaResolver.IsYouTubeUrl(initialUrl);
+            if (isYt && (SelectedFormat == null || string.IsNullOrWhiteSpace(SelectedFormat.DirectUrl) || SelectedFormat.DirectUrl.Contains("youtube.com") || SelectedFormat.DirectUrl.Contains("youtu.be") || IsGenericOrInvalidFileName(FileName)))
             {
-                _ = TryResolveYouTubeFormatsAsync(initialUrl.Trim());
+                _ = TryResolveYouTubeFormatsAsync(initialUrl!.Trim());
             }
         }
         else if (!string.IsNullOrWhiteSpace(initialUrl))
@@ -559,6 +560,34 @@ public partial class AddDownloadViewModel : ViewModelBase
         string targetUrl = (SelectedFormat != null && !string.IsNullOrWhiteSpace(SelectedFormat.DirectUrl))
             ? SelectedFormat.DirectUrl
             : Url.Trim();
+
+        if (YouTubeMediaResolver.IsYouTubeUrl(targetUrl) || (SelectedFormat != null && !string.IsNullOrWhiteSpace(SelectedFormat.DirectUrl) && YouTubeMediaResolver.IsYouTubeUrl(SelectedFormat.DirectUrl)))
+        {
+            string ytUrl = !string.IsNullOrWhiteSpace(Url) ? Url.Trim() : targetUrl;
+            if (YouTubeMediaResolver.IsYouTubeUrl(ytUrl))
+            {
+                IsProbing = true;
+                ProbeStatus = "• Resolving YouTube streams & deciphering signatures...";
+                var res = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(ytUrl);
+                if (res.Success && res.Formats.Count > 0)
+                {
+                    var match = res.Formats.FirstOrDefault(f => f.FormatId.Equals(SelectedFormatId, StringComparison.OrdinalIgnoreCase) || f.Resolution.StartsWith(SelectedFormatId, StringComparison.OrdinalIgnoreCase))
+                             ?? res.Formats.FirstOrDefault(f => f.Resolution.StartsWith("1080p") && !f.IsAudioOnly)
+                             ?? res.Formats.FirstOrDefault();
+                    if (match != null)
+                    {
+                        targetUrl = match.DirectUrl ?? targetUrl;
+                        if (SelectedFormat != null)
+                        {
+                            SelectedFormat.DirectUrl = match.DirectUrl;
+                            SelectedFormat.AudioUrl = match.AudioUrl;
+                            if (match.FileSize > 0) SelectedFormat.FileSize = match.FileSize;
+                        }
+                    }
+                }
+                IsProbing = false;
+            }
+        }
 
         long targetBytes = (SelectedFormat != null && SelectedFormat.FileSize > 0)
             ? SelectedFormat.FileSize
