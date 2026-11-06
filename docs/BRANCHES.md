@@ -64,3 +64,6 @@ The source publication consolidates previously unpublished development because
 GitHub rejected an older 171 MB audit video. Original local commits remain on
 `codex/local-before-source-sync-20261106`; the local video is preserved and ignored.
 Both remote branch updates remain fast-forwards from their original `ecbafc7` tip.
+
+Publication succeeded at `fb945a7` on both remote C# branches. A subsequent CI-only
+repair replaces invalid action pins; use `git ls-remote` for the resulting tip.

@@ -303,3 +303,12 @@ See [exact commands/results](BRANCH_SYNC_HANDOFF.md): restore/build pass with ze
 skips, including four real FFmpeg fixtures; 77 browser and 13 auth tests pass.
 Website build passes with its existing bundle warning. Gradle checks pass with
 88 tasks up-to-date. No new Linux/live-site completion proof is claimed.
+# 2026-11-06 publication CI setup repair
+
+Both remote C# branches were verified at `fb945a7` after atomic publication.
+GitHub run 42263706241 failed before checkout because the existing upload-artifact
+and wrapper-validation hashes were unavailable. Replacements were checked against
+official Git tag refs and action files; `git diff --check` passed. No application
+code changed in this follow-up. This setup failure provides no Linux/Windows test
+result; inspect the subsequent run separately.
+

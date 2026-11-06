@@ -1,8 +1,9 @@
 # Resume here â€” C# version
 
-Updated 2026-11-03. Branch `sdm2.0`, HEAD `48ec34c`; this working tree contains
-substantial uncommitted transfer, UI, browser and cleanup changes. HEAD alone does
-not reproduce this working tree. No changes from these sessions have been pushed.
+Updated 2026-11-06. The current C# source snapshot was committed and pushed to both
+`sdm2.0` and `sdm-v2` at `fb945a7`; subsequent CI-only repairs are recorded below.
+Read [BRANCH_SYNC_HANDOFF.md](BRANCH_SYNC_HANDOFF.md) first for current evidence.
+Older dated entries below describe earlier sessions, not the present Git state.
 
 ## First five minutes
 
@@ -101,3 +102,8 @@ AES-128 fixture correction and Firefox packaging repairs. Latest local evidence:
 pass. Reanime partial transfer was user-confirmed; Animepahe HTTP/2 probes worked
 but complete live verification and the other media failures remain open. No
 installer/release was built. Follow the explicit Linux C# entry point in README.
+
+The source push to both branches succeeded at `fb945a7`. The first CI run failed
+before checkout because two existing action hashes were invalid; the follow-up
+uses verified immutable references. Check the latest remote run for execution
+results. No package exit gate is closed by source synchronization.

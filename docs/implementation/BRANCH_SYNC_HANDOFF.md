@@ -16,6 +16,18 @@ uses a new source snapshot commit whose parent is the unchanged remote `ecbafc7`
 tip, consolidating the unpublished development content without sending the video.
 No remote history is rewritten and no force push is used.
 
+### Publication and CI follow-up
+
+Both remote branches were verified at `fb945a79837a6c4ffd3b40f4aa75561dbf31919a`
+after a successful atomic push. Java `main` remained `b705fd0`. The working tree
+was clean. GitHub run 42263706241 failed during runner setup, before any source
+tests: two existing workflow action hashes did not exist. This follow-up replaces
+them with verified immutable v4 commits for `actions/upload-artifact` and the
+official `gradle/actions/wrapper-validation` action. The setup-gradle reference was
+also verified to exist. No application code or schema changed in this follow-up.
+Action paths were checked against their official repository files and tag refs;
+`git diff --check` passed. Remote execution results must be checked separately.
+
 ## Pre-existing dirty files
 
 This snapshot intentionally includes the prior UI, engine, browser, cleanup,

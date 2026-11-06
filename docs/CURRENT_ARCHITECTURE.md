@@ -1,7 +1,9 @@
 # Current architecture â€” C# version
 
-Observed 2026-11-03 on `sdm2.0`, HEAD `48ec34c`, with substantial uncommitted changes.
-This describes the working tree, not just HEAD. See [branch ownership](BRANCHES.md).
+Updated 2026-11-06: the implementation below and dated follow-ups are included in
+the C# source snapshot published as `fb945a7` to `sdm2.0` and `sdm-v2`.
+See [branch ownership](BRANCHES.md) and the latest publication handoff. Earlier
+dated observations remain historical; target architecture is still separate.
 
 ## Actual project structure
 
