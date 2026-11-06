@@ -71,3 +71,8 @@ Remote Ubuntu C# checks passed; the legacy Gradle cold-build verification gate
 remains open. See the publication handoff for exact evidence and subsequent runs.
 The Windows fixture cleanup correction is included in the synchronized source;
 both branch names continue to receive the identical publication tip.
+
+2026-11-06: Shared streamed-media binding repair is recorded in
+[handoff](implementation/STREAM_BINDING_HANDOFF.md), with 95 browser fixtures and
+two completed Chrome TikTok downloads. Both C# branch names remain synchronized
+publication targets; Java main is unchanged.

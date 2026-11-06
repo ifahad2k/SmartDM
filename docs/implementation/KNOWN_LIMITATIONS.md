@@ -68,3 +68,9 @@ Animepahe live verification, other live-site/browser behavior, Linux execution,
 secure persistence and authenticated durable handoff remain open. Firefox manifest
 and registration metadata is corrected; loaded Firefox/Linux proof remains absent.
 Both synchronized C# branches are development snapshots, not a release certification.
+
+2026-11-06 streamed capture: [specific TikTok evidence](STREAM_BINDING_HANDOFF.md)
+now includes two complete, correctly identified Chrome downloads with audio/video
+decode verification. This supersedes the blanket unverified statement for those
+two cases only. Other sites, all qualities, Firefox/Linux runtime, controlled memory
+measurements and the intermediate Chrome renderer crash's cause remain unverified.

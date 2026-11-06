@@ -324,3 +324,13 @@ staging-delete race after terminal notification. The fixture now awaits engine
 session shutdown before cleanup. Focused rebuilt Package2RegressionTests: 27
 passed, zero failed/skipped; exact command is in BRANCH_SYNC_HANDOFF.md. Production
 code is unchanged; legacy Gradle dependency verification still fails independently.
+
+## 2026-11-06 shared streamed-player binding
+
+`node --test tests/browser/*.test.cjs`: **95 passed, zero failed/skipped**. Both
+sniffer `node --check` commands and `git diff --check` pass; sniffer SHA-256 hashes
+match. The new streamed-copy regression failed in both browsers before the repair.
+Two real Chrome TikTok downloads completed: original screenshot clip H.264/AAC,
+720×1280, 218.8 s, 17,248,469 bytes; clean-code feed clip HEVC/AAC, 720×1280,
+83.3 s, 8,012,300 bytes. Both full FFmpeg decodes exited 0; extracted frames matched
+their selected videos. See [exact evidence/limits](STREAM_BINDING_HANDOFF.md).

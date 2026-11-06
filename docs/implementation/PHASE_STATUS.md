@@ -151,3 +151,8 @@ The owner authorized the current development snapshot on both sdm2.0 and sdm-v2.
 See [handoff](BRANCH_SYNC_HANDOFF.md). Local checks pass (177 .NET / 77 browser /
 13 auth), including corrected AES-128 test setup and browser packaging fixtures.
 This synchronization closes no product/package gate; installer/release stays deferred.
+
+2026-11-06 Package 4 streamed-player repair: shared read/copy/sample association
+implemented in both extensions; 95 browser fixtures and two real Chrome TikTok
+downloads pass, including full audio/video decode and selected-frame verification.
+See [handoff](STREAM_BINDING_HANDOFF.md). Full Package 4 exit gate remains NO.

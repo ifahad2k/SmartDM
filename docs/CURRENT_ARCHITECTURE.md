@@ -143,3 +143,12 @@ entry; Windows build passed before matrix cancellation. Platforms now finish
 independently (`fail-fast: false`); dependency verification remains enforced.
 The Windows collision fixture now joins runner shutdown before staging deletion;
 this is test lifecycle synchronization, not a production architecture change.
+
+## 2026-11-06 streamed MediaSource association
+
+Both sniffers now follow the player's existing streamed response reads and byte
+copies, with bounded exact MP4 payload sample matching across copied/remuxed data.
+Player/source identity and observed audio pairing remain required; no tab-wide
+latest-media guess was restored. Caps, invalidation behavior and actual two-clip
+Chrome download evidence are in [handoff](implementation/STREAM_BINDING_HANDOFF.md).
+This is shared browser implementation; desktop transport and schemas are unchanged.

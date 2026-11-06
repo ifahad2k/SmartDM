@@ -118,3 +118,14 @@ The independent Windows run found a test cleanup race: terminal notification did
 not imply staging cleanup had finished. The Package2RegressionTests helper now
 joins the runner before deleting staging; 27 focused cases pass after rebuild.
 This fixture correction changes no transfer-engine behavior.
+
+## 2026-11-06 streamed capture follow-up — read first for TikTok
+
+See [STREAM_BINDING_HANDOFF.md](STREAM_BINDING_HANDOFF.md). The first streamed-read
+fix alone failed live; final shared provenance/sample matching and session identity
+handling passed 95 browser fixtures and completed the original TikTok clip plus a
+fresh feed clip, with correct frames and fully decodable audio/video. Temporary
+capture counters are removed. Reload the extension and refresh pages after edits;
+restarting C# alone cannot update content scripts. Preserve byte-range subview and
+overwrite isolation, bounded sample retention, MP4 initialization invalidation and
+separate audio handling. No package-wide or universal-site completeness is claimed.
