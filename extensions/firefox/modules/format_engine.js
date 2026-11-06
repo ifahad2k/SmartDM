@@ -796,10 +796,11 @@ class FormatRegistryEngine {
   }
 
   static selectedSocialFormats(mediaEl, media) {
-    const src = mediaEl && (mediaEl.currentSrc || mediaEl.src) || '';
+    const src = mediaEl?.currentSrc || mediaEl?.src || '';
     const poster = mediaEl && (mediaEl.poster || mediaEl.getAttribute?.('poster')) || '';
     const asset = poster.match(/(?:ext_tw_video_thumb|amplify_video_thumb)\/(\d+)/)?.[1];
     const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
+    const sanitize = u => (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(u) : u;
     const matches = (media || []).filter(m => m.url === src || (asset && new RegExp('/(?:ext_tw_video|amplify_video)/' + asset + '/').test(m.url || '')));
     let binding = this.playerBinding(mediaEl);
     if (binding) {
@@ -810,53 +811,82 @@ class FormatRegistryEngine {
         if (matchedAudio) binding.audio = matchedAudio.url;
       }
       if (binding.audioExpected && !binding.audio && !isInsta) return [];
-      matches.push({...(media || []).find(m => m.url === binding.video) || {}, url: binding.video, audioUrl: binding.audio});
+      const cleanVideo = sanitize(binding.video);
+      const cleanAudio = binding.audio ? (sanitize(binding.audio) || null) : null;
+      matches.push({...(media || []).find(m => m.url === binding.video) || {}, url: cleanVideo, audioUrl: cleanAudio});
     } else if (isInsta && !matches.length) {
       const instaVideos = (media || []).filter(m => !m.isAudio && /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url || ''));
       if (instaVideos.length > 0) {
         const best = instaVideos.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0];
         const matchingAudio = (media || []).find(m => m.isAudio && (best.fbVideoId && m.fbVideoId === best.fbVideoId || /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url)));
-        matches.push({...best, audioUrl: matchingAudio ? matchingAudio.url : null});
+        const cleanVideo = sanitize(best.url);
+        const cleanAudio = matchingAudio ? (sanitize(matchingAudio.url) || null) : null;
+        matches.push({...best, url: cleanVideo, audioUrl: cleanAudio});
       }
     }
     let caption = '';
-    const card = mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"], [role="presentation"]');
-    if (card) {
-      for (const selector of ['[data-testid="tweetText"]', '[data-e2e="video-desc"]', 'h1', '[data-testid="post-caption"]', 'img[alt]']) {
-        const node = card.querySelector?.(selector);
-        const value = (node?.textContent || node?.getAttribute?.('alt') || '').trim();
-        if (value.length > 3 && !/^(instagram|home.*x)$/i.test(value)) { caption = value; break; }
-      }
-      if (isInsta) {
-        if (!caption) {
-          for (const el of card.querySelectorAll('span[dir="auto"], div[dir="auto"]')) {
-            const txt = (el.textContent || '').trim();
-            if (txt.length > 3 && !/^(instagram|home|follow|likes?|views?|comments?)$/i.test(txt)) {
-              caption = txt;
-              break;
+    if (isInsta && typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractInstagramMediaTitle) {
+      caption = VisualMountDetector.extractInstagramMediaTitle(mediaEl);
+    }
+    if (!caption) {
+      const card = mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"], [role="presentation"]');
+      if (card) {
+        for (const selector of ['[data-testid="tweetText"]', '[data-e2e="video-desc"]', 'h1', '[data-testid="post-caption"]', 'img[alt]']) {
+          const node = card.querySelector?.(selector);
+          const value = (node?.textContent || node?.getAttribute?.('alt') || '').trim();
+          if (value.length > 3 && !/^(instagram|home.*x)$/i.test(value)) { caption = value; break; }
+        }
+        if (isInsta) {
+          if (!caption) {
+            for (const el of card.querySelectorAll('span[dir="auto"], div[dir="auto"]')) {
+              const txt = (el.textContent || '').trim();
+              if (txt.length > 3 && !/^(instagram|home|follow|likes?|views?|comments?)$/i.test(txt)) {
+                caption = txt;
+                break;
+              }
             }
           }
-        }
-        if (!caption) {
-          const author = card.querySelector('header a, h2 a, a[role="link"][tabindex="0"]')?.textContent?.trim();
-          if (author && author.length > 1 && !SmartDmUtils.isGenericTitle(author)) {
-            caption = `${author} - Instagram Video`;
+          if (!caption) {
+            const author = card.querySelector('header a, h2 a, a[role="link"][tabindex="0"]')?.textContent?.trim();
+            if (author && author.length > 1 && !SmartDmUtils.isGenericTitle(author)) {
+              caption = `${author} - Instagram Video`;
+            }
           }
         }
       }
     }
     if (!caption) caption = mediaEl?.getAttribute?.('aria-label') || '';
     const title = caption ? SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160) : (isInsta ? 'Instagram Video' : 'Selected video');
-    const urls = new Map(matches.map(m => [m.url, m]));
-    if (/^https?:/.test(src) && !urls.has(src)) urls.set(src, {url:src});
+    const urls = new Map(matches.map(m => {
+      const u = sanitize(m.url);
+      const a = m.audioUrl ? (sanitize(m.audioUrl) || null) : null;
+      return [u, {...m, url: u, audioUrl: a}];
+    }));
+    const cleanSrc = sanitize(src);
+    if (/^https?:/.test(cleanSrc) && !urls.has(cleanSrc)) urls.set(cleanSrc, {url:cleanSrc});
     const audio = [...urls.values()].filter(m => m.isAudio || /audio\//.test(m.contentType || ''));
-      return [...urls.values()].filter(m => !audio.includes(m)).flatMap(m => {
-      const audioUrl = m.audioUrl || (audio.length === 1 ? audio[0].url : null);
+    return [...urls.values()].filter(m => !audio.includes(m)).flatMap(m => {
+      const cleanUrl = sanitize(m.url);
+      const rawA = m.audioUrl || (audio.length === 1 ? audio[0].url : null);
+      const audioUrl = rawA ? (sanitize(rawA) || null) : null;
       if (m.hasAudio === false && !audioUrl) return [];
-      const height = m.height || (m.url === src || m.url === binding?.video ? Math.min(mediaEl.videoWidth || Infinity, mediaEl.videoHeight || Infinity) : 0);
+      const cleanBindingVideo = sanitize(binding?.video);
+      const height = m.height || (cleanUrl === cleanSrc || cleanUrl === cleanBindingVideo ? Math.min(mediaEl.videoWidth || Infinity, mediaEl.videoHeight || Infinity) : 0);
       const h = Number.isFinite(height) ? height : 0;
-      return [{formatId:'selected_' + h, resolution:h ? h + 'p (captured stream)' : 'Original stream (resolution unknown)', height:h,
-        ext:/\.m3u8(?:[?#]|$)/i.test(m.url) ? 'm3u8' : 'mp4', url:m.url, directUrl:m.url, audioUrl, title, isAudioOnly:false, fileSize:m.contentLength || 0}];
+      return [{
+        formatId:'selected_' + h,
+        resolution:h ? h + 'p (captured stream)' : 'Original stream (resolution unknown)',
+        height:h,
+        ext:/\.m3u8(?:[?#]|$)/i.test(cleanUrl) ? 'm3u8' : 'mp4',
+        url:cleanUrl,
+        directUrl:cleanUrl,
+        audioUrl,
+        title,
+        isAudioOnly:false,
+        fileSize:m.contentLength || 0,
+        referer: (typeof window !== 'undefined' ? window.location.href : ''),
+        origin: (typeof window !== 'undefined' ? window.location.origin : '')
+      }];
     });
   }
 

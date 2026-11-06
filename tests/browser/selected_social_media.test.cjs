@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
 for(const browser of ['chrome','firefox']){
  const ctx=vm.createContext({window:{location:{hostname:'tiktok.com'}},URL});
- for(const [file,name] of [['utils.js','SmartDmUtils'],['format_engine.js','FormatRegistryEngine'],['overlay_ui.js','OverlayUiRenderer']])vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/${file}`,'utf8')+`\nthis.${name}=${name};`,ctx);
+ for(const [file,name] of [['utils.js','SmartDmUtils'],['visual_mount.js','VisualMountDetector'],['format_engine.js','FormatRegistryEngine'],['overlay_ui.js','OverlayUiRenderer']])vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/${file}`,'utf8')+`\nthis.${name}=${name};`,ctx);
  const engine=ctx.FormatRegistryEngine;
  vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/watcher.js`,'utf8')+'\nthis.MediaWatcher=MediaWatcher;',ctx);
  test(`${browser}: only one visible reel overlay survives viewport sync`,()=>{
@@ -47,4 +47,39 @@ for(const browser of ['chrome','firefox']){
   assert.equal(result[0].audioUrl,'https://scontent.cdninstagram.com/v/t16/audio.mp4');
   ctx.window.location.hostname='tiktok.com';
  });
+  test(`${browser}: Instagram feed without article extracts post caption via parent container and strips byte-range`, () => {
+   ctx.window.location.hostname = 'instagram.com';
+   const parentContainer = {
+    querySelectorAll(sel) {
+     if (sel === 'video') return [{}];
+     if (sel === 'div[class*="_a9zs"]') return [{ textContent: 'athiiiiiiiiiiii Intense workout routine for beginners', closest: () => null }];
+     return [];
+    },
+    querySelector(sel) {
+     if (sel.includes('header a')) return { textContent: 'athiiiiiiiiiiii', getAttribute: () => '/athiiiiiiiiiiii/' };
+     if (sel.includes('Like')) return {};
+     return null;
+    }
+   };
+   const p = {
+    currentSrc: 'blob:insta-feed-2',
+    videoWidth: 1080,
+    videoHeight: 1920,
+    parentElement: parentContainer,
+    closest: () => null,
+    getAttribute: k => ({
+     'data-smartdm-bound-src': 'blob:insta-feed-2',
+     'data-smartdm-video-url': 'https://instagram.fdac14-1.fna.fbcdn.net/v/t50.2886-16/123.mp4?bytestart=0&byteend=1032877&_nc_cat=100',
+     'data-smartdm-separate-audio': '0'
+    }[k])
+   };
+   const result = engine.selectedSocialFormats(p, []);
+   assert.equal(result.length, 1);
+   assert.equal(result[0].title, 'Intense workout routine for beginners');
+   assert.equal(result[0].url, 'https://instagram.fdac14-1.fna.fbcdn.net/v/t50.2886-16/123.mp4?_nc_cat=100');
+   assert.ok(!result[0].url.includes('bytestart'));
+   assert.ok(!result[0].url.includes('byteend'));
+   ctx.window.location.hostname = 'tiktok.com';
+  });
+
 }

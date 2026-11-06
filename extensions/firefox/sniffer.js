@@ -43,6 +43,20 @@
   const pendingReads = new Set();
   const MAX_MANIFEST_BYTES = 500000;
 
+  function stripByteRangeParams(url) {
+    if (!url || typeof url !== 'string') return url;
+    try {
+      const u = new URL(url, window.location.href);
+      if (u.searchParams.has('bytestart') || u.searchParams.has('byteend') || u.searchParams.has('range')) {
+        u.searchParams.delete('bytestart');
+        u.searchParams.delete('byteend');
+        u.searchParams.delete('range');
+        return u.href;
+      }
+    } catch (_) {}
+    return url;
+  }
+
   // Associate actual network buffers with the SourceBuffer that consumes them.
   // Weak keys never retain response bodies, players or detached DOM elements.
   // This handles ordinary MSE/DASH players without guessing from tab-wide traffic.
@@ -140,7 +154,7 @@
     let resource = sampledResources.get(metadata.url);
     if (!resource) {
       if (sampledResources.size >= MAX_SAMPLE_RESOURCES) forgetSamples(sampledResources.values().next().value);
-      resource = {url: metadata.url, contentType: metadata.type, kind: /^audio\//i.test(metadata.type) ? 'audio' : 'unknown', samples: [], seen: now};
+      resource = {url: stripByteRangeParams(metadata.url), contentType: metadata.type, kind: /^audio\//i.test(metadata.type) ? 'audio' : 'unknown', samples: [], seen: now};
     }
     resource.seen = now;
     sampledResources.delete(resource.url); sampledResources.set(resource.url, resource);
@@ -218,7 +232,7 @@
       completeMp4 = ftyp && moov && media;
     } catch (_) {}
     if (!backingRange && !completeMp4) return;
-    writeSpans(span.buffer, span.start, span.end, [{start: 0, end: span.end - span.start, metadata: {url, contentType}}]);
+    writeSpans(span.buffer, span.start, span.end, [{start: 0, end: span.end - span.start, metadata: {url: stripByteRangeParams(url), contentType}}]);
   }
   function bindSource(state) {
     state.lastSync = Date.now();
@@ -229,9 +243,9 @@
         media.removeAttribute?.('data-smartdm-video-url'); media.removeAttribute?.('data-smartdm-audio-url');
       }
       media.setAttribute('data-smartdm-bound-src', src);
-      if (state.video) media.setAttribute('data-smartdm-video-url', state.video.url);
+      if (state.video) media.setAttribute('data-smartdm-video-url', stripByteRangeParams(state.video.url));
       else media.removeAttribute?.('data-smartdm-video-url');
-      if (state.audio) media.setAttribute('data-smartdm-audio-url', state.audio.url);
+      if (state.audio) media.setAttribute('data-smartdm-audio-url', stripByteRangeParams(state.audio.url));
       else media.removeAttribute?.('data-smartdm-audio-url');
       media.setAttribute('data-smartdm-separate-audio', state.audioExpected ? '1' : '0');
     });
@@ -359,6 +373,7 @@
             const track = owner.audio || metadata?.kind === 'audio' ? 'audio' : 'video';
             if (track === 'audio') owner.state.audioExpected = true;
             if (initialization && track === 'video') owner.state.audio = null;
+            if (metadata && metadata.url) metadata.url = stripByteRangeParams(metadata.url);
             const changed = owner.state[track]?.url !== (metadata?.url);
             owner.state[track] = metadata || null;
             if (changed || Date.now() - owner.state.lastSync > 1000) bindSource(owner.state);

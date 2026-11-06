@@ -448,7 +448,7 @@ class SmartDmUtils {
   }
 
   static sanitizeStreamUrl(rawUrl) {
-    if (!rawUrl) return '';
+    if (!rawUrl) return null;
     try {
       const u = new URL(rawUrl);
       if (u.searchParams.has('bytestart')) u.searchParams.delete('bytestart');

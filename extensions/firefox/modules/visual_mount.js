@@ -338,6 +338,119 @@ class VisualMountDetector {
     return null;
   }
 
+  static findInstagramPostCard(mediaEl) {
+    if (!mediaEl) return null;
+    let card = mediaEl.closest?.('article, [role="dialog"], [role="presentation"]');
+    if (card) return card;
+    let curr = mediaEl.parentElement;
+    let candidate = null;
+    const docBody = typeof document !== 'undefined' ? document.body : null;
+    const docEl = typeof document !== 'undefined' ? document.documentElement : null;
+    for (let i = 0; i < 12 && curr && curr !== docBody && curr !== docEl; i++) {
+      const vids = curr.querySelectorAll ? curr.querySelectorAll('video') : [];
+      if (vids.length > 1 && candidate) break;
+      const hasHeader = curr.querySelector?.('header, [role="heading"], a[href*="/p/"], a[href*="/reel/"]');
+      const hasActions = curr.querySelector?.('[aria-label*="Like" i], [aria-label*="Comment" i], [aria-label*="Share" i]');
+      if (hasHeader || hasActions) {
+        candidate = curr;
+        if ((hasHeader && hasActions) || curr.querySelector?.('a[href*="/p/"], a[href*="/reel/"]')) {
+          break;
+        }
+      }
+      curr = curr.parentElement;
+    }
+    return candidate;
+  }
+
+  static extractInstagramMediaTitle(mediaEl, cardContainer) {
+    try {
+      const card = cardContainer || this.findInstagramPostCard(mediaEl);
+      let author = '';
+      let caption = '';
+
+      if (card) {
+        const authorEl = card.querySelector?.('header a, h2 a, a[role="link"][tabindex="0"]') || card.querySelector?.('header a[role="link"], header a[href]');
+        if (authorEl) {
+          const raw = (authorEl.textContent || '').trim();
+          if (raw && !SmartDmUtils.isGenericTitle(raw) && !/^(follow|following|sponsored|suggested)/i.test(raw)) {
+            author = raw;
+          } else {
+            const href = authorEl.getAttribute?.('href') || '';
+            const m = href.match(/^\/([A-Za-z0-9_.]+)\/?$/);
+            if (m && !/^(explore|reels|stories|direct|p|reel)/i.test(m[1])) author = m[1];
+          }
+        }
+        if (!author) {
+          const links = card.querySelectorAll ? card.querySelectorAll('header a, a[href^="/"]') : [];
+          for (const a of links) {
+            const href = a.getAttribute?.('href') || '';
+            const m = href.match(/^\/([A-Za-z0-9_.]+)\/?$/);
+            if (m && !/^(explore|reels|stories|direct|p|reel|accounts)/i.test(m[1])) {
+              const txt = (a.textContent || '').trim();
+              if (txt && !SmartDmUtils.isGenericTitle(txt) && !/^(follow|following)/i.test(txt)) {
+                author = txt;
+                break;
+              }
+            }
+          }
+        }
+
+        for (const sel of ['h1', '[data-testid="post-caption"]', 'div[class*="_a9zs"]', 'span[dir="auto"]', 'div[dir="auto"]']) {
+          const nodes = card.querySelectorAll ? card.querySelectorAll(sel) : [];
+          for (const node of nodes) {
+            if (node.closest?.('button, [role="button"], header')) continue;
+            if (mediaEl && (mediaEl.contains?.(node) || node.contains?.(mediaEl))) continue;
+            let txt = (node.textContent || '').trim();
+            if (!txt || txt.length < 3) continue;
+            if (/^(instagram|home|follow|following|likes?|views?|comments?|original audio|more)$/i.test(txt)) continue;
+            if (author && txt.toLowerCase().startsWith(author.toLowerCase())) {
+              txt = txt.slice(author.length).trim();
+              if (txt.startsWith(':') || txt.startsWith('-') || txt.startsWith('—') || txt.startsWith('•')) {
+                txt = txt.slice(1).trim();
+              }
+            }
+            if (txt.length >= 3 && !SmartDmUtils.isGenericTitle(txt)) {
+              caption = txt;
+              break;
+            }
+          }
+          if (caption) break;
+        }
+
+        if (!caption) {
+          const img = card.querySelector?.('img[alt]');
+          const alt = img?.getAttribute?.('alt')?.trim();
+          if (alt && alt.length > 5 && !/^(instagram|profile picture|photo by)/i.test(alt)) {
+            caption = alt;
+          }
+        }
+      }
+
+      if (caption) {
+        return SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 120);
+      }
+      if (author) {
+        return `${author} - Instagram Video`;
+      }
+      const permalinkLink = card?.querySelector?.('a[href*="/p/"], a[href*="/reel/"]');
+      if (permalinkLink) {
+        const m = (permalinkLink.getAttribute?.('href') || '').match(/\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
+        if (m) return `Instagram_${m[1]}`;
+      }
+      if (typeof window !== 'undefined' && window.location?.pathname) {
+        const m = window.location.pathname.match(/\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
+        if (m) return `Instagram_${m[1]}`;
+      }
+      const pageT = SmartDmUtils.extractWatchPageTitle();
+      if (pageT && !SmartDmUtils.isGenericTitle(pageT)) {
+        return SmartDmUtils.sanitizeCleanTitle(pageT);
+      }
+      return 'Instagram Video';
+    } catch (e) {
+      return 'Instagram Video';
+    }
+  }
+
   static extractFacebookMediaTitle(mediaEl, cardContainer) {
     try {
       let card = cardContainer;
@@ -565,6 +678,10 @@ class VisualMountDetector {
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
       if (isFb) {
         return this.extractFacebookMediaTitle(null, containerEl);
+      }
+      const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
+      if (isInsta) {
+        return this.extractInstagramMediaTitle(null, containerEl);
       }
 
       const card = containerEl.closest(

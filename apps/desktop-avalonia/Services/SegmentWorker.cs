@@ -43,9 +43,13 @@ public class SegmentWorker
         string? expectedETag = null)
     {
         _httpClient = httpClient;
-        _url = url;
+        _url = DownloadEngine.SanitizeMediaUrl(url);
         _targetFilePath = targetFilePath;
         _referer = referer;
+        if (!string.IsNullOrEmpty(_referer) && (_referer.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || _referer.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase) || _referer.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)))
+        {
+            _referer = _url.Contains("instagram", StringComparison.OrdinalIgnoreCase) ? "https://www.instagram.com/" : "https://www.facebook.com/";
+        }
         _userAgent = userAgent;
         _cookies = cookies;
         _expectedTotalBytes = expectedTotalBytes;
@@ -387,14 +391,28 @@ public class SegmentWorker
 
                     if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent)
                     {
-                        throw new HttpRequestException($"Server returned HTTP {(int)resp.StatusCode} instead of 206 Partial Content for chunk range {chunk.StartByte}-{chunk.EndByte}.");
+                        if (resp.StatusCode == System.Net.HttpStatusCode.OK && chunk.StartByte == 0 && (chunk.EndByte < 0 || chunk.EndByte == fileStream.Length - 1))
+                        {
+                            // Full body 200 OK for complete chunk transfer
+                        }
+                        else
+                        {
+                            throw new HttpRequestException($"Server returned HTTP {(int)resp.StatusCode} instead of 206 Partial Content for chunk range {chunk.StartByte}-{chunk.EndByte}.");
+                        }
                     }
                     var cr = resp.Content.Headers.ContentRange;
-                    if (cr?.From != chunk.StartByte || cr.To != chunk.EndByte ||
-                        cr.Length != fileStream.Length || fileStream.Length <= chunk.EndByte ||
-                        !string.Equals(cr.Unit, "bytes", StringComparison.OrdinalIgnoreCase))
-                        throw new HttpRequestException("The media byte-range response does not match the selected resource and requested bounds.");
-
+                    if (resp.StatusCode == System.Net.HttpStatusCode.PartialContent)
+                    {
+                        if (cr?.From != chunk.StartByte || cr.To != chunk.EndByte ||
+                            cr.Length != fileStream.Length || fileStream.Length <= chunk.EndByte ||
+                            !string.Equals(cr.Unit, "bytes", StringComparison.OrdinalIgnoreCase))
+                            throw new HttpRequestException("The media byte-range response does not match the selected resource and requested bounds.");
+                    }
+                    else if (resp.StatusCode == System.Net.HttpStatusCode.OK)
+                    {
+                        if (resp.Content.Headers.ContentLength.HasValue && resp.Content.Headers.ContentLength.Value != fileStream.Length)
+                            throw new HttpRequestException("The media response content length did not match the expected total file size.");
+                    }
                     await using var contentStream = await resp.Content.ReadAsStreamAsync(cancellationToken);
                     fileStream.Seek(chunk.StartByte, SeekOrigin.Begin);
 

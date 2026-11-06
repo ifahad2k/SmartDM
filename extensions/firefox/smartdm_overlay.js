@@ -110,6 +110,9 @@
     } else {
       directDownloadUrl = targetItem.directUrl || targetItem.DirectUrl || targetItem.url || targetItem.Url || targetItem.videoUrl || null;
     }
+    if (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) {
+      directDownloadUrl = SmartDmUtils.sanitizeStreamUrl(directDownloadUrl);
+    }
 
     // A watch page is not a media fallback. Only the desktop's explicit YouTube
     // resolver accepts a page URL as its source.
@@ -120,9 +123,22 @@
     }
     const selectedFormatId = String(targetItem.formatId || targetItem.FormatId || formatsList.find(f => f.directUrl === directDownloadUrl)?.formatId || 'direct_selected');
 
-    const rawAudio = targetItem.audioUrl || (!targetItem.isAudioOnly && targetItem.formatId !== 'thumbnail' ? bestAudioUrl : null);
+    let rawAudio = targetItem.audioUrl || (!targetItem.isAudioOnly && targetItem.formatId !== 'thumbnail' ? bestAudioUrl : null);
+    if (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) {
+      rawAudio = SmartDmUtils.sanitizeStreamUrl(rawAudio);
+    }
     const audioUrlToSend = (rawAudio && rawAudio !== directDownloadUrl) ? rawAudio : null;
-    const refToSend = targetItem.referer || (targetItem.videoUrl && targetItem.videoUrl.startsWith('http') && targetItem.videoUrl !== window.location.href ? targetItem.videoUrl : (window.top !== window.self ? window.location.href : (document.referrer || window.location.href)));
+    const isMediaUrl = (u) => typeof u === 'string' && (/\.(?:mp4|webm|m3u8|mpd|m4s|ts)(?:[?#]|$)/i.test(u) || /(?:fbcdn\.net|cdninstagram\.com)/i.test(u));
+    let refToSend = targetItem.referer;
+    if (!refToSend || isMediaUrl(refToSend)) {
+      refToSend = (window.top !== window.self) ? window.location.href : (document.referrer || window.location.href);
+    }
+    if (isMediaUrl(refToSend)) refToSend = window.location.href;
+
+    let pageUrlToSend = targetItem.referer;
+    if (!pageUrlToSend || isMediaUrl(pageUrlToSend)) {
+      pageUrlToSend = window.location.href;
+    }
     const origToSend = targetItem.origin || window.location.origin;
 
     let settled = false;
@@ -137,14 +153,14 @@
       runtime.sendMessage({
       type: 'START_MEDIA_DOWNLOAD',
       url: directDownloadUrl,
-      videoUrl: targetItem.videoUrl,
+      videoUrl: (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(targetItem.videoUrl) : targetItem.videoUrl,
       audioUrl: audioUrlToSend,
       formatId: selectedFormatId,
       fileName: targetItem.fileName,
       title: finalBaseTitle,
       referer: refToSend,
       origin: origToSend,
-      pageUrl: targetItem.referer || (targetItem.videoUrl && targetItem.videoUrl.startsWith('http') ? targetItem.videoUrl : window.location.href),
+      pageUrl: pageUrlToSend,
       formats: formatsList
       }, (response) => {
         const sendError = runtime.lastError;

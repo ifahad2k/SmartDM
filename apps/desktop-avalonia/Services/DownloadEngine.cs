@@ -598,6 +598,21 @@ public class DownloadEngine : IDownloadEngine
         }
     }
 
+    public static string SanitizeMediaUrl(string? rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl)) return rawUrl ?? string.Empty;
+        try
+        {
+            string sanitized = System.Text.RegularExpressions.Regex.Replace(rawUrl, @"(?<=[?&])(bytestart|byteend)=\d+&?|(?<=[?&])range=\d+(?:-\d+)?&?", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"[?&]$", "");
+            return sanitized;
+        }
+        catch
+        {
+            return rawUrl;
+        }
+    }
+
     private async Task PrepareAndRunSessionAsync(DownloadSession session)
     {
         var download = session.Download;
@@ -629,6 +644,16 @@ public class DownloadEngine : IDownloadEngine
 
         session.StagingDirectory = stagingDir;
         session.StagingFilePath = stagingFilePath;
+
+        download.Url = SanitizeMediaUrl(download.Url);
+        if (!string.IsNullOrWhiteSpace(download.AudioUrl))
+        {
+            download.AudioUrl = SanitizeMediaUrl(download.AudioUrl);
+        }
+        if (!string.IsNullOrWhiteSpace(download.VideoUrl))
+        {
+            download.VideoUrl = SanitizeMediaUrl(download.VideoUrl);
+        }
 
         // Clear duplicate AudioUrl if caller passed identical URL for both video and audio
         if (!string.IsNullOrWhiteSpace(download.AudioUrl) && string.Equals(download.Url, download.AudioUrl, StringComparison.OrdinalIgnoreCase))
@@ -744,6 +769,16 @@ public class DownloadEngine : IDownloadEngine
                  (string.IsNullOrEmpty(referer) || !referer.Contains("viewkey=", StringComparison.OrdinalIgnoreCase)))
         {
             referer = download.PageUrl;
+        }
+
+        if (download.Url.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || download.Url.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrEmpty(referer) || referer.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || referer.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase))
+            {
+                referer = (download.Url.Contains("instagram", StringComparison.OrdinalIgnoreCase) || (download.PageUrl != null && download.PageUrl.Contains("instagram", StringComparison.OrdinalIgnoreCase)))
+                    ? "https://www.instagram.com/"
+                    : "https://www.facebook.com/";
+            }
         }
 
         string? cookieHeader = FormatCookieHeader(download.Cookies, download.Url);
@@ -1169,6 +1204,12 @@ public class DownloadEngine : IDownloadEngine
     {
         try
         {
+            url = SanitizeMediaUrl(url);
+            if (!string.IsNullOrEmpty(referer) && (referer.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || referer.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase) || referer.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)))
+            {
+                referer = url.Contains("instagram", StringComparison.OrdinalIgnoreCase) ? "https://www.instagram.com/" : "https://www.facebook.com/";
+            }
+
             using var req = HttpTransferRequest.Create(HttpMethod.Get, url);
 
             req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
@@ -1179,6 +1220,24 @@ public class DownloadEngine : IDownloadEngine
             using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
             if (!resp.IsSuccessStatusCode)
             {
+                var candidates = GetCandidateReferers(url, referer);
+                foreach (var cand in candidates)
+                {
+                    if (string.Equals(cand, referer, StringComparison.OrdinalIgnoreCase)) continue;
+                    using var candReq = HttpTransferRequest.Create(HttpMethod.Get, url);
+                    candReq.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+                    if (!string.IsNullOrEmpty(cand)) candReq.Headers.TryAddWithoutValidation("Referer", cand);
+                    if (!string.IsNullOrEmpty(uaString)) candReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
+                    if (!string.IsNullOrEmpty(cookieHeader)) candReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                    using var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, token);
+                    if (candResp.IsSuccessStatusCode)
+                    {
+                        if (candResp.Content.Headers.ContentRange?.Length.HasValue == true)
+                            return candResp.Content.Headers.ContentRange.Length.Value;
+                        if (candResp.Content.Headers.ContentLength.HasValue && candResp.Content.Headers.ContentLength.Value > 1)
+                            return candResp.Content.Headers.ContentLength.Value;
+                    }
+                }
                 return -1;
             }
             if (resp.Content.Headers.ContentRange?.Length.HasValue == true)
@@ -1238,6 +1297,16 @@ public class DownloadEngine : IDownloadEngine
         string uaString = !string.IsNullOrWhiteSpace(dl.UserAgent)
             ? dl.UserAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+        if (dl.Url.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || dl.Url.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrEmpty(referer) || referer.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || referer.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase))
+            {
+                referer = (dl.Url.Contains("instagram", StringComparison.OrdinalIgnoreCase) || (dl.PageUrl != null && dl.PageUrl.Contains("instagram", StringComparison.OrdinalIgnoreCase)))
+                    ? "https://www.instagram.com/"
+                    : "https://www.facebook.com/";
+            }
+        }
 
         string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url);
 
@@ -2066,6 +2135,26 @@ public class DownloadEngine : IDownloadEngine
         AddHostAndRoot(targetUrl);
         AddHostAndRoot(primaryReferer);
         AddHostAndRoot(pageUrl);
+
+        // 4a. Meta / Facebook / Instagram CDN referer candidates
+        bool isMetaCdn = targetUrl.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) ||
+                         targetUrl.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase) ||
+                         targetUrl.Contains("instagram.com", StringComparison.OrdinalIgnoreCase) ||
+                         targetUrl.Contains("facebook.com", StringComparison.OrdinalIgnoreCase);
+        if (isMetaCdn)
+        {
+            if (targetUrl.Contains("instagram", StringComparison.OrdinalIgnoreCase) ||
+                (pageUrl != null && pageUrl.Contains("instagram.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                Add("https://www.instagram.com/");
+                Add("https://www.facebook.com/");
+            }
+            else
+            {
+                Add("https://www.facebook.com/");
+                Add("https://www.instagram.com/");
+            }
+        }
 
         // 4b. Known embed hosts and anime video streaming providers
         Add("https://megacloud.tv/");

@@ -530,6 +530,7 @@ class MediaWatcher {
       const isYouTube = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be');
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
       const isFbReels = isFb && (window.location.pathname.includes('/reel/') || mediaEl.closest('div[role="dialog"]'));
+      const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
 
       let parentCard = null;
       let reelCard = null;
@@ -539,15 +540,19 @@ class MediaWatcher {
         } else {
           parentCard = VisualMountDetector.findFacebookPostCard(mediaEl);
         }
+      } else if (isInsta) {
+        parentCard = VisualMountDetector.findInstagramPostCard(mediaEl);
       }
 
       let cardTitle = null;
       if (isFb) {
         cardTitle = VisualMountDetector.extractFacebookMediaTitle(mediaEl, parentCard);
+      } else if (isInsta) {
+        cardTitle = VisualMountDetector.extractInstagramMediaTitle(mediaEl, parentCard);
       } else if (parentCard) {
         cardTitle = VisualMountDetector.extractCardTitle(parentCard);
       }
-      const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : SmartDmUtils.extractWatchPageTitle();
+      const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : (isInsta ? 'Instagram Video' : SmartDmUtils.extractWatchPageTitle());
       const pageTitle = (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : fallbackTitle;
 
       let initialFormats = null;

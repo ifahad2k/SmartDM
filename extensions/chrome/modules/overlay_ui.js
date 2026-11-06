@@ -139,8 +139,14 @@ class OverlayUiRenderer {
     }
     if (!authoritativeTitle || SmartDmUtils.isGenericTitle(authoritativeTitle)) {
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
+      const isInsta = /(^|\.)instagram\.com$/.test(window.location.hostname) || (videoUrl && (videoUrl.includes('instagram.com') || videoUrl.includes('cdninstagram.com')));
       if (isFb) {
         const lateTitle = VisualMountDetector.extractFacebookMediaTitle(container._mediaEl, null);
+        if (lateTitle && !SmartDmUtils.isGenericTitle(lateTitle)) {
+          authoritativeTitle = lateTitle;
+        }
+      } else if (isInsta) {
+        const lateTitle = VisualMountDetector.extractInstagramMediaTitle(container._mediaEl, null);
         if (lateTitle && !SmartDmUtils.isGenericTitle(lateTitle)) {
           authoritativeTitle = lateTitle;
         }
