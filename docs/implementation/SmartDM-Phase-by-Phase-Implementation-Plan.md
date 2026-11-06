@@ -8,34 +8,35 @@
 | --- | --- |
 | Product | SmartDM |
 | Document type | Phase-by-phase implementation plan |
-| Status | Approved planning baseline |
-| Revision | 1.0 |
-| Primary platforms | Windows and Linux |
-| Desktop stack | Java 21 LTS, Gradle, JavaFX, SQLite/SQLCipher |
+| Status | Approved planning baseline (Branch sdm2.0 C# Architecture per accepted ADR-009) |
+| Revision | 2.0 |
+| Primary platforms | Windows and Linux only (No macOS) |
+| Desktop stack | C# / .NET 9 with Avalonia UI (apps/desktop-avalonia); Java version preserved separately on main |
 | Browser targets | Google Chrome and Mozilla Firefox |
-| Media tools | yt-dlp and FFmpeg/FFprobe |
-| AI model | Local-first; optional Gemini free API with explicit user consent |
-| Product editions | One free edition; no premium features or paid feature gates |
-| Backend | None; no SmartDM-owned server |
+| Media discovery & tools | Browser modules/format_engine.js (HLS/DASH), YoutubeExplode, native C# HLS resolver, FFmpeg (muxing/conversion only); no yt-dlp, no Java runtime |
+| AI model | Local-first; optional Gemini free API with explicit user consent and preview |
+| Product editions | One free edition (SmartDM 2.0); no premium features, Pro tier, or paid gates |
+| Backend | None; no SmartDM-owned server, no telemetry, no accounts |
 
 ---
 
 ## 1. Authority of this plan
 
-This document supersedes conflicting product-scope decisions in the earlier SmartDM architecture document. In particular:
+This document governs development on branch sdm2.0 and supersedes earlier Java-only assumptions per accepted ADR-009. In particular:
 
 - SmartDM targets **Windows and Linux only**.
 - There is **no macOS work** in this plan.
-- There is **one free product edition**.
-- There is **no premium or Pro module**.
-- All SmartDM features are available to every user.
+- There is **one free product edition** (SmartDM 2.0).
+- There is **no premium or Pro module**; all features are free and available to every user.
 - SmartDM has **no account system, cloud sync, telemetry backend, license server, or SmartDM-owned API server**.
-- Private indexing, duplicate detection, prompt search, file scanning, and normal folder suggestions run on the user's computer.
+- The primary desktop client is the **C# / .NET 9 Avalonia application** (apps/desktop-avalonia), organized in SmartDm.sln.
+- Media format discovery is handled natively by SmartDM's browser extension engine (modules/format_engine.js) and C# desktop services (YoutubeExplode for YouTube, native HlsMediaResolver with platform TLS). FFmpeg is used strictly as an external subprocess for stream muxing and conversion.
+- There is **no yt-dlp binary dependency** and **no Java runtime requirement** in the completed product. The legacy Java engine is retained strictly during transfer parity validation.
+- Private indexing, duplicate detection, prompt search, file scanning, and folder suggestions run locally on the user's computer.
 - Gemini is an optional, user-keyed fallback for work the user explicitly agrees to send.
 - Chrome and Firefox are first-class browser targets.
-- YouTube/media selection is implemented with a locally executed yt-dlp and FFmpeg toolchain.
 
-If code, an issue, an AI prompt, or another design document conflicts with this plan, this plan controls until the conflict is resolved through a new Architecture Decision Record (ADR) approved by the project owner.
+If code, an issue, an AI prompt, or another design document conflicts with this plan, this plan controls until the conflict is resolved through an Architecture Decision Record (ADR) approved by the project owner.
 
 ---
 
@@ -47,7 +48,7 @@ SmartDM will combine:
 2. reliable high-speed segmented downloads with pause, resume, retry, queues, and schedules;
 3. Chrome and Firefox capture integration;
 4. a SmartDM icon over YouTube thumbnails so users can inspect and download available video resolutions or audio without first playing the video;
-5. a minimal, friendly JavaFX interface with multiple themes;
+5. a minimal, friendly Avalonia interface with multiple themes;
 6. local file indexing and duplicate discovery across user-approved locations;
 7. smart destination-folder suggestions that learn from user choices;
 8. natural-language file search using file type, dates, duration, size, download history, names, paths, and optional indexed content;
@@ -210,19 +211,17 @@ Budgets are verified in Phase 17 and adjusted only through a documented ADR with
 
 | Concern | Technology |
 | --- | --- |
-| Language | Java 21 LTS |
-| Build | Gradle wrapper with Kotlin DSL |
-| UI | JavaFX with FXML/CSS and presentation view models |
+| Primary Language | C# (.NET 9) with Avalonia UI (branch sdm2.0); legacy Java 21 LTS engine during migration |
+| Build | .NET 9 SDK (SmartDm.sln) + Gradle wrapper with Kotlin DSL for legacy baseline |
+| UI | Avalonia UI 11.2 (Fluent glassmorphic theme, MVVM); legacy JavaFX shell |
 | Database | SQLite with FTS5; encrypted at rest through a validated SQLCipher integration |
-| HTTP | Java `HttpClient` |
-| JSON | Jackson |
-| Logging | SLF4J + Logback with a privacy-safe encrypted appender |
-| Media | yt-dlp subprocess adapter; FFmpeg/FFprobe subprocess adapter |
-| Windows integration | JNA where necessary; fixed-argument native commands where safer |
-| Linux integration | XDG directories, portals/desktop integration, Secret Service |
-| Tests | JUnit 5, AssertJ, Mockito only at true seams, TestFX, local HTTP fixtures |
-| Search | SQLite FTS5 plus local query parser |
-| Optional semantic search | Small separately installed ONNX embedding pack, never required |
+| HTTP | .NET SocketsHttpHandler with strict platform TLS certificate validation |
+| JSON | System.Text.Json |
+| Media Discovery | Browser modules/format_engine.js (HLS/DASH), YoutubeExplode (YouTubeMediaResolver), native C# HlsMediaResolver |
+| Media Processing | FFmpeg subprocess adapter (stream muxing and container conversion only; no yt-dlp) |
+| Windows integration | Direct Win32 / DPAPI credential protection; fixed ArgumentList process invocation |
+| Linux integration | XDG directories, Secret Service fallback |
+| Tests | xUnit, .NET Test SDK, ArchUnit for Java legacy baseline, deterministic local fixtures |
 | Antivirus | Windows Defender adapter; ClamAV adapter on Linux; local rule engine on both |
 
 ### 6.2 Free dependency register
@@ -456,27 +455,33 @@ Tasks are introduced when their owning phase is implemented. CI must use the com
 
 | Phase | Name | Main result |
 | ---: | --- | --- |
-| 0 | Product, legal, privacy, and supply-chain lock | Buildable decisions with no unresolved distribution blocker |
-| 1 | Repository and engineering foundation | Reproducible multi-module build and CI |
-| 2 | Secure local profile and encrypted persistence | Encrypted database, key storage, migrations, private diagnostics |
-| 3 | Minimal JavaFX shell and theme system | Friendly navigable UI foundation |
-| 4 | Single-download vertical slice | Reliable ordinary HTTP download |
-| 5 | Segmentation, pause/resume, verification, recovery | Production-grade accelerated engine |
-| 6 | Queues, scheduler, bandwidth, and resource control | IDM-style transfer management |
-| 7 | Categories, batch, clipboard, authentication, and proxy | Advanced normal-download inputs |
-| 8 | Chrome/Firefox native browser integration | Direct-link capture and download-all-links |
-| 9 | yt-dlp and FFmpeg media subsystem | Format discovery, video/audio transfer and merge |
-| 10 | YouTube thumbnail SmartDM panel | Thumbnail icon and format picker without playback |
-| 11 | Local file catalog and duplicate detection | Existing-file discovery across approved roots |
+| 0 | Product, legal, privacy, and supply-chain lock | Buildable decisions, accepted ADR-009, TLS bypass fix (C-06) |
+| 1 | Repository and engineering foundation | Reproducible .NET 9 build (SmartDm.sln), CI workflow, architecture positive & negative tests |
+| 2 | Secure local profile and encrypted persistence | Encrypted SQLCipher database, ISecretStore, immutable migrations, private diagnostics |
+| 3 | Minimal desktop shell and theme system | Avalonia UI shell, truthful labels (no 'Pro' branding), completion inspector |
+| 4 | Single-download vertical slice | Reliable ordinary HTTP download via C# DownloadEngine (achieving Java daemon parity) |
+| 5 | Segmentation, pause/resume, verification, recovery | Exact range validation, clean EOF, crash recovery, expected SHA-256 |
+| 6 | Queues, scheduler, bandwidth, and resource control | Aggregated token bucket limiter, functional Add to Queue |
+| 7 | Categories, batch, clipboard, authentication, and proxy | Advanced normal-download inputs, consent-bounded catalog |
+| 8 | Chrome/Firefox native browser integration | Authenticated local IPC, token enforcement, acknowledged handoff |
+| 9 | Media extraction and streaming subsystem | Extension modules/format_engine.js, YoutubeExplode, native HLS, FFmpeg muxing (no yt-dlp) |
+| 10 | YouTube thumbnail & browser panel | Media format ladders with container/codec clarity, provisional labels |
+| 11 | Local file catalog and duplicate detection | Existing-file discovery across approved roots with cryptographic hash |
 | 12 | Local smart folder selection | Top folder suggestions that learn from user choices |
 | 13 | Local natural-language search | Prompt-like search on a potato PC |
 | 14 | Optional Gemini consented fallback | BYO-key heavy/ambiguous request assistance |
-| 15 | Local safety scanner and risk center | Defender/ClamAV/rule evidence and warnings |
+| 15 | Local safety scanner and risk center | Truthful evidence states (no fake 'clean' without scan), staging quarantine |
 | 16 | Remaining IDM-parity workflows | Site collector, refresh, import/export, CLI, completion actions |
 | 17 | UX, accessibility, localization, and performance hardening | Polished, minimal, low-end-friendly application |
 | 18 | Packaging, browser-extension bundling, update, and release hardening | Unsigned-but-checksummed Windows/Linux release candidates with bundled, working browser extensions |
 
 No phase may skip its exit gate. Phases 11–15 can be developed on separate branches after Phase 10 only if module boundaries are stable, but release integration must retain the numbered gate order.
+
+### Verification and CI Release Gate Rules
+
+1. **Local Checkpoints per Package**: Each remediation package (Packages 0 through 5) progresses locally and is verified with clean local builds and test suites across both C# .NET 9 (`dotnet test SmartDm.sln`) and legacy Java regression suites. Reviewable commits are made upon completion of each package without requiring a remote GitHub push between packages.
+2. **Mandatory Remote CI Release Gate**: Before declaring the overall remediation complete or releasing SmartDM (prior to closing Phase 18 / final release verification), the repository must be pushed to GitHub, and the remote GitHub Actions CI workflow must execute and pass on actual Windows and Linux runner environments (`windows-latest`, `ubuntu-latest`). Any platform discrepancies or failures revealed by the remote runners must be diagnosed and resolved before release.
+
 
 ---
 

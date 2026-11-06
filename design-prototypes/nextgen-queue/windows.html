@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartDM — supporting windows concept</title>
+<style>
+:root{font-family:Inter,"Segoe UI","Nirmala UI",sans-serif;color-scheme:light;--canvas:#edf1f4;--surface:#fff;--subtle:#f6f8fa;--ink:#192633;--muted:#617181;--light:#8594a2;--line:#dce4ea;--blue:#2368c9;--blue-pale:#eaf2ff;--green:#247751;--green-pale:#e8f5ec;--red:#b94d4b;--red-pale:#fff0ef;--amber:#9b6828;--amber-pale:#fff5e7}
+*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font-size:14px}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #86baff;outline-offset:2px}svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.stage{min-height:100vh;padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px}.picker{width:760px;max-width:100%;display:flex;align-items:center;gap:7px;flex-wrap:wrap}.picker-label{font-size:12px;color:var(--muted);margin-right:7px}.pick{height:32px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:0 10px;color:var(--muted);font-size:12px;font-weight:600}.pick.active{color:var(--blue);border-color:#9fc4f5;background:var(--blue-pale)}.window{width:760px;max-width:100%;height:660px;background:var(--surface);border:1px solid #cbd6df;border-radius:11px;box-shadow:0 21px 60px #1d354c2b;overflow:hidden;display:flex;flex-direction:column}.chrome{height:39px;flex:none;background:#f8fafb;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 13px 0 16px;font-size:12px;font-weight:650}.chrome-left{display:flex;align-items:center;gap:9px}.brand{width:18px;height:18px;border-radius:5px;background:var(--blue);color:white;display:grid;place-items:center;font-size:12px;font-weight:800}.window-buttons{display:flex;gap:2px}.window-buttons button{width:34px;height:27px;border:0;background:none;color:var(--muted);display:grid;place-items:center}.window-buttons svg{width:13px;height:13px}.window-buttons button:hover{background:var(--line)}.body{padding:26px 29px;flex:1;min-height:0;overflow:auto}.footer{height:67px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;gap:9px;padding:0 29px;background:var(--surface)}.footer .push{margin-left:auto}.btn{height:35px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:0 13px;color:var(--ink);font-size:12px;font-weight:620;white-space:nowrap}.btn:hover{background:var(--subtle)}.btn.primary{color:#fff;background:var(--blue);border-color:var(--blue)}.btn.primary:hover{background:#185bb5}.btn.danger{color:var(--red);border-color:#e7bdbc}.btn:disabled{opacity:.46;cursor:default}.text-button{background:none;border:0;color:var(--blue);font-size:12px;font-weight:630;padding:4px}.title{font-size:22px;line-height:1.25;letter-spacing:-.04em;margin:0;font-weight:720}.subtitle{color:var(--muted);font-size:13px;line-height:1.5;margin-top:6px}.file-heading{display:flex;align-items:flex-start;gap:13px;margin:22px 0 23px}.file-icon{width:45px;height:49px;display:grid;place-items:center;background:var(--blue-pale);color:var(--blue);border-radius:8px}.file-icon svg{width:22px;height:22px}.filename{font-size:16px;font-weight:680;line-height:1.45;overflow-wrap:anywhere}.source{font-size:12px;color:var(--muted);margin-top:3px}.pill{font-size:11px;font-weight:680;border-radius:5px;padding:5px 7px;white-space:nowrap}.pill.blue{background:var(--blue-pale);color:var(--blue)}.pill.green{background:var(--green-pale);color:var(--green)}.pill.red{background:var(--red-pale);color:var(--red)}.pill.amber{background:var(--amber-pale);color:var(--amber)}.status-head{display:flex;align-items:flex-start;gap:15px}.status-icon{width:43px;height:43px;border-radius:10px;display:grid;place-items:center;flex:none}.status-icon svg{width:24px;height:24px}.status-icon.blue{background:var(--blue-pale);color:var(--blue)}.status-icon.green{background:var(--green-pale);color:var(--green)}.status-icon.red{background:var(--red-pale);color:var(--red)}.status-icon.amber{background:var(--amber-pale);color:var(--amber)}.status-main{flex:1;min-width:0}.status-stat{font-size:24px;font-weight:730;color:var(--blue);letter-spacing:-.04em;white-space:nowrap}.status-stat small{font-size:11px;color:var(--muted);font-weight:500;display:block;text-align:right;letter-spacing:0;margin-top:2px}.rule{height:1px;background:var(--line);margin:22px 0}.progress-row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;color:var(--muted);font-size:12px}.progress-row strong{font-size:15px;color:var(--ink)}.bar{height:8px;border-radius:10px;overflow:hidden;background:#e3eaf0;margin:10px 0 12px}.bar span{display:block;height:100%;background:var(--blue);border-radius:10px}.bar.green span{background:var(--green)}.muted{color:var(--muted);font-size:12px}.data-row{display:flex;gap:12px;color:var(--muted);font-size:12px;align-items:center;margin-top:11px}.data-row svg{width:15px;height:15px}.data-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.data-row strong{color:var(--ink);font-weight:580}.data-row button{margin-left:auto}.detail-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.detail-header h2,.section h2{font-size:13px;margin:0;font-weight:700}.detail-grid{display:grid;grid-template-columns:1fr 235px;gap:12px}.panel{border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface)}.panel h3{margin:0 0 12px;font-size:12px;font-weight:690}.segment-list{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.segment{border:1px solid var(--line);border-radius:4px;background:var(--subtle);height:33px;padding:5px 6px}.segment-top{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);line-height:1}.segment-top strong{color:var(--ink)}.mini-bar{height:3px;background:#dce6f1;border-radius:5px;margin-top:6px;overflow:hidden}.mini-bar i{display:block;height:100%;background:var(--blue);border-radius:5px}.chart{height:58px;border-bottom:1px solid var(--line);position:relative;margin-bottom:12px}.chart svg{width:100%;height:100%;stroke:var(--blue);stroke-width:2;fill:none}.bandwidth{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted)}.bandwidth strong{font-size:12px;color:var(--ink)}.select{height:27px;border:1px solid var(--line);border-radius:5px;padding:0 5px;background:var(--surface);color:var(--ink);font-size:11px}.note{background:var(--blue-pale);border-radius:7px;padding:12px 14px;color:#315981;font-size:12px;line-height:1.5}.note.red{background:var(--red-pale);color:#894644}.note.amber{background:var(--amber-pale);color:#765725}.fact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:22px 0}.fact{border:1px solid var(--line);background:var(--subtle);padding:13px;border-radius:7px}.fact label,.field label{display:block;color:var(--muted);font-size:11px;margin-bottom:6px}.fact strong{font-size:14px;font-weight:670}.section{margin:19px 0}.section h2{margin-bottom:12px}.evidence{border:1px solid var(--line);border-radius:7px;overflow:hidden}.evidence-row{padding:11px 13px;display:flex;align-items:flex-start;gap:10px;font-size:12px;border-bottom:1px solid var(--line)}.evidence-row:last-child{border-bottom:0}.evidence-row svg{width:15px;height:15px;color:var(--green)}.evidence-row .neutral{color:var(--muted)}.evidence-row strong{display:block;font-weight:640}.evidence-row span{display:block;color:var(--muted);margin-top:3px;line-height:1.4}.path-box{border:1px solid var(--line);background:var(--subtle);padding:10px 12px;border-radius:6px;display:flex;align-items:center;gap:10px;font-size:12px;min-width:0}.path-box span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.path-box svg{width:15px;height:15px;color:var(--muted)}.path-box button{border:0;background:none;color:var(--blue);font-size:12px;font-weight:630}.choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}.choice{border:1px solid var(--line);border-radius:7px;padding:13px 14px;text-align:left;background:var(--surface);min-height:73px}.choice:hover{border-color:#a5bfe0}.choice.selected{border-color:var(--blue);background:var(--blue-pale);box-shadow:inset 0 0 0 1px var(--blue)}.choice strong{display:block;font-size:13px;margin-bottom:4px}.choice span{display:block;color:var(--muted);font-size:11px;line-height:1.4}.field{margin:17px 0}.field input{height:38px;width:100%;border:1px solid var(--line);border-radius:6px;padding:0 11px;color:var(--ink);background:var(--surface)}.field .hint{font-size:11px;color:var(--muted);margin-top:6px}.placeholder{height:118px;border:1px dashed var(--line);border-radius:7px;display:grid;place-items:center;color:var(--light);font-size:12px}.prototype-note{font-size:11px;color:var(--light);text-align:center}body.dark{color-scheme:dark;--canvas:#121b24;--surface:#1d2933;--subtle:#24313c;--ink:#eef3f6;--muted:#afbac5;--light:#8999a8;--line:#3a4956;--blue:#84b4ff;--blue-pale:#263d57;--green:#8acba5;--green-pale:#254735;--red:#ef9693;--red-pale:#4b3036;--amber:#dbb47b;--amber-pale:#4b3b2a}body.dark .window{border-color:#41515f;box-shadow:0 21px 60px #030a11a0}body.dark .chrome{background:#22303b}body.dark .bar{background:#334350}body.dark .mini-bar{background:#374958}body.dark .note{color:#c2daff}body.dark .note.red{color:#f3b9b5}body.dark .note.amber{color:#e8cc9f}
+@media(max-width:800px){.stage{padding:8px}.window{height:calc(100vh - 85px);min-height:520px}.body{padding:20px}.footer{padding:0 15px;flex-wrap:wrap;min-height:67px;height:auto}.detail-grid{grid-template-columns:1fr}.segment-list{grid-template-columns:repeat(4,1fr)}}@media(max-width:500px){.picker-label{display:none}.pick{font-size:10px}.status-stat{font-size:18px}.fact-grid{grid-template-columns:1fr 1fr}.choice-grid{grid-template-columns:1fr}.segment-list{grid-template-columns:repeat(2,1fr)}}
+.picker{width:720px}
+.window{width:720px;height:500px;border-radius:5px}
+.window.monitor{height:500px}
+.window.monitor.expanded{height:650px}
+.window.success.expanded{height:650px}
+.window.collision.expanded{height:580px}
+.window .body{padding:20px 24px}
+.file-heading{margin:14px 0}
+.rule{margin:18px 0}
+.section{margin:13px 0}
+.fact-grid{margin:16px 0}
+.detail-grid{grid-template-columns:minmax(0,1fr) 202px;gap:8px}
+.panel{padding:10px}
+.segment-list{gap:4px}
+.segment{padding:5px}
+.window.failed .file-heading{margin:10px 0}
+.window.failed .note{padding:9px 12px}
+.window.failed .fact-grid{margin:10px 0}
+.window.failed .section{margin:8px 0}
+.window.success .section{margin:10px 0}
+.window.success .evidence-row{padding:8px 11px}
+.window.monitor .total-bar{height:11px;background:#e1e9f1;border:1px solid var(--line);border-radius:4px;margin:10px 0 16px;overflow:hidden;box-shadow:inset 0 1px 2px #1d344d12}
+.window.monitor .total-bar span{display:block;height:100%;background:linear-gradient(90deg,#2368c9,#4b91e5);border-radius:3px;transition:width .5s linear}
+.segment-caption{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:7px}
+.segment-caption strong{font-weight:660;color:var(--ink)}
+.segment-strip{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;margin-bottom:17px}
+.segment-strip span{height:12px;border:1px solid var(--line);background:var(--subtle);border-radius:2px;overflow:hidden}
+.segment-strip i{display:block;height:100%;background:var(--blue);transition:width .5s linear}
+.segment-strip span.done i{background:var(--green)}
+.transfer-flow{margin-top:22px;padding-top:15px;border-top:1px solid var(--line)}
+.flow-heading{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--muted);margin-bottom:12px}
+.flow-heading strong{font-size:12px;color:var(--ink)}
+.flow-steps{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--light)}
+.flow-steps .step{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.flow-steps .step:before{content:"";width:7px;height:7px;border:1.5px solid var(--light);border-radius:50%;flex:none}
+.flow-steps .step.current{color:var(--blue);font-weight:660}
+.flow-steps .step.current:before{border-color:var(--blue);background:var(--blue)}
+.flow-steps .step.done{color:var(--green);font-weight:660}
+.flow-steps .step.done:before{border-color:var(--green);background:var(--green)}
+.flow-steps .connector{height:1px;background:var(--line);flex:1;min-width:12px}
+body.dark .window.monitor .total-bar{background:#344656;box-shadow:inset 0 1px 2px #0004}
+body.dark .window.monitor .total-bar span{background:linear-gradient(90deg,#5a9aee,#8dbdff)}
+.pick,.btn,.choice,.panel,.fact,.note,.path-box,.file-icon,.status-icon,.select,.field input,.segment{border-radius:4px}
+@media(max-width:800px){.window,.window.monitor,.window.monitor.expanded{height:calc(100vh - 85px);min-height:355px}.window .body{padding:18px}.detail-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><symbol id="min" viewBox="0 0 24 24"><path d="M4 12h16"/></symbol><symbol id="max" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></symbol><symbol id="close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol><symbol id="file" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6zM14 2v5h5M9 13h7M9 17h7"/></symbol><symbol id="check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol><symbol id="alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/></symbol><symbol id="folder" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/></symbol><symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol><symbol id="link" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.2 1.2M14 10a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.2-1.2"/></symbol><symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/></symbol><symbol id="copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol></svg>
+<main class="stage">
+ <div class="picker" role="tablist" aria-label="Window examples"><span class="picker-label">Window drafts</span><button class="pick active" data-view="active">Downloading</button><button class="pick" data-view="failed">Failed</button><button class="pick" data-view="success">Finished</button><button class="pick" data-view="collision">File exists</button><button class="pick" data-view="duplicate">Duplicate</button><button class="pick" id="theme">Dark theme</button></div>
+ <div class="window"><div class="chrome"><div class="chrome-left"><span class="brand">↓</span><span id="windowTitle">SmartDM — Download</span></div><div class="window-buttons"><button aria-label="Minimize concept"><svg><use href="#min"/></svg></button><button aria-label="Maximize concept"><svg><use href="#max"/></svg></button><button aria-label="Close concept"><svg><use href="#close"/></svg></button></div></div><div class="body" id="body"></div><div class="footer" id="footer"></div></div>
+ <div class="prototype-note">Visual prototype. Pause, Resume, and both progress bars simulate a transfer; no real downloads or files change.</div>
+</main>
+<script>
+const icon=name=>`<svg><use href="#${name}"/></svg>`;
+const body=document.getElementById('body'),footer=document.getElementById('footer'),title=document.getElementById('windowTitle');
+let view=new URLSearchParams(location.search).get('view')||'active',details=new URLSearchParams(location.search).get('details')==='1',verification=new URLSearchParams(location.search).get('verification')==='1',choice='keep';
+let segmentProgress=[90,84,78,60,52,45,42,39,35,30,25,20,15,10,8,7],running=true,tick=0,elapsed=54,speedLimit='Unlimited';
+const filename='512MB (2).zip',path='C:\\Users\\ifaha\\Downloads\\512MB (2).zip';
+function header(state,heading,subtitle,stat=''){return `<div class="status-head"><div class="status-icon ${state}">${icon(state==='green'?'check':state==='blue'?'file':'alert')}</div><div class="status-main"><h1 class="title">${heading}</h1><div class="subtitle">${subtitle}</div></div>${stat?`<div class="status-stat">${stat}</div>`:''}</div>`}
+function segmentGrid(){return segmentProgress.map((p,i)=>`<div class="segment"><div class="segment-top"><strong>${String(i+1).padStart(2,'0')}</strong><span data-segment-pct="${i}">${p}%</span></div><div class="mini-bar"><i data-segment-fill="${i}" style="width:${p}%"></i></div></div>`).join('')}
+function segmentStrip(){return segmentProgress.map((p,i)=>`<span class="${p===100?'done':''}" aria-label="Segment ${i+1}: ${p}%" title="Segment ${i+1}: ${p}%"><i data-strip-fill="${i}" style="width:${p}%"></i></span>`).join('')}
+function totalPercent(){return Math.round(segmentProgress.reduce((sum,p)=>sum+p,0)/segmentProgress.length)}
+function refreshProgress(){
+ if(view!=='active')return;
+ const percent=totalPercent(),received=Math.round(512*segmentProgress.reduce((sum,p)=>sum+p,0)/1600);
+ const text=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value};
+ text('transferState',percent===100?'Download finished':running?'Downloading':'Paused');
+ text('transferSubtitle',percent===100?'All parts have finished':running?'Receiving data from speedtest.tele2.net':'The simulated transfer is paused');
+ const rate=speedLimit==='1 MB/s'?1:3.8;
+ text('speedValue',percent===100?'Complete':running?`${rate.toFixed(1)} MB/s`:'Paused');
+ text('etaValue',percent===100?'All segments complete':running?`About ${Math.ceil((512-received)/rate/60)} minutes left`:'Transfer paused');
+ text('receivedValue',`${received} MB of 512 MB`);
+ text('totalPercent',`${percent}%`);
+ text('elapsedValue',`${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`);
+ text('flowStage',percent===100?'Downloaded':running?'Downloading':'Paused');
+ document.querySelectorAll('.flow-steps .step').forEach((step,i)=>{
+  step.classList.toggle('done',percent===100);
+  step.classList.toggle('current',percent<100&&i===0);
+ });
+ const total=document.getElementById('totalFill');if(total)total.style.width=percent+'%';
+ const progressbar=document.querySelector('.total-bar');if(progressbar)progressbar.setAttribute('aria-valuenow',percent);
+ const pause=document.getElementById('pauseButton');if(pause&&percent===100){pause.textContent='Finished';pause.disabled=true}
+ segmentProgress.forEach((p,i)=>{
+  const strip=document.querySelector(`[data-strip-fill="${i}"]`),tile=document.querySelector(`[data-segment-fill="${i}"]`);
+  if(strip){strip.style.width=p+'%';strip.parentElement.classList.toggle('done',p===100);strip.parentElement.setAttribute('aria-label',`Segment ${i+1}: ${p}%`);strip.parentElement.title=`Segment ${i+1}: ${p}%`}
+  if(tile)tile.style.width=p+'%';
+  const pct=document.querySelector(`[data-segment-pct="${i}"]`);if(pct)pct.textContent=p+'%';
+ });
+}
+function render(){
+ title.textContent='SmartDM — '+({active:'Download',failed:'Download failed',success:'Download finished',collision:'File already exists',duplicate:'Possible duplicate'}[view]);
+ document.querySelector('.window').className='window '+(view==='active'?'monitor'+(details?' expanded':''):view==='success'?'success'+(verification?' expanded':''):view==='collision'?'collision'+(choice==='rename'||choice==='replace'?' expanded':''):view);
+ document.querySelectorAll('.pick[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
+ if(view==='active'){
+  body.innerHTML=header('blue','<span id="transferState">Downloading</span>','<span id="transferSubtitle">Receiving data from speedtest.tele2.net</span>',`<span id="speedValue">3.8 MB/s</span><small id="etaValue">About 2 minutes left</small>`)+
+   `<div class="file-heading"><div class="file-icon">${icon('file')}</div><div><div class="filename">${filename}</div><div class="source">speedtest.tele2.net</div></div><span class="pill blue" style="margin-left:auto">16 connections</span></div>
+   <div class="progress-row"><span id="receivedValue">205 MB of 512 MB</span><strong id="totalPercent">40%</strong></div><div class="total-bar" role="progressbar" aria-label="Total download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40"><span id="totalFill" style="width:40%"></span></div>
+   <div class="segment-caption"><strong>Segment progress</strong><span>16 parallel parts</span></div><div class="segment-strip" role="group" aria-label="Individual segment progress">${segmentStrip()}</div>
+   <div class="data-row">${icon('folder')}<span><strong>Save to</strong> ${path}</span><button class="text-button">Open folder</button></div>
+   ${details?`<div class="rule"></div><div class="detail-header"><h2>Transfer details</h2></div><div class="detail-grid"><div class="panel"><h3>Connections <span style="float:right;color:var(--muted);font-weight:500">16 active</span></h3><div class="segment-list">${segmentGrid()}</div></div><div class="panel"><h3>Speed over the last minute</h3><div class="chart"><svg viewBox="0 0 200 58" preserveAspectRatio="none"><path d="M0 44 L22 41 L42 42 L58 36 L79 38 L99 31 L116 33 L137 21 L157 23 L177 13 L200 17"/></svg></div><div class="bandwidth"><strong>Speed limit</strong><select class="select" aria-label="Speed limit"><option>Unlimited</option><option>1 MB/s</option><option>5 MB/s</option></select></div><p class="muted" style="line-height:1.45;margin:10px 0 0">Limit applies to direct HTTP transfers.</p></div></div>`:`<div class="transfer-flow"><div class="flow-heading"><strong>Transfer stages</strong><span>Elapsed <b id="elapsedValue">0:54</b> · Retries <b>0</b></span></div><div class="flow-steps"><span class="step current" id="flowStage">Downloading</span><span class="connector"></span><span class="step">Finalizing</span><span class="connector"></span><span class="step">Saved</span></div></div>`}`;
+  footer.innerHTML=`<button id="pauseButton" class="btn primary">${running?'Pause':'Resume'}</button><button class="btn">Open folder</button><button class="btn danger">Stop download</button><span class="push"></span><button id="toggleDetails" class="btn">${details?'Hide details':'Show details'}</button><button class="btn">Hide to tray</button>`;
+  document.getElementById('toggleDetails').onclick=()=>{details=!details;render()};
+  document.getElementById('pauseButton').onclick=()=>{running=!running;render()};
+  const limit=document.querySelector('.select');if(limit){limit.value=speedLimit;limit.onchange=()=>{speedLimit=limit.value;refreshProgress()}}
+  refreshProgress();
+ }else if(view==='failed'){
+  body.innerHTML=header('red','Download needs attention','The file transferred, but video and audio could not be combined.')+
+   `<div class="file-heading"><div class="file-icon">${icon('file')}</div><div><div class="filename">উজানেই কুড়িগ্রাম ও হাওর ভ্রমণের স্মৃতিতে.mp4</div><div class="source">facebook.com</div></div></div>
+   <div class="note red"><strong>FFmpeg is not configured.</strong><br>Choose a verified FFmpeg executable in Settings, then retry combining the downloaded streams. The transferred parts are still available.</div>
+   <div class="fact-grid"><div class="fact"><label>Transferred</label><strong>31 MB</strong></div><div class="fact"><label>Stage</label><strong>Combining media</strong></div><div class="fact"><label>Result</label><strong>Output not ready</strong></div></div>
+   <div class="section"><h2>Save location</h2><div class="path-box">${icon('folder')}<span>C:\\Users\\ifaha\\Downloads\\উজানেই কুড়িগ্রাম ও হাওর ভ্রমণের স্মৃতিতে.mp4</span><button>Open folder</button></div></div>`;
+  footer.innerHTML=`<button class="btn primary">Configure FFmpeg</button><button class="btn">Retry</button><button class="btn">Open folder</button><span class="push"></span><button class="btn">Close</button>`;
+ }else if(view==='success'){
+  body.innerHTML=header('green','Download finished','The file was saved to your selected folder.')+
+   `<div class="file-heading"><div class="file-icon">${icon('file')}</div><div><div class="filename">20MB.zip</div><div class="source">example.org</div></div><span class="pill green" style="margin-left:auto">Finished</span></div>
+   <div class="fact-grid"><div class="fact"><label>File size</label><strong>20.0 MB</strong></div><div class="fact"><label>Transfer</label><strong>16 parts assembled</strong></div><div class="fact"><label>Completed</label><strong>Just now</strong></div></div>
+   <div class="section"><h2>Save location</h2><div class="path-box">${icon('folder')}<span>C:\\Users\\ifaha\\Downloads\\20MB.zip</span><button>Copy path</button></div></div>
+   <div class="section"><button id="toggleVerification" class="text-button">${verification?'Hide verification details':'Show verification details'}</button></div>
+   ${verification?`<div class="section"><h2>Verification</h2><div class="evidence"><div class="evidence-row">${icon('check')}<div><strong>Transfer completed</strong><span>All expected bytes were written and the file was finalized.</span></div></div><div class="evidence-row">${icon('info')}<div><strong>No expected hash supplied</strong><span>A computed hash alone does not prove the file matches a trusted source.</span></div></div><div class="evidence-row">${icon('info')}<div><strong>Safety scan unavailable</strong><span>No malware verdict is shown without scanner evidence.</span></div></div></div></div>`:''}`;
+  footer.innerHTML=`<button class="btn primary">Open file</button><button class="btn">Open folder</button><button class="btn">Copy path</button><span class="push"></span><button class="btn">Close</button>`;
+  document.getElementById('toggleVerification').onclick=()=>{verification=!verification;render()};
+ }else if(view==='collision'){
+  body.innerHTML=header('amber','A file with this name already exists','Choose what to do before this download starts.')+
+   `<div class="file-heading"><div class="file-icon">${icon('file')}</div><div><div class="filename">512MB.zip</div><div class="source">C:\\Users\\ifaha\\Downloads</div></div></div>
+   <div class="note amber">The existing file will stay untouched unless you explicitly choose to replace it.</div>
+   <div class="choice-grid"><button class="choice ${choice==='keep'?'selected':''}" data-choice="keep"><strong>Keep both</strong><span>Save the new download as 512MB (2).zip.</span></button><button class="choice ${choice==='rename'?'selected':''}" data-choice="rename"><strong>Use another name</strong><span>Enter the exact filename you want.</span></button><button class="choice ${choice==='replace'?'selected':''}" data-choice="replace"><strong>Replace existing file</strong><span>The original file is replaced after the new file finishes.</span></button><button class="choice ${choice==='cancel'?'selected':''}" data-choice="cancel"><strong>Cancel new download</strong><span>Keep the original file and stop here.</span></button></div>
+   ${choice==='rename'?`<div class="field"><label for="newName">New filename</label><input id="newName" value="512MB (2).zip"><div class="hint">SmartDM will validate the name before saving.</div></div>`:''}
+   ${choice==='replace'?`<div class="note red" style="margin-top:16px"><strong>Replace existing file</strong><br>Confirm this action only if you no longer need the original file.</div>`:''}`;
+  footer.innerHTML=`<button class="btn">Open existing file location</button><span class="push"></span><button class="btn">Back</button><button class="btn primary">${choice==='cancel'?'Cancel download':choice==='replace'?'Review replacement':'Continue'}</button>`;
+  document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{choice=x.dataset.choice;render()});
+ }else{
+  body.innerHTML=header('blue','This download may already be in your queue','A matching destination and source were found.')+
+   `<div class="file-heading"><div class="file-icon">${icon('file')}</div><div><div class="filename">512MB (2).zip</div><div class="source">speedtest.tele2.net</div></div><span class="pill blue" style="margin-left:auto">Paused</span></div>
+   <div class="fact-grid"><div class="fact"><label>Existing download</label><strong>52 MB of 512 MB</strong></div><div class="fact"><label>Progress</label><strong>10%</strong></div><div class="fact"><label>Location</label><strong>Downloads</strong></div></div>
+   <div class="section"><h2>Existing item</h2><div class="path-box">${icon('folder')}<span>${path}</span><button>Open folder</button></div></div>
+   <div class="note">This is a possible duplicate based on queue data. Open the existing item to inspect it, or save a separate copy if you need one.</div>`;
+  footer.innerHTML=`<button class="btn primary">View existing download</button><button class="btn">Open folder</button><span class="push"></span><button class="btn">Cancel</button><button class="btn">Save another copy</button>`;
+ }
+}
+document.querySelectorAll('.pick[data-view]').forEach(x=>x.onclick=()=>{view=x.dataset.view;render()});
+document.getElementById('theme').onclick=()=>document.body.classList.toggle('dark');
+if(new URLSearchParams(location.search).get('theme')==='dark')document.body.classList.add('dark');
+render();
+setInterval(()=>{
+ if(!running||totalPercent()===100)return;
+ let budget=speedLimit==='1 MB/s'?3:12,attempt=0,cursor=tick*4;
+ while(budget>0&&attempt<64){
+  const i=(cursor+attempt)%segmentProgress.length;
+  if(segmentProgress[i]<100){const add=Math.min(4,budget,100-segmentProgress[i]);segmentProgress[i]+=add;budget-=add}
+  attempt++;
+ }
+ tick++;
+ elapsed++;
+ refreshProgress();
+},1000);
+</script>
+</body>
+</html>

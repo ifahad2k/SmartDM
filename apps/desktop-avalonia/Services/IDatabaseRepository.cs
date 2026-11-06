@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using SmartDm.Desktop.Avalonia.Models;
 
@@ -13,4 +13,8 @@ public interface IDatabaseRepository
     Task UpdateDownloadProgressAsync(string id, long downloadedBytes, double speedMbps, double progress, int etaSeconds);
     Task UpdateDownloadStatusAsync(string id, DownloadStatus status, string statusDetail, string subline);
     Task UpdateChecksumAndSecurityAsync(string id, string sha256, bool isQuarantined, string statusDetail);
+    Task SaveCrashReportAsync(CrashReport crash);
+    void SaveCrashReportSync(CrashReport crash);
+    Task<List<CrashReport>> GetRecentCrashReportsAsync(int limit = 20);
+    List<CrashReport> GetRecentCrashReportsSync(int limit = 20);
 }

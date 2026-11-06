@@ -44,14 +44,14 @@ public partial class DuplicateFoundDialog : Window
 
         if (!match.ExistsOnDisk)
         {
-            VerifiedStatusBadge.Text = "⚡ In Progress";
+            VerifiedStatusBadge.Text = "In queue";
             HeaderPromptText.Text = "SmartDM detected this download is currently in progress or queued.";
             OpenFileButton.IsVisible = false;
         }
         else
         {
-            VerifiedStatusBadge.Text = "✓ Verified on Disk";
-            HeaderPromptText.Text = "SmartDM catalog search found this exact file already saved in your storage.";
+            VerifiedStatusBadge.Text = "Found on disk";
+            HeaderPromptText.Text = "A possible match was found in your local catalog.";
             OpenFileButton.IsVisible = true;
         }
 

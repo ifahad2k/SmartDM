@@ -83,6 +83,23 @@ public class SparklineControl : Control
         Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Background);
     }
 
+    private static readonly IPen BaselinePen = new Pen(new SolidColorBrush(Color.FromArgb(40, 59, 130, 246)), 1.5, new DashStyle(new double[] { 4, 4 }, 0));
+    private static readonly IPen GridPen = new Pen(new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)), 1.0, new DashStyle(new double[] { 3, 3 }, 0));
+    private static readonly IBrush CachedFillBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+        GradientStops = new GradientStops
+        {
+            new GradientStop(Color.FromArgb(90, 59, 130, 246), 0.0),
+            new GradientStop(Color.FromArgb(35, 14, 165, 233), 0.5),
+            new GradientStop(Color.FromArgb(4, 59, 130, 246), 1.0)
+        }
+    };
+    private static readonly IPen DefaultLinePen = new Pen(new SolidColorBrush(Color.Parse("#38BDF8")), 2.2);
+    private static readonly IBrush HaloBrush = new SolidColorBrush(Color.FromArgb(70, 56, 189, 248));
+    private static readonly IBrush DotBrush = new SolidColorBrush(Color.Parse("#38BDF8"));
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -93,8 +110,7 @@ public class SparklineControl : Control
         if (points == null || points.Count < 2)
         {
             // Draw subtle idle baseline
-            var baselinePen = new Pen(new SolidColorBrush(Color.FromArgb(40, 59, 130, 246)), 1.5, new DashStyle(new double[] { 4, 4 }, 0));
-            context.DrawLine(baselinePen, new Point(0, bounds.Height - 6), new Point(bounds.Width, bounds.Height - 6));
+            context.DrawLine(BaselinePen, new Point(0, bounds.Height - 6), new Point(bounds.Width, bounds.Height - 6));
             return;
         }
 
@@ -107,10 +123,9 @@ public class SparklineControl : Control
         maxSpeed *= 1.25; // 25% vertical breathing room
 
         // 2. Draw Subtle Horizontal Gridlines (0%, 50%, 100%)
-        var gridPen = new Pen(new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)), 1.0, new DashStyle(new double[] { 3, 3 }, 0));
         double midY = bounds.Height / 2.0;
-        context.DrawLine(gridPen, new Point(0, midY), new Point(bounds.Width, midY));
-        context.DrawLine(gridPen, new Point(0, 4), new Point(bounds.Width, 4));
+        context.DrawLine(GridPen, new Point(0, midY), new Point(bounds.Width, midY));
+        context.DrawLine(GridPen, new Point(0, 4), new Point(bounds.Width, 4));
 
         double stepX = bounds.Width / (points.Count - 1);
         double bottomY = bounds.Height - 4;
@@ -131,18 +146,7 @@ public class SparklineControl : Control
             ctx.LineTo(new Point(bounds.Width, bounds.Height));
         }
 
-        var fillBrush = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-            GradientStops = new GradientStops
-            {
-                new GradientStop(Color.FromArgb(90, 59, 130, 246), 0.0),
-                new GradientStop(Color.FromArgb(35, 14, 165, 233), 0.5),
-                new GradientStop(Color.FromArgb(4, 59, 130, 246), 1.0)
-            }
-        };
-        context.DrawGeometry(fillBrush, null, fillGeometry);
+        context.DrawGeometry(CachedFillBrush, null, fillGeometry);
 
         // 4. Construct Stroke Curve
         var strokeGeometry = new StreamGeometry();
@@ -167,14 +171,11 @@ public class SparklineControl : Control
             }
         }
 
-        var linePen = new Pen(StrokeBrush ?? new SolidColorBrush(Color.Parse("#38BDF8")), 2.2);
+        var linePen = StrokeBrush != null ? new Pen(StrokeBrush, 2.2) : DefaultLinePen;
         context.DrawGeometry(null, linePen, strokeGeometry);
 
         // 5. Draw Glowing Leading Pulse Dot at Latest Speed Position
-        var haloBrush = new SolidColorBrush(Color.FromArgb(70, 56, 189, 248));
-        context.DrawEllipse(haloBrush, null, lastPoint, 5, 5);
-
-        var dotBrush = new SolidColorBrush(Color.Parse("#38BDF8"));
-        context.DrawEllipse(dotBrush, null, lastPoint, 2.5, 2.5);
+        context.DrawEllipse(HaloBrush, null, lastPoint, 5, 5);
+        context.DrawEllipse(DotBrush, null, lastPoint, 2.5, 2.5);
     }
 }

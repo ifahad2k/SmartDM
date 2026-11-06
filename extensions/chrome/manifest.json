@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SmartDM Integration",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Send files and media to SmartDM.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmLgtF89pUtCcJkhWEEM1Z0j40HqJnzbyxVlZ/qpJk27F/8WL5o4Vm3MXnHm8Fg/yLfS5ZZp7DA/82FcDKNvRHkSr4OpmPvQ2BsfuyYWuCSFG91wsUa3AShEg/AcPt5/iZVvT5XOON98Fli7odj33faD2Q3cGeU1lKHa64lHNSdedaUpCNgEJ3ECC51oAlkCCE8XXnufQlKvdh4LhvaKbocECdI07/3YYLzST4ZfdimuAzKqu82rKEsccgVwLeFRwDN18xxdQxf9Ad24gHQJO2Oz58j81RPnej8Yg3rkvuXfhZxeiGZt/vyNsluzBEV7CTC0a/WcjPPTcU7B5UDPQKQIDAQAB",
   "permissions": [
@@ -24,10 +24,31 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["smartdm_overlay.js"],
+      "js": ["sniffer.js"],
+      "world": "MAIN",
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "modules/utils.js",
+        "modules/visual_mount.js",
+        "modules/format_engine.js",
+        "modules/overlay_ui.js",
+        "modules/watcher.js",
+        "smartdm_overlay.js"
+      ],
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["sniffer.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

@@ -1,0 +1,76 @@
+ M .gitignore
+ M AGENTS.md
+ M README.md
+ M apps/desktop-avalonia/App.axaml
+ M apps/desktop-avalonia/App.axaml.cs
+ M apps/desktop-avalonia/Controls/MiniProgressBar.cs
+ M apps/desktop-avalonia/Controls/SegmentVisualizerControl.cs
+ M apps/desktop-avalonia/Controls/SparklineControl.cs
+ M apps/desktop-avalonia/Models/DownloadModel.cs
+ M apps/desktop-avalonia/Models/ProbeResult.cs
+ M apps/desktop-avalonia/Models/SegmentProgress.cs
+ M apps/desktop-avalonia/Program.cs
+ M apps/desktop-avalonia/Services/DownloadEngine.cs
+ M apps/desktop-avalonia/Services/HttpProbeService.cs
+ M apps/desktop-avalonia/Services/IDatabaseRepository.cs
+ M apps/desktop-avalonia/Services/ISpeedLimiter.cs
+ M apps/desktop-avalonia/Services/LocalIpcService.cs
+ M apps/desktop-avalonia/Services/SafetyScannerService.cs
+ M apps/desktop-avalonia/Services/SegmentWorker.cs
+ M apps/desktop-avalonia/Services/SqliteDatabaseRepository.cs
+ M apps/desktop-avalonia/Services/YouTubeMediaResolver.cs
+ M apps/desktop-avalonia/ViewModels/AddDownloadViewModel.cs
+ M apps/desktop-avalonia/ViewModels/CompletionInspectorViewModel.cs
+ M apps/desktop-avalonia/ViewModels/MainViewModel.cs
+ M apps/desktop-avalonia/ViewModels/TransferMonitorViewModel.cs
+ M apps/desktop-avalonia/Views/AddDownloadDialog.axaml.cs
+ M apps/desktop-avalonia/Views/CompletionInspectorWindow.axaml
+ M apps/desktop-avalonia/Views/CompletionInspectorWindow.axaml.cs
+ M apps/desktop-avalonia/Views/DuplicateFoundDialog.axaml
+ M apps/desktop-avalonia/Views/DuplicateFoundDialog.axaml.cs
+ M apps/desktop-avalonia/Views/FileCollisionDialog.axaml
+ M apps/desktop-avalonia/Views/FileCollisionDialog.axaml.cs
+ M apps/desktop-avalonia/Views/MainWindow.axaml
+ M apps/desktop-avalonia/Views/SettingsWindow.axaml
+ M apps/desktop-avalonia/Views/TransferMonitorWindow.axaml
+ M apps/desktop-avalonia/Views/TransferMonitorWindow.axaml.cs
+ M docs/audits/2026-10-26/SMARTDM_FULL_BUG_AUDIT.md
+ M docs/implementation/KNOWN_LIMITATIONS.md
+ M docs/implementation/PHASE_STATUS.md
+ M docs/implementation/SmartDM-Phase-by-Phase-Implementation-Plan.md
+ M docs/implementation/TEST_EVIDENCE.md
+ M extensions/chrome/background.js
+ M extensions/chrome/manifest.json
+ M extensions/chrome/smartdm_overlay.js
+ M extensions/firefox/background.js
+ M extensions/firefox/manifest.json
+ M extensions/firefox/smartdm_overlay.js
+ M modules/media-ytdlp/src/main/java/io/smartdm/media/ytdlp/LocalMediaToolManager.java
+ M modules/media-ytdlp/src/test/java/io/smartdm/media/ytdlp/NativeDirectExtractorTest.java
+ M smartdm-website/src/context/AuthContext.tsx
+ M tests/SmartDm.Architecture.Tests/TestFixtures.cs
+ M tests/SmartDm.Architecture.Tests/TransferIntegrityTests.cs
+?? apps/desktop-avalonia/Models/CrashReport.cs
+?? apps/desktop-avalonia/Services/SegmentCheckpointHash.cs
+?? design-prototypes/
+?? docs/BRANCHES.md
+?? docs/CURRENT_ARCHITECTURE.md
+?? docs/README.md
+?? docs/adr/ADR-010-preserve-product-tracks.md
+?? docs/audits/2026-11-03/
+?? docs/implementation/BRANCH_DOCUMENTATION_HANDOFF.md
+?? docs/implementation/PACKAGE2_RELIABILITY_HANDOFF.md
+?? docs/implementation/REPOSITORY_CLEANUP.md
+?? docs/implementation/REPOSITORY_CLEANUP_INVENTORY.json
+?? docs/implementation/RESUME_HERE.md
+?? extensions/chrome/modules/
+?? extensions/chrome/sniffer.js
+?? extensions/firefox/modules/
+?? extensions/firefox/sniffer.js
+?? run-app.bat
+?? run-app.ps1
+?? smartdm-website/tests/auth-cleanup.cjs
+?? tests/SmartDm.Architecture.Tests/MonitorEvidenceTests.cs
+?? tests/SmartDm.Architecture.Tests/Package2RegressionTests.cs
+?? tests/SmartDm.Architecture.Tests/QueuePresentationTests.cs
+?? tests/browser/

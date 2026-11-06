@@ -6,9 +6,9 @@
         x:Class="SmartDm.Desktop.Avalonia.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Icon="/Assets/SDM_2.0_logo.png"
-        Title="SmartDM 2.0 Engine — v2.0-STABLE"
-        Width="1120" Height="640"
-        MinWidth="880" MinHeight="520"
+        Title="SmartDM — Downloads"
+        Width="1250" Height="760"
+        MinWidth="1120" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="PreferSystemChrome"
@@ -33,14 +33,11 @@
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
-                    <TextBlock Text="SmartDM 2.0 Engine — v2.0-STABLE" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <TextBlock Text="SmartDM — Downloads" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
                 </StackPanel>
 
                 <!-- Margin leaves room for Windows native caption buttons (minimize, maximize, close) -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center" Margin="0,0,140,0">
-                    <TextBlock Text="SESSION: OPT_NET_DIRECT" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding CurrentProcessId, StringFormat='{}PID: {0}'}" FontSize="11" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
-                </StackPanel>
+                <Border Grid.Column="2" Width="140"/>
             </Grid>
         </Border>
 
@@ -53,7 +50,7 @@
                     <Image Source="/Assets/SDM_2.0_logo.png" Width="30" Height="30" VerticalAlignment="Center" />
                     <TextBlock Text="SmartDM" FontWeight="ExtraBold" FontSize="17" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
                     <Border Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                        <TextBlock Text="2.0 PRO" FontWeight="Bold" FontSize="10.5" Foreground="{DynamicResource PrimaryAccent}" />
+                        <TextBlock Text="2.0" FontWeight="Bold" FontSize="10.5" Foreground="{DynamicResource PrimaryAccent}" />
                     </Border>
                 </StackPanel>
 
@@ -116,9 +113,7 @@
                     <Button Command="{Binding PauseAllCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="Pause All">
                         <Image Source="/Assets/Icons/pause-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
                     </Button>
-                    <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="10,7" ToolTip.Tip="User Profile">
-                        <Image Source="/Assets/Icons/user-gray.png" Width="14" Height="14" VerticalAlignment="Center" />
-                    </Button>
+                    <Button Command="{Binding ToggleAdvancedLayoutCommand}" Content="{Binding LayoutButtonText}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="4" Padding="11,7" FontSize="11" Foreground="{DynamicResource PrimaryText}"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -301,7 +296,8 @@
 
             <!-- COLUMN 2: CENTER STREAM -->
             <Border Grid.Column="1" Background="{DynamicResource AppBackground}" Padding="16">
-                <Grid RowDefinitions="Auto,Auto,*">
+                <Grid>
+                <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowAdvancedLayout}">
                     
                     <!-- Top Engine Banner (Matching Reference Image 5) -->
                     <Border Grid.Row="0" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,0,12">
@@ -309,8 +305,8 @@
                             <!-- Row 1 -->
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <TextBlock Text="SmartDM v2.0 Pro" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
-                                    <TextBlock Text="SOCKET DIRECT • HTTP/3" FontSize="10.5" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                    <TextBlock Text="SmartDM v2.0" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
+                                    <TextBlock Text="C# transfer engine" FontSize="10.5" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                                 </StackPanel>
 
                                 <Border Grid.Column="1" HorizontalAlignment="Center" Background="#1A16A34A" CornerRadius="5" Padding="8,3" IsVisible="{Binding !IsDetailsPaneOpen}">
@@ -532,7 +528,7 @@
 
                                                     <!-- File Information & Badges -->
                                                     <Grid Grid.Column="2" RowDefinitions="Auto,Auto" VerticalAlignment="Center" Margin="0,0,12,0">
-                                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto">
+                                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                                                             <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                             <Border Grid.Column="1" IsVisible="{Binding HasCategoryBadge}" Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="5,1" VerticalAlignment="Center" Margin="6,0,0,0">
                                                                 <TextBlock Text="{Binding Category}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
@@ -544,14 +540,26 @@
                                                             <Border Grid.Column="3" IsVisible="{Binding IsQuarantined}" Background="{DynamicResource ErrorColor}" CornerRadius="4" Padding="6,1.5" VerticalAlignment="Center" Margin="6,0,0,0">
                                                                 <TextBlock Text="QUARANTINED" FontSize="10" FontWeight="ExtraBold" Foreground="White" />
                                                             </Border>
+                                                            <!-- Red FAILED badge directly adjacent to filename -->
+                                                            <Border Grid.Column="4" IsVisible="{Binding IsFailed}" Background="{DynamicResource ErrorColor}" CornerRadius="4" Padding="6,1.5" VerticalAlignment="Center" Margin="6,0,0,0">
+                                                                <TextBlock Text="FAILED" FontSize="10" FontWeight="ExtraBold" Foreground="White" />
+                                                            </Border>
                                                         </Grid>
 
                                                         <!-- Subline -->
                                                         <Grid Grid.Row="1" Margin="0,3,0,0">
-                                                            <TextBlock IsVisible="{Binding !IsQuarantined}" Text="{Binding Subline}" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock IsVisible="{Binding IsNormalSublineVisible}" Text="{Binding Subline}" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
                                                             <Grid IsVisible="{Binding IsQuarantined}" ColumnDefinitions="Auto,*,Auto">
                                                                 <TextBlock Grid.Column="0" Text="{Binding Subline}" FontSize="10.5" Foreground="{DynamicResource ErrorColor}" FontWeight="SemiBold" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
                                                                 <TextBlock Grid.Column="2" Text="{Binding StatusDetail}" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" Margin="0,0,16,0" TextTrimming="CharacterEllipsis" />
+                                                            </Grid>
+                                                            <!-- Failed / Error State: Explicit error reason displayed in high-contrast red -->
+                                                            <Grid IsVisible="{Binding IsFailed}" ColumnDefinitions="Auto,*,Auto" Background="{DynamicResource CardBackground}">
+                                                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                                    <Image Source="/Assets/Icons/danger-red.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                                                    <TextBlock Text="Reason:" FontSize="10.5" Foreground="{DynamicResource ErrorColor}" FontWeight="Bold" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                                                                </StackPanel>
+                                                                <TextBlock Grid.Column="1" Text="{Binding StatusDetail}" FontSize="10.5" Foreground="{DynamicResource ErrorColor}" FontWeight="Bold" FontFamily="Cascadia Code, Consolas, monospace" Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                             </Grid>
                                                         </Grid>
                                                     </Grid>
@@ -620,6 +628,25 @@
                                                             </Button>
                                                         </StackPanel>
 
+                                                        <!-- Case 4: Failed File -->
+                                                        <StackPanel IsVisible="{Binding IsFailed}" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                            <Border Background="#FEE2E2" BorderBrush="{DynamicResource ErrorColor}" BorderThickness="1" CornerRadius="5" Padding="7,3" VerticalAlignment="Center">
+                                                                <TextBlock Text="Failed" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource ErrorColor}" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <Button Command="{Binding ResumeCommand}" Background="{DynamicResource PrimaryAccent}" CornerRadius="6" Padding="10,5" VerticalAlignment="Center" ToolTip.Tip="Retry Download">
+                                                                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                                    <Image Source="/Assets/Icons/play-white.png" Width="10" Height="10" VerticalAlignment="Center" />
+                                                                    <TextBlock Text="Retry" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                            <Button Command="{Binding OpenMonitorCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="7,6" ToolTip.Tip="View Error Details in Transfer Monitor">
+                                                                <Image Source="/Assets/Icons/gauge-blue.png" Width="12" Height="12" />
+                                                            </Button>
+                                                            <Button Command="{Binding DeleteCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="6,5" VerticalAlignment="Center" ToolTip.Tip="Delete">
+                                                                <Image Source="/Assets/Icons/trash-red.png" Width="12" Height="12" />
+                                                            </Button>
+                                                        </StackPanel>
+
                                                     <!-- Case 5: Storage Card -->
                                                     <StackPanel IsVisible="{Binding IsStorage}" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                         <TextBlock Text="Used Space" FontSize="11" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
@@ -659,6 +686,89 @@
                     </Panel>
                 </ScrollViewer>
                 </Grid>
+                <!-- Default queue view. The original card view remains available through Advanced view. -->
+                <Grid IsVisible="{Binding !ShowAdvancedLayout}" RowDefinitions="Auto,Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,2,0,18">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="{Binding QueueHeading}" FontSize="23" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
+                            <TextBlock Text="Your downloads, in one place" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ActiveCount, StringFormat='{}{0} active'}" FontSize="12" Foreground="{DynamicResource PrimaryAccent}"/>
+                            <TextBlock Text="{Binding CompletedCount, StringFormat='{}{0} completed'}" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
+                            <TextBlock Text="{Binding TotalSpeedFormatted}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
+                        </StackPanel>
+                    </Grid>
+                    <Border Grid.Row="1" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="4,4,0,0" Padding="15,10">
+                        <Grid ColumnDefinitions="4*,1*,1.2*,1*,1*,Auto">
+                            <TextBlock Grid.Column="0" Text="FILE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
+                            <TextBlock Grid.Column="1" Text="SIZE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
+                            <TextBlock Grid.Column="2" Text="STATUS" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
+                            <TextBlock Grid.Column="3" Text="SPEED" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
+                            <TextBlock Grid.Column="4" Text="TIME LEFT" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
+                        </Grid>
+                    </Border>
+                    <Grid Grid.Row="2">
+                        <Panel>
+                            <ListBox ItemsSource="{Binding Downloads}" SelectedItem="{Binding SelectedDownload}" IsVisible="{Binding !HasNoDownloads}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="models:DownloadModel">
+                                        <Border Classes="downloadCard" Classes.selected="{Binding IsSelected}" Background="{DynamicResource CardBackground}" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BorderColor}" Padding="15,10" PointerPressed="OnCardPointerPressed" DoubleTapped="OnCardDoubleTapped" Cursor="Hand">
+                                            <Border.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Open" Command="{Binding OpenFileCommand}"/>
+                                                    <MenuItem Header="Open with..." Command="{Binding OpenWithCommand}"/>
+                                                    <MenuItem Header="Open folder" Command="{Binding OpenFolderCommand}"/>
+                                                    <MenuItem Header="Move or rename" Command="{Binding MoveRenameCommand}"/>
+                                                    <MenuItem Header="Redownload" Command="{Binding RedownloadCommand}"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="Resume" Command="{Binding ResumeCommand}"/>
+                                                    <MenuItem Header="Pause" Command="{Binding PauseCommand}"/>
+                                                    <MenuItem Header="Stop" Command="{Binding CancelCommand}"/>
+                                                    <MenuItem Header="Refresh address" Command="{Binding RefreshUrlCommand}"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="Transfer details" Command="{Binding OpenMonitorCommand}"/>
+                                                    <MenuItem Header="Completion details" Command="{Binding OpenInspectorCommand}"/>
+                                                    <MenuItem Header="Properties" Command="{Binding PropertiesCommand}"/>
+                                                    <MenuItem Header="Remove" Command="{Binding DeleteCommand}"/>
+                                                </ContextMenu>
+                                            </Border.ContextMenu>
+                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="4*,1*,1.2*,1*,1*,Auto">
+                                                <Grid Grid.Column="0" ColumnDefinitions="40,*" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                    <Border Grid.Column="0" Background="{Binding IconBg}" Width="30" Height="30" CornerRadius="4" HorizontalAlignment="Left">
+                                                        <Image Source="{Binding IconBitmap}" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                        <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Domain}" FontSize="10" Foreground="{DynamicResource MutedText}" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Grid.Column="1" Text="{Binding FormattedTotalBytes}" FontSize="11" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding StatusLabel}" FontSize="11" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding QueueSpeedText}" FontSize="11" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="4" Text="{Binding QueueEtaText}" FontSize="11" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                    <Button IsVisible="{Binding IsActive}" Command="{Binding PauseCommand}" Content="Pause" FontSize="10" Padding="5,3"/>
+                                                    <Button IsVisible="{Binding IsPaused}" Command="{Binding ResumeCommand}" Content="Resume" FontSize="10" Padding="5,3"/>
+                                                    <Button IsVisible="{Binding IsFailed}" Command="{Binding ResumeCommand}" Content="Retry" FontSize="10" Padding="5,3"/>
+                                                    <Button IsVisible="{Binding IsCompletedFile}" Command="{Binding OpenFileCommand}" Content="Open" FontSize="10" Padding="5,3"/>
+                                                </StackPanel>
+                                                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="6" IsVisible="{Binding HasProgressBar}" Value="{Binding ProgressPercentage}" Minimum="0" Maximum="100" Height="3" Margin="40,8,0,0" Foreground="{DynamicResource PrimaryAccent}" Background="{DynamicResource BorderColor}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <StackPanel IsVisible="{Binding HasNoDownloads}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,70" Spacing="12">
+                                <TextBlock Text="No downloads here" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Add a URL to start a download." FontSize="12" Foreground="{DynamicResource SecondaryText}" HorizontalAlignment="Center"/>
+                                <Button Command="{Binding OpenAddDialogCommand}" Content="Add URL" HorizontalAlignment="Center" Background="{DynamicResource PrimaryAccent}" Foreground="White" Padding="14,7"/>
+                            </StackPanel>
+                        </Panel>
+                    </Grid>
+                </Grid>
+                </Grid>
             </Border>
 
             <!-- COLUMN 3: CONTEXTUAL DETAILS INSPECTOR SIDEBAR (COLLAPSIBLE, OPENS ON SELECTION) -->
@@ -667,7 +777,8 @@
                     Background="{DynamicResource SidebarBackground}" 
                     BorderBrush="{DynamicResource BorderColor}" 
                     BorderThickness="1,0,0,0">
-                <Grid RowDefinitions="52,*">
+                <Grid>
+                <Grid RowDefinitions="52,*" IsVisible="{Binding ShowAdvancedLayout}">
                     <!-- Sidebar Header with Selected Download File & Close Button -->
                     <Border Grid.Row="0" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0">
                         <Grid ColumnDefinitions="Auto,*,Auto">
@@ -825,7 +936,7 @@
                                             <TextBlock Text="INTEGRITY &amp; SAFETY" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
                                         </StackPanel>
                                         <Border Grid.Column="1" Background="#1A16A34A" CornerRadius="4" Padding="5,1">
-                                            <TextBlock Text="SANDBOX ACTIVE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+                                            <TextBlock Text="SCAN EVIDENCE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
                                         </Border>
                                     </Grid>
 
@@ -877,19 +988,80 @@
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
+                <Grid IsVisible="{Binding !ShowAdvancedLayout}" RowDefinitions="Auto,*,Auto">
+                    <Border Grid.Row="0" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="20,18">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Download details" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
+                            <Button Grid.Column="1" Command="{Binding CloseDetailsPaneCommand}" Content="✕" FontSize="12" Background="Transparent" BorderThickness="0" Padding="2" Foreground="{DynamicResource SecondaryText}" ToolTip.Tip="Close details"/>
+                        </Grid>
+                    </Border>
+                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="20,20" Spacing="20">
+                            <Grid ColumnDefinitions="48,*">
+                                <Border Width="42" Height="46" Background="{Binding SelectedDownload.IconBg}" CornerRadius="5">
+                                    <Image Source="{Binding SelectedDownload.IconBitmap}" Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="5">
+                                    <TextBlock Text="{Binding SelectedDownload.Title}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding SelectedDownload.Domain}" FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="{Binding SelectedDownload.StatusLabel}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryAccent}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SelectedDownload.ProgressPercentage, StringFormat='{}{0:F0}%'}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
+                                </Grid>
+                                <ProgressBar IsVisible="{Binding SelectedDownload.HasProgressBar}" Value="{Binding SelectedDownload.ProgressPercentage}" Minimum="0" Maximum="100" Height="7" Foreground="{DynamicResource PrimaryAccent}" Background="{DynamicResource BorderColor}"/>
+                                <TextBlock Text="{Binding SelectedDownload.FormattedProgress}" FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Button IsVisible="{Binding SelectedDownload.IsActive}" Command="{Binding SelectedDownload.PauseCommand}" Content="Pause" Background="{DynamicResource PrimaryAccent}" Foreground="White" Padding="11,7" CornerRadius="4"/>
+                                <Button IsVisible="{Binding SelectedDownload.IsPaused}" Command="{Binding SelectedDownload.ResumeCommand}" Content="Resume" Background="{DynamicResource PrimaryAccent}" Foreground="White" Padding="11,7" CornerRadius="4"/>
+                                <Button IsVisible="{Binding SelectedDownload.IsFailed}" Command="{Binding SelectedDownload.ResumeCommand}" Content="Retry" Background="{DynamicResource PrimaryAccent}" Foreground="White" Padding="11,7" CornerRadius="4"/>
+                                <Button IsVisible="{Binding SelectedDownload.IsCompletedFile}" Command="{Binding SelectedDownload.OpenFileCommand}" Content="Open file" Background="{DynamicResource PrimaryAccent}" Foreground="White" Padding="11,7" CornerRadius="4"/>
+                                <Button Command="{Binding SelectedDownload.OpenFolderCommand}" Content="Open folder" Padding="11,7" CornerRadius="4"/>
+                            </StackPanel>
+                            <Border BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="0,17,0,0">
+                                <StackPanel Spacing="14">
+                                    <TextBlock Text="Properties" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Source" FontSize="10" Foreground="{DynamicResource MutedText}"/>
+                                        <TextBlock Text="{Binding SelectedDownload.Url}" FontSize="11" Foreground="{DynamicResource PrimaryText}" TextWrapping="Wrap" MaxHeight="48"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Save location" FontSize="10" Foreground="{DynamicResource MutedText}"/>
+                                        <TextBlock Text="{Binding SelectedDownload.SavePath}" FontSize="11" Foreground="{DynamicResource PrimaryText}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Size" FontSize="10" Foreground="{DynamicResource MutedText}"/>
+                                        <TextBlock Text="{Binding SelectedDownload.FormattedTotalBytes}" FontSize="11" Foreground="{DynamicResource PrimaryText}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Border Grid.Row="2" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="20,14">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Command="{Binding OpenMonitorCommand}" CommandParameter="{Binding SelectedDownload}" Content="Transfer details" FontSize="11" Foreground="{DynamicResource PrimaryAccent}" Background="Transparent" BorderThickness="0" Padding="0"/>
+                            <Button Command="{Binding OpenInspectorCommand}" CommandParameter="{Binding SelectedDownload}" Content="Verification" FontSize="11" Foreground="{DynamicResource PrimaryAccent}" Background="Transparent" BorderThickness="0" Padding="0" IsVisible="{Binding SelectedDownload.IsCompletedFile}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+                </Grid>
             </Border>
         </Grid>
 
         <!-- 4. BOTTOM TELEMETRY STATUS BAR -->
         <Border Grid.Row="3" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="14,0">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowAdvancedLayout}">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessColor}" VerticalAlignment="Center" />
-                    <TextBlock Text="Engine Core: HyperThread Native v2.0" FontSize="10.5" Foreground="{DynamicResource SuccessColor}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                    <TextBlock Text="Engine: C#" FontSize="10.5" Foreground="{DynamicResource SuccessColor}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                     <TextBlock Text="|" Foreground="{DynamicResource BorderColor}" VerticalAlignment="Center" />
-                    <TextBlock Text="Local Database: SQLCipher-AES256" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                    <TextBlock Text="Local database: SQLite (unencrypted)" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                     <TextBlock Text="|" Foreground="{DynamicResource BorderColor}" VerticalAlignment="Center" />
-                    <TextBlock Text="Zero DNS Leak Protocol" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                    <TextBlock Text="Platform TLS validation" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                     <TextBlock Text="|" Foreground="{DynamicResource BorderColor}" VerticalAlignment="Center" />
                     <TextBlock Text="RAM Buffer: Fast Flush" FontSize="10.5" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                 </StackPanel>
@@ -904,6 +1076,14 @@
                     </StackPanel>
                     <TextBlock Text="{Binding ThrottlingStatus}" FontSize="10.5" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                 </StackPanel>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !ShowAdvancedLayout}">
+                <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ActiveCount, StringFormat='{}{0} downloads active'}" FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+                    <TextBlock Text="{Binding TotalSpeedFormatted, StringFormat='{}{0} total'}" FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="Files and history stay on this device" FontSize="11" Foreground="{DynamicResource MutedText}" VerticalAlignment="Center"/>
+            </Grid>
             </Grid>
         </Border>
     </Grid>

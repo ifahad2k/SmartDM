@@ -12,9 +12,10 @@ using SmartDm.Desktop.Avalonia.Services;
 
 namespace SmartDm.Desktop.Avalonia.ViewModels;
 
-public partial class TransferMonitorViewModel : ViewModelBase
+public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
 {
     private readonly IDownloadEngine? _engine;
+    private bool _isDisposed;
 
     [ObservableProperty]
     private DownloadModel? _download;
@@ -45,10 +46,10 @@ public partial class TransferMonitorViewModel : ViewModelBase
     private string _speedLimitInput = "25.0";
 
     [ObservableProperty]
-    private bool _showDetails = true;
+    private bool _showDetails = false;
 
     [ObservableProperty]
-    private string _detailsButtonText = "Hide Details";
+    private string _detailsButtonText = "Show Details";
 
     [ObservableProperty]
     private double _peakSpeedMbps = 0.0;
@@ -134,6 +135,53 @@ public partial class TransferMonitorViewModel : ViewModelBase
         SelectedLimitMode = "Max (Unlimited)";
     }
 
+    public void InitializeDetailsData()
+    {
+        ThreadMetrics.Clear();
+        var existingSegs = !string.IsNullOrEmpty(Download?.Id) ? _engine?.GetSegments(Download.Id) : null;
+        int threadCount = Math.Max(1, Download?.ParallelThreads > 0 ? Download.ParallelThreads : 16);
+        if (existingSegs != null && existingSegs.Count > 0)
+        {
+            threadCount = Math.Max(threadCount, existingSegs.Count);
+        }
+
+        for (int i = 0; i < threadCount; i++)
+        {
+            ThreadMetrics.Add(new ThreadMetric
+            {
+                ThreadIndex = i + 1,
+                SpeedMbps = 0,
+                IsActive = false,
+                Progress = 0
+            });
+        }
+
+        if (existingSegs != null && existingSegs.Count > 0)
+        {
+            for (int i = 0; i < existingSegs.Count && i < ThreadMetrics.Count; i++)
+            {
+                ThreadMetrics[i].SpeedMbps = existingSegs[i].SpeedMbps;
+                ThreadMetrics[i].IsActive = existingSegs[i].IsActive;
+                ThreadMetrics[i].Progress = existingSegs[i].ProgressPercentage;
+                ThreadMetrics[i].IsCompleted = existingSegs[i].IsCompleted;
+            }
+        }
+
+        SparklineHistory.Clear();
+        if (Download != null && Download.SpeedMbps > 0)
+        {
+            SparklineHistory.Add(Download.SpeedMbps);
+            PeakSpeedMbps = Download.SpeedMbps;
+        }
+        else
+        {
+            PeakSpeedMbps = 0.0;
+        }
+        OnPropertyChanged(nameof(SocketsTelemetryBadge));
+        OnPropertyChanged(nameof(SegmentsTitle));
+        OnPropertyChanged(nameof(PeakSpeedFormatted));
+    }
+
     [RelayCommand]
     public void ToggleDetails()
     {
@@ -155,9 +203,9 @@ public partial class TransferMonitorViewModel : ViewModelBase
 
     public string ProtocolInfo => Download?.StatusDetail?.Contains("Single", StringComparison.OrdinalIgnoreCase) == true
         ? "Protocol: HTTP/1.1 • Single-Stream Sequential"
-        : "Protocol: HTTP/2 TLS 1.3 • Multi-Socket Slices • ALPN Multiplexed";
+        : "Protocol: Not measured";
 
-    public string BufferInfo => "Direct Async FileChannel • Low-Latency Flush";
+    public string BufferInfo => "C# download engine";
 
     public string FormattedChunkSize
     {
@@ -174,13 +222,50 @@ public partial class TransferMonitorViewModel : ViewModelBase
 
     public string SegmentsTitle => $"{Math.Max(Download?.ParallelThreads ?? 16, ThreadMetrics.Count)} Parallel Stream Segments (Chunk Buffers)";
 
+    public string TransferStatusBadgeText
+    {
+        get
+        {
+            if (Download?.Status == DownloadStatus.Failed) return "Transfer Failed";
+            if (Download?.Status == DownloadStatus.Completed) return "Transfer Completed";
+            if (Download?.Status == DownloadStatus.Paused || IsPaused) return "Transfer Paused";
+            if (Download?.SpeedMbps > 0) return "Concurrency Active";
+            return "Connecting...";
+        }
+    }
+
+    public string TransferStatusBadgeColor
+    {
+        get
+        {
+            if (Download?.Status == DownloadStatus.Failed) return "#EF4444";
+            if (Download?.Status == DownloadStatus.Completed) return "#3B82F6";
+            if (Download?.Status == DownloadStatus.Paused || IsPaused) return "#F59E0B";
+            if (Download?.SpeedMbps > 0) return "#16A34A";
+            return "#94A3B8";
+        }
+    }
+
     public string SocketsTelemetryBadge
     {
         get
         {
+            if (Download?.Status == DownloadStatus.Failed)
+                return "Failed";
+            if (Download?.Status == DownloadStatus.Completed)
+                return "Completed";
+            if (Download?.Status == DownloadStatus.Paused || IsPaused)
+                return "Paused";
+            if (ThreadMetrics.Count == 0)
+            {
+                int threads = Download?.ParallelThreads ?? 16;
+                return (Download?.Status == DownloadStatus.Active && Download?.SpeedMbps > 0) ? $"{threads} Sockets Active" : "Connecting...";
+            }
             int active = ThreadMetrics.Count(t => t.IsActive);
             int done = ThreadMetrics.Count(t => t.IsCompleted);
             int total = ThreadMetrics.Count;
+            if (active == 0 && done == 0)
+                return "Connecting...";
             if (done > 0)
                 return $"{active}/{total} In Flight • {done} Done";
             return $"{active}/{total} Sockets Active";
@@ -198,83 +283,15 @@ public partial class TransferMonitorViewModel : ViewModelBase
         Download = download;
         _engine = engine;
 
-        var existingSegs = _engine?.GetSegments(download.Id);
-        int threadCount = Math.Max(1, download.ParallelThreads > 0 ? download.ParallelThreads : 16);
-        if (existingSegs != null && existingSegs.Count > 0)
-        {
-            threadCount = Math.Max(threadCount, existingSegs.Count);
-        }
-
-        for (int i = 0; i < threadCount; i++)
-        {
-            ThreadMetrics.Add(new ThreadMetric
-            {
-                ThreadIndex = i + 1,
-                SpeedMbps = 0,
-                IsActive = download.Status == DownloadStatus.Active,
-                Progress = 0
-            });
-        }
-
-        if (existingSegs != null && existingSegs.Count > 0)
-        {
-            for (int i = 0; i < existingSegs.Count && i < ThreadMetrics.Count; i++)
-            {
-                ThreadMetrics[i].SpeedMbps = existingSegs[i].SpeedMbps;
-                ThreadMetrics[i].IsActive = existingSegs[i].IsActive;
-                ThreadMetrics[i].Progress = existingSegs[i].ProgressPercentage;
-                ThreadMetrics[i].IsCompleted = existingSegs[i].IsCompleted;
-            }
-        }
-        else if (download.ProgressPercentage > 0)
-        {
-            double totalProgress = Math.Clamp(download.ProgressPercentage, 0.0, 100.0);
-            double totalActiveSpeed = download.SpeedMbps > 0 ? download.SpeedMbps : 16.0;
-            double completedUnits = (totalProgress / 100.0) * threadCount;
-            int fullCompleted = (int)Math.Floor(completedUnits);
-            int activeCount = Math.Max(1, threadCount - fullCompleted);
-            double perActiveSpeed = Math.Round(totalActiveSpeed / Math.Min(6, activeCount), 1);
-
-            for (int i = 0; i < threadCount; i++)
-            {
-                if (i < fullCompleted)
-                {
-                    ThreadMetrics[i].Progress = 100.0;
-                    ThreadMetrics[i].IsCompleted = true;
-                    ThreadMetrics[i].IsActive = false;
-                    ThreadMetrics[i].SpeedMbps = 0.0;
-                }
-                else if (i == fullCompleted)
-                {
-                    double remFraction = completedUnits - fullCompleted;
-                    double curProg = Math.Round(Math.Clamp(remFraction * 100.0, 10.0, 95.0), 1);
-                    ThreadMetrics[i].Progress = curProg;
-                    ThreadMetrics[i].IsCompleted = false;
-                    ThreadMetrics[i].IsActive = download.Status == DownloadStatus.Active;
-                    ThreadMetrics[i].SpeedMbps = perActiveSpeed * 1.2;
-                }
-                else if (i < fullCompleted + 4 && i < threadCount)
-                {
-                    double taper = Math.Max(5.0, 60.0 - (i - fullCompleted) * 15.0);
-                    ThreadMetrics[i].Progress = taper;
-                    ThreadMetrics[i].IsCompleted = false;
-                    ThreadMetrics[i].IsActive = download.Status == DownloadStatus.Active;
-                    ThreadMetrics[i].SpeedMbps = perActiveSpeed;
-                }
-                else
-                {
-                    ThreadMetrics[i].Progress = Math.Max(0.0, 15.0 - (i - fullCompleted) * 4.0);
-                    ThreadMetrics[i].IsCompleted = false;
-                    ThreadMetrics[i].IsActive = download.Status == DownloadStatus.Active;
-                    ThreadMetrics[i].SpeedMbps = Math.Round(perActiveSpeed * 0.5, 1);
-                }
-            }
-        }
-
         if (download.Status == DownloadStatus.Paused)
         {
             IsPaused = true;
             PauseButtonText = "Resume";
+        }
+        else if (download.Status == DownloadStatus.Failed)
+        {
+            IsPaused = true;
+            PauseButtonText = "Retry";
         }
 
         if (_engine != null)
@@ -292,31 +309,23 @@ public partial class TransferMonitorViewModel : ViewModelBase
                 Download.Title ?? "download.bin");
         }
 
-        if (download.SpeedMbps > 0)
-        {
-            double s = download.SpeedMbps;
-            double[] seedWave = { s * 0.42, s * 0.58, s * 0.52, s * 0.71, s * 0.65, s * 0.82, s * 0.77, s * 0.91, s * 0.86, s * 0.95, s * 0.89, s * 0.98, s * 0.93, s * 1.04, s };
-            foreach (var val in seedWave)
-            {
-                SparklineHistory.Add(Math.Round(val, 1));
-            }
-            PeakSpeedMbps = SparklineHistory.Max();
-        }
-        else
-        {
-            for (int i = 0; i < 15; i++)
-            {
-                SparklineHistory.Add(0);
-            }
-            PeakSpeedMbps = 0.0;
-        }
-        OnPropertyChanged(nameof(PeakSpeedFormatted));
+        // The compact monitor also renders live segment progress.
+        InitializeDetailsData();
     }
+
+    private long _lastProgressUiTick = 0;
 
     private void OnEngineProgressChanged(DownloadModel updated)
     {
         if (Download == null || updated.Id != Download.Id) return;
         if (IsPaused || Download.Status == DownloadStatus.Paused) return;
+
+        long now = Stopwatch.GetTimestamp();
+        if (Stopwatch.GetElapsedTime(_lastProgressUiTick, now).TotalMilliseconds < 250)
+        {
+            return;
+        }
+        _lastProgressUiTick = now;
 
         Dispatcher.UIThread.Post(() =>
         {
@@ -324,13 +333,13 @@ public partial class TransferMonitorViewModel : ViewModelBase
 
             if (!ReferenceEquals(Download, updated))
             {
-                Download.DownloadedBytes = updated.DownloadedBytes;
-                Download.TotalBytes = updated.TotalBytes;
-                Download.SpeedMbps = updated.SpeedMbps;
-                Download.ProgressPercentage = updated.ProgressPercentage;
-                Download.EtaSeconds = updated.EtaSeconds;
-                Download.Status = updated.Status;
-                Download.StatusDetail = updated.StatusDetail;
+                if (Download.DownloadedBytes != updated.DownloadedBytes) Download.DownloadedBytes = updated.DownloadedBytes;
+                if (Download.TotalBytes != updated.TotalBytes) Download.TotalBytes = updated.TotalBytes;
+                if (Math.Abs(Download.SpeedMbps - updated.SpeedMbps) > 0.05) Download.SpeedMbps = updated.SpeedMbps;
+                if (Math.Abs(Download.ProgressPercentage - updated.ProgressPercentage) >= 0.1) Download.ProgressPercentage = updated.ProgressPercentage;
+                if (Download.EtaSeconds != updated.EtaSeconds) Download.EtaSeconds = updated.EtaSeconds;
+                if (Download.Status != updated.Status) Download.Status = updated.Status;
+                if (Download.StatusDetail != updated.StatusDetail) Download.StatusDetail = updated.StatusDetail;
             }
 
             if (updated.SpeedMbps > PeakSpeedMbps)
@@ -339,8 +348,11 @@ public partial class TransferMonitorViewModel : ViewModelBase
                 OnPropertyChanged(nameof(PeakSpeedFormatted));
             }
 
-            SparklineHistory.Add(updated.SpeedMbps);
-            if (SparklineHistory.Count > 45) SparklineHistory.RemoveAt(0);
+            if (ShowDetails)
+            {
+                SparklineHistory.Add(updated.SpeedMbps);
+                if (SparklineHistory.Count > 45) SparklineHistory.RemoveAt(0);
+            }
 
             if (_engine != null)
             {
@@ -357,15 +369,20 @@ public partial class TransferMonitorViewModel : ViewModelBase
                 }
                 for (int i = 0; i < segs.Count && i < ThreadMetrics.Count; i++)
                 {
-                    ThreadMetrics[i].SpeedMbps = segs[i].SpeedMbps;
-                    ThreadMetrics[i].IsActive = segs[i].IsActive;
-                    ThreadMetrics[i].Progress = segs[i].ProgressPercentage;
-                    ThreadMetrics[i].IsCompleted = segs[i].IsCompleted;
+                    var tm = ThreadMetrics[i];
+                    var s = segs[i];
+                    if (Math.Abs(tm.SpeedMbps - s.SpeedMbps) > 0.05) tm.SpeedMbps = s.SpeedMbps;
+                    if (tm.IsActive != s.IsActive) tm.IsActive = s.IsActive;
+                    if (Math.Abs(tm.Progress - s.ProgressPercentage) >= 0.5) tm.Progress = s.ProgressPercentage;
+                    if (tm.IsCompleted != s.IsCompleted) tm.IsCompleted = s.IsCompleted;
                 }
                 OnPropertyChanged(nameof(SocketsTelemetryBadge));
                 OnPropertyChanged(nameof(SegmentsTitle));
             }
-        });
+
+            OnPropertyChanged(nameof(TransferStatusBadgeText));
+            OnPropertyChanged(nameof(TransferStatusBadgeColor));
+        }, DispatcherPriority.Background);
     }
 
     private void OnEngineStatusChanged(DownloadModel updated)
@@ -390,6 +407,19 @@ public partial class TransferMonitorViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SocketsTelemetryBadge));
                 OnPropertyChanged(nameof(PauseButtonIcon));
             }
+            else if (updated.Status == DownloadStatus.Failed)
+            {
+                IsPaused = true;
+                PauseButtonText = "Retry";
+                Download.SpeedMbps = 0;
+                foreach (var t in ThreadMetrics)
+                {
+                    t.IsActive = false;
+                    t.SpeedMbps = 0;
+                }
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                OnPropertyChanged(nameof(PauseButtonIcon));
+            }
             else if (updated.Status == DownloadStatus.Active)
             {
                 IsPaused = false;
@@ -397,6 +427,9 @@ public partial class TransferMonitorViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SocketsTelemetryBadge));
                 OnPropertyChanged(nameof(PauseButtonIcon));
             }
+
+            OnPropertyChanged(nameof(TransferStatusBadgeText));
+            OnPropertyChanged(nameof(TransferStatusBadgeColor));
         });
     }
 
@@ -421,64 +454,102 @@ public partial class TransferMonitorViewModel : ViewModelBase
     [RelayCommand]
     private async Task TogglePauseAsync()
     {
-        if (Download == null) return;
-
-        IsPaused = !IsPaused;
-        PauseButtonText = IsPaused ? "Resume" : "Pause";
-        OnPropertyChanged(nameof(PauseButtonIcon));
-
-        if (IsPaused)
+        try
         {
-            Download.Status = DownloadStatus.Paused;
-            Download.SpeedMbps = 0;
-            Download.StatusDetail = "Paused by user";
-            foreach (var t in ThreadMetrics)
+            if (Download == null) return;
+
+            if (Download.Status == DownloadStatus.Failed)
             {
-                t.IsActive = false;
-                t.SpeedMbps = 0;
+                IsPaused = false;
+                PauseButtonText = "Pause";
+                Download.Status = DownloadStatus.Active;
+                Download.StatusDetail = "Retrying download...";
+                foreach (var t in ThreadMetrics)
+                {
+                    t.IsActive = true;
+                }
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                OnPropertyChanged(nameof(PauseButtonIcon));
+                if (_engine != null)
+                {
+                    await Task.Run(async () => await _engine.StartDownloadAsync(Download));
+                }
+                return;
             }
-            OnPropertyChanged(nameof(SocketsTelemetryBadge));
-            if (_engine != null)
+
+            IsPaused = !IsPaused;
+            PauseButtonText = IsPaused ? "Resume" : "Pause";
+            OnPropertyChanged(nameof(PauseButtonIcon));
+
+            if (IsPaused)
             {
-                await _engine.PauseDownloadAsync(Download.Id);
+                Download.Status = DownloadStatus.Paused;
+                Download.SpeedMbps = 0;
+                Download.StatusDetail = "Paused by user";
+                foreach (var t in ThreadMetrics)
+                {
+                    t.IsActive = false;
+                    t.SpeedMbps = 0;
+                }
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                if (_engine != null)
+                {
+                    await _engine.PauseDownloadAsync(Download.Id);
+                }
+            }
+            else
+            {
+                Download.Status = DownloadStatus.Active;
+                Download.StatusDetail = "Resuming download...";
+                foreach (var t in ThreadMetrics)
+                {
+                    t.IsActive = true;
+                }
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                if (_engine != null)
+                {
+                    await _engine.ResumeDownloadAsync(Download.Id, Download);
+                }
             }
         }
-        else
+        catch (Exception ex)
         {
-            Download.Status = DownloadStatus.Active;
-            Download.StatusDetail = "Resuming download...";
-            foreach (var t in ThreadMetrics)
-            {
-                t.IsActive = true;
-            }
-            OnPropertyChanged(nameof(SocketsTelemetryBadge));
-            if (_engine != null)
-            {
-                await _engine.ResumeDownloadAsync(Download.Id, Download);
-            }
+            Debug.WriteLine($"[TransferMonitor.TogglePauseAsync] Error: {ex.Message}");
         }
     }
 
     [RelayCommand]
     private async Task StopAsync()
     {
-        if (Download != null)
+        try
         {
-            Download.Status = DownloadStatus.Paused;
-            Download.SpeedMbps = 0;
-            Download.StatusDetail = "Stopped by user";
-            foreach (var t in ThreadMetrics)
+            Dispose();
+
+            if (Download != null)
             {
-                t.IsActive = false;
-                t.SpeedMbps = 0;
-            }
-            OnPropertyChanged(nameof(SocketsTelemetryBadge));
-            if (_engine != null)
-            {
-                await _engine.CancelDownloadAsync(Download.Id);
+                Download.Status = DownloadStatus.Paused;
+                Download.SpeedMbps = 0;
+                Download.StatusDetail = "Stopped by user";
+                foreach (var t in ThreadMetrics)
+                {
+                    t.IsActive = false;
+                    t.SpeedMbps = 0;
+                }
+                OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                if (_engine != null)
+                {
+                    await _engine.CancelDownloadAsync(Download.Id);
+                }
             }
         }
-        RequestClose?.Invoke();
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[TransferMonitor.StopAsync] Error: {ex.Message}");
+        }
+        finally
+        {
+            RequestClose?.Invoke();
+        }
     }
 
     [RelayCommand]
@@ -509,15 +580,27 @@ public partial class TransferMonitorViewModel : ViewModelBase
         catch { }
     }
 
+    public void Dispose()
+    {
+        if (_isDisposed) return;
+        _isDisposed = true;
+
+        if (_engine != null)
+        {
+            try
+            {
+                _engine.DownloadProgressChanged -= OnEngineProgressChanged;
+                _engine.DownloadStatusChanged -= OnEngineStatusChanged;
+                _engine.DownloadCompleted -= OnEngineCompleted;
+            }
+            catch { }
+        }
+    }
+
     [RelayCommand]
     private void Close()
     {
-        if (_engine != null)
-        {
-            _engine.DownloadProgressChanged -= OnEngineProgressChanged;
-            _engine.DownloadStatusChanged -= OnEngineStatusChanged;
-            _engine.DownloadCompleted -= OnEngineCompleted;
-        }
+        Dispose();
         RequestClose?.Invoke();
     }
 }

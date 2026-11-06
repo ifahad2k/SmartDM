@@ -11,7 +11,16 @@ public enum DownloadStatus
     Paused,
     Completed,
     Quarantined,
-    Queued
+    Queued,
+    Failed
+}
+
+public enum DestinationConflictAction
+{
+    DefaultNeverOverwrite,
+    Rename,
+    Replace,
+    Skip
 }
 
 public partial class DownloadModel : ObservableObject
@@ -32,25 +41,42 @@ public partial class DownloadModel : ObservableObject
     private string? _sourcePageUrl;
 
     [ObservableProperty]
+    private string? _videoUrl;
+
+    [ObservableProperty]
+    private string? _pageUrl;
+
+    [ObservableProperty]
     private string? _audioUrl;
 
     [ObservableProperty]
     private string _formatId = string.Empty;
+
+    public string? MediaKind { get; set; }
+    public string? ManifestText { get; set; }
+    public string? AudioManifestText { get; set; }
+    public Services.SafetyVerdict SafetyVerdict { get; set; } = Services.SafetyVerdict.NotScanned;
+    public string SafetyDetails { get; set; } = "No scan evidence recorded";
+    public string? QuarantinePath { get; set; }
 
     [ObservableProperty]
     private string _domain = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FormattedProgress))]
+    [NotifyPropertyChangedFor(nameof(FormattedTotalBytes))]
     private long _totalBytes;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FormattedProgress))]
+    [NotifyPropertyChangedFor(nameof(FormattedDownloaded))]
     private long _downloadedBytes;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FormattedSpeed))]
     [NotifyPropertyChangedFor(nameof(FormattedEta))]
+    [NotifyPropertyChangedFor(nameof(QueueSpeedText))]
+    [NotifyPropertyChangedFor(nameof(QueueEtaText))]
     private double _speedMbps;
 
     [ObservableProperty]
@@ -61,8 +87,14 @@ public partial class DownloadModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsPaused))]
     [NotifyPropertyChangedFor(nameof(IsCompletedFile))]
     [NotifyPropertyChangedFor(nameof(IsQuarantined))]
+    [NotifyPropertyChangedFor(nameof(IsFailed))]
+    [NotifyPropertyChangedFor(nameof(IsQueued))]
+    [NotifyPropertyChangedFor(nameof(IsNormalSublineVisible))]
     [NotifyPropertyChangedFor(nameof(FormattedSpeed))]
     [NotifyPropertyChangedFor(nameof(FormattedEta))]
+    [NotifyPropertyChangedFor(nameof(StatusLabel))]
+    [NotifyPropertyChangedFor(nameof(QueueSpeedText))]
+    [NotifyPropertyChangedFor(nameof(QueueEtaText))]
     [NotifyPropertyChangedFor(nameof(HasCategoryBadge))]
     [NotifyPropertyChangedFor(nameof(HasSecondaryBadge))]
     [NotifyPropertyChangedFor(nameof(HasProgressBar))]
@@ -88,10 +120,14 @@ public partial class DownloadModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FormattedEta))]
+    [NotifyPropertyChangedFor(nameof(QueueEtaText))]
     private int _etaSeconds;
 
     [ObservableProperty]
     private string _sha256Hash = string.Empty;
+
+    [ObservableProperty]
+    private string _expectedSha256 = string.Empty;
 
     [ObservableProperty]
     private string _fileExtension = string.Empty;
@@ -121,26 +157,36 @@ public partial class DownloadModel : ObservableObject
     private string? _cookies;
 
     [ObservableProperty]
+    private DestinationConflictAction _conflictAction = DestinationConflictAction.DefaultNeverOverwrite;
+
+    [ObservableProperty]
+    private string? _lastModified;
+
+    // Null means no capability evidence (including legacy records), not "supported".
+    [ObservableProperty]
+    private bool? _supportsRanges;
+
+    [ObservableProperty]
     private bool _isStorage = false;
 
     // Advanced Forensics & Metadata
     [ObservableProperty]
-    private string _httpProtocol = "HTTP/2 TLS 1.3";
+    private string _httpProtocol = "Not measured";
 
     [ObservableProperty]
     private string _mimeType = "application/octet-stream";
 
     [ObservableProperty]
-    private string _acceptsRanges = "bytes (Multi-part enabled)";
+    private string _acceptsRanges = "Not measured";
 
     [ObservableProperty]
-    private string _serverSoftware = "cloudflare-nginx";
+    private string _serverSoftware = "Not measured";
 
     [ObservableProperty]
-    private string _eTag = "\"66228ba7-18d223c\"";
+    private string _eTag = string.Empty;
 
     [ObservableProperty]
-    private string _startedAt = "Today 10:14 PM";
+    private string _startedAt = "Not recorded";
 
     [ObservableProperty]
     private string _completedAt = "--";
@@ -149,22 +195,37 @@ public partial class DownloadModel : ObservableObject
     private string _smartRule = "by extension (*.* -> General)";
 
     [ObservableProperty]
-    private string _allocationMethod = "Pre-allocated Sparse (Zero Frag)";
+    private string _allocationMethod = "Not measured";
 
     [ObservableProperty]
-    private string _avScannerName = "Windows Defender Engine 1.1.24080";
+    private string _avScannerName = "Not scanned";
 
     [ObservableProperty]
     private bool _isSelected = false;
 
     public bool IsActive => Status == DownloadStatus.Active && !IsStorage;
+    public string StatusLabel => Status switch
+    {
+        DownloadStatus.Active => "Downloading",
+        DownloadStatus.Paused => "Paused",
+        DownloadStatus.Completed => "Completed",
+        DownloadStatus.Failed => "Needs attention",
+        DownloadStatus.Quarantined => "Quarantined",
+        DownloadStatus.Queued => "Queued",
+        _ => Status.ToString()
+    };
+    public string QueueSpeedText => IsActive ? $"{SpeedMbps:F1} MB/s" : "—";
+    public string QueueEtaText => IsActive && SpeedMbps > 0 ? $"{EtaSeconds}s" : "—";
     public bool IsPaused => Status == DownloadStatus.Paused && !IsStorage;
     public bool IsCompletedFile => Status == DownloadStatus.Completed && !IsStorage;
     public bool IsQuarantined => Status == DownloadStatus.Quarantined && !IsStorage;
+    public bool IsFailed => Status == DownloadStatus.Failed && !IsStorage;
+    public bool IsQueued => Status == DownloadStatus.Queued && !IsStorage;
+    public bool IsNormalSublineVisible => !IsQuarantined && !IsFailed && !IsStorage;
 
     public bool HasCategoryBadge => !string.IsNullOrEmpty(Category) && Status != DownloadStatus.Quarantined && !IsStorage;
     public bool HasSecondaryBadge => !string.IsNullOrEmpty(SecondaryBadge) && Status == DownloadStatus.Active;
-    public bool HasProgressBar => (Status == DownloadStatus.Active || Status == DownloadStatus.Paused) && !IsStorage;
+    public bool HasProgressBar => (Status == DownloadStatus.Active || Status == DownloadStatus.Paused || Status == DownloadStatus.Failed || Status == DownloadStatus.Queued) && !IsStorage;
     public bool HasFooter => !IsStorage;
 
     public string FormattedSpeed => Status switch
@@ -173,6 +234,8 @@ public partial class DownloadModel : ObservableObject
         DownloadStatus.Completed => "Completed",
         DownloadStatus.Paused => "Paused",
         DownloadStatus.Quarantined => "Quarantined",
+        DownloadStatus.Failed => "Failed",
+        DownloadStatus.Queued => "Queued",
         _ => Status.ToString()
     };
 

@@ -47,6 +47,7 @@ public partial class AddDownloadDialog : Window
                 var handle = TryGetPlatformHandle()?.Handle;
                 if (handle.HasValue && handle.Value != IntPtr.Zero)
                 {
+                    ShowWindow(handle.Value, 5); // SW_SHOW
                     BringWindowToTop(handle.Value);
                     SetForegroundWindow(handle.Value);
                 }
@@ -64,19 +65,6 @@ public partial class AddDownloadDialog : Window
             catch { }
         }
         Deactivated += OnDeactivated;
-
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(350);
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                try
-                {
-                    Topmost = false;
-                }
-                catch { }
-            });
-        });
     }
 
     [DllImport("user32.dll")]
@@ -84,6 +72,9 @@ public partial class AddDownloadDialog : Window
 
     [DllImport("user32.dll")]
     private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     protected override void OnDataContextChanged(EventArgs e)
     {

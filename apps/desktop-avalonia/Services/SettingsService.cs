@@ -22,7 +22,7 @@ public class SettingsService : ISettingsService
 
     public SettingsService(string? baseDir = null)
     {
-        string dir = baseDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
+        string dir = baseDir ?? AppProfile.DirectoryPath;
         Directory.CreateDirectory(dir);
         _settingsPath = Path.Combine(dir, "app_settings.json");
         _aiConfigPath = Path.Combine(dir, "ai_config.json");
@@ -54,19 +54,18 @@ public class SettingsService : ISettingsService
 
     public async Task SaveAppSettingsAsync(AppSettingsModel settings)
     {
-        CurrentSettings = settings ?? new AppSettingsModel();
+        if (settings == null) throw new ArgumentNullException(nameof(settings));
+        if (settings.MaxParallelSegments is < 1 or > 32 || settings.ConnectionTimeoutSeconds is < 1 or > 300 || settings.MaxRetries is < 0 or > 10)
+            throw new ArgumentOutOfRangeException(nameof(settings), "Connection settings are out of range.");
+        string pending = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            string? dir = Path.GetDirectoryName(_settingsPath);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            string json = JsonSerializer.Serialize(CurrentSettings, JsonOptions);
-            await File.WriteAllTextAsync(_settingsPath, json);
+            await File.WriteAllTextAsync(pending, JsonSerializer.Serialize(settings, JsonOptions));
+            using (var file = new FileStream(pending, FileMode.Open, FileAccess.Write, FileShare.None)) file.Flush(true);
+            File.Move(pending, _settingsPath, true);
+            CurrentSettings = settings;
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to save app_settings.json: {ex.Message}");
-        }
+        finally { if (File.Exists(pending)) File.Delete(pending); }
     }
 
     public async Task<AiConfigModel> LoadAiConfigAsync()
@@ -119,35 +118,10 @@ public class SettingsService : ISettingsService
                 string appPath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
                 if (string.IsNullOrEmpty(appPath)) return false;
 
-                const string regKey = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-                const string appName = "SmartDM";
-
-                if (enable)
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "reg",
-                        Arguments = $"add \"{regKey}\" /v \"{appName}\" /t REG_SZ /d \"\\\"{appPath}\\\" --autostart\" /f",
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    };
-                    using var p = Process.Start(psi);
-                    p?.WaitForExit(3000);
-                    return p?.ExitCode == 0;
-                }
-                else
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "reg",
-                        Arguments = $"delete \"{regKey}\" /v \"{appName}\" /f",
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    };
-                    using var p = Process.Start(psi);
-                    p?.WaitForExit(3000);
-                    return p?.ExitCode == 0;
-                }
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+                if (enable) key.SetValue("SmartDM", "\"" + appPath + "\" --autostart");
+                else key.DeleteValue("SmartDM", throwOnMissingValue: false);
+                return true;
             }
             else if (OperatingSystem.IsLinux())
             {
@@ -160,7 +134,7 @@ public class SettingsService : ISettingsService
                 if (enable)
                 {
                     string appPath = Process.GetCurrentProcess().MainModule?.FileName ?? "smartdm";
-                    string content = $"[Desktop Entry]\nType=Application\nName=SmartDM\nExec={appPath} --autostart\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n";
+                    string content = $"[Desktop Entry]\nType=Application\nName=SmartDM\nExec=\"{appPath.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("%", "%%")}\" --autostart\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n";
                     File.WriteAllText(desktopFile, content);
                     return true;
                 }

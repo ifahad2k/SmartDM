@@ -8,6 +8,10 @@ public partial class MediaFormatItem : ObservableObject
     [ObservableProperty]
     private string _formatId = string.Empty;
 
+    public string? MediaKind { get; set; }
+    public string? ManifestText { get; set; }
+    public string? AudioManifestText { get; set; }
+
     [ObservableProperty]
     private string _resolution = string.Empty;
 

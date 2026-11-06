@@ -14,6 +14,9 @@ public class MediaFormatDto
     public string? Title { get; set; }
     public string? DirectUrl { get; set; }
     public string? AudioUrl { get; set; }
+    public string? MediaKind { get; set; }
+    public string? ManifestText { get; set; }
+    public string? AudioManifestText { get; set; }
 }
 
 public class BrowserDownloadRequest
@@ -21,6 +24,9 @@ public class BrowserDownloadRequest
     public string Url { get; set; } = string.Empty;
     public string? VideoUrl { get; set; }
     public string? AudioUrl { get; set; }
+    public string? MediaKind { get; set; }
+    public string? ManifestText { get; set; }
+    public string? AudioManifestText { get; set; }
     public string? FormatId { get; set; }
     public string? FileName { get; set; }
     public string? Title { get; set; }

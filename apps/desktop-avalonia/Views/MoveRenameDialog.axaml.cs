@@ -14,6 +14,7 @@ public partial class MoveRenameDialog : Window
 {
     private DownloadModel? _download;
     public event Action<DownloadModel, string, string>? DestinationChanged;
+    public Func<DownloadModel, string, string, System.Threading.Tasks.Task<string>>? MoveRequested { get; set; }
 
     public MoveRenameDialog()
     {
@@ -81,47 +82,21 @@ public partial class MoveRenameDialog : Window
         Close();
     }
 
-    private void OnSaveClicked(object? sender, RoutedEventArgs e)
+    private async void OnSaveClicked(object? sender, RoutedEventArgs e)
     {
-        string newName = FileNameBox.Text?.Trim() ?? string.Empty;
-        string newFolder = FolderPathBox.Text?.Trim() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(newName))
+        if (_download == null || MoveRequested == null) return;
+        try
         {
-            StatusMessageText.Text = "Please enter a valid file name.";
+            IsEnabled = false;
+            string path = await MoveRequested(_download, FolderPathBox.Text?.Trim() ?? "", FileNameBox.Text?.Trim() ?? "");
+            DestinationChanged?.Invoke(_download, _download.Title, path);
+            Close();
+        }
+        catch (Exception error)
+        {
+            StatusMessageText.Text = error.Message;
             StatusMessageText.Foreground = global::Avalonia.Media.Brushes.OrangeRed;
-            return;
         }
-
-        if (string.IsNullOrWhiteSpace(newFolder) || !Directory.Exists(newFolder))
-        {
-            StatusMessageText.Text = "Destination directory does not exist.";
-            StatusMessageText.Foreground = global::Avalonia.Media.Brushes.OrangeRed;
-            return;
-        }
-
-        if (_download != null)
-        {
-            string oldPath = _download.SavePath;
-            string newPath = Path.Combine(newFolder, newName);
-
-            if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    if (File.Exists(oldPath))
-                    {
-                        File.Move(oldPath, newPath, true);
-                    }
-                }
-                catch { }
-
-                _download.Title = newName;
-                _download.SavePath = newPath;
-                DestinationChanged?.Invoke(_download, newName, newPath);
-            }
-        }
-
-        Close();
+        finally { IsEnabled = true; }
     }
 }

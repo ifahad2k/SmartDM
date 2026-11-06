@@ -74,13 +74,32 @@ public partial class MainViewModel : ViewModelBase
     private string _upstreamSpeedFormatted = "0.0 KB/s";
 
     [ObservableProperty]
-    private string _throttlingStatus = "Speed Limit: OFF";
+    private string _throttlingStatus = "HTTP Speed Limit: OFF";
+
+    private long _lastAppliedSavedSpeedLimit = long.MinValue;
 
     [ObservableProperty]
     private string _storageStatus = "Storage: Calculating...";
 
     [ObservableProperty]
     private bool _isDarkMode = false;
+
+    [ObservableProperty]
+    private bool _showAdvancedLayout;
+
+    public string LayoutButtonText => ShowAdvancedLayout ? "Simple view" : "Advanced view";
+    public string QueueHeading => CurrentQueueFilter switch
+    {
+        "Active" => "Downloading",
+        "Completed" => "Completed",
+        "Scheduled" => "Scheduled",
+        _ => "All downloads"
+    };
+
+    partial void OnShowAdvancedLayoutChanged(bool value) => OnPropertyChanged(nameof(LayoutButtonText));
+
+    [RelayCommand]
+    private void ToggleAdvancedLayout() => ShowAdvancedLayout = !ShowAdvancedLayout;
 
     [ObservableProperty]
     private string _currentQueueFilter = "All"; // "All", "Active", "Completed", "Scheduled"
@@ -140,7 +159,7 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<ThreadMetric> ActiveThreads { get; } = new();
     public ObservableCollection<double> SparklineHistory { get; } = new();
 
-    public event Action<string?, string?, string?, List<MediaFormatDto>?, string?, string?, string?, string?>? RequestOpenAddDialog;
+    public event Action<string?, string?, string?, List<MediaFormatDto>?, string?, string?, string?, string?, string?, string?>? RequestOpenAddDialog;
     public event Action<DownloadModel?>? RequestOpenMonitor;
     public event Action<DownloadModel?>? RequestOpenInspector;
     public event Action<DownloadModel>? RequestOpenMoveRename;
@@ -165,13 +184,13 @@ public partial class MainViewModel : ViewModelBase
         _isDemoMode = isDemoMode;
         _repository = repository ?? new SqliteDatabaseRepository();
         _safetyScanner = safetyScanner ?? new SafetyScannerService();
-        _engine = engine ?? new IpcDownloadEngine(_repository, _safetyScanner);
+        _engine = engine ?? new DownloadEngine(_repository, _safetyScanner);
         _probeService = probeService ?? new HttpProbeService();
         _ipcService = ipcService ?? new LocalIpcService();
         _settingsService = settingsService ?? new SettingsService();
         _catalogService = catalogService ?? new FileCatalogService();
 
-        _ = _catalogService.ScanCommonFoldersAsync();
+        // Only explicitly indexed downloads enter the catalog.
 
         UpdateStorageStatus();
 
@@ -282,6 +301,13 @@ public partial class MainViewModel : ViewModelBase
                 _allMasterDownloads.Add(dl);
             }
 
+            // Reconcile staging directories: preserve valid partials for active/resumable downloads
+            var activeOrResumableIds = stored
+                .Where(d => d.Status != DownloadStatus.Completed)
+                .Select(d => d.Id)
+                .ToHashSet();
+            DownloadEngine.CleanupOrphanStagingDirectories(activeOrResumableIds, TimeSpan.FromHours(24));
+
             // 2. Wire engine events
             _engine.DownloadProgressChanged += OnEngineProgressChanged;
             _engine.DownloadStatusChanged += OnEngineStatusChanged;
@@ -316,32 +342,53 @@ public partial class MainViewModel : ViewModelBase
         dl.OnOpenInspector = d => RequestOpenInspector?.Invoke(d);
         dl.OnPause = async d =>
         {
-            d.Status = DownloadStatus.Paused;
-            d.SpeedMbps = 0;
-            d.StatusDetail = "Paused by user";
-            RefreshEngineMetrics();
-            UpdateCounts();
-            await _engine.PauseDownloadAsync(d.Id);
+            try
+            {
+                d.Status = DownloadStatus.Paused;
+                d.SpeedMbps = 0;
+                d.StatusDetail = "Paused by user";
+                RefreshEngineMetrics();
+                UpdateCounts();
+                await _engine.PauseDownloadAsync(d.Id);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainViewModel.OnPause] Error: {ex.Message}");
+            }
         };
         dl.OnResume = async d =>
         {
-            d.Status = DownloadStatus.Active;
-            d.StatusDetail = "Resuming download...";
-            RefreshEngineMetrics();
-            UpdateCounts();
-            await _engine.ResumeDownloadAsync(d.Id, d);
+            try
+            {
+                d.Status = DownloadStatus.Active;
+                d.StatusDetail = "Resuming download...";
+                RefreshEngineMetrics();
+                UpdateCounts();
+                await _engine.ResumeDownloadAsync(d.Id, d);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainViewModel.OnResume] Error: {ex.Message}");
+            }
         };
         dl.OnCancel = async d =>
         {
-            d.Status = DownloadStatus.Paused;
-            d.SpeedMbps = 0;
-            d.StatusDetail = "Cancelled";
-            RefreshEngineMetrics();
-            UpdateCounts();
-            await _engine.CancelDownloadAsync(d.Id);
+            try
+            {
+                d.Status = DownloadStatus.Paused;
+                d.SpeedMbps = 0;
+                d.StatusDetail = "Cancelled";
+                RefreshEngineMetrics();
+                UpdateCounts();
+                await _engine.CancelDownloadAsync(d.Id);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainViewModel.OnCancel] Error: {ex.Message}");
+            }
         };
         dl.OnDelete = d => RequestOpenDeleteConfirm?.Invoke(d);
-        dl.OnOpenFile = d => OpenFileNative(d.SavePath);
+        dl.OnOpenFile = d => { if (d.IsCompletedFile) OpenFileNative(d.SavePath); };
         dl.OnOpenFolder = d => OpenFolderNative(d.SavePath);
         dl.OnOpenWith = d => OpenWith(d);
         dl.OnMoveRename = d => MoveRename(d);
@@ -358,9 +405,9 @@ public partial class MainViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(req.Url))
         {
             var now = DateTime.UtcNow;
-            if (_recentBrowserRequests.TryGetValue(req.Url, out var lastTime) && (now - lastTime).TotalMilliseconds < 1500)
+            if (_recentBrowserRequests.TryGetValue(req.Url, out var lastTime) && (now - lastTime).TotalMilliseconds < 250)
             {
-                // Suppress rapid duplicate clicks from browser extension
+                // Suppress rapid hardware double-click bounce only (< 250ms)
                 return;
             }
             _recentBrowserRequests[req.Url] = now;
@@ -368,7 +415,7 @@ public partial class MainViewModel : ViewModelBase
 
         Dispatcher.UIThread.Post(() =>
         {
-            RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats, req.Title, req.Referer, req.UserAgent, req.Cookies);
+            RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats, req.Title, req.Referer, req.UserAgent, req.Cookies, req.VideoUrl, req.AudioUrl);
         });
     }
 
@@ -401,7 +448,7 @@ public partial class MainViewModel : ViewModelBase
             SocketBufferStatus = "Direct Async FileChannel (32 Buffers Active)";
             TotalEtaFormatted = activeDl.FormattedEta;
             EngineSubline = $"Active | {ActiveSocketCount} Streams | Speed {activeDl.FormattedSpeed}";
-            UpstreamSpeedFormatted = "12.4 KB/s (ACK/ALPN)";
+            UpstreamSpeedFormatted = "Not measured";
 
             var segs = _engine.GetSegments(activeDl.Id);
             while (ActiveThreads.Count < segs.Count)
@@ -440,22 +487,39 @@ public partial class MainViewModel : ViewModelBase
             : "No completed payload verified";
 
         var settings = _settingsService?.CurrentSettings;
+        long savedLimit = settings is { EnableSpeedLimit: true, DefaultSpeedLimitKbps: > 0 }
+            ? (long)settings.DefaultSpeedLimitKbps * 1024
+            : 0;
+        if (savedLimit != _lastAppliedSavedSpeedLimit)
+        {
+            _engine.SetSpeedLimitBytesPerSec(savedLimit);
+            _lastAppliedSavedSpeedLimit = savedLimit;
+        }
         if (settings != null && settings.EnableSpeedLimit)
         {
             BandwidthCapFormatted = $"{settings.DefaultSpeedLimitKbps} KB/s";
             BandwidthThrottlerBadge = $"Cap {settings.DefaultSpeedLimitKbps} KB/s";
-            ThrottlingStatus = $"Speed Limit: {settings.DefaultSpeedLimitKbps} KB/s";
+            ThrottlingStatus = $"HTTP Speed Limit: {settings.DefaultSpeedLimitKbps} KB/s";
         }
         else
         {
             BandwidthCapFormatted = "Unlimited";
             BandwidthThrottlerBadge = "Unlimited Pipe";
-            ThrottlingStatus = "Speed Limit: OFF";
+            ThrottlingStatus = "HTTP Speed Limit: OFF";
         }
     }
 
+    private long _lastMainProgressUiTick = 0;
+
     private void OnEngineProgressChanged(DownloadModel updated)
     {
+        long now = Stopwatch.GetTimestamp();
+        if (Stopwatch.GetElapsedTime(_lastMainProgressUiTick, now).TotalMilliseconds < 250)
+        {
+            return;
+        }
+        _lastMainProgressUiTick = now;
+
         Dispatcher.UIThread.Post(() =>
         {
             var existing = _allMasterDownloads.FirstOrDefault(d => d.Id == updated.Id);
@@ -464,13 +528,13 @@ public partial class MainViewModel : ViewModelBase
 
             if (!ReferenceEquals(existing, updated))
             {
-                existing.DownloadedBytes = updated.DownloadedBytes;
-                existing.TotalBytes = updated.TotalBytes;
-                existing.SpeedMbps = updated.SpeedMbps;
-                existing.ProgressPercentage = updated.ProgressPercentage;
-                existing.EtaSeconds = updated.EtaSeconds;
-                existing.Status = updated.Status;
-                existing.StatusDetail = updated.StatusDetail;
+                if (existing.DownloadedBytes != updated.DownloadedBytes) existing.DownloadedBytes = updated.DownloadedBytes;
+                if (existing.TotalBytes != updated.TotalBytes) existing.TotalBytes = updated.TotalBytes;
+                if (Math.Abs(existing.SpeedMbps - updated.SpeedMbps) > 0.05) existing.SpeedMbps = updated.SpeedMbps;
+                if (Math.Abs(existing.ProgressPercentage - updated.ProgressPercentage) >= 0.1) existing.ProgressPercentage = updated.ProgressPercentage;
+                if (existing.EtaSeconds != updated.EtaSeconds) existing.EtaSeconds = updated.EtaSeconds;
+                if (existing.Status != updated.Status) existing.Status = updated.Status;
+                if (existing.StatusDetail != updated.StatusDetail) existing.StatusDetail = updated.StatusDetail;
             }
 
             RefreshEngineMetrics();
@@ -479,7 +543,7 @@ public partial class MainViewModel : ViewModelBase
             double totalSpeed = _allMasterDownloads.Where(d => d.Status == DownloadStatus.Active).Sum(d => d.SpeedMbps);
             SparklineHistory.Add(totalSpeed);
             if (SparklineHistory.Count > 30) SparklineHistory.RemoveAt(0);
-        });
+        }, DispatcherPriority.Background);
     }
 
     private void OnEngineStatusChanged(DownloadModel dl)
@@ -501,7 +565,7 @@ public partial class MainViewModel : ViewModelBase
             UpdateCounts();
             ApplyFilters();
             RefreshEngineMetrics();
-        });
+        }, DispatcherPriority.Background);
     }
 
     private void OnEngineCompleted(DownloadModel dl, SafetyScanResult scan)
@@ -533,43 +597,14 @@ public partial class MainViewModel : ViewModelBase
                 await _engine.CancelDownloadAsync(dl.Id);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Debug.WriteLine($"Failed to cancel engine download: {ex.Message}");
+            Debug.WriteLine("Could not stop transfer; deletion was not performed.");
+            return;
         }
 
         if (deleteFileOnDisk)
-        {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(dl.SavePath) && File.Exists(dl.SavePath))
-                {
-                    File.Delete(dl.SavePath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to delete file on disk: {ex.Message}");
-            }
-
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(dl.SavePath))
-                {
-                    string partFile = dl.SavePath + ".part";
-                    if (File.Exists(partFile)) File.Delete(partFile);
-                    string tmpFile = dl.SavePath + ".tmp";
-                    if (File.Exists(tmpFile)) File.Delete(tmpFile);
-                }
-            }
-            catch { }
-
-            try
-            {
-                DownloadEngine.CleanupStagingDirectory(DownloadEngine.GetDownloadStagingDirectory(dl.Id));
-            }
-            catch { }
-        }
+            await DownloadDestinationService.DeleteConfirmedFileAsync(dl);
 
         _allMasterDownloads.Remove(dl);
         await _repository.DeleteDownloadAsync(dl.Id);
@@ -803,7 +838,7 @@ public partial class MainViewModel : ViewModelBase
         AllCount = _allMasterDownloads.Count(d => !d.IsStorage);
         ActiveCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Active && !d.IsStorage);
         CompletedCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Completed && !d.IsStorage);
-        ScheduledCount = _allMasterDownloads.Count(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused) && !d.IsStorage);
+        ScheduledCount = _allMasterDownloads.Count(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Failed) && !d.IsStorage);
     }
 
     public DownloadModel? FindActiveDownloadByUrl(string? url)
@@ -814,9 +849,18 @@ public partial class MainViewModel : ViewModelBase
         string? targetYtId = YouTubeMediaResolver.ExtractYouTubeVideoId(normalizedUrl);
 
         string? targetBaseUrl = null;
-        if (targetYtId == null && Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var parsedUri))
+        bool isCdnStreamEndpoint = false;
+        Uri? parsedUri = null;
+        if (targetYtId == null && Uri.TryCreate(normalizedUrl, UriKind.Absolute, out parsedUri))
         {
             targetBaseUrl = $"{parsedUri.Scheme}://{parsedUri.Authority}{parsedUri.AbsolutePath}";
+            string absPath = parsedUri.AbsolutePath.ToLowerInvariant();
+            isCdnStreamEndpoint = absPath.Contains("videoplayback") ||
+                                  absPath.Contains("/seg-") ||
+                                  absPath.Contains("segment") ||
+                                  absPath.EndsWith("/stream") ||
+                                  absPath.EndsWith("/video") ||
+                                  absPath.EndsWith("/manifest");
         }
 
         lock (_allMasterDownloads)
@@ -847,14 +891,43 @@ public partial class MainViewModel : ViewModelBase
                     }
                 }
 
-                // 3. Base URL match (without query tokens)
-                if (targetBaseUrl != null && !string.IsNullOrWhiteSpace(dl.Url) &&
-                    Uri.TryCreate(dl.Url, UriKind.Absolute, out var dlUri))
+                // 3. For CDN / stream endpoints (like Googlevideo videoplayback), match only if resource identifiers match
+                if (parsedUri != null && Uri.TryCreate(dl.Url, UriKind.Absolute, out var dlUri))
                 {
-                    string dlBaseUrl = $"{dlUri.Scheme}://{dlUri.Authority}{dlUri.AbsolutePath}";
-                    if (string.Equals(targetBaseUrl, dlBaseUrl, StringComparison.OrdinalIgnoreCase))
+                    string targetPath = parsedUri.AbsolutePath.ToLowerInvariant();
+                    string dlPath = dlUri.AbsolutePath.ToLowerInvariant();
+
+                    if (targetPath.Contains("videoplayback") && dlPath.Contains("videoplayback"))
                     {
-                        return dl;
+                        var targetQuery = System.Web.HttpUtility.ParseQueryString(parsedUri.Query);
+                        var dlQuery = System.Web.HttpUtility.ParseQueryString(dlUri.Query);
+                        string? targetId = targetQuery["id"];
+                        string? dlId = dlQuery["id"];
+                        if (!string.IsNullOrEmpty(targetId) && !string.IsNullOrEmpty(dlId) &&
+                            string.Equals(targetId, dlId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return dl;
+                        }
+                        continue;
+                    }
+
+                    if (isCdnStreamEndpoint)
+                    {
+                        continue;
+                    }
+
+                    // 4. Static downloads with concrete filenames: match base URL without tracking query parameters
+                    if (targetBaseUrl != null)
+                    {
+                        string dlBaseUrl = $"{dlUri.Scheme}://{dlUri.Authority}{dlUri.AbsolutePath}";
+                        string targetFileName = Path.GetFileName(parsedUri.AbsolutePath);
+                        if (!string.IsNullOrEmpty(targetFileName) &&
+                            targetFileName.Contains('.') &&
+                            !HttpProbeService.IsGenericName(targetFileName) &&
+                            string.Equals(targetBaseUrl, dlBaseUrl, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return dl;
+                        }
                     }
                 }
             }
@@ -934,7 +1007,26 @@ public partial class MainViewModel : ViewModelBase
         WireDownloadCallbacks(newDl);
         _allMasterDownloads.Insert(0, newDl);
         _ = _catalogService.IndexFileAsync(newDl.SavePath, newDl.Url);
-        _ = _engine.StartDownloadAsync(newDl);
+
+        if (newDl.Status != DownloadStatus.Queued)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _engine.StartDownloadAsync(newDl);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[AddNewDownload] StartDownloadAsync error: {ex.Message}");
+                }
+            });
+        }
+        else
+        {
+            _ = _repository.SaveDownloadAsync(newDl);
+        }
+
         UpdateCounts();
         ApplyFilters();
     }
@@ -942,6 +1034,7 @@ public partial class MainViewModel : ViewModelBase
     partial void OnSearchQueryChanged(string value) => ApplyFilters();
     partial void OnCurrentQueueFilterChanged(string value)
     {
+        OnPropertyChanged(nameof(QueueHeading));
         OnPropertyChanged(nameof(IsAllQueueSelected));
         OnPropertyChanged(nameof(IsActiveQueueSelected));
         OnPropertyChanged(nameof(IsCompletedQueueSelected));
@@ -1007,7 +1100,7 @@ public partial class MainViewModel : ViewModelBase
         }
         else if (CurrentQueueFilter == "Scheduled")
         {
-            query = query.Where(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused) && !d.IsStorage);
+            query = query.Where(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Failed) && !d.IsStorage);
         }
 
         if (CurrentCategoryFilter != "All")
@@ -1043,10 +1136,33 @@ public partial class MainViewModel : ViewModelBase
         }
 
         var list = query.ToList();
-        Downloads.Clear();
-        foreach (var item in list)
+        // In-place collection synchronization to eliminate UI thread card rebuilds
+        for (int i = Downloads.Count - 1; i >= 0; i--)
         {
-            Downloads.Add(item);
+            if (!list.Contains(Downloads[i]))
+            {
+                Downloads.RemoveAt(i);
+            }
+        }
+        for (int i = 0; i < list.Count; i++)
+        {
+            var item = list[i];
+            if (i >= Downloads.Count)
+            {
+                Downloads.Add(item);
+            }
+            else if (!ReferenceEquals(Downloads[i], item))
+            {
+                int existingIdx = Downloads.IndexOf(item);
+                if (existingIdx >= 0)
+                {
+                    Downloads.Move(existingIdx, i);
+                }
+                else
+                {
+                    Downloads.Insert(i, item);
+                }
+            }
         }
 
         HasNoDownloads = Downloads.Count == 0;
@@ -1098,7 +1214,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null, null, null, null, null, null, null);
+    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null, null, null, null, null, null, null, null, null);
 
     [RelayCommand]
     public void OpenMonitor(DownloadModel? dl) => RequestOpenMonitor?.Invoke(dl);
@@ -1157,6 +1273,8 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    public Task<string> MoveDownloadAsync(DownloadModel model, string directory, string name) => _engine.MoveDownloadAsync(model, directory, name);
+
     [RelayCommand]
     public void MoveRename(DownloadModel? dl)
     {
@@ -1187,7 +1305,11 @@ public partial class MainViewModel : ViewModelBase
             target.ProgressPercentage = 0;
             target.SpeedMbps = 0;
             target.Status = DownloadStatus.Active;
-            _ = _engine.StartDownloadAsync(target);
+            _ = Task.Run(async () =>
+            {
+                try { await _engine.StartDownloadAsync(target); }
+                catch (Exception ex) { Debug.WriteLine($"[Redownload] StartDownloadAsync error: {ex.Message}"); }
+            });
             UpdateCounts();
             ApplyFilters();
             RefreshEngineMetrics();
@@ -1274,10 +1396,17 @@ public partial class MainViewModel : ViewModelBase
 
         foreach (var dl in activeDownloads)
         {
-            dl.Status = DownloadStatus.Paused;
-            dl.SpeedMbps = 0;
-            dl.StatusDetail = "Paused by user";
-            await _engine.PauseDownloadAsync(dl.Id);
+            try
+            {
+                dl.Status = DownloadStatus.Paused;
+                dl.SpeedMbps = 0;
+                dl.StatusDetail = "Paused by user";
+                await _engine.PauseDownloadAsync(dl.Id);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PauseAll] Error pausing {dl.Id}: {ex.Message}");
+            }
         }
         UpdateCounts();
         ApplyFilters();
@@ -1288,14 +1417,21 @@ public partial class MainViewModel : ViewModelBase
     public async Task ResumeAllAsync()
     {
         var pausedDownloads = _allMasterDownloads
-            .Where(d => (d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Queued) && !d.IsStorage)
+            .Where(d => (d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Failed) && !d.IsStorage)
             .ToList();
 
         foreach (var dl in pausedDownloads)
         {
-            dl.Status = DownloadStatus.Active;
-            dl.StatusDetail = "Resuming...";
-            await _engine.ResumeDownloadAsync(dl.Id, dl);
+            try
+            {
+                dl.Status = DownloadStatus.Active;
+                dl.StatusDetail = "Resuming...";
+                await _engine.ResumeDownloadAsync(dl.Id, dl);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ResumeAll] Error resuming {dl.Id}: {ex.Message}");
+            }
         }
         UpdateCounts();
         ApplyFilters();

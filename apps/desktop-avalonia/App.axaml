@@ -11,40 +11,41 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
-                <!-- EXACT WHITE MODE COLOR PALETTE -->
+                <!-- Quiet desktop utility palette -->
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="AppBackground">#F7F8FA</SolidColorBrush>
-                    <SolidColorBrush x:Key="SidebarBackground">#F1F3F6</SolidColorBrush>
+                    <SolidColorBrush x:Key="AppBackground">#EEF1F4</SolidColorBrush>
+                    <SolidColorBrush x:Key="SidebarBackground">#F6F8FA</SolidColorBrush>
                     <SolidColorBrush x:Key="CardBackground">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="ElevatedBackground">#FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="BorderColor">#E3E7ED</SolidColorBrush>
-                    <SolidColorBrush x:Key="PrimaryText">#111827</SolidColorBrush>
-                    <SolidColorBrush x:Key="SecondaryText">#5F6B7A</SolidColorBrush>
-                    <SolidColorBrush x:Key="MutedText">#8A94A3</SolidColorBrush>
-                    <SolidColorBrush x:Key="PrimaryAccent">#3B82F6</SolidColorBrush>
-                    <SolidColorBrush x:Key="AccentHover">#2563EB</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderColor">#DCE4EA</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryText">#192633</SolidColorBrush>
+                    <SolidColorBrush x:Key="SecondaryText">#617181</SolidColorBrush>
+                    <SolidColorBrush x:Key="MutedText">#8594A2</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryAccent">#2368C9</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentHover">#185BB5</SolidColorBrush>
                     <SolidColorBrush x:Key="AccentLight">#EAF2FF</SolidColorBrush>
-                    <SolidColorBrush x:Key="SuccessColor">#16A34A</SolidColorBrush>
-                    <SolidColorBrush x:Key="WarningColor">#D97706</SolidColorBrush>
-                    <SolidColorBrush x:Key="ErrorColor">#DC2626</SolidColorBrush>
+                    <SolidColorBrush x:Key="SuccessColor">#247751</SolidColorBrush>
+                    <SolidColorBrush x:Key="WarningColor">#9B6828</SolidColorBrush>
+                    <SolidColorBrush x:Key="ErrorColor">#B94D4B</SolidColorBrush>
+                    <SolidColorBrush x:Key="DangerColor">#B94D4B</SolidColorBrush>
                 </ResourceDictionary>
 
-                <!-- EXACT DARK MODE COLOR PALETTE -->
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="AppBackground">#0B0D10</SolidColorBrush>
-                    <SolidColorBrush x:Key="SidebarBackground">#11151A</SolidColorBrush>
-                    <SolidColorBrush x:Key="CardBackground">#171C22</SolidColorBrush>
-                    <SolidColorBrush x:Key="ElevatedBackground">#1D232B</SolidColorBrush>
-                    <SolidColorBrush x:Key="BorderColor">#29313B</SolidColorBrush>
-                    <SolidColorBrush x:Key="PrimaryText">#F2F5F7</SolidColorBrush>
-                    <SolidColorBrush x:Key="SecondaryText">#9AA4B2</SolidColorBrush>
-                    <SolidColorBrush x:Key="MutedText">#687382</SolidColorBrush>
-                    <SolidColorBrush x:Key="PrimaryAccent">#4F8CFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="AccentHover">#6A9FFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="AccentLight">#264F8CFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="SuccessColor">#3DDC97</SolidColorBrush>
-                    <SolidColorBrush x:Key="WarningColor">#F5B84B</SolidColorBrush>
-                    <SolidColorBrush x:Key="ErrorColor">#FF5C6C</SolidColorBrush>
+                    <SolidColorBrush x:Key="AppBackground">#121B24</SolidColorBrush>
+                    <SolidColorBrush x:Key="SidebarBackground">#22303B</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBackground">#1D2933</SolidColorBrush>
+                    <SolidColorBrush x:Key="ElevatedBackground">#1D2933</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderColor">#3A4956</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryText">#EEF3F6</SolidColorBrush>
+                    <SolidColorBrush x:Key="SecondaryText">#AFBAC5</SolidColorBrush>
+                    <SolidColorBrush x:Key="MutedText">#8999A8</SolidColorBrush>
+                    <SolidColorBrush x:Key="PrimaryAccent">#84B4FF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentHover">#A2C7FF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentLight">#263D57</SolidColorBrush>
+                    <SolidColorBrush x:Key="SuccessColor">#8ACBA5</SolidColorBrush>
+                    <SolidColorBrush x:Key="WarningColor">#DBB47B</SolidColorBrush>
+                    <SolidColorBrush x:Key="ErrorColor">#EF9693</SolidColorBrush>
+                    <SolidColorBrush x:Key="DangerColor">#EF9693</SolidColorBrush>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
@@ -53,13 +54,13 @@
     <Application.Styles>
         <FluentTheme />
         <Style Selector="TextBlock">
-            <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI, sans-serif" />
+            <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI, Nirmala UI, sans-serif" />
         </Style>
     </Application.Styles>
 
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon Icon="/Assets/SDM_2.0_logo.png" ToolTipText="SmartDM 2.0 Pro">
+            <TrayIcon Icon="/Assets/SDM_2.0_logo.png" ToolTipText="SmartDM 2.0">
                 <TrayIcon.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Open SmartDM" Click="OnOpenSmartDmClicked" />

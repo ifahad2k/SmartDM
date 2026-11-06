@@ -22,6 +22,7 @@ public partial class FileCollisionDialog : Window
     private string _originalPath = string.Empty;
     private string _autoNumberedPath = string.Empty;
     private string _directory = string.Empty;
+    private bool _overwritePending;
 
     public event Action<CollisionResolution, string>? CollisionResolved;
 
@@ -129,6 +130,13 @@ public partial class FileCollisionDialog : Window
 
     private void OnOverwriteClicked(object? sender, RoutedEventArgs e)
     {
+        if (!_overwritePending)
+        {
+            _overwritePending = true;
+            OverwriteButtonText.Text = "Confirm replace";
+            HeaderPromptText.Text = "This will replace the existing file after the new download finishes. Click Confirm replace to continue.";
+            return;
+        }
         CollisionResolved?.Invoke(CollisionResolution.Overwrite, _originalPath);
         Close();
     }
@@ -136,12 +144,21 @@ public partial class FileCollisionDialog : Window
     private void OnCustomRenameClicked(object? sender, RoutedEventArgs e)
     {
         string customName = CustomFileNameBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(customName))
+        if (string.IsNullOrWhiteSpace(customName) ||
+            customName != Path.GetFileName(customName) ||
+            customName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
-            customName = Path.GetFileName(_originalPath);
+            LiveTargetPreviewText.Text = "Enter a valid filename without folder separators.";
+            return;
         }
 
-        string customPath = Path.Combine(_directory, customName);
+        string customPath = Path.GetFullPath(Path.Combine(_directory, customName));
+        if (string.Equals(customPath, Path.GetFullPath(_originalPath), StringComparison.OrdinalIgnoreCase) ||
+            File.Exists(customPath))
+        {
+            LiveTargetPreviewText.Text = "Choose a filename that does not already exist.";
+            return;
+        }
         CollisionResolved?.Invoke(CollisionResolution.CustomRename, customPath);
         Close();
     }

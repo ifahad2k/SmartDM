@@ -182,10 +182,18 @@ public class LocalIpcService : ILocalIpcService
             }
 
             if (type.Equals("GET_MEDIA_FORMATS", StringComparison.OrdinalIgnoreCase) ||
-                type.Equals("extractMediaInfo", StringComparison.OrdinalIgnoreCase))
+                type.Equals("extractMediaInfo", StringComparison.OrdinalIgnoreCase) ||
+                type.Equals("RESOLVE_M3U8_VARIANTS", StringComparison.OrdinalIgnoreCase))
             {
                 string? queryUrl = null;
                 if (root.TryGetProperty("url", out var qUrlElem)) queryUrl = qUrlElem.GetString();
+
+                string? queryReferer = null;
+                if (root.TryGetProperty("referer", out var rElem)) queryReferer = rElem.GetString();
+                string? queryUa = null;
+                if (root.TryGetProperty("userAgent", out var uaElemQ)) queryUa = uaElemQ.GetString();
+                string? queryCookies = null;
+                if (root.TryGetProperty("cookies", out var cElemQ)) queryCookies = cElemQ.GetString();
 
                 if (!string.IsNullOrEmpty(queryUrl))
                 {
@@ -210,10 +218,31 @@ public class LocalIpcService : ILocalIpcService
                             return;
                         }
                     }
+                    else if (queryUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var hlsRes = await HlsMediaResolver.ResolveHlsFormatsAsync(queryUrl, queryReferer, queryUa, queryCookies);
+                        if (hlsRes.Success && hlsRes.Formats.Count > 0)
+                        {
+                            var jsonPayload = JsonSerializer.Serialize(new
+                            {
+                                status = "ok",
+                                success = true,
+                                masterUrl = hlsRes.MasterUrl,
+                                formats = hlsRes.Formats
+                            }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+                            byte[] hlsBytes = Encoding.UTF8.GetBytes(jsonPayload);
+                            resp.ContentType = "application/json";
+                            resp.StatusCode = 200;
+                            resp.ContentLength64 = hlsBytes.Length;
+                            await resp.OutputStream.WriteAsync(hlsBytes);
+                            return;
+                        }
+                    }
                     else
                     {
-                        // Immediate non-blocking response for non-YouTube queries (handled by browser media graph)
-                        byte[] nonYtBytes = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"success\":false,\"message\":\"Non-YouTube media streams are handled by browser media graph.\"}");
+                        // Immediate non-blocking response for non-stream queries
+                        byte[] nonYtBytes = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"success\":false,\"message\":\"Media stream is handled by browser media graph.\"}");
                         resp.ContentType = "application/json";
                         resp.StatusCode = 200;
                         resp.ContentLength64 = nonYtBytes.Length;
@@ -284,6 +313,9 @@ public class LocalIpcService : ILocalIpcService
                     if (item.TryGetProperty("url", out var u)) dto.DirectUrl = u.GetString();
                     else if (item.TryGetProperty("directUrl", out var du)) dto.DirectUrl = du.GetString();
                     if (item.TryGetProperty("audioUrl", out var au)) dto.AudioUrl = au.GetString();
+                    if (item.TryGetProperty("mediaKind", out var mk)) dto.MediaKind = mk.GetString();
+                    if (item.TryGetProperty("manifestText", out var mt) && mt.ValueKind == JsonValueKind.String && mt.GetString()!.Length <= 500_000) dto.ManifestText = mt.GetString();
+                    if (item.TryGetProperty("audioManifestText", out var amt) && amt.ValueKind == JsonValueKind.String && amt.GetString()!.Length <= 500_000) dto.AudioManifestText = amt.GetString();
                     formats.Add(dto);
                 }
             }

@@ -111,6 +111,18 @@ public class LocalMediaToolManager implements MediaToolManager {
             }
         }
 
+        // Explicitly check FFMPEG_PATH for ffmpeg; unverified system PATH fallback is forbidden
+        if ("ffmpeg".equalsIgnoreCase(name)) {
+            String ffmpegEnv = System.getenv("FFMPEG_PATH");
+            if (ffmpegEnv != null && !ffmpegEnv.isBlank()) {
+                Path p = Paths.get(ffmpegEnv);
+                if (isExecutableFile(p)) {
+                    return Optional.of(p.toAbsolutePath());
+                }
+            }
+            return Optional.empty();
+        }
+
         // 3. Check PATH env variable
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {

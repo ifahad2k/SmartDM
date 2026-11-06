@@ -12,6 +12,7 @@ public class ProbeResult
     public string MimeType { get; set; } = "application/octet-stream";
     public string SuggestedCategory { get; set; } = "Other";
     public string ETag { get; set; } = string.Empty;
+    public string? LastModified { get; set; }
     public long LatencyMs { get; set; }
     public int StatusCode { get; set; }
     public bool IsSuccess { get; set; }

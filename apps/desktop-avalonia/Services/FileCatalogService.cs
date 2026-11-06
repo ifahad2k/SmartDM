@@ -18,7 +18,7 @@ public class FileCatalogService : IFileCatalogService
     {
         if (string.IsNullOrWhiteSpace(dbPath))
         {
-            string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
+            string appDir = AppProfile.DirectoryPath;
             Directory.CreateDirectory(appDir);
             dbPath = Path.Combine(appDir, "smartdm.db");
         }
@@ -132,7 +132,7 @@ public class FileCatalogService : IFileCatalogService
         }
     }
 
-    public async Task<CatalogMatch?> FindDuplicateAsync(string? url, string? fileName)
+    public async Task<CatalogMatch?> FindDuplicateAsync(string? url, string? fileName, string? expectedSha256 = null)
     {
         await InitializeAsync();
         await _semaphore.WaitAsync();
@@ -145,7 +145,7 @@ public class FileCatalogService : IFileCatalogService
             if (!string.IsNullOrWhiteSpace(url))
             {
                 string queryUrl = url.Trim();
-                string sqlUrl = "SELECT file_name, file_path, file_size, source_url, drive_letter FROM file_catalog WHERE source_url = @url COLLATE NOCASE LIMIT 10;";
+                string sqlUrl = "SELECT file_name, file_path, file_size, source_url, drive_letter, sha256_hash FROM file_catalog WHERE source_url = @url COLLATE NOCASE LIMIT 10;";
                 await using var cmdUrl = new SqliteCommand(sqlUrl, conn);
                 cmdUrl.Parameters.AddWithValue("@url", queryUrl);
 
@@ -155,12 +155,21 @@ public class FileCatalogService : IFileCatalogService
                     string fPath = reader.GetString(1);
                     if (File.Exists(fPath))
                     {
+                        string? dbHash = reader.IsDBNull(5) ? null : reader.GetString(5);
+                        bool hashVerified = !string.IsNullOrWhiteSpace(expectedSha256) &&
+                                            !string.IsNullOrWhiteSpace(dbHash) &&
+                                            string.Equals(dbHash.Trim(), expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase);
+
+                        string matchReason = hashVerified
+                            ? "Exact Download URL & Verified SHA-256 Checksum Match"
+                            : "Matching Source URL Found in File Catalog";
+
                         return new CatalogMatch(
                             reader.GetString(0),
                             fPath,
                             reader.GetInt64(2),
                             reader.IsDBNull(3) ? null : reader.GetString(3),
-                            "Exact Download URL & File Match",
+                            matchReason,
                             reader.GetString(4),
                             true
                         );
@@ -172,7 +181,7 @@ public class FileCatalogService : IFileCatalogService
             if (!string.IsNullOrWhiteSpace(fileName))
             {
                 string targetName = fileName.Trim();
-                string sqlName = "SELECT file_name, file_path, file_size, source_url, drive_letter FROM file_catalog WHERE file_name = @fileName COLLATE NOCASE LIMIT 10;";
+                string sqlName = "SELECT file_name, file_path, file_size, source_url, drive_letter, sha256_hash FROM file_catalog WHERE file_name = @fileName COLLATE NOCASE LIMIT 10;";
                 await using var cmdName = new SqliteCommand(sqlName, conn);
                 cmdName.Parameters.AddWithValue("@fileName", targetName);
 
@@ -184,12 +193,39 @@ public class FileCatalogService : IFileCatalogService
                     {
                         long size = reader.GetInt64(2);
                         string drive = reader.GetString(4);
+                        string? dbHash = reader.IsDBNull(5) ? null : reader.GetString(5);
+
+                        bool isCryptographicMatch = false;
+                        if (!string.IsNullOrWhiteSpace(expectedSha256))
+                        {
+                            if (!string.IsNullOrWhiteSpace(dbHash))
+                            {
+                                isCryptographicMatch = string.Equals(dbHash.Trim(), expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase);
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    using var sha256 = System.Security.Cryptography.SHA256.Create();
+                                    using var fs = File.OpenRead(fPath);
+                                    var hashBytes = sha256.ComputeHash(fs);
+                                    string computedHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                                    isCryptographicMatch = string.Equals(computedHash, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase);
+                                }
+                                catch { }
+                            }
+                        }
+
+                        string matchReason = isCryptographicMatch
+                            ? $"Identical File (SHA-256 Verified) Already Exists on Drive {drive}"
+                            : $"Candidate Duplicate File with Same Name on Drive {drive} (Content Unverified)";
+
                         return new CatalogMatch(
                             reader.GetString(0),
                             fPath,
                             size,
                             reader.IsDBNull(3) ? null : reader.GetString(3),
-                            $"Identical File Already Exists on Drive {drive}",
+                            matchReason,
                             drive,
                             true
                         );

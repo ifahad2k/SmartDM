@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
 TARGET_DIRS=(
-    "$HOME/.config/google-chrome/NativeMessagingHosts"
-    "$HOME/.config/chromium/NativeMessagingHosts"
-    "$HOME/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
-    "$HOME/.config/microsoft-edge/NativeMessagingHosts"
+    "$HOME/.mozilla/native-messaging-hosts"
 )
 
 for TARGET_DIR in "${TARGET_DIRS[@]}"; do
@@ -14,4 +11,4 @@ for TARGET_DIR in "${TARGET_DIRS[@]}"; do
     fi
 done
 
-echo "Chrome Native Messaging Host uninstalled."
+echo "Firefox Native Messaging Host uninstalled."

@@ -11,6 +11,7 @@ using SmartDm.Desktop.Avalonia.Models;
 
 namespace SmartDm.Desktop.Avalonia.Services;
 
+[Obsolete("Legacy Java daemon adapter. Decommissioned per ADR-009 / Package 1. Production code uses DownloadEngine directly.")]
 public class IpcDownloadEngine : IDownloadEngine, IAsyncDisposable
 {
     private readonly SmartDmIpcClient _ipcClient;

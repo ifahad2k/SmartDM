@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
@@ -33,148 +33,66 @@ public class SafetyScannerService : ISafetyScanner
         return sb.ToString();
     }
 
+    private readonly IScannerProcessRunner _runner;
+    private readonly string? _scannerPath;
+    private readonly bool _defender;
+
+    public SafetyScannerService(IScannerProcessRunner? runner = null, string? scannerPath = null, bool? defender = null)
+    {
+        _runner = runner ?? new ScannerProcessRunner();
+        _defender = defender ?? OperatingSystem.IsWindows();
+        _scannerPath = scannerPath ?? (_defender ? FindMpCmdRun() : FindClamAv());
+    }
+
     public async Task<SafetyScanResult> ScanFileAsync(string filePath, CancellationToken cancellationToken = default)
     {
         var result = new SafetyScanResult();
-
         if (!File.Exists(filePath))
         {
-            result.IsClean = true;
-            result.ThreatDetails = "File does not exist.";
+            result.Verdict = SafetyVerdict.ScanFailed;
+            result.ThreatDetails = "The file is missing; no safety scan was completed.";
             return result;
         }
-
-        // 1. Compute SHA-256 Hash
         result.Sha256Hash = await ComputeSha256Async(filePath, cancellationToken);
-
-        // 2. Heuristic check: RTLO exploit detection
-        string fileName = Path.GetFileName(filePath);
-        if (CheckRtloExploit(fileName))
+        string name = Path.GetFileName(filePath).ToLowerInvariant();
+        bool deceptive = (name.EndsWith(".exe") || name.EndsWith(".scr") || name.EndsWith(".bat") || name.EndsWith(".cmd") || name.EndsWith(".vbs")) &&
+            (name.Contains(".pdf.") || name.Contains(".doc.") || name.Contains(".docx.") || name.Contains(".jpg.") || name.Contains(".png."));
+        if (CheckRtloExploit(name) || deceptive)
         {
-            result.HasThreat = true;
-            result.IsClean = false;
-            result.ThreatDetails = "RTLO Unicode Disguised Extension Attack Detected";
-            result.ScannerName = "SmartDM Local Heuristics";
-            result.IsQuarantined = true;
+            result.Verdict = SafetyVerdict.Suspicious;
+            result.HasThreat = result.IsQuarantined = true;
+            result.ScannerName = "Local filename checks";
+            result.ThreatDetails = "Suspicious filename; this is heuristic evidence, not a malware signature verdict.";
             return result;
         }
-
-        // 3. Heuristic check: Deceptive double extension (e.g. document.pdf.exe)
-        string lower = fileName.ToLowerInvariant();
-        if ((lower.EndsWith(".exe") || lower.EndsWith(".scr") || lower.EndsWith(".bat") || lower.EndsWith(".cmd") || lower.EndsWith(".vbs")) &&
-            (lower.Contains(".pdf.") || lower.Contains(".doc.") || lower.Contains(".docx.") || lower.Contains(".jpg.") || lower.Contains(".png.")))
+        if (_scannerPath == null)
         {
-            result.HasThreat = true;
-            result.IsClean = false;
-            result.ThreatDetails = "Deceptive double extension executable disguised as document";
-            result.ScannerName = "SmartDM Local Heuristics";
-            result.IsQuarantined = true;
+            result.Verdict = SafetyVerdict.ScannerUnavailable;
+            result.ThreatDetails = "No supported antivirus scanner was found. SHA-256 is a fingerprint, not a safety verdict.";
             return result;
         }
-
-        // 4. Windows Defender Integration (Windows)
-        if (OperatingSystem.IsWindows())
+        result.ScannerName = _defender ? "Windows Defender" : "ClamAV";
+        int? code = await _runner.RunAsync(_scannerPath, _defender
+            ? new[] { "-Scan", "-ScanType", "3", "-File", filePath, "-DisableRemediation" }
+            : new[] { "--no-summary", "--", filePath }, cancellationToken);
+        if (code == 0)
         {
-            var defenderResult = await RunWindowsDefenderAsync(filePath, cancellationToken);
-            if (defenderResult != null)
-            {
-                result.ScannerName = "Windows Defender Endpoint";
-                if (!defenderResult.IsClean)
-                {
-                    result.HasThreat = true;
-                    result.IsClean = false;
-                    result.ThreatDetails = defenderResult.ThreatDetails;
-                    result.IsQuarantined = true;
-                }
-                else
-                {
-                    result.IsClean = true;
-                    result.ThreatDetails = "Zero threats detected by Windows Defender";
-                }
-                return result;
-            }
+            result.Verdict = SafetyVerdict.NoThreatsDetected;
+            result.IsClean = true;
+            result.ThreatDetails = "The scanner completed and reported no threats.";
         }
-        else if (OperatingSystem.IsLinux())
+        else if (code == (_defender ? 2 : 1))
         {
-            // ClamAV on Linux
-            var clamResult = await RunClamAvAsync(filePath, cancellationToken);
-            if (clamResult != null)
-            {
-                result.ScannerName = "ClamAV Local Daemon";
-                if (!clamResult.IsClean)
-                {
-                    result.HasThreat = true;
-                    result.IsClean = false;
-                    result.ThreatDetails = clamResult.ThreatDetails;
-                    result.IsQuarantined = true;
-                }
-                else
-                {
-                    result.IsClean = true;
-                    result.ThreatDetails = "Zero threats detected by ClamAV";
-                }
-                return result;
-            }
+            result.Verdict = SafetyVerdict.MalwareDetected;
+            result.HasThreat = result.IsQuarantined = true;
+            result.ThreatDetails = "The antivirus scanner reported a threat.";
         }
-
-        // 5. Default clean heuristic result
-        result.IsClean = true;
-        result.ScannerName = "SmartDM Safe Sandbox";
-        result.ThreatDetails = "Verified clean • No RTLO spoofing or zip slip hazards";
+        else
+        {
+            result.Verdict = SafetyVerdict.ScanFailed;
+            result.ThreatDetails = "The antivirus scan failed or timed out. No clean verdict is available.";
+        }
         return result;
-    }
-
-    private static async Task<SafetyScanResult?> RunWindowsDefenderAsync(string filePath, CancellationToken cancellationToken)
-    {
-        try
-        {
-            string? mpCmdRunPath = FindMpCmdRun();
-            if (string.IsNullOrEmpty(mpCmdRunPath) || !File.Exists(mpCmdRunPath))
-            {
-                return null;
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = mpCmdRunPath,
-                Arguments = $"-Scan -ScanType 3 -File \"{filePath}\" -DisableRemediation",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            using var process = new Process { StartInfo = psi };
-            process.Start();
-
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-            await process.WaitForExitAsync(linked.Token);
-
-            // MpCmdRun return codes:
-            // 0 = No threat found
-            // 2 = Threat detected
-            if (process.ExitCode == 0)
-            {
-                return new SafetyScanResult { IsClean = true };
-            }
-            else if (process.ExitCode == 2)
-            {
-                return new SafetyScanResult
-                {
-                    IsClean = false,
-                    HasThreat = true,
-                    ThreatDetails = "Threat detected by Windows Defender Real-Time Scanner"
-                };
-            }
-        }
-        catch
-        {
-            // Defender unavailable or timed out, fallback to heuristics
-        }
-
-        return null;
     }
 
     private static string? FindMpCmdRun()
@@ -199,47 +117,10 @@ public class SafetyScannerService : ISafetyScanner
         return null;
     }
 
-    private static async Task<SafetyScanResult?> RunClamAvAsync(string filePath, CancellationToken cancellationToken)
+    private static string? FindClamAv()
     {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "clamscan",
-                Arguments = $"--no-summary \"{filePath}\"",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            using var process = new Process { StartInfo = psi };
-            process.Start();
-
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-            await process.WaitForExitAsync(linked.Token);
-
-            if (process.ExitCode == 0)
-            {
-                return new SafetyScanResult { IsClean = true };
-            }
-            else if (process.ExitCode == 1)
-            {
-                return new SafetyScanResult
-                {
-                    IsClean = false,
-                    HasThreat = true,
-                    ThreatDetails = "Threat detected by ClamAV Signature Engine"
-                };
-            }
-        }
-        catch
-        {
-            // clamscan not installed
-        }
-
+        foreach (string path in new[] { "/usr/bin/clamscan", "/usr/local/bin/clamscan" })
+            if (File.Exists(path)) return path;
         return null;
     }
 }

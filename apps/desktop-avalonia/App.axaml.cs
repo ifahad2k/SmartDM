@@ -1,7 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
@@ -23,7 +25,7 @@ public partial class App : Application
     {
         try
         {
-            string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
+            string dir = AppProfile.DirectoryPath;
             System.IO.Directory.CreateDirectory(dir);
             System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "startup.log"), $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
         }
@@ -42,8 +44,8 @@ public partial class App : Application
             bool isDemo = desktop.Args != null && (desktop.Args.Contains("--snapshot") || desktop.Args.Contains("--snapshot-settings") || desktop.Args.Contains("--demo"));
             LogStartup($"isDemo={isDemo}, args={(desktop.Args != null ? string.Join(' ', desktop.Args) : "<null>")}");
 
-            _ = EngineDaemonLauncher.EnsureDaemonRunningAsync();
-            DownloadEngine.CleanupOrphanStagingDirectories();
+            // C-04: Do not wipe staging directories blindly before DB is loaded;
+            // reconciliation happens safely in MainViewModel.InitializeProductionAsync.
             LogStartup("Starting MainViewModel creation...");
             var mainVm = new MainViewModel(isDemoMode: isDemo);
             LogStartup("MainViewModel created successfully");
@@ -104,14 +106,16 @@ public partial class App : Application
                     if (w <= 0) w = 1120;
                     if (h <= 0) h = 640;
 
-                    string brainDir = @"C:\Users\ifaha\.gemini\antigravity\brain\87d0f223-9f18-4ef3-88a6-b1033d77865f";
+                    string snapshotDirectory = Environment.GetEnvironmentVariable("SMARTDM_SNAPSHOT_DIR")
+                        ?? System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SmartDM", "snapshots");
+                    System.IO.Directory.CreateDirectory(snapshotDirectory);
 
                     // 1. Snapshot MainWindow (Light Mode - Clean Queue)
                     var pixelSize = new PixelSize(w, h);
                     using (var rtb = new RenderTargetBitmap(pixelSize, new Vector(96, 96)))
                     {
                         rtb.Render(mainWindow);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_actual.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_actual.png"));
                     }
 
                     // 1b. Snapshot MainWindow with Details Inspector Sidebar Open
@@ -122,7 +126,7 @@ public partial class App : Application
                         using (var rtb = new RenderTargetBitmap(pixelSize, new Vector(96, 96)))
                         {
                             rtb.Render(mainWindow);
-                            rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_sidebar.png"));
+                            rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_sidebar.png"));
                         }
                         mainVm.CloseDetailsPane();
                         await System.Threading.Tasks.Task.Delay(200);
@@ -134,7 +138,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(pixelSize, new Vector(96, 96)))
                     {
                         rtb.Render(mainWindow);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_dark.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_dark.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Light;
                     await System.Threading.Tasks.Task.Delay(300);
@@ -147,30 +151,30 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(780, 680), new Vector(96, 96)))
                     {
                         rtb.Render(addWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_add_download.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_add_download.png"));
                     }
                     addWin.Close();
 
                     // 4. Snapshot TransferMonitorWindow
                     var activeDl = mainVm.Downloads.FirstOrDefault(d => d.IsActive) ?? mainVm.Downloads.First();
                     var monVm = new TransferMonitorViewModel(activeDl);
-                    var monWin = new TransferMonitorWindow { DataContext = monVm, Width = 680, Height = 750 };
+                    var monWin = new TransferMonitorWindow { DataContext = monVm, Width = 720, Height = 500 };
                     monWin.Show();
                     await System.Threading.Tasks.Task.Delay(600);
-                    using (var rtb = new RenderTargetBitmap(new PixelSize(680, 750), new Vector(96, 96)))
+                    using (var rtb = new RenderTargetBitmap(new PixelSize(720, 500), new Vector(96, 96)))
                     {
                         rtb.Render(monWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_transfer_monitor.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_transfer_monitor.png"));
                     }
 
                     // Snapshot TransferMonitorWindow with Custom Limit enabled
                     monVm.SelectedLimitMode = "Custom Limit";
                     monVm.SpeedLimit = 25.0;
                     await System.Threading.Tasks.Task.Delay(300);
-                    using (var rtb = new RenderTargetBitmap(new PixelSize(680, 750), new Vector(96, 96)))
+                    using (var rtb = new RenderTargetBitmap(new PixelSize(720, 500), new Vector(96, 96)))
                     {
                         rtb.Render(monWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_transfer_monitor_limited.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_transfer_monitor_limited.png"));
                     }
                     monVm.SelectedLimitMode = "Max (Unlimited)";
                     await System.Threading.Tasks.Task.Delay(200);
@@ -178,34 +182,34 @@ public partial class App : Application
                     // Snapshot TransferMonitorWindow (Dark mode)
                     RequestedThemeVariant = ThemeVariant.Dark;
                     await System.Threading.Tasks.Task.Delay(400);
-                    using (var rtb = new RenderTargetBitmap(new PixelSize(680, 750), new Vector(96, 96)))
+                    using (var rtb = new RenderTargetBitmap(new PixelSize(720, 500), new Vector(96, 96)))
                     {
                         rtb.Render(monWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_transfer_monitor_dark.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_transfer_monitor_dark.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Light;
                     await System.Threading.Tasks.Task.Delay(200);
 
-                    // Snapshot compact mode
+                    // Snapshot expanded details mode
                     monVm.ToggleDetailsCommand.Execute(null);
                     await System.Threading.Tasks.Task.Delay(400);
-                    using (var rtb = new RenderTargetBitmap(new PixelSize(680, 265), new Vector(96, 96)))
+                    using (var rtb = new RenderTargetBitmap(new PixelSize(720, 650), new Vector(96, 96)))
                     {
                         rtb.Render(monWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_transfer_monitor_compact.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_transfer_monitor_compact.png"));
                     }
                     monWin.Close();
 
                     // 5. Snapshot CompletionInspectorWindow
                     var compDl = mainVm.Downloads.FirstOrDefault(d => d.IsCompletedFile) ?? mainVm.Downloads.First();
                     var inspVm = new CompletionInspectorViewModel(compDl);
-                    var inspWin = new CompletionInspectorWindow { DataContext = inspVm, Width = 940, Height = 620 };
+                    var inspWin = new CompletionInspectorWindow { DataContext = inspVm, Width = 720, Height = 500 };
                     inspWin.Show();
                     await System.Threading.Tasks.Task.Delay(600);
-                    using (var rtb = new RenderTargetBitmap(new PixelSize(940, 620), new Vector(96, 96)))
+                    using (var rtb = new RenderTargetBitmap(new PixelSize(720, 500), new Vector(96, 96)))
                     {
                         rtb.Render(inspWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_completion_inspector.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_completion_inspector.png"));
                     }
                     inspWin.Close();
 
@@ -217,14 +221,14 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(920, 680), new Vector(96, 96)))
                     {
                         rtb.Render(setWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_settings.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_settings.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Dark;
                     await System.Threading.Tasks.Task.Delay(400);
                     using (var rtb = new RenderTargetBitmap(new PixelSize(920, 680), new Vector(96, 96)))
                     {
                         rtb.Render(setWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_settings_dark.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_settings_dark.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Light;
                     setWin.Close();
@@ -238,7 +242,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(640, 420), new Vector(96, 96)))
                     {
                         rtb.Render(refreshWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_refresh_link.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_refresh_link.png"));
                     }
                     refreshWin.Close();
 
@@ -250,7 +254,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(640, 410), new Vector(96, 96)))
                     {
                         rtb.Render(moveWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_move_rename.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_move_rename.png"));
                     }
                     moveWin.Close();
 
@@ -263,7 +267,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(640, 430), new Vector(96, 96)))
                     {
                         rtb.Render(deleteWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_delete_confirm.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_delete_confirm.png"));
                     }
 
                     // DeleteConfirmDialog (Dark mode)
@@ -272,7 +276,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(640, 430), new Vector(96, 96)))
                     {
                         rtb.Render(deleteWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_delete_confirm_dark.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_delete_confirm_dark.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Light;
                     deleteWin.Close();
@@ -294,7 +298,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(660, 440), new Vector(96, 96)))
                     {
                         rtb.Render(dupWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_duplicate_found.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_duplicate_found.png"));
                     }
 
                     // DuplicateFoundDialog (Dark mode)
@@ -303,7 +307,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(660, 440), new Vector(96, 96)))
                     {
                         rtb.Render(dupWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_duplicate_found_dark.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_duplicate_found_dark.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Light;
                     dupWin.Close();
@@ -316,7 +320,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(660, 480), new Vector(96, 96)))
                     {
                         rtb.Render(colWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_file_collision.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_file_collision.png"));
                     }
 
                     // FileCollisionDialog (Dark mode)
@@ -325,7 +329,7 @@ public partial class App : Application
                     using (var rtb = new RenderTargetBitmap(new PixelSize(660, 480), new Vector(96, 96)))
                     {
                         rtb.Render(colWin);
-                        rtb.Save(System.IO.Path.Combine(brainDir, "smartdm_v2_file_collision_dark.png"));
+                        rtb.Save(System.IO.Path.Combine(snapshotDirectory, "smartdm_v2_file_collision_dark.png"));
                     }
                     RequestedThemeVariant = ThemeVariant.Light;
                     colWin.Close();
@@ -366,8 +370,15 @@ public partial class App : Application
                 settingsWin.Show(); // INDEPENDENT WINDOW
             };
 
-            mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies) =>
+            AddDownloadDialog? activeAddDialog = null;
+            mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies, videoUrl, audioUrl) =>
             {
+                if (activeAddDialog != null)
+                {
+                    try { activeAddDialog.Close(); } catch { }
+                    activeAddDialog = null;
+                }
+
                 var addVm = new AddDownloadViewModel(
                     mainVm.ProbeService,
                     mainVm.CatalogService,
@@ -380,34 +391,59 @@ public partial class App : Application
                     userAgent,
                     cookies,
                     mainVm.FindActiveDownloadByUrl,
-                    mainVm.IsPathInUse);
+                    mainVm.IsPathInUse,
+                    videoUrl,
+                    audioUrl,
+                    mainVm?.SettingsService?.CurrentSettings);
                 var dialog = new AddDownloadDialog
                 {
                     DataContext = addVm
                 };
+                activeAddDialog = dialog;
+                dialog.Closed += (s, e) => { if (activeAddDialog == dialog) activeAddDialog = null; };
 
                 addVm.RequestOpenDuplicateDialog += (match, onDownloadAgain) =>
                 {
-                    var dupDialog = new DuplicateFoundDialog();
-                    dupDialog.LoadMatch(match, addVm.Url);
-                    dupDialog.DownloadAgainRequested += onDownloadAgain;
-                    dupDialog.Show(dialog);
+                    try
+                    {
+                        var dupDialog = new DuplicateFoundDialog();
+                        dupDialog.LoadMatch(match, addVm.Url);
+                        dupDialog.DownloadAgainRequested += onDownloadAgain;
+                        SafeShow(dupDialog, dialog ?? desktop.MainWindow);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[DuplicateDialog] Show error: {ex.Message}");
+                    }
                 };
 
                 addVm.RequestOpenFileCollisionDialog += (targetPath, autoNumPath, onResolved) =>
                 {
-                    var colDialog = new FileCollisionDialog();
-                    colDialog.LoadCollision(targetPath, autoNumPath);
-                    colDialog.CollisionResolved += onResolved;
-                    colDialog.Show(dialog);
+                    try
+                    {
+                        var colDialog = new FileCollisionDialog();
+                        colDialog.LoadCollision(targetPath, autoNumPath);
+                        colDialog.CollisionResolved += onResolved;
+                        SafeShow(colDialog, dialog ?? desktop.MainWindow);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[FileCollisionDialog] Show error: {ex.Message}");
+                    }
                 };
 
                 addVm.DownloadCreated += newDl =>
                 {
                     mainVm.AddNewDownload(newDl);
-                    mainVm.OpenMonitor(newDl);
+                    if (newDl.Status != Models.DownloadStatus.Queued)
+                    {
+                        mainVm.OpenMonitor(newDl);
+                    }
                 };
-                addVm.RequestClose += () => dialog.Close();
+                addVm.RequestClose += () =>
+                {
+                    try { dialog.Close(); } catch { }
+                };
                 dialog.ShowTransientTopmost();
             };
 
@@ -420,13 +456,20 @@ public partial class App : Application
                 {
                     DataContext = monitorVm
                 };
-                monitorVm.RequestClose += () => monitorWin.Close();
+                monitorVm.RequestClose += () =>
+                {
+                    try { monitorWin.Close(); } catch { }
+                };
                 monitorVm.RequestCompletionView += completedDl =>
                 {
-                    monitorWin.Close();
+                    try { monitorWin.Close(); } catch { }
                     mainVm.OpenInspectorCommand.Execute(completedDl);
                 };
-                monitorWin.Show(); // INDEPENDENT WINDOW
+                monitorWin.Closed += (s, e) =>
+                {
+                    monitorVm.Dispose();
+                };
+                SafeShow(monitorWin);
             };
 
             mainVm.RequestOpenInspector += dl =>
@@ -438,26 +481,31 @@ public partial class App : Application
                 {
                     DataContext = inspectorVm
                 };
-                inspectorVm.RequestClose += () => inspectorWin.Close();
-                inspectorWin.Show(); // INDEPENDENT WINDOW
+                inspectorVm.RequestClose += () =>
+                {
+                    try { inspectorWin.Close(); } catch { }
+                };
+                SafeShow(inspectorWin);
             };
 
             mainVm.RequestOpenMoveRename += dl =>
             {
                 var dialog = new MoveRenameDialog();
+                dialog.MoveRequested = (model, folder, name) => mainVm.MoveDownloadAsync(model, folder, name);
                 dialog.LoadDownload(dl);
-                dialog.Show();
+                SafeShow(dialog, desktop.MainWindow);
             };
 
             mainVm.RequestOpenRefreshLink += dl =>
             {
                 var dialog = new RefreshLinkDialog();
                 dialog.LoadDownload(dl);
-                dialog.LinkRefreshed += (d, newUrl) =>
+                dialog.RefreshRequested = async (d, newUrl) =>
                 {
-                    _ = mainVm.Engine.ResumeDownloadAsync(d.Id, d);
+                    await mainVm.Engine.RefreshDownloadAddressAsync(d, newUrl);
+                    await mainVm.Engine.ResumeDownloadAsync(d.Id, d);
                 };
-                dialog.Show();
+                SafeShow(dialog, desktop.MainWindow);
             };
 
             mainVm.RequestOpenDeleteConfirm += dl =>
@@ -468,7 +516,7 @@ public partial class App : Application
                 {
                     _ = mainVm.DeleteDownloadAsync(d, deleteOnDisk);
                 };
-                dialog.Show();
+                SafeShow(dialog, desktop.MainWindow);
             };
 
             LogStartup("Setting desktop.MainWindow...");
@@ -512,6 +560,48 @@ public partial class App : Application
     public static void RestoreCurrentMainWindow()
     {
         (Current as App)?.RestoreMainWindow();
+    }
+
+    public static bool IsWindowSafeOwner(Window? window)
+    {
+        if (window == null) return false;
+        try
+        {
+            var handle = window.TryGetPlatformHandle()?.Handle;
+            return window.IsVisible && handle.HasValue && handle.Value != IntPtr.Zero;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static void SafeShow(Window window, Window? preferredOwner = null)
+    {
+        try
+        {
+            if (preferredOwner != null && IsWindowSafeOwner(preferredOwner))
+            {
+                try
+                {
+                    window.Show(preferredOwner);
+                    return;
+                }
+                catch (InvalidOperationException)
+                {
+                    // Owner was closed or closing during invocation, fall back to ownerless Show()
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[SafeShow] Owner Show failed: {ex.Message}");
+                }
+            }
+            window.Show();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SafeShow] Window.Show failed: {ex.Message}");
+        }
     }
 
     [DllImport("user32.dll")]

@@ -83,12 +83,13 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        if (!App.IsExiting)
+        if (!App.IsExiting && DataContext is MainViewModel vm && vm.SettingsService.CurrentSettings.CloseToTray)
         {
             e.Cancel = true;
             Hide();
             return;
         }
+        if (!App.IsExiting && global::Avalonia.Application.Current is App app) app.OnExitClicked(null, EventArgs.Empty);
         base.OnClosing(e);
     }
 }

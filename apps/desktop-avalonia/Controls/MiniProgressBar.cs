@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -40,6 +40,42 @@ public class MiniProgressBar : Control
         set => SetValue(TrackBrushProperty, value);
     }
 
+    private static readonly IBrush CompleteBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.Parse("#10B981"), 0.0),
+            new GradientStop(Color.Parse("#059669"), 1.0)
+        }
+    };
+
+    private static readonly IBrush DarkActiveBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.Parse("#38BDF8"), 0.0),
+            new GradientStop(Color.Parse("#2563EB"), 1.0)
+        }
+    };
+
+    private static readonly IBrush LightActiveBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.Parse("#0284C7"), 0.0),
+            new GradientStop(Color.Parse("#1D4ED8"), 1.0)
+        }
+    };
+
+    private static readonly IBrush DarkTrackBrush = new SolidColorBrush(Color.Parse("#252E3A"));
+    private static readonly IBrush LightTrackBrush = new SolidColorBrush(Color.Parse("#CBD5E1"));
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -51,9 +87,7 @@ public class MiniProgressBar : Control
         var trackRect = new RoundedRect(new Rect(0, 0, bounds.Width, bounds.Height), radius);
 
         // 1. Draw track
-        var track = TrackBrush ?? (isDark
-            ? new SolidColorBrush(Color.Parse("#252E3A"))
-            : new SolidColorBrush(Color.Parse("#CBD5E1")));
+        var track = TrackBrush ?? (isDark ? DarkTrackBrush : LightTrackBrush);
         context.DrawRectangle(track, null, trackRect);
 
         // 2. Draw progress fill
@@ -65,38 +99,7 @@ public class MiniProgressBar : Control
 
             using (context.PushClip(trackRect))
             {
-                IBrush fillBrush;
-                if (ProgressBrush != null)
-                {
-                    fillBrush = ProgressBrush;
-                }
-                else if (pct >= 99.9)
-                {
-                    fillBrush = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                        GradientStops =
-                        {
-                            new GradientStop(Color.Parse("#10B981"), 0.0),
-                            new GradientStop(Color.Parse("#059669"), 1.0)
-                        }
-                    };
-                }
-                else
-                {
-                    fillBrush = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                        GradientStops =
-                        {
-                            new GradientStop(isDark ? Color.Parse("#38BDF8") : Color.Parse("#0284C7"), 0.0),
-                            new GradientStop(isDark ? Color.Parse("#2563EB") : Color.Parse("#1D4ED8"), 1.0)
-                        }
-                    };
-                }
-
+                IBrush fillBrush = ProgressBrush ?? (pct >= 99.9 ? CompleteBrush : (isDark ? DarkActiveBrush : LightActiveBrush));
                 context.DrawRectangle(fillBrush, null, fillRect);
             }
         }

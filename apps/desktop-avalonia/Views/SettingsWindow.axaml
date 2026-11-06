@@ -225,8 +225,8 @@
                             <StackPanel Spacing="8">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Grid.Column="0" Spacing="3">
-                                        <TextBlock Text="Global Download Speed Limiter" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
-                                        <TextBlock Text="Throttle aggregate download bandwidth to preserve network for other devices." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
+                                        <TextBlock Text="HTTP Download Speed Limiter" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="Limits SmartDM HTTP workers. Direct FFmpeg streams are not limited." FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
                                     </StackPanel>
                                     <ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableSpeedLimit}" OnContent="" OffContent="" VerticalAlignment="Center" />
                                 </Grid>
@@ -298,7 +298,7 @@
 
                                 <Button IsVisible="{Binding IsUpdateAvailable}" Command="{Binding DownloadAndInstallUpdateCommand}" IsEnabled="{Binding !IsDownloadingUpdate}"
                                         Background="{DynamicResource SuccessColor}" Foreground="White" FontWeight="Bold" Padding="16,9" CornerRadius="6" FontSize="12" HorizontalAlignment="Left">
-                                    <TextBlock Text="{Binding LatestVersion, StringFormat='{}Download &amp; Install Release {0}'}" />
+                                    <TextBlock Text="{Binding LatestVersion, StringFormat='{}Download verified archive Release {0}'}" />
                                 </Button>
                             </StackPanel>
                         </Border>
@@ -397,7 +397,7 @@
                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                     <Image Source="/Assets/SDM_2.0_logo.png" Width="40" Height="40" VerticalAlignment="Center" />
                                     <StackPanel VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="SmartDM 2.0 Pro" FontWeight="ExtraBold" FontSize="16" Foreground="{DynamicResource PrimaryText}" />
+                                        <TextBlock Text="SmartDM 2.0" FontWeight="ExtraBold" FontSize="16" Foreground="{DynamicResource PrimaryText}" />
                                         <TextBlock Text="High-Performance Cross-Platform Parallel Download Engine" FontSize="12" Foreground="{DynamicResource SecondaryText}" />
                                     </StackPanel>
                                 </StackPanel>

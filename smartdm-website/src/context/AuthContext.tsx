@@ -28,8 +28,6 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   resendVerificationEmail: () => Promise<void>;
   updateUserProfileName: (displayName: string) => Promise<void>;
-  loginAsAdmin: () => void;
-  loginAsUser: () => void;
   logout: () => void;
 }
 
@@ -149,28 +147,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Password must be at least 6 characters.');
       }
 
-      try {
-        const userCred = await signInWithEmailAndPassword(auth, email, pass);
-        if (!userCred.user.emailVerified) {
-          setError('Email is not verified yet. Please check your inbox for the verification link.');
-        }
-      } catch (fbErr: any) {
-        if (fbErr.code === 'auth/invalid-api-key' || fbErr.code === 'auth/api-key-not-valid-please-pass-a-valid-api-key.') {
-          const adminCheck = email.toLowerCase().includes('admin');
-          const mockUser: UserProfile = {
-            uid: `usr_demo_${Date.now()}`,
-            email,
-            displayName: email.split('@')[0],
-            photoURL: null,
-            isAdmin: adminCheck,
-            emailVerified: true,
-            role: adminCheck ? 'Admin' : 'User',
-          };
-          setUser(mockUser);
-          setIsAdmin(adminCheck);
-          return;
-        }
-        throw fbErr;
+      const userCred = await signInWithEmailAndPassword(auth, email, pass);
+      if (!userCred.user.emailVerified) {
+        setError('Email is not verified yet. Please check your inbox for the verification link.');
       }
     } catch (err: any) {
       const message = err.message || 'Failed to sign in.';
@@ -192,27 +171,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Password must be at least 6 characters long.');
       }
 
-      try {
-        const userCred = await createUserWithEmailAndPassword(auth, email, pass);
-        await sendEmailVerification(userCred.user);
-      } catch (fbErr: any) {
-        if (fbErr.code === 'auth/invalid-api-key' || fbErr.code === 'auth/api-key-not-valid-please-pass-a-valid-api-key.') {
-          const adminCheck = email.toLowerCase().includes('admin');
-          const mockUser: UserProfile = {
-            uid: `usr_demo_${Date.now()}`,
-            email,
-            displayName: email.split('@')[0],
-            photoURL: null,
-            isAdmin: adminCheck,
-            emailVerified: false,
-            role: adminCheck ? 'Admin' : 'User',
-          };
-          setUser(mockUser);
-          setIsAdmin(adminCheck);
-          return;
-        }
-        throw fbErr;
-      }
+      const userCred = await createUserWithEmailAndPassword(auth, email, pass);
+      await sendEmailVerification(userCred.user);
     } catch (err: any) {
       const message = err.message || 'Failed to create account.';
       setError(message);
@@ -229,22 +189,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await signInWithPopup(auth, googleProvider);
       } catch (fbErr: any) {
-        if (fbErr.code === 'auth/invalid-api-key' || fbErr.code === 'auth/api-key-not-valid-please-pass-a-valid-api-key.' || fbErr.code === 'auth/popup-closed-by-user') {
-          if (fbErr.code === 'auth/popup-closed-by-user') {
-            throw new Error('Google sign-in popup was closed before completing authentication.');
-          }
-          const mockUser: UserProfile = {
-            uid: `usr_google_${Date.now()}`,
-            email: 'user.google@smartdm.org',
-            displayName: 'Google SmartDM User',
-            photoURL: 'https://lh3.googleusercontent.com/a/default-user',
-            isAdmin: false,
-            emailVerified: true,
-            role: 'User',
-          };
-          setUser(mockUser);
-          setIsAdmin(false);
-          return;
+        if (fbErr.code === 'auth/popup-closed-by-user') {
+          throw new Error('Google sign-in popup was closed before completing authentication.');
         }
         throw fbErr;
       }
@@ -264,22 +210,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await signInWithPopup(auth, githubProvider);
       } catch (fbErr: any) {
-        if (fbErr.code === 'auth/invalid-api-key' || fbErr.code === 'auth/api-key-not-valid-please-pass-a-valid-api-key.' || fbErr.code === 'auth/popup-closed-by-user') {
-          if (fbErr.code === 'auth/popup-closed-by-user') {
-            throw new Error('GitHub sign-in popup was closed before completing authentication.');
-          }
-          const mockUser: UserProfile = {
-            uid: `usr_github_${Date.now()}`,
-            email: 'dev.github@smartdm.org',
-            displayName: 'GitHub Developer',
-            photoURL: 'https://github.githubassets.com/images/modules/logos/github-mark.png',
-            isAdmin: false,
-            emailVerified: true,
-            role: 'Contributor',
-          };
-          setUser(mockUser);
-          setIsAdmin(false);
-          return;
+        if (fbErr.code === 'auth/popup-closed-by-user') {
+          throw new Error('GitHub sign-in popup was closed before completing authentication.');
         }
         throw fbErr;
       }
@@ -314,9 +246,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await sendPasswordResetEmail(auth, email);
     } catch (err: any) {
-      if (err.code === 'auth/invalid-api-key' || err.code === 'auth/api-key-not-valid-please-pass-a-valid-api-key.') {
-        return;
-      }
       const message = err.message || 'Failed to send password reset email.';
       setError(message);
       throw err;
@@ -353,34 +282,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginAsAdmin = () => {
-    const adminUser: UserProfile = {
-      uid: 'admin-001',
-      displayName: 'SmartDM Architect',
-      email: 'admin@smartdm.dev',
-      photoURL: null,
-      isAdmin: true,
-      role: 'Admin',
-      emailVerified: true,
-    };
-    setUser(adminUser);
-    setIsAdmin(true);
-  };
-
-  const loginAsUser = () => {
-    const memberUser: UserProfile = {
-      uid: 'user-002',
-      displayName: 'SmartDM Contributor',
-      email: 'dev@smartdm.dev',
-      photoURL: null,
-      isAdmin: false,
-      role: 'Contributor',
-      emailVerified: true,
-    };
-    setUser(memberUser);
-    setIsAdmin(false);
-  };
-
   const logout = () => {
     signOutUser();
   };
@@ -402,8 +303,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resetPassword,
         resendVerificationEmail,
         updateUserProfileName,
-        loginAsAdmin,
-        loginAsUser,
         logout,
       }}
     >

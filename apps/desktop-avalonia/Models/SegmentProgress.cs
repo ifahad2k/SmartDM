@@ -1,35 +1,17 @@
 using System;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace SmartDm.Desktop.Avalonia.Models;
 
-public partial class SegmentProgress : ObservableObject
+public class SegmentProgress
 {
-    [ObservableProperty]
-    private int _segmentIndex;
-
-    [ObservableProperty]
-    private long _startByte;
-
-    [ObservableProperty]
-    private long _endByte;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ProgressPercentage))]
-    private long _downloadedBytes;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(FormattedSpeed))]
-    private double _speedMbps;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(FormattedSpeed))]
-    private bool _isActive;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ProgressPercentage))]
-    [NotifyPropertyChangedFor(nameof(FormattedSpeed))]
-    private bool _isCompleted;
+    public int SegmentIndex { get; set; }
+    public long StartByte { get; set; }
+    public long EndByte { get; set; }
+    public long DownloadedBytes { get; set; }
+    public double SpeedMbps { get; set; }
+    public bool IsActive { get; set; }
+    public bool IsCompleted { get; set; }
+    public string? CheckpointSha256 { get; set; }
 
     public double ProgressPercentage
     {

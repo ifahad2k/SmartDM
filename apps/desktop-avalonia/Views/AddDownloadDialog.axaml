@@ -172,7 +172,7 @@
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <Button Grid.Column="0" Command="{Binding CancelCommand}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Cancel" />
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
-                    <Button Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Add to Queue" />
+                    <Button Command="{Binding AddToQueueCommand}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Add to Queue" />
                     <Button Command="{Binding StartDownloadCommand}" Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="18,8" FontSize="12.5" FontWeight="Bold">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <Image Source="/Assets/Icons/play-white.png" Width="12" Height="12" VerticalAlignment="Center" />

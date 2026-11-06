@@ -11,7 +11,7 @@ namespace SmartDm.Desktop.Avalonia.Views;
 public partial class RefreshLinkDialog : Window
 {
     private DownloadModel? _download;
-    public event Action<DownloadModel, string>? LinkRefreshed;
+    public Func<DownloadModel, string, System.Threading.Tasks.Task>? RefreshRequested { get; set; }
 
     public RefreshLinkDialog()
     {
@@ -56,26 +56,20 @@ public partial class RefreshLinkDialog : Window
         Close();
     }
 
-    private void OnUpdateResumeClicked(object? sender, RoutedEventArgs e)
+    private async void OnUpdateResumeClicked(object? sender, RoutedEventArgs e)
     {
-        string freshUrl = NewUrlBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(freshUrl) || !Uri.TryCreate(freshUrl, UriKind.Absolute, out _))
+        if (_download == null || RefreshRequested == null) return;
+        try
         {
-            StatusMessageText.Text = "Please enter a valid HTTP/HTTPS download link.";
+            IsEnabled = false;
+            await RefreshRequested(_download, NewUrlBox.Text?.Trim() ?? "");
+            Close();
+        }
+        catch (Exception error)
+        {
+            StatusMessageText.Text = error.Message;
             StatusMessageText.Foreground = global::Avalonia.Media.Brushes.OrangeRed;
-            return;
         }
-
-        if (_download != null)
-        {
-            _download.Url = freshUrl;
-            if (Uri.TryCreate(freshUrl, UriKind.Absolute, out var uri))
-            {
-                _download.Domain = uri.Host;
-            }
-            LinkRefreshed?.Invoke(_download, freshUrl);
-        }
-
-        Close();
+        finally { IsEnabled = true; }
     }
 }

@@ -1,0 +1,27 @@
+using System.Collections.Concurrent;
+using System.Net;
+using SmartDm.Desktop.Avalonia.Services;
+
+var limiter = new AggregateSpeedLimiter(1024);
+using (var cancel = new CancellationTokenSource(1200))
+{
+ try { await limiter.ThrottleAsync(2048,cancel.Token); Console.WriteLine("LIMITER granted"); }
+ catch(OperationCanceledException) { Console.WriteLine("CONFIRMED: 1 KiB/s limiter cannot ever grant a 2 KiB read (bucket capped at 1 KiB)"); }
+}
+var cookie = DownloadEngine.FormatCookieHeader(".site-a.invalid\tTRUE\t/\tTRUE\t9999999999\tsession\tREPRO_ONLY", "https://site-b.invalid/file");
+Console.WriteLine("COOKIE isolation: "+(cookie == "session=REPRO_ONLY" ? "CONFIRMED unrelated-domain cookie returned" : "isolated"));
+Console.WriteLine("YouTube classifier: "+YouTubeMediaResolver.IsYouTubeUrl("https://example.invalid/file?v=abcdef12345"));
+using var client = new HttpClient(new DeniedHandler());
+var queue = new ConcurrentQueue<HlsSegmentTask>();
+queue.Enqueue(new HlsSegmentTask { Index=0, Url="https://example.invalid/chunk", TargetPath=Path.Combine(Path.GetTempPath(),"smartdm-review-never-created.ts") });
+using var stop = new CancellationTokenSource();
+var workers = new[] { new SegmentWorker(client,"https://example.invalid/master", "unused",1,0,0),new SegmentWorker(client,"https://example.invalid/master","unused",2,0,0) };
+var tasks=workers.Select(w=>w.ExecuteHlsChunkQueueAsync(queue,()=>false,stop.Token)).ToArray();
+await Task.Delay(1800);
+Console.WriteLine($"HLS terminal failure: queue={queue.Count}, failedWorkers={workers.Count(w=>w.LastError!=null)}, tasksCompleted={tasks.Count(t=>t.IsCompleted)}/2");
+stop.Cancel(); await Task.WhenAll(tasks);
+Console.WriteLine("REPRO END; mock HTTP only, no remote requests");
+sealed class DeniedHandler : HttpMessageHandler
+{
+ protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden));
+}

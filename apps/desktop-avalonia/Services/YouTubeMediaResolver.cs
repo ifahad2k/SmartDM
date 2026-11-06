@@ -30,41 +30,20 @@ public static class YouTubeMediaResolver
 
     public static string? ExtractYouTubeVideoId(string url)
     {
-        if (string.IsNullOrWhiteSpace(url)) return null;
-
-        try
+        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return null;
+        string host = uri.IdnHost.ToLowerInvariant();
+        string? id = null;
+        if (host == "youtu.be") id = uri.AbsolutePath.Trim('/').Split('/')[0];
+        else if (host is "youtube.com" or "www.youtube.com" or "m.youtube.com" or "music.youtube.com" or "www.youtube-nocookie.com")
         {
-            if (Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            if (uri.AbsolutePath == "/watch") id = System.Web.HttpUtility.ParseQueryString(uri.Query)["v"];
+            else
             {
-                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-                string? v = query["v"];
-                if (!string.IsNullOrEmpty(v) && v.Length >= 5) return v;
-
-                if (uri.AbsolutePath.Contains("/shorts/"))
-                {
-                    var segs = uri.AbsolutePath.Split("/shorts/")[1].Split('/');
-                    if (segs.Length > 0 && segs[0].Length >= 5) return segs[0];
-                }
-
-                if (uri.Host.Contains("youtu.be"))
-                {
-                    string id = uri.AbsolutePath.TrimStart('/').Split('?')[0].Split('/')[0];
-                    if (!string.IsNullOrEmpty(id) && id.Length >= 5) return id;
-                }
+                var pieces = uri.AbsolutePath.Trim('/').Split('/');
+                if (pieces.Length == 2 && pieces[0] is "shorts" or "embed" or "live") id = pieces[1];
             }
         }
-        catch { }
-
-        var match = System.Text.RegularExpressions.Regex.Match(url, @"[?&]v=([^&#]+)");
-        if (match.Success && match.Groups[1].Value.Length >= 5) return match.Groups[1].Value;
-
-        var shortMatch = System.Text.RegularExpressions.Regex.Match(url, @"/shorts/([^?&#/]+)");
-        if (shortMatch.Success && shortMatch.Groups[1].Value.Length >= 5) return shortMatch.Groups[1].Value;
-
-        var beMatch = System.Text.RegularExpressions.Regex.Match(url, @"youtu\.be/([^?&#/]+)");
-        if (beMatch.Success && beMatch.Groups[1].Value.Length >= 5) return beMatch.Groups[1].Value;
-
-        return null;
+        return id != null && System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_-]{11}$") ? id : null;
     }
 
     public static bool IsYouTubeUrl(string? url)
@@ -73,7 +52,7 @@ public static class YouTubeMediaResolver
         return !string.IsNullOrEmpty(ExtractYouTubeVideoId(url));
     }
 
-    public static async Task<YouTubeResolveResult> ResolveYouTubeFormatsAsync(string targetUrl)
+    public static async Task<YouTubeResolveResult> ResolveYouTubeFormatsAsync(string targetUrl, bool forceRefresh = false)
     {
         var result = new YouTubeResolveResult();
         string? videoId = ExtractYouTubeVideoId(targetUrl);
@@ -82,7 +61,7 @@ public static class YouTubeMediaResolver
         result.VideoId = videoId;
 
         // Check memory cache first
-        if (_cache.TryGetValue(videoId, out var cached) && DateTime.UtcNow < cached.ExpireAt && cached.Result.Success)
+        if (!forceRefresh && _cache.TryGetValue(videoId, out var cached) && DateTime.UtcNow < cached.ExpireAt && cached.Result.Success)
         {
             return cached.Result;
         }
@@ -100,7 +79,7 @@ public static class YouTubeMediaResolver
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to get stream manifest for {videoId}: {ex.Message}");
+                Console.WriteLine($"[YouTubeMediaResolver] Failed to get stream manifest for {videoId}: {ex.GetType().Name} - {ex.Message}");
                 return result;
             }
 
@@ -128,7 +107,9 @@ public static class YouTubeMediaResolver
             {
                 string qualityLabel = stream.VideoQuality.Label;
                 string ext = stream.Container.Name.ToLowerInvariant();
-                string key = $"{qualityLabel}_{ext}";
+                string videoIdPart = System.Web.HttpUtility.ParseQueryString(new Uri(stream.Url).Query)["itag"] ?? qualityLabel + "_" + ext;
+                string audioIdPart = bestAudioUrl != null ? System.Web.HttpUtility.ParseQueryString(new Uri(bestAudioUrl).Query)["itag"] ?? "unknown" : "none";
+                string key = $"{videoIdPart}_{ext}_{(stream is VideoOnlyStreamInfo ? audioIdPart : "muxed")}";
                 if (!seen.Add(key)) continue;
 
                 long totalBytes = stream.Size.Bytes;
@@ -140,7 +121,7 @@ public static class YouTubeMediaResolver
 
                 list.Add(new MediaFormatDto
                 {
-                    FormatId = qualityLabel,
+                    FormatId = key,
                     Resolution = qualityLabel,
                     Ext = ext,
                     FileSize = totalBytes,
@@ -156,7 +137,7 @@ public static class YouTubeMediaResolver
             {
                 list.Add(new MediaFormatDto
                 {
-                    FormatId = "bestaudio/best",
+                    FormatId = "audio_" + (System.Web.HttpUtility.ParseQueryString(new Uri(bestAudioUrl).Query)["itag"] ?? "unknown"),
                     Resolution = "Audio (MP3 / High Quality)",
                     Ext = "mp3",
                     FileSize = bestAudioSize,

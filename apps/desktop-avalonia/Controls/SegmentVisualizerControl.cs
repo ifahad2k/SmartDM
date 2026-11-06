@@ -25,8 +25,6 @@ public class SegmentVisualizerControl : Control
 
     private INotifyCollectionChanged? _subscribedCollection;
     private readonly List<INotifyPropertyChanged> _subscribedItems = new();
-    private readonly DispatcherTimer _shimmerTimer;
-    private double _shimmerPhase = 0;
 
     static SegmentVisualizerControl()
     {
@@ -35,27 +33,17 @@ public class SegmentVisualizerControl : Control
 
     public SegmentVisualizerControl()
     {
-        _shimmerTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Background, (s, e) =>
-        {
-            if (Segments != null && Segments.Any(m => m.IsActive))
-            {
-                _shimmerPhase = (_shimmerPhase + 0.04) % 1.0;
-                InvalidateVisual();
-            }
-        });
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         SubscribeToSegments(Segments);
-        _shimmerTimer.Start();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
-        _shimmerTimer.Stop();
         UnsubscribeFromSegments();
     }
 
@@ -125,12 +113,51 @@ public class SegmentVisualizerControl : Control
         Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Background);
     }
 
+    private static readonly IBrush CompleteBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.Parse("#10B981"), 0.0),
+            new GradientStop(Color.Parse("#059669"), 1.0)
+        }
+    };
+
+    private static readonly IBrush DarkActiveBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.Parse("#38BDF8"), 0.0),
+            new GradientStop(Color.Parse("#2563EB"), 1.0)
+        }
+    };
+
+    private static readonly IBrush LightActiveBrush = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.Parse("#0284C7"), 0.0),
+            new GradientStop(Color.Parse("#1D4ED8"), 1.0)
+        }
+    };
+
+    private static readonly IBrush DarkIdleBrush = new SolidColorBrush(Color.FromArgb(140, 59, 130, 246));
+    private static readonly IBrush LightIdleBrush = new SolidColorBrush(Color.FromArgb(150, 37, 99, 235));
+    private static readonly IBrush DarkBgBrush = new SolidColorBrush(Color.Parse("#1A222C"));
+    private static readonly IBrush LightBgBrush = new SolidColorBrush(Color.Parse("#E2E8F0"));
+    private static readonly IPen DarkBorderPen = new Pen(new SolidColorBrush(Color.Parse("#2D3748")), 1.0);
+    private static readonly IPen LightBorderPen = new Pen(new SolidColorBrush(Color.Parse("#CBD5E1")), 1.0);
+
     private void OnItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ThreadMetric.Progress) ||
             e.PropertyName == nameof(ThreadMetric.IsActive) ||
-            e.PropertyName == nameof(ThreadMetric.IsCompleted) ||
-            e.PropertyName == nameof(ThreadMetric.SpeedMbps))
+            e.PropertyName == nameof(ThreadMetric.IsCompleted))
         {
             Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Background);
         }
@@ -150,40 +177,10 @@ public class SegmentVisualizerControl : Control
         double cornerRadius = Math.Min(3.0, bounds.Height / 3.0);
 
         bool isDark = Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
-
-        var bgBrush = isDark
-            ? new SolidColorBrush(Color.Parse("#1A222C"))
-            : new SolidColorBrush(Color.Parse("#E2E8F0"));
-
-        var borderPen = isDark
-            ? new Pen(new SolidColorBrush(Color.Parse("#2D3748")), 1.0)
-            : new Pen(new SolidColorBrush(Color.Parse("#CBD5E1")), 1.0);
-
-        var completeBrush = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Color.Parse("#10B981"), 0.0),
-                new GradientStop(Color.Parse("#059669"), 1.0)
-            }
-        };
-
-        var activeBrush = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(isDark ? Color.Parse("#38BDF8") : Color.Parse("#0284C7"), 0.0),
-                new GradientStop(isDark ? Color.Parse("#2563EB") : Color.Parse("#1D4ED8"), 1.0)
-            }
-        };
-
-        var idleFillBrush = isDark
-            ? new SolidColorBrush(Color.FromArgb(140, 59, 130, 246))
-            : new SolidColorBrush(Color.FromArgb(150, 37, 99, 235));
+        var bgBrush = isDark ? DarkBgBrush : LightBgBrush;
+        var borderPen = isDark ? DarkBorderPen : LightBorderPen;
+        var activeBrush = isDark ? DarkActiveBrush : LightActiveBrush;
+        var idleFillBrush = isDark ? DarkIdleBrush : LightIdleBrush;
 
         for (int i = 0; i < count; i++)
         {
@@ -207,26 +204,8 @@ public class SegmentVisualizerControl : Control
 
                 using (context.PushClip(roundedSlot))
                 {
-                    IBrush brush = isCompleted ? completeBrush : (isActive ? activeBrush : idleFillBrush);
+                    IBrush brush = isCompleted ? CompleteBrush : (isActive ? activeBrush : idleFillBrush);
                     context.DrawRectangle(brush, null, fillRect);
-
-                    // 3. Active Stream Shimmer Wave
-                    if (isActive)
-                    {
-                        double shimmerOffset = ((_shimmerPhase + (i * 0.12)) % 1.0) * (slotWidth + 14.0) - 7.0;
-                        var shimmerBrush = new LinearGradientBrush
-                        {
-                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                            EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                            GradientStops =
-                            {
-                                new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.0),
-                                new GradientStop(Color.FromArgb(170, 255, 255, 255), 0.5),
-                                new GradientStop(Color.FromArgb(0, 255, 255, 255), 1.0)
-                            }
-                        };
-                        context.DrawRectangle(shimmerBrush, null, new Rect(x + shimmerOffset - 4, 0, 8, bounds.Height));
-                    }
                 }
             }
         }

@@ -3,14 +3,17 @@ using System.Threading.Tasks;
 
 namespace SmartDm.Desktop.Avalonia.Services;
 
+public enum SafetyVerdict { NotScanned, NoThreatsDetected, Suspicious, MalwareDetected, ScannerUnavailable, ScanFailed }
+
 public class SafetyScanResult
 {
-    public bool IsClean { get; set; } = true;
+    public bool IsClean { get; set; } = false;
+    public SafetyVerdict Verdict { get; set; } = SafetyVerdict.NotScanned;
     public string Sha256Hash { get; set; } = string.Empty;
     public string Md5Hash { get; set; } = string.Empty;
     public bool HasThreat { get; set; } = false;
     public string ThreatDetails { get; set; } = string.Empty;
-    public string ScannerName { get; set; } = "SmartDM Local Engine";
+    public string ScannerName { get; set; } = "Not scanned";
     public bool IsQuarantined { get; set; } = false;
 }
 

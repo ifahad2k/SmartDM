@@ -1,6 +1,17 @@
 const NATIVE_HOST_NAME = 'io.smartdm.host';
 const detectedMediaMap = new Map(); // tabId -> Array<{ url, type, contentType, contentLength }>
 const tabUrlMap = new Map(); // tabId -> url
+const tabTitleMap = new Map(); // tabId -> title
+const probedM3u8Urls = new Set(); // url -> boolean (prevents duplicate manifest probing loops)
+function shouldProbeM3u8(url) {
+  if (!url || probedM3u8Urls.has(url)) return false;
+  probedM3u8Urls.add(url);
+  if (probedM3u8Urls.size > 200) {
+    const first = probedM3u8Urls.keys().next().value;
+    probedM3u8Urls.delete(first);
+  }
+  return true;
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -22,7 +33,20 @@ if (chrome.tabs && chrome.tabs.onActivated) {
 if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tab && tab.url) {
+      const oldUrl = tabUrlMap.get(tabId);
       tabUrlMap.set(tabId, tab.url);
+      if (oldUrl && tab.url !== oldUrl) {
+        try {
+          const oldU = new URL(oldUrl);
+          const newU = new URL(tab.url);
+          if (oldU.origin !== newU.origin || (oldU.pathname !== newU.pathname && !tab.url.includes('facebook.com') && !oldUrl.includes('facebook.com'))) {
+            detectedMediaMap.delete(tabId);
+          }
+        } catch(e) {}
+      }
+    }
+    if (tab && tab.title) {
+      tabTitleMap.set(tabId, tab.title);
     }
   });
 }
@@ -31,6 +55,11 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
 chrome.tabs.onRemoved.addListener((tabId) => {
   detectedMediaMap.delete(tabId);
   tabUrlMap.delete(tabId);
+  tabTitleMap.delete(tabId);
+  if (broadcastDebounceTimers.has(tabId)) {
+    clearTimeout(broadcastDebounceTimers.get(tabId));
+    broadcastDebounceTimers.delete(tabId);
+  }
 });
 
 function isOpaqueTokenOrHash(str) {
@@ -81,6 +110,207 @@ function parseFacebookEfg(rawUrl) {
   return null;
 }
 
+function normalizeVideoResolution(width, height) {
+  let w = parseInt(width, 10) || 0;
+  let h = parseInt(height, 10) || 0;
+  if (w > 0 && h > 0 && w < h) {
+    const tmp = w; w = h; h = tmp;
+  }
+  let normW = 0;
+  if (w > 0) {
+    if (w >= 3400) normW = 2160;
+    else if (w >= 2300) normW = 1440;
+    else if (w >= 1700) normW = 1080;
+    else if (w >= 1100) normW = 720;
+    else if (w >= 780) normW = 480;
+    else if (w >= 540) normW = 360;
+    else if (w >= 360) normW = 240;
+    else normW = 144;
+  }
+  let normH = 0;
+  if (h > 0) {
+    if (h >= 1800) normH = 2160;
+    else if (h >= 1300) normH = 1440;
+    else if (h >= 760) normH = 1080;
+    else if (h >= 500) normH = 720;
+    else if (h >= 400) normH = 480;
+    else if (h >= 260) normH = 360;
+    else if (h >= 160) normH = 240;
+    else normH = 144;
+  }
+  return Math.max(normW, normH);
+}
+
+function extractResolutionNumber(url, title = '') {
+  if (!url && !title) return 0;
+  const str = `${title || ''} ${url || ''}`.toLowerCase();
+
+  // 1. Explicit dimensions (e.g. 1920x1080, 1920x800, 1280x720, 1280x534, 3840x2160, 2560x1440, 854x480, 640x360, 640x266)
+  const dimMatch = str.match(/(?:^|[^0-9a-z])(\d{3,4})x(\d{3,4})(?=[^0-9a-z]|$)/i);
+  if (dimMatch) {
+    const norm = normalizeVideoResolution(dimMatch[1], dimMatch[2]);
+    if (norm > 0) return norm;
+  }
+
+  // 2. Explicit pixel heights with p suffix (e.g. 2160p, 1440p, 1080p, 720p, 540p, 480p, 360p, 240p)
+  const pMatch = str.match(/(?:^|[^0-9a-z])(2160|1440|1080|720|540|480|360|240)p(?=[^0-9a-z]|$)/i);
+  if (pMatch) {
+    return normalizeVideoResolution(0, pMatch[1]);
+  }
+
+  // 3. Named parameters or tags: quality=1080, res=720, height=1080, q=720, label=1080
+  const paramMatch = str.match(/[?&/_\-.](?:quality|res|resolution|height|h|q)[=_/\-]?(\d{3,4})\b/i);
+  if (paramMatch) {
+    const h = parseInt(paramMatch[1], 10);
+    const norm = normalizeVideoResolution(0, h);
+    if (norm > 0) return norm;
+  }
+
+  // 4. Isolated path/filename components: /1080/, /720/, _1080., -1080., .1080.
+  const pathNumMatch = str.match(/[/\-_](2160|1440|1080|720|540|480|360|240)(?=[/\-_.]|$)/);
+  if (pathNumMatch) {
+    return normalizeVideoResolution(0, pathNumMatch[1]);
+  }
+
+  // 5. Look for standalone resolution words
+  if (/\b(?:4k|uhd)\b/i.test(str)) return 2160;
+  if (/\b(?:2k|qhd)\b/i.test(str)) return 1440;
+  if (/\b(?:1080|fhd|full[\s_.-]?hd)\b/i.test(str)) return 1080;
+  if (/\b(?:720|hd)\b/i.test(str) && !str.includes('full hd') && !str.includes('full-hd') && !str.includes('full_hd')) return 720;
+  if (/\b(?:480|sd)\b/i.test(str)) return 480;
+  if (/\b360\b/i.test(str)) return 360;
+
+  // 6. Common CDN format tier indices (e.g. index-f1.m3u8, stream-f2, video_f1, /f1.m3u8, etc.)
+  const tierMatch = str.match(/[/\-_](?:index|stream|video|track)?[-_]?f([1-5])(?:\.m3u8|\b)/i);
+  if (tierMatch) {
+    const tier = parseInt(tierMatch[1], 10);
+    if (tier === 1) return 1080;
+    if (tier === 2) return 720;
+    if (tier === 3) return 480;
+    if (tier === 4) return 360;
+    if (tier === 5) return 240;
+  }
+
+  return 0;
+}
+
+function getResolutionLabel(height, ext = 'MP4', isAudio = false) {
+  if (isAudio) return `Audio Stream (${ext.toUpperCase()})`;
+  const normH = normalizeVideoResolution(0, height) || height;
+  const outExt = ext.toUpperCase() === 'M3U8' ? 'MP4' : ext.toUpperCase();
+  if (normH >= 2160) return `4K UHD (2160p) (${outExt})`;
+  if (normH >= 1440) return `2K QHD (1440p) (${outExt})`;
+  if (normH >= 1080) return `1080p Full HD (${outExt})`;
+  if (normH >= 720) return `720p HD (${outExt})`;
+  if (normH === 640) return `640p (${outExt})`;
+  if (normH === 540) return `540p (${outExt})`;
+  if (normH >= 480) return `480p SD (${outExt})`;
+  if (normH >= 360) return `360p SD (${outExt})`;
+  if (normH > 0) return `${normH}p (${outExt})`;
+  return `Video Stream (${outExt})`;
+}
+
+const broadcastDebounceTimers = new Map();
+function broadcastNewMedia(tabId, mediaList) {
+  if (!tabId || tabId <= 0) return;
+  if (broadcastDebounceTimers.has(tabId)) {
+    clearTimeout(broadcastDebounceTimers.get(tabId));
+  }
+  broadcastDebounceTimers.set(tabId, setTimeout(() => {
+    broadcastDebounceTimers.delete(tabId);
+    try {
+      chrome.tabs.sendMessage(tabId, {
+        type: 'SMARTDM_MEDIA_DETECTED',
+        tabId: tabId,
+        mediaList: mediaList || []
+      }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    } catch (e) {}
+  }, 250));
+}
+
+async function fetchM3u8Text(url, referrer, initiator = null) {
+  if (!url) return null;
+  // Strategy 1: try with iframe initiator (e.g. https://megaplay.xyz/) which matches CDN anti-hotlink check
+  if (initiator && initiator.startsWith('http')) {
+    try {
+      const initRef = initiator.endsWith('/') ? initiator : initiator + '/';
+      const res = await fetch(url, { referrer: initRef });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('#EXTM3U')) return text;
+      }
+    } catch(e) {}
+  }
+
+  // Strategy 2: try with tab referrer
+  if (referrer && referrer.startsWith('http') && !referrer.startsWith('chrome') && !referrer.startsWith('moz')) {
+    try {
+      const res = await fetch(url, { referrer: referrer });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('#EXTM3U')) return text;
+      }
+    } catch (e) {}
+  }
+
+  // Strategy 3: try with no-referrer
+  try {
+    const res = await fetch(url, { referrerPolicy: 'no-referrer' });
+    if (res.ok) {
+      const text = await res.text();
+      if (text && text.includes('#EXTM3U')) return text;
+    }
+  } catch (e) {}
+
+  // Strategy 4: plain default fetch (extension background host_permissions grants cross-origin access)
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const text = await res.text();
+      if (text && text.includes('#EXTM3U')) return text;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+function inheritQueryTokens(targetUrl, sourceUrl) {
+  if (!targetUrl || !sourceUrl || !sourceUrl.includes('?')) return targetUrl;
+  try {
+    const targetParsed = new URL(targetUrl);
+    const sourceParsed = new URL(sourceUrl);
+    if (!targetParsed.search) {
+      targetParsed.search = sourceParsed.search;
+      return targetParsed.href;
+    }
+    for (const [k, v] of sourceParsed.searchParams.entries()) {
+      if (!targetParsed.searchParams.has(k)) {
+        targetParsed.searchParams.set(k, v);
+      }
+    }
+    return targetParsed.href;
+  } catch (e) {
+    return targetUrl;
+  }
+}
+
+// Universal stream directory token cache: maps host+path directory to latest security tokens / query string
+const streamTokenCache = new Map();
+
+function getStreamDirectoryKey(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  try {
+    const u = new URL(rawUrl);
+    const lastSlash = u.pathname.lastIndexOf('/');
+    const dirPath = lastSlash >= 0 ? u.pathname.substring(0, lastSlash + 1) : u.pathname;
+    return `${u.hostname}${dirPath}`.toLowerCase();
+  } catch(e) {
+    return '';
+  }
+}
+
 function parseM3u8Formats(m3u8Text, baseUrl) {
   const lines = m3u8Text.split('\n');
   const formats = [];
@@ -100,38 +330,72 @@ function parseM3u8Formats(m3u8Text, baseUrl) {
       let streamUrl = line;
       if (!streamUrl.startsWith('http')) {
         try {
-          streamUrl = new URL(streamUrl, baseUrl).href;
+          const resolved = new URL(streamUrl, baseUrl);
+          streamUrl = resolved.href;
         } catch (e) {}
       }
+      streamUrl = inheritQueryTokens(streamUrl, baseUrl);
       
       let height = 0;
       if (currentInfo.resolution) {
         const parts = currentInfo.resolution.split('x');
-        if (parts.length === 2) height = parseInt(parts[1], 10);
+        if (parts.length === 2) height = normalizeVideoResolution(parts[0], parts[1]);
+      }
+      if (height === 0) {
+        height = extractResolutionNumber(streamUrl, currentInfo.name || '');
+      }
+      if (height === 0 && currentInfo.bandwidth > 0) {
+        const bw = currentInfo.bandwidth;
+        if (bw >= 3800000) height = 1080;
+        else if (bw >= 1800000) height = 720;
+        else if (bw >= 900000) height = 480;
+        else if (bw >= 450000) height = 360;
+        else height = 240;
       }
 
-      let label = currentInfo.name || (height > 0 ? `${height}p` : 'Video');
-      if (height >= 720 && !label.includes('HD')) label += ' HD';
+      let label = getResolutionLabel(height, 'MP4');
+      if (!label || label.startsWith('Video Stream')) {
+        label = currentInfo.name || (height > 0 ? `${height}p HD (MP4)` : 'Video (MP4)');
+      }
       
-      let badge = 'Stream';
-      if (currentInfo.bandwidth) {
+      let badge = height > 0 ? `${height}p` : 'Stream';
+      if (currentInfo.bandwidth && height <= 0) {
         const kbps = Math.round(currentInfo.bandwidth / 1000);
         badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
       }
 
       formats.push({
+        formatId: height > 0 ? `m3u8_${height}p` : `m3u8_stream_${formats.length}`,
         title: label,
+        resolution: label,
+        ext: 'mp4',
         badge: badge,
         url: streamUrl,
+        directUrl: streamUrl,
         height: height,
-        bandwidth: currentInfo.bandwidth || 0
+        bandwidth: currentInfo.bandwidth || 0,
+        isAudioOnly: false
       });
       currentInfo = null;
     }
   }
 
-  formats.sort((a, b) => b.height - a.height || b.bandwidth - a.bandwidth);
-  return formats;
+  formats.sort((a, b) => (b.height - a.height) || (b.bandwidth - a.bandwidth));
+
+  // Deduplicate by height keeping highest bandwidth variant
+  const uniqueFormats = [];
+  const seenH = new Set();
+  for (const f of formats) {
+    if (f.height > 0) {
+      if (!seenH.has(f.height)) {
+        seenH.add(f.height);
+        uniqueFormats.push(f);
+      }
+    } else {
+      uniqueFormats.push(f);
+    }
+  }
+  return uniqueFormats;
 }
 
 function extractDashManifestFromText(text, targetVideoId = null) {
@@ -239,7 +503,7 @@ function parseMpdFormats(mpdText, baseUrl) {
         if (mediaUrl && mediaUrl.startsWith('http')) {
           mediaUrl = sanitizeStreamUrl(mediaUrl);
           if (isVideo) {
-            const effH = (width > 0 && height > 0) ? Math.min(width, height) : (height || width);
+            const effH = normalizeVideoResolution(width, height) || ((width > 0 && height > 0) ? Math.min(width, height) : (height || width));
             videoReps.push({ effectiveHeight: effH, width, height, bandwidth, url: mediaUrl });
           } else if (isAudio) {
             if (!audioUrl || bandwidth > audioBw) {
@@ -313,6 +577,178 @@ function parseMpdFormats(mpdText, baseUrl) {
   return formats;
 }
 
+// Universal cache of authentic browser request headers for stream URLs and domains
+const streamHeadersCache = new Map(); // url -> { referer, origin, userAgent, cookie }
+const domainHeadersCache = new Map(); // domain -> { referer, origin, userAgent, cookie }
+
+function getCachedStreamHeaders(url) {
+  if (!url) return null;
+  if (streamHeadersCache.has(url)) return streamHeadersCache.get(url);
+  try {
+    const parsed = new URL(url);
+    const domain = parsed.hostname;
+    if (domainHeadersCache.has(domain)) return domainHeadersCache.get(domain);
+    const parts = domain.split('.');
+    if (parts.length > 2) {
+      const rootDomain = parts.slice(-2).join('.');
+      if (domainHeadersCache.has(rootDomain)) return domainHeadersCache.get(rootDomain);
+    }
+  } catch(e) {}
+  return null;
+}
+
+if (chrome.webRequest && chrome.webRequest.onSendHeaders) {
+  const onSendHandler = (details) => {
+    try {
+      const u = details.url;
+      if (!u || !u.startsWith('http')) return;
+
+      // Fast-path filter out static web assets that have no relevance to media headers
+      if (/\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?|ttf|eot|map|json)(\?|$)/i.test(u) || u.includes('/rsrc.php/')) {
+        return;
+      }
+
+      let referer = null;
+      let origin = null;
+      let userAgent = null;
+      let cookie = null;
+
+      if (details.requestHeaders) {
+        for (const h of details.requestHeaders) {
+          const n = h.name.toLowerCase();
+          if (n === 'referer') referer = h.value;
+          else if (n === 'origin') origin = h.value;
+          else if (n === 'user-agent') userAgent = h.value;
+          else if (n === 'cookie') cookie = h.value;
+        }
+      }
+
+      if (!referer && details.initiator && details.initiator.startsWith('http')) {
+        referer = details.initiator.endsWith('/') ? details.initiator : details.initiator + '/';
+      }
+      if (!origin && referer) {
+        try { origin = new URL(referer).origin; } catch(e) {}
+      }
+
+      if (referer || origin || cookie) {
+        const headerData = { referer, origin, userAgent, cookie };
+        streamHeadersCache.set(u, headerData);
+        if (streamHeadersCache.size > 200) {
+          const firstKey = streamHeadersCache.keys().next().value;
+          streamHeadersCache.delete(firstKey);
+        }
+
+        try {
+          const parsed = new URL(u);
+          const domain = parsed.hostname;
+          domainHeadersCache.set(domain, headerData);
+          const parts = domain.split('.');
+          if (parts.length > 2) {
+            domainHeadersCache.set(parts.slice(-2).join('.'), headerData);
+          }
+          if (domainHeadersCache.size > 100) {
+            const firstKey = domainHeadersCache.keys().next().value;
+            domainHeadersCache.delete(firstKey);
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+  };
+
+  try {
+    chrome.webRequest.onSendHeaders.addListener(
+      onSendHandler,
+      { urls: ['<all_urls>'] },
+      ['requestHeaders', 'extraHeaders']
+    );
+  } catch(e) {
+    try {
+      chrome.webRequest.onSendHeaders.addListener(
+        onSendHandler,
+        { urls: ['<all_urls>'] },
+        ['requestHeaders']
+      );
+    } catch(e2) {}
+  }
+}
+
+function pushToMediaList(mediaList, newItem) {
+  if (!mediaList || !newItem || !newItem.url) return;
+  const isNewAudio = !!newItem.isAudio || (newItem.contentType && newItem.contentType.includes('audio/'));
+  const isFb = !!newItem.fbVideoId || (newItem.url && (newItem.url.includes('fbcdn.net') || newItem.url.includes('facebook.com') || newItem.url.includes('fbsbx.com')));
+  const isHls = (newItem.contentType && newItem.contentType.includes('mpegurl')) || (newItem.url && newItem.url.includes('.m3u8'));
+
+  const existingIdx = mediaList.findIndex((m) => {
+    if (m.url === newItem.url) return true;
+    const isMAudio = !!m.isAudio || (m.contentType && m.contentType.includes('audio/'));
+    if (isNewAudio !== isMAudio) return false;
+
+    // For Facebook media: deduplicate only if exact same fbVideoId and same audio/video track role
+    if (isFb && newItem.fbVideoId && m.fbVideoId) {
+      return m.fbVideoId === newItem.fbVideoId;
+    }
+
+    // For HLS manifests: only consolidate unknown variant child manifests belonging to same playlist
+    if (isHls && (m.contentType?.includes('mpegurl') || m.url?.includes('.m3u8'))) {
+      if ((!newItem.height || newItem.height <= 0) && (!m.height || m.height <= 0)) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  if (existingIdx >= 0) {
+    const existing = mediaList[existingIdx];
+    if (newItem.height > 0 && (!existing.height || existing.height <= 0)) {
+      existing.height = newItem.height;
+      existing.customBadge = newItem.customBadge || `${newItem.height}p`;
+    }
+    if (newItem.url && existing.url !== newItem.url) {
+      if (newItem.height > (existing.height || 0)) {
+        existing.url = newItem.url;
+        existing.height = newItem.height;
+        existing.customBadge = newItem.customBadge || `${newItem.height}p`;
+      }
+    }
+    if (newItem.contentLength > 0 && (!existing.contentLength || existing.contentLength <= 0)) {
+      existing.contentLength = newItem.contentLength;
+    }
+    if (newItem.fbVideoId && !existing.fbVideoId) {
+      existing.fbVideoId = newItem.fbVideoId;
+    }
+    if (newItem.pageReelId && !existing.pageReelId) {
+      existing.pageReelId = newItem.pageReelId;
+    }
+    if (newItem.customTitle && (!existing.customTitle || isGenericTitle(existing.customTitle))) {
+      existing.customTitle = newItem.customTitle;
+      existing.filename = newItem.filename;
+    }
+    if (newItem.referer && !existing.referer) existing.referer = newItem.referer;
+    if (newItem.origin && !existing.origin) existing.origin = newItem.origin;
+    existing.timestamp = Date.now();
+    return;
+  }
+
+  // Only drop unresolvable child manifests if we already have explicit HLS resolutions for this playlist
+  if (isHls && !isNewAudio && (!newItem.height || newItem.height <= 0)) {
+    const hasExplicit = mediaList.some(m => !m.isAudio && m.height > 0 && (m.contentType?.includes('mpegurl') || m.url?.includes('.m3u8')));
+    if (hasExplicit) return;
+  }
+
+  const maxItems = 40;
+  if (mediaList.length >= maxItems) {
+    let evictIdx = mediaList.findIndex((m) => !m.contentType?.includes('mpegurl') && (!m.height || m.height <= 0) && !m.fbVideoId);
+    if (evictIdx < 0) {
+      evictIdx = mediaList.findIndex((m) => !m.contentType?.includes('mpegurl'));
+    }
+    if (evictIdx < 0) {
+      evictIdx = 0;
+    }
+    mediaList.splice(evictIdx, 1);
+  }
+  mediaList.push(newItem);
+}
+
 // Intercept network requests for video/audio streams
 if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
   chrome.webRequest.onHeadersReceived.addListener(
@@ -349,13 +785,19 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         return;
       }
 
-      // Exclude web assets, images, scripts, stylesheets, fonts, archives, torrents, executables
-      if (contentType.includes('image/')) return;
+      // Explicitly ignore Facebook static assets (scripts, styles, wasm, UI icons)
+      if (url.includes('static.xx.fbcdn.net') || url.includes('/rsrc.php/')) {
+        return;
+      }
+
+      // Exclude web assets, images, scripts, stylesheets, fonts, archives, torrents, executables, wasm
+      if (contentType.includes('image/') || contentType.includes('wasm') || contentType.includes('javascript') || contentType.includes('text/css')) return;
       const isNonMediaAsset = url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
                               url.includes('.html') || url.includes('.ico') || url.includes('.webmanifest') ||
+                              url.includes('.wasm') || url.includes('.map') ||
                               url.includes('.torrent') || url.includes('.rar') ||
                               url.includes('.zip') || url.includes('.7z') || url.includes('.tar') ||
                               url.includes('.gz') || url.includes('.iso') || url.includes('.exe') ||
@@ -378,11 +820,54 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
       // Filter out HLS/DASH segment chunks (preserve full stream URLs)
       const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
-      const isSegmentChunk = (url.includes('.ts') && (url.includes('/seg') || url.includes('fragment') || url.includes('chunk') || url.includes('sq/'))) ||
-                             (url.includes('.m4s') && !url.includes('master'));
+      const isM3u8OrMpd = url.includes('.m3u8') || url.includes('.mpd');
+      const isSegmentChunk = !isGoogleVideo && !isM3u8OrMpd && !isFbMedia && (
+        /\.ts(\?|$)/i.test(url) ||
+        /\.m4s(\?|$)/i.test(url) ||
+        /\.f4m(\?|$)/i.test(url) ||
+        /\.f4f(\?|$)/i.test(url) ||
+        contentType.includes('video/mp2t') ||
+        contentType.includes('video/iso.segment') ||
+        contentType.includes('audio/mp4a-latm') ||
+        url.includes('/seg-') ||
+        url.includes('/segment') ||
+        url.includes('/chunk') ||
+        url.includes('/fragment') ||
+        url.includes('sq/') ||
+        url.includes('/init.mp4') ||
+        url.includes('-init.mp4') ||
+        url.includes('/cmfv') ||
+        url.includes('/cmfa')
+      );
       if (isSegmentChunk) return;
 
+      // Filter out subtitle files, captions, and DRM/key files
+      if (url.includes('.vtt') || url.includes('.srt') || url.includes('.key') || url.includes('/sub/') || url.includes('/subs/') || url.includes('subtitle')) return;
+
       let targetUrl = sanitizeStreamUrl(details.url);
+
+      // Maintain directory-level token cache across variant streams & segment manifests
+      const dirKey = getStreamDirectoryKey(targetUrl);
+      if (dirKey) {
+        if (targetUrl.includes('?') && (targetUrl.includes('token=') || targetUrl.includes('sig=') || targetUrl.includes('auth=') || targetUrl.includes('h=') || targetUrl.includes('expires=') || targetUrl.length > 40)) {
+          try {
+            const u = new URL(targetUrl);
+            if (u.search && u.search.length > 1) {
+              streamTokenCache.set(dirKey, u.search);
+              if (streamTokenCache.size > 100) {
+                const firstKey = streamTokenCache.keys().next().value;
+                streamTokenCache.delete(firstKey);
+              }
+            }
+          } catch(e) {}
+        } else if (!targetUrl.includes('?')) {
+          const cachedToken = streamTokenCache.get(dirKey);
+          if (cachedToken) {
+            targetUrl += cachedToken;
+          }
+        }
+      }
+
       if (isGoogleVideo) {
         if (!contentLength || contentLength === 0) {
           const clenMatch = targetUrl.match(/[?&]clen=(\d+)/);
@@ -401,7 +886,16 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
                          url.includes('.avi') || url.includes('.mkv');
 
-      const isFbStream = isFbMedia && (url.includes('/v/') || url.includes('video') || url.includes('bytestart') || url.includes('efg') || url.includes('.mp4') || url.includes('audio') || contentType.includes('video/') || contentType.includes('audio/'));
+      const isFbStream = isFbMedia && !url.includes('static.xx.fbcdn.net') && !url.includes('/rsrc.php/') && !url.includes('.wasm') && (
+        contentType.includes('video/') ||
+        contentType.includes('audio/') ||
+        url.includes('.mp4') ||
+        url.includes('.m4a') ||
+        url.includes('.webm') ||
+        url.includes('.m3u8') ||
+        url.includes('.mpd') ||
+        ((url.includes('video.') || url.includes('video-') || url.includes('/v/t')) && (url.includes('bytestart') || url.includes('.mp4') || contentType.startsWith('video/')))
+      );
 
       if (isMediaMime || isMediaExt || isGoogleVideo || isFbStream) {
         if (!detectedMediaMap.has(targetTabId)) {
@@ -409,7 +903,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
         const mediaList = detectedMediaMap.get(targetTabId);
 
-        const tabUrl = tabUrlMap.get(targetTabId) || details.initiator || null;
+        const initiatorUrl = details.initiator || null;
+        const tabUrl = tabUrlMap.get(targetTabId) || initiatorUrl || null;
         const fetchOpts = {};
         if (tabUrl && !tabUrl.startsWith('chrome') && !tabUrl.startsWith('moz')) {
           fetchOpts.referrer = tabUrl;
@@ -417,39 +912,234 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
         // If this is an m3u8 playlist, fetch and parse variants BEFORE adding to mediaList
         if (targetUrl.includes('.m3u8')) {
-          fetch(targetUrl, fetchOpts)
-            .then((r) => r.text())
-            .then((text) => {
-              if (text.includes('#EXT-X-STREAM-INF')) {
-                const variants = parseM3u8Formats(text, targetUrl);
-                variants.forEach((v) => {
-                  if (!mediaList.some((m) => m.url === v.url)) {
-                    if (mediaList.length >= 35) mediaList.shift();
-                    mediaList.push({
-                      url: v.url,
-                      contentType: 'application/x-mpegurl',
-                      contentLength: 0,
-                      filename: v.title + '.mp4',
-                      customTitle: v.title,
-                      customBadge: v.badge
-                    });
-                  }
-                });
-              } else {
-                if (!mediaList.some((m) => m.url === targetUrl)) {
-                  if (mediaList.length >= 35) mediaList.shift();
-                  mediaList.push({
-                    url: targetUrl,
-                    contentType: 'application/x-mpegurl',
-                    contentLength: contentLength,
-                    filename: getFilenameFromUrl(targetUrl),
-                    customTitle: 'HLS Video Stream',
-                    customBadge: 'HLS Stream'
-                  });
+          if (!shouldProbeM3u8(targetUrl)) return;
+          (async () => {
+            const cachedH = getCachedStreamHeaders(targetUrl);
+            const itemReferer = (cachedH && cachedH.referer) || initiatorUrl || tabUrl || null;
+            const itemOrigin = (cachedH && cachedH.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+
+            const rawTabTitle = targetTabId ? tabTitleMap.get(targetTabId) : null;
+            const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+            const authoritativeTabTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
+
+            let text = await fetchM3u8Text(targetUrl, tabUrl, itemReferer || initiatorUrl);
+
+            // If this is a child playlist (media playlist with chunks) or initial fetch was empty,
+            // probe parent path or master.m3u8 in same folder
+            if ((text && !text.includes('#EXT-X-STREAM-INF') && text.includes('#EXTINF')) || !text) {
+              const candidates = [];
+              const addCand = (cand) => {
+                if (cand && cand !== targetUrl && !candidates.includes(cand)) {
+                  candidates.push(cand);
+                }
+              };
+              // Sibling candidates in same folder
+              addCand(targetUrl.replace(/\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/master.m3u8$1'));
+              addCand(targetUrl.replace(/\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/playlist.m3u8$1'));
+              addCand(targetUrl.replace(/\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/index.m3u8$1'));
+              // Stripping format slugs (e.g. index-f1.m3u8 -> index.m3u8)
+              addCand(targetUrl.replace(/[-_]?(?:f\d+|v\d+|a\d+|\d+p|\d+)(?=\.m3u8)/i, ''));
+              // Parent directory candidates (guard against stripping tokenized paths)
+              const parentMatch = targetUrl.match(/\/([^\/?#]+)\/[^\/?#]+\.m3u8(?:\?[^#]*)?$/i);
+              if (parentMatch) {
+                const parentDir = parentMatch[1];
+                const isSecurityToken = parentDir.length > 16 || (parentDir.length >= 8 && /^[a-f0-9]{8,}$|^[a-zA-Z0-9_\-]{20,}$/i.test(parentDir));
+                if (!isSecurityToken) {
+                  addCand(targetUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/master.m3u8$1'));
+                  addCand(targetUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/playlist.m3u8$1'));
+                  addCand(targetUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/index.m3u8$1'));
                 }
               }
-            })
-            .catch(() => {});
+
+              for (const candUrl of candidates) {
+                const parentText = await fetchM3u8Text(candUrl, tabUrl, itemReferer || initiatorUrl);
+                if (parentText && parentText.includes('#EXT-X-STREAM-INF')) {
+                  text = parentText;
+                  targetUrl = candUrl;
+                  break;
+                }
+              }
+            }
+
+            // If in-extension fetch did not yield master variants (e.g. cross-origin referrer blocked by browser),
+            // query SmartDM Desktop App IPC which has full C# HttpClient capabilities with 0 CORS restrictions
+            if (!text || !text.includes('#EXT-X-STREAM-INF')) {
+              try {
+                const desktopRes = await postToDesktopApp({
+                  type: 'RESOLVE_M3U8_VARIANTS',
+                  url: targetUrl,
+                  referer: itemReferer || initiatorUrl,
+                  userAgent: navigator.userAgent
+                });
+                if (desktopRes && (desktopRes.status === 'ok' || desktopRes.success) && desktopRes.formats && desktopRes.formats.length > 0) {
+                  let addedAny = false;
+                  desktopRes.formats.forEach((v) => {
+                    const finalTitle = (!v.title || isGenericTitle(v.title)) ? (authoritativeTabTitle || v.title || 'Video') : v.title;
+                    const vUrl = v.url || v.directUrl;
+                    const existing = mediaList.find((m) => m.url === vUrl);
+                    const vH = v.height || extractResolutionNumber(v.resolution || vUrl) || 0;
+                    if (!existing) {
+                      pushToMediaList(mediaList, {
+                        url: vUrl,
+                        contentType: 'application/x-mpegurl',
+                        contentLength: 0,
+                        filename: finalTitle + '.mp4',
+                        customTitle: finalTitle,
+                        customBadge: v.badge || (vH > 0 ? `${vH}p` : 'Stream'),
+                        height: vH,
+                        bandwidth: v.bandwidth || 0,
+                        referer: itemReferer,
+                        origin: itemOrigin,
+                        timestamp: Date.now()
+                      });
+                      addedAny = true;
+                    }
+                  });
+                  if (addedAny) {
+                    broadcastNewMedia(targetTabId, mediaList);
+                    return;
+                  }
+                }
+              } catch(e) {}
+            }
+
+            if (text && text.includes('#EXT-X-STREAM-INF')) {
+              const variants = parseM3u8Formats(text, targetUrl);
+              let addedAny = false;
+              variants.forEach((v) => {
+                v.referer = itemReferer;
+                v.origin = itemOrigin;
+                const finalTitle = (!v.title || isGenericTitle(v.title)) ? (authoritativeTabTitle || v.title || 'Video') : v.title;
+                const existing = mediaList.find((m) => m.url === v.url);
+                if (!existing) {
+                  pushToMediaList(mediaList, {
+                    url: v.url,
+                    contentType: 'application/x-mpegurl',
+                    contentLength: 0,
+                    filename: finalTitle + '.mp4',
+                    customTitle: finalTitle,
+                    customBadge: v.badge || (v.height > 0 ? `${v.height}p` : 'Stream'),
+                    height: v.height || 0,
+                    bandwidth: v.bandwidth || 0,
+                    referer: itemReferer,
+                    origin: itemOrigin,
+                    timestamp: Date.now()
+                  });
+                  addedAny = true;
+                } else {
+                  if (v.height > 0 && (!existing.height || existing.height <= 0)) {
+                    existing.height = v.height;
+                    existing.customBadge = v.badge || `${v.height}p`;
+                    addedAny = true;
+                  }
+                  if (authoritativeTabTitle && (!existing.customTitle || isGenericTitle(existing.customTitle))) {
+                    existing.customTitle = authoritativeTabTitle;
+                    existing.filename = authoritativeTabTitle + '.mp4';
+                    addedAny = true;
+                  }
+                  if (itemReferer && !existing.referer) existing.referer = itemReferer;
+                  if (itemOrigin && !existing.origin) existing.origin = itemOrigin;
+                  existing.timestamp = Date.now();
+                }
+              });
+              if (addedAny) broadcastNewMedia(targetTabId, mediaList);
+            } else {
+              const resH = extractResolutionNumber(targetUrl);
+              const singleTitle = authoritativeTabTitle || (resH > 0 ? getResolutionLabel(resH, 'MP4') : 'HLS Video Stream');
+              const singleFilename = (authoritativeTabTitle || getFilenameFromUrl(targetUrl)) + (authoritativeTabTitle ? '.mp4' : '');
+              const existing = mediaList.find((m) => m.url === targetUrl);
+              if (!existing) {
+                pushToMediaList(mediaList, {
+                  url: targetUrl,
+                  contentType: 'application/x-mpegurl',
+                  contentLength: contentLength,
+                  filename: singleFilename,
+                  customTitle: singleTitle,
+                  customBadge: resH > 0 ? `${resH}p` : 'HLS Stream',
+                  height: resH,
+                  referer: itemReferer,
+                  origin: itemOrigin,
+                  timestamp: Date.now()
+                });
+                broadcastNewMedia(targetTabId, mediaList);
+              } else {
+                if (resH > 0 && (!existing.height || existing.height <= 0)) {
+                  existing.height = resH;
+                  existing.customBadge = `${resH}p`;
+                  broadcastNewMedia(targetTabId, mediaList);
+                }
+                if (authoritativeTabTitle && (!existing.customTitle || isGenericTitle(existing.customTitle))) {
+                  existing.customTitle = authoritativeTabTitle;
+                  existing.filename = authoritativeTabTitle + '.mp4';
+                  broadcastNewMedia(targetTabId, mediaList);
+                }
+                if (itemReferer && !existing.referer) existing.referer = itemReferer;
+                if (itemOrigin && !existing.origin) existing.origin = itemOrigin;
+                existing.timestamp = Date.now();
+              }
+
+              // Delegate in-page probing to active tab's content script where cookies & referer are authentic
+              if (targetTabId && targetTabId > 0 && shouldProbeM3u8(targetUrl)) {
+                if (details.frameId && details.frameId > 0) {
+                  try {
+                    chrome.tabs.sendMessage(targetTabId, {
+                      type: 'PROBE_M3U8_MANIFEST',
+                      url: targetUrl
+                    }, { frameId: details.frameId }, () => { if (chrome.runtime.lastError) {} });
+                  } catch(e) {}
+                }
+                try {
+                  chrome.tabs.sendMessage(targetTabId, {
+                    type: 'PROBE_M3U8_MANIFEST',
+                    url: targetUrl
+                  }, { frameId: 0 }, () => { if (chrome.runtime.lastError) {} });
+                } catch(e) {}
+              }
+            }
+          })().catch(() => {
+            const cachedH = getCachedStreamHeaders(targetUrl);
+            const itemReferer = (cachedH && cachedH.referer) || initiatorUrl || tabUrl || null;
+            const itemOrigin = (cachedH && cachedH.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+            const resH = extractResolutionNumber(targetUrl);
+            const rawTabTitle = targetTabId ? tabTitleMap.get(targetTabId) : null;
+            const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+            const authoritativeTabTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
+            const singleTitle = authoritativeTabTitle || (resH > 0 ? getResolutionLabel(resH, 'MP4') : 'HLS Video Stream');
+            const singleFilename = (authoritativeTabTitle || getFilenameFromUrl(targetUrl)) + (authoritativeTabTitle ? '.mp4' : '');
+            const existing = mediaList.find((m) => m.url === targetUrl);
+            if (!existing) {
+              pushToMediaList(mediaList, {
+                url: targetUrl,
+                contentType: 'application/x-mpegurl',
+                contentLength: contentLength,
+                filename: singleFilename,
+                customTitle: singleTitle,
+                customBadge: resH > 0 ? `${resH}p` : 'HLS Stream',
+                height: resH,
+                referer: itemReferer,
+                origin: itemOrigin,
+                timestamp: Date.now()
+              });
+              broadcastNewMedia(targetTabId, mediaList);
+            }
+
+            if (targetTabId && targetTabId > 0 && shouldProbeM3u8(targetUrl)) {
+              if (details.frameId && details.frameId > 0) {
+                try {
+                  chrome.tabs.sendMessage(targetTabId, {
+                    type: 'PROBE_M3U8_MANIFEST',
+                    url: targetUrl
+                  }, { frameId: details.frameId }, () => { if (chrome.runtime.lastError) {} });
+                } catch(e) {}
+              }
+              try {
+                chrome.tabs.sendMessage(targetTabId, {
+                  type: 'PROBE_M3U8_MANIFEST',
+                  url: targetUrl
+                }, { frameId: 0 }, () => { if (chrome.runtime.lastError) {} });
+              } catch(e) {}
+            }
+          });
           return;
         }
 
@@ -460,10 +1150,10 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             .then((text) => {
               const mpdFormats = parseMpdFormats(text, targetUrl);
               if (mpdFormats.length > 0) {
+                let addedAny = false;
                 mpdFormats.forEach((f) => {
                   if (!mediaList.some((m) => m.url === f.url)) {
-                    if (mediaList.length >= 35) mediaList.shift();
-                    mediaList.push({
+                    pushToMediaList(mediaList, {
                       url: f.url,
                       videoUrl: f.videoUrl,
                       audioUrl: f.audioUrl,
@@ -471,54 +1161,131 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                       contentLength: 0,
                       filename: f.title + '.mp4',
                       customTitle: f.title,
-                      customBadge: f.badge
+                      customBadge: f.badge,
+                      height: f.height || 0,
+                      bandwidth: f.bandwidth || 0,
+                      timestamp: Date.now()
                     });
+                    addedAny = true;
                   }
                 });
+                if (addedAny) broadcastNewMedia(targetTabId, mediaList);
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              const existing = mediaList.find((m) => m.url === targetUrl);
+              if (!existing) {
+                pushToMediaList(mediaList, {
+                  url: targetUrl,
+                  contentType: 'application/dash+xml',
+                  contentLength: contentLength,
+                  filename: getFilenameFromUrl(targetUrl),
+                  customTitle: 'DASH Video Stream',
+                  customBadge: 'DASH Stream',
+                  timestamp: Date.now()
+                });
+                broadcastNewMedia(targetTabId, mediaList);
+              }
+            });
           return;
         }
 
         // Standard direct media URL (mp4, webm, mp3, m4a, etc.)
+        const resH = extractResolutionNumber(targetUrl);
         if (!mediaList.some((m) => m.url === targetUrl)) {
-          if (mediaList.length >= 35) mediaList.shift();
 
           let rawName = getFilenameFromUrl(targetUrl);
           let title = rawName;
-          let badge = 'Media';
+          let badge = resH > 0 ? `${resH}p` : 'Media';
           let customTitle = null;
 
           const isAudio = (contentType && contentType.includes('audio/')) || targetUrl.includes('.m4a') || targetUrl.includes('.mp3');
           let isFbAudio = false;
           let isFbVideo = false;
+          let isFbReel = false;
           let fbVideoId = null;
+          let pageReelId = null;
 
           if (isFbMedia) {
             const fbEfg = parseFacebookEfg(targetUrl);
-            let efgStr = '';
             if (fbEfg) {
               const efgVid = fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id || fbEfg.media_id || fbEfg.reel_id || fbEfg.video_asset_id;
               if (efgVid) fbVideoId = String(efgVid);
+              if (fbEfg.reel_id) pageReelId = String(fbEfg.reel_id);
+              if (fbEfg.is_reel === true || fbEfg.is_reel === 'true' || fbEfg.is_reel === 1 || fbEfg.reel_id) {
+                isFbReel = true;
+              }
+              const vTag = (fbEfg.vencode_tag || fbEfg.encode_tag || '').toLowerCase();
+              if (vTag.includes('reel') || vTag.includes('short')) {
+                isFbReel = true;
+              }
+            }
+            if (!isFbReel && (targetUrl.includes('/reel/') || targetUrl.includes('is_reel=1') || targetUrl.includes('reel_id='))) {
+              isFbReel = true;
+            }
 
-              try { efgStr = JSON.stringify(fbEfg).toLowerCase(); } catch(e) {}
-              const encTag = ((fbEfg.vencode_tag || fbEfg.encode_tag || fbEfg.audio_tag || fbEfg.tag || '') + ' ' + efgStr).toLowerCase();
-              if (encTag.includes('audio') || encTag.includes('_a1_') || encTag.includes('_a2_') || encTag.includes('_a3_') || encTag.includes('ac3') || encTag.includes('aac') || encTag.includes('opus')) {
+            // The tab URL is not proof of stream identity: Facebook preloads
+            // recommendations while another Reel is open. Only a media URL's
+            // explicit Reel ID may bind a request to the selected Reel.
+
+            const ct = (contentType || '').toLowerCase();
+            const uLower = targetUrl.toLowerCase();
+
+            // Strict Priority 1: Inspect explicit fbEfg encoding tags
+            // Facebook CDN serves DASH audio MP4 files with Content-Type: video/mp4, so efg audio_tag takes precedence!
+            if (fbEfg) {
+              const vTag = (fbEfg.vencode_tag || fbEfg.encode_tag || '').toLowerCase();
+              const aTag = (fbEfg.audio_tag || '').toLowerCase();
+
+              const hasAudioMarker = vTag.includes('audio') || vTag.includes('heaac') || vTag.includes('aac') || vTag.includes('opus') ||
+                                     aTag.includes('audio') || aTag.includes('heaac') || aTag.includes('aac') || aTag.includes('opus') ||
+                                     vTag.includes('dash_a') || aTag.includes('dash_a') || vTag.includes('_a1_') || vTag.includes('_a2_') ||
+                                     vTag.includes('_a3_') || aTag.includes('_a1_') || aTag.includes('_a2_') || aTag.includes('_a3_');
+
+              const hasVideoMarker = vTag.includes('video') || vTag.includes('dash_v') || vTag.includes('vp9') || vTag.includes('avc') ||
+                                     vTag.includes('h264') || vTag.includes('hevc') || vTag.includes('av01') || vTag.includes('baseline') ||
+                                     vTag.includes('main') || vTag.includes('high') || vTag.includes('720p') || vTag.includes('1080p') ||
+                                     vTag.includes('480p') || vTag.includes('360p') || vTag.includes('inline') || vTag.includes('_v1_') ||
+                                     vTag.includes('_v2_') || vTag.includes('_v3_') || vTag.includes('_v4_');
+
+              if (hasAudioMarker && !hasVideoMarker) {
                 isFbAudio = true;
                 isFbVideo = false;
-              } else if (encTag.includes('video') || encTag.includes('_v1_') || encTag.includes('_v2_') || encTag.includes('_v3_') || encTag.includes('_v4_') || encTag.includes('720p') || encTag.includes('1080p') || encTag.includes('480p') || encTag.includes('360p')) {
+              } else if (hasVideoMarker && !hasAudioMarker) {
+                isFbVideo = true;
+                isFbAudio = false;
+              } else if (hasAudioMarker) {
+                if (fbEfg.bitrate && fbEfg.bitrate < 150000) {
+                  isFbAudio = true;
+                  isFbVideo = false;
+                } else {
+                  isFbVideo = true;
+                  isFbAudio = false;
+                }
+              }
+            }
+
+            // Strict Priority 2: URL parameter inspection (dash_a, mime=audio, etc.)
+            if (!isFbAudio && !isFbVideo) {
+              if (uLower.includes('mime=audio') || uLower.includes('frag_2_audio') || uLower.includes('audiocodecs') || uLower.includes('dash_a') || uLower.includes('/audio/') || uLower.includes('.m4a') || uLower.includes('.mp3')) {
+                isFbAudio = true;
+                isFbVideo = false;
+              } else if (uLower.includes('mime=video') || uLower.includes('frag_1_video') || uLower.includes('videocodecs') || uLower.includes('dash_v') || uLower.includes('/video/')) {
                 isFbVideo = true;
                 isFbAudio = false;
               }
             }
 
+            // Strict Priority 3: Content-Type header fallback
             if (!isFbAudio && !isFbVideo) {
-              const uLower = targetUrl.toLowerCase();
-              if (contentType.includes('audio/') || uLower.includes('mime=audio') || uLower.includes('_audio') || uLower.includes('/audio/') || uLower.includes('audiocodecs') || uLower.includes('frag_2_audio') || uLower.includes('_a1_') || uLower.includes('.m4a') || uLower.includes('.mp3')) {
+              if (ct.includes('audio/')) {
                 isFbAudio = true;
                 isFbVideo = false;
+              } else if (ct.includes('video/')) {
+                isFbVideo = true;
+                isFbAudio = false;
               } else {
+                // Default to video for Facebook media CDN streams
                 isFbVideo = true;
                 isFbAudio = false;
               }
@@ -559,12 +1326,21 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             badge = isGvAudio ? 'Audio Stream' : (itag ? `Video Stream (itag ${itag})` : 'Video Stream');
             customTitle = isGvAudio ? `Audio Stream (${itag || 'm4a'})` : `Video Stream (${itag || 'mp4'})`;
             title = isGvAudio ? `audio_${itag || 'stream'}.m4a` : `video_${itag || 'stream'}.mp4`;
+          } else if (resH > 0 && !isFinalAudio) {
+            const ext = (rawName.includes('.') ? rawName.substring(rawName.lastIndexOf('.') + 1) : 'mp4').toLowerCase();
+            badge = `${resH}p`;
+            customTitle = getResolutionLabel(resH, ext, false);
+            title = (rawName && !isOpaqueTokenOrHash(rawName)) ? rawName : `video_${resH}p.${ext}`;
           } else if (isOpaqueTokenOrHash(rawName)) {
             const ext = rawName.includes('.') ? rawName.substring(rawName.lastIndexOf('.')) : '.mp4';
             badge = isFinalAudio ? 'Audio Stream' : 'Direct Video';
             customTitle = isFinalAudio ? 'Audio Stream' : 'Video Stream (MP4)';
             title = (isFinalAudio ? 'audio_stream' : 'video_stream') + ext;
           }
+
+          const cachedH = getCachedStreamHeaders(targetUrl);
+          const itemReferer = (cachedH && cachedH.referer) || initiatorUrl || tabUrl || null;
+          const itemOrigin = (cachedH && cachedH.origin) || (itemReferer ? new URL(itemReferer).origin : null);
 
           const mediaItem = {
             url: targetUrl,
@@ -573,12 +1349,18 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
             filename: title,
             customTitle: customTitle || title,
             customBadge: badge,
+            height: resH || 0,
             isAudio: isFinalAudio,
             isVideo: isFbMedia ? isFbVideo : !isFinalAudio,
             fbVideoId: fbVideoId || null,
+            pageReelId: pageReelId || null,
+            isReel: isFbMedia ? isFbReel : false,
+            referer: itemReferer,
+            origin: itemOrigin,
             timestamp: Date.now()
           };
-          mediaList.push(mediaItem);
+          pushToMediaList(mediaList, mediaItem);
+          broadcastNewMedia(targetTabId, mediaList);
 
           // Asynchronously probe full stream size using Range: bytes=0-0 to get real total size without loading stream
           if (!isFinalAudio && targetUrl && targetUrl.startsWith('http') && reportedLength === 0) {
@@ -591,6 +1373,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                     const total = parseInt(m[1], 10);
                     if (total > 1048576) {
                       mediaItem.contentLength = total;
+                      broadcastNewMedia(targetTabId, mediaList);
                     }
                   }
                 }
@@ -601,12 +1384,34 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           const existing = mediaList.find((m) => m.url === targetUrl);
           if (existing) {
             existing.timestamp = Date.now();
-            if (isFbMedia && !existing.fbVideoId) {
+            let changed = false;
+            const cachedH = getCachedStreamHeaders(targetUrl);
+            const itemReferer = (cachedH && cachedH.referer) || initiatorUrl || tabUrl || null;
+            const itemOrigin = (cachedH && cachedH.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+            if (itemReferer && !existing.referer) { existing.referer = itemReferer; changed = true; }
+            if (itemOrigin && !existing.origin) { existing.origin = itemOrigin; changed = true; }
+            if (resH > 0 && (!existing.height || existing.height <= 0)) {
+              existing.height = resH;
+              existing.customTitle = getResolutionLabel(resH, 'mp4', !!existing.isAudio);
+              existing.customBadge = `${resH}p`;
+              changed = true;
+            }
+            if (isFbMedia) {
               const fbEfg = parseFacebookEfg(targetUrl);
-              const efgVid = fbEfg ? (fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id) : null;
-              if (efgVid) {
+              const efgVid = fbEfg ? (fbEfg.video_id || fbEfg.fbid || fbEfg.target_video_id || fbEfg.asset_id || fbEfg.reel_id) : null;
+              if (efgVid && !existing.fbVideoId) {
                 existing.fbVideoId = String(efgVid);
+                changed = true;
               }
+              if (fbEfg && (fbEfg.is_reel === true || fbEfg.is_reel === 'true' || fbEfg.is_reel === 1 || fbEfg.reel_id)) {
+                if (!existing.isReel) {
+                  existing.isReel = true;
+                  changed = true;
+                }
+              }
+            }
+            if (changed) {
+              broadcastNewMedia(targetTabId, mediaList);
             }
           }
         }
@@ -680,66 +1485,163 @@ async function getActivePort() {
   }
 }
 
+function postToDesktopApp(request) {
+  return new Promise((resolve) => {
+    appendCookiesAndSend(request, (res) => {
+      resolve(res);
+    });
+  });
+}
+
 async function appendCookiesAndSend(request, sendResponse) {
-  request.userAgent = navigator.userAgent;
-  request.referer = request.referer || request.pageUrl || null;
+  let targetUrl = request.url;
+  if (!targetUrl && request.urls && request.urls.length > 0) {
+    targetUrl = request.urls[0];
+  }
+
+  // Look up authentic browser headers from network interceptor cache
+  const cachedH = getCachedStreamHeaders(targetUrl);
+  if (cachedH) {
+    if (cachedH.referer) request.referer = cachedH.referer;
+    if (cachedH.origin) request.origin = cachedH.origin;
+    if (cachedH.userAgent) request.userAgent = cachedH.userAgent;
+    if (cachedH.cookie && !request.cookies) request.cookies = cachedH.cookie;
+  }
+  if (!request.userAgent) request.userAgent = navigator.userAgent;
+  if (!request.referer) request.referer = request.pageUrl || null;
+  if (!request.origin && request.referer) {
+    try { request.origin = new URL(request.referer).origin; } catch(e) {}
+  }
+
+  // Refresh query tokens from directory token cache if targetUrl has no query
+  const dirKey = getStreamDirectoryKey(targetUrl);
+  if (dirKey && !targetUrl.includes('?') && streamTokenCache.has(dirKey)) {
+    targetUrl += streamTokenCache.get(dirKey);
+    request.url = targetUrl;
+  }
+
+  if (Array.isArray(request.formats)) {
+    request.formats.forEach(f => {
+      const fCached = getCachedStreamHeaders(f.url || f.directUrl);
+      if (fCached) {
+        if (fCached.referer) f.referer = fCached.referer;
+        if (fCached.origin) f.origin = fCached.origin;
+      } else {
+        if (request.referer) f.referer = request.referer;
+        if (request.origin) f.origin = request.origin;
+      }
+    });
+  }
+
   try {
-    let targetUrl = request.url;
-    if (!targetUrl && request.urls && request.urls.length > 0) {
-      targetUrl = request.urls[0];
+    // Check targetUrl, referer, pageUrl, and origin for cookies (crucial for CDN media streams on separate domains)
+    const candidateUrls = [targetUrl, request.referer, request.pageUrl, request.origin].filter(Boolean);
+    const domainSet = new Set();
+    const urlSet = new Set();
+
+    for (const u of candidateUrls) {
+      try {
+        const parsed = new URL(u);
+        urlSet.add(parsed.protocol + '//' + parsed.hostname + '/');
+        const host = parsed.hostname.replace(/^www\./, '');
+        if (host) {
+          domainSet.add(host);
+          const parts = host.split('.');
+          if (parts.length > 2) {
+            domainSet.add(parts.slice(-2).join('.'));
+          }
+        }
+      } catch (e) {}
     }
-    
-    // Check both targetUrl and referer/pageUrl for cookies (crucial for Pornhub and CDN media streams)
-    let cookieDomainUrl = request.referer || request.pageUrl || targetUrl;
-    let domainHost = '';
-    try {
-      const parsed = new URL(cookieDomainUrl);
-      cookieDomainUrl = parsed.protocol + '//' + parsed.hostname + '/';
-      domainHost = parsed.hostname.replace(/^www\./, '');
-    } catch (e) {}
 
     if (chrome.cookies) {
-      const cookies = await new Promise(resolve => {
-        if (domainHost) {
-          chrome.cookies.getAll({ domain: domainHost }, (c) => {
-            if (c && c.length > 0) return resolve(c);
-            chrome.cookies.getAll({ url: cookieDomainUrl }, (c2) => resolve(c2 || []));
-          });
-        } else if (cookieDomainUrl) {
-          chrome.cookies.getAll({ url: cookieDomainUrl }, (c) => resolve(c || []));
-        } else {
-          resolve([]);
+      const allCookiesMap = new Map();
+
+      // First, seed with authentic raw cookies captured by webRequest.onSendHeaders for target stream CDN
+      if (cachedH && cachedH.cookie) {
+        try {
+          let streamDomain = '';
+          if (targetUrl) {
+            const pu = new URL(targetUrl);
+            streamDomain = pu.hostname;
+          }
+          const pairs = cachedH.cookie.split(';');
+          for (const p of pairs) {
+            const eq = p.indexOf('=');
+            if (eq > 0) {
+              const k = p.substring(0, eq).trim();
+              const v = p.substring(eq + 1).trim();
+              if (k && !allCookiesMap.has(`${streamDomain}_${k}_/`)) {
+                allCookiesMap.set(`${streamDomain}_${k}_/`, {
+                  domain: streamDomain ? '.' + streamDomain : '',
+                  name: k,
+                  value: v,
+                  path: '/',
+                  secure: true,
+                  expirationDate: Math.floor(Date.now() / 1000) + 86400 * 30
+                });
+              }
+            }
+          }
+        } catch(e) {}
+      }
+
+      const cookieQueries = [];
+
+      for (const d of domainSet) {
+        cookieQueries.push(new Promise(resolve => {
+          try {
+            chrome.cookies.getAll({ domain: d }, (c) => resolve(c || []));
+          } catch(e) { resolve([]); }
+        }));
+      }
+      for (const u of urlSet) {
+        cookieQueries.push(new Promise(resolve => {
+          try {
+            chrome.cookies.getAll({ url: u }, (c) => resolve(c || []));
+          } catch(e) { resolve([]); }
+        }));
+      }
+
+      const queryResults = await Promise.all(cookieQueries);
+      for (const cookieList of queryResults) {
+        for (const c of cookieList) {
+          if (c && c.name) {
+            const key = `${c.domain || ''}_${c.name}_${c.path || ''}`;
+            if (!allCookiesMap.has(key)) {
+              allCookiesMap.set(key, c);
+            }
+          }
         }
-      });
-      
-      if (cookies && cookies.length > 0) {
+      }
+
+      if (allCookiesMap.size > 0) {
         let cookieStr = '# Netscape HTTP Cookie File\n';
-        cookieStr += cookies.map(c => {
-          const domain = c.domain;
+        for (const c of allCookiesMap.values()) {
+          const domain = c.domain || '';
           const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
-          const path = c.path;
+          const path = c.path || '/';
           const secure = c.secure ? 'TRUE' : 'FALSE';
           const expiry = c.expirationDate ? Math.floor(c.expirationDate) : 0;
-          return `${domain}\t${includeSubdomains}\t${path}\t${secure}\t${expiry}\t${c.name}\t${c.value}`;
-        }).join('\n') + '\n';
+          cookieStr += `${domain}\t${includeSubdomains}\t${path}\t${secure}\t${expiry}\t${c.name}\t${c.value}\n`;
+        }
         request.cookies = cookieStr;
+      } else if (cachedH && cachedH.cookie && !request.cookies) {
+        request.cookies = cachedH.cookie;
       }
     }
   } catch (e) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  // 1. Discover active SmartDM desktop app port (port 18420-18425) via fast parallel OPTIONS probe
-  const isFormatQuery = request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo';
-  const activePort = await getActivePort();
-
-  if (activePort) {
+  // 1. Send directly to active SmartDM desktop app port (default 18420)
+  const isFormatQuery = request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo' || request.type === 'RESOLVE_M3U8_VARIANTS';
+  const tryPostToPort = async (port) => {
     try {
-      const timeoutMs = isFormatQuery ? 20000 : 4000;
+      const timeoutMs = isFormatQuery ? 15000 : 8000;
       const reqController = new AbortController();
-
       const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
-      const res = await fetch(`http://127.0.0.1:${activePort}/api/browser`, {
+      const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
@@ -747,11 +1649,32 @@ async function appendCookiesAndSend(request, sendResponse) {
       });
       clearTimeout(reqTimer);
       if (res.ok) {
+        cachedActivePort = port;
         const data = await res.json();
-        if (sendResponse) sendResponse(data || { success: true, status: 'ok' });
-        return;
+        return data || { success: true, status: 'ok' };
       }
     } catch (e) {}
+    return null;
+  };
+
+  // Fast direct attempt to cachedActivePort (< 10ms)
+  let postResult = null;
+  if (cachedActivePort) {
+    postResult = await tryPostToPort(cachedActivePort);
+  }
+
+  // If cached port failed or wasn't set, scan remaining ports
+  if (!postResult) {
+    const ports = [18420, 18421, 18422, 18423, 18424, 18425].filter(p => p !== cachedActivePort);
+    for (const p of ports) {
+      postResult = await tryPostToPort(p);
+      if (postResult) break;
+    }
+  }
+
+  if (postResult) {
+    if (sendResponse) sendResponse(postResult);
+    return;
   }
 
   // Never call native messaging for format queries - avoid blocking stalls
@@ -986,30 +1909,91 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
 function sanitizeCleanTitle(str) {
   if (!str || typeof str !== 'string') return '';
   let clean = str.replace(/^\(\d+\)\s*/, '').trim();
-  clean = clean.replace(/\s*[\-\|\:·•]\s*(Facebook|Pornhub\.com|Pornhub|YouTube Music|YouTube|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit).*$/i, '').trim();
-  if (clean.toLowerCase().endsWith(' - youtube')) clean = clean.substring(0, clean.length - 10).trim();
-  if (clean.toLowerCase().endsWith(' | youtube')) clean = clean.substring(0, clean.length - 10).trim();
-  if (clean.toLowerCase().endsWith(' youtube')) clean = clean.substring(0, clean.length - 8).trim();
-  if (clean.toLowerCase().endsWith(' - pornhub.com')) clean = clean.substring(0, clean.length - 14).trim();
-  if (clean.toLowerCase().endsWith(' - pornhub')) clean = clean.substring(0, clean.length - 10).trim();
-  if (clean.toLowerCase().endsWith(' | pornhub')) clean = clean.substring(0, clean.length - 10).trim();
-  if (clean.toLowerCase().endsWith(' - facebook')) clean = clean.substring(0, clean.length - 11).trim();
+
+  // Strip leading action verbs: Watch, Streaming, Play, Download, Free
+  clean = clean.replace(/^(?:watch|streaming|play|download|free)\s+/i, '').trim();
+
+  // Strip resolution brackets like [1080p], [720p], (1080p), [1080p HD], [Full HD]
+  clean = clean.replace(/\[\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\]/gi, '').trim();
+  clean = clean.replace(/\(\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\)/gi, '').trim();
+
+  // Strip site suffixes separated by :: (e.g. " :: AnimePahe")
+  clean = clean.replace(/\s*::\s*.*$/, '').trim();
+
+  // Strip site/brand suffixes separated by - or | or • or —
+  clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+
+  // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>"
+  clean = clean.replace(/\s+(?:online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
+  clean = clean.replace(/\s+(?:at|on)\s+[a-z0-9.-]+\.[a-z]{2,}\b.*$/i, '').trim();
+
+  // Strip trailing " - Watch", " - Free", " - Online" etc if left behind
+  clean = clean.replace(/\s*[\-\|\•\—]\s*(?:watch|free|online|stream|download)$/i, '').trim();
+
+  // Clean trailing delimiters
+  clean = clean.replace(/[\s\-\|\:\•\—]+$/, '').trim();
+
+  // Clean invalid filesystem characters
   clean = clean.replace(/[\\/:*?""<>|]/g, '_').replace(/\s+/g, ' ').trim();
   return clean;
+}
+
+function isGenericTitle(t) {
+  if (!t || typeof t !== 'string') return true;
+  let clean = t.replace(/\.[a-z0-9]+$/i, '').trim();
+  clean = clean.replace(/^\(\d+\)\s*/, '').replace(/\s*\(\d+\)$/, '').trim().toLowerCase();
+  if (!clean || clean.length < 2) return true;
+
+  const genericExact = new Set([
+    'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
+    'trending', 'watch later', 'video', 'media stream', 'download', 'downloads',
+    'facebook', 'facebook_video', 'facebook_reel', 'facebook video', 'facebook reel', 'facebook reels',
+    'notifications', 'notification', 'chats', 'messages', 'menu', 'shortcuts', 'your shortcuts',
+    'contacts', 'explore', 'settings', 'search', 'news feed', 'newsfeed', 'stories',
+    'pornhub', 'pornhub.com', 'video stream', 'stream', 'hls video stream', 'dash video stream',
+    'reels', 'reel', 'player', 'embed', 'kwik', 'megaplay', 'streamwish', 'vidcloud', 'upcloud',
+    'mp4upload', 'filemoon', 'doodstream', 'streamtape', 'mixdrop', 'luluvdo', 'voe',
+    'watch', 'play', 'index', 'untitled', 'html5 player', 'video player'
+  ]);
+  if (genericExact.has(clean)) return true;
+
+  if (clean.startsWith('reels - video') || clean.startsWith('reel - video') ||
+      clean.startsWith('reels and short') || clean.startsWith('facebook video') ||
+      clean.startsWith('facebook reel')) {
+    return true;
+  }
+
+  // File 12345 or File 12345 - MegaPlay or File_12345 or any file followed by digits
+  if (/^file[\s_-]*\d+/i.test(clean)) return true;
+
+  // Generic player embed titles like "MegaPlay - Player", "Kwik Player", etc.
+  if (/^(?:kwik|megaplay|streamwish|vidcloud|upcloud|filemoon|doodstream|streamtape|mp4upload)\s*(?:[-_:]\s*)?(?:player|embed|stream|video)?$/i.test(clean)) return true;
+
+  if (clean.includes('megaplay') || clean.includes('kwik') || clean.includes('streamwish') ||
+      clean.includes('vidcloud') || clean.includes('upcloud') || clean.includes('filemoon') ||
+      clean.includes('doodstream') || clean.includes('streamtape') || clean.includes('mp4upload')) {
+    if (clean.startsWith('file') || clean.startsWith('player') || clean.startsWith('embed') || clean.startsWith('video') || clean.includes('server') || clean === 'megaplay' || clean === 'kwik') {
+      return true;
+    }
+  }
+
+  // Single word player tokens
+  if (/^(?:player|embed|iframe|video)[\s_-]*\d*$/i.test(clean)) return true;
+
+  return isOpaqueTokenOrHash(clean);
 }
 
 async function fetchPageMediaFormats(pageUrl) {
   try {
     const isFb = pageUrl && (pageUrl.includes('facebook.com') || pageUrl.includes('fb.watch'));
+    if (isFb) return null; // Whole-page HTML contains unrelated recommended Reels.
     const fetchOpts = {
+      credentials: 'include',
       headers: {
         'User-Agent': navigator.userAgent,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
     };
-    if (isFb) {
-      fetchOpts.credentials = 'include';
-    }
     const res = await fetch(pageUrl, fetchOpts);
     if (!res.ok) return null;
     const html = await res.text();
@@ -1029,10 +2013,12 @@ async function fetchPageMediaFormats(pageUrl) {
     const seen = new Set();
 
     const addFmt = (u, q, ext = 'mp4') => {
-      if (!u || typeof u !== 'string' || !u.startsWith('http') || seen.has(u)) return;
+      if (!u || typeof u !== 'string' || !u.startsWith('http')) return;
+      if (u.includes('/video/get_media') || u.includes('/api/') || u.includes('/ajax/') || u.includes('/analytics') || u.endsWith('.json')) return;
+      if (seen.has(u)) return;
       seen.add(u);
       const isHls = ext === 'm3u8' || u.includes('.m3u8');
-      let qStr = q ? String(q).trim() : '';
+      let qStr = (q && typeof q === 'string') ? q.trim() : (typeof q === 'number' ? String(q) : '');
       if (qStr && !qStr.endsWith('p') && /^\d+$/.test(qStr)) qStr += 'p';
       let qLabel = qStr || (isHls ? 'Master' : 'Video');
       const hNum = parseInt(qLabel, 10);
@@ -1040,17 +2026,35 @@ async function fetchPageMediaFormats(pageUrl) {
       qLabel += ' (MP4)';
 
       formats.push({
-        formatId: 'tube_' + (q || formats.length),
+        formatId: 'tube_' + (qStr || formats.length),
         resolution: qLabel,
         height: hNum || (isHls ? 1080 : 720),
-        ext: 'mp4',
+        ext: isHls ? 'm3u8' : (ext || 'mp4'),
         fileSize: 0,
         isAudioOnly: false,
         title: title,
-        url: u
+        url: u,
+        videoUrl: pageUrl,
+        referer: pageUrl
       });
 
     };
+
+    // 0. Universal OpenGraph / Twitter meta video tags
+    const ogMatches = html.matchAll(/<meta\s+[^>]*(?:property|name)=["'](?:og:video(?::(?:url|secure_url))?|twitter:player:stream)["']\s+content=["']([^"']+)["']/gi);
+    for (const m of ogMatches) {
+      const u = m[1].replace(/&amp;/g, '&');
+      if (u.startsWith('http')) addFmt(u, '720p', u.includes('.m3u8') ? 'm3u8' : 'mp4');
+    }
+
+    // 0b. Universal HTML5 <video> and <source> tags
+    const srcMatches = html.matchAll(/<(?:video|source)\s+[^>]*src=["'](https?:\/\/[^"']+)["']/gi);
+    for (const m of srcMatches) {
+      const u = m[1].replace(/&amp;/g, '&');
+      const resM = m[0].match(/(?:res|size|height)=["']?(\d+)/i);
+      const q = resM ? resM[1] + 'p' : '720p';
+      addFmt(u, q, u.includes('.m3u8') ? 'm3u8' : 'mp4');
+    }
 
     // 1. Pornhub / MindGeek mediaDefinitions
     if (html.includes('mediaDefinitions')) {
@@ -1070,8 +2074,10 @@ async function fetchPageMediaFormats(pageUrl) {
             const list = JSON.parse(html.substring(start, last + 1));
             if (Array.isArray(list)) {
               list.forEach(item => {
-                if (item && item.videoUrl) {
-                  addFmt(item.videoUrl, item.quality || (item.format === 'hls' ? 'Master' : '720p'), item.format);
+                if (item && item.videoUrl && !item.remote && !item.videoUrl.includes('/video/get_media')) {
+                  let q = item.quality;
+                  if (Array.isArray(q)) q = null;
+                  addFmt(item.videoUrl, q || (item.format === 'hls' ? 'Master' : '720p'), item.format);
                 }
               });
             }
@@ -1198,19 +2204,19 @@ async function fetchPageMediaFormats(pageUrl) {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_DETECTED_MEDIA') {
-    const tabId = sender.tab ? sender.tab.id : null;
-    let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
-    if (media.length === 0 && detectedMediaMap.size > 0) {
-      for (const list of detectedMediaMap.values()) {
-        if (list && list.length > 0) {
-          media = list;
-          break;
-        }
-      }
+    const tabId = sender.tab ? sender.tab.id : lastActiveTabId;
+    if (request.currentUrl && tabId) {
+      tabUrlMap.set(tabId, request.currentUrl);
     }
+    let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
     // Return newest media streams first so the currently active/played video is prioritized
     const sortedMedia = media.slice().reverse();
-    sendResponse({ success: true, media: sortedMedia });
+    sendResponse({
+      success: true,
+      media: sortedMedia,
+      tabTitle: (sender.tab && sender.tab.title) ? sender.tab.title : (tabId ? tabTitleMap.get(tabId) : null),
+      tabUrl: tabId ? (tabUrlMap.get(tabId) || (sender.tab && sender.tab.url ? sender.tab.url : null)) : null
+    });
     return false;
   }
 
@@ -1252,15 +2258,258 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // INSTANT (0ms) response from memory graph without desktop polling or native messaging hang!
     const tabId = sender.tab ? sender.tab.id : null;
     let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
-    if (media.length === 0 && detectedMediaMap.size > 0) {
-      const allEntries = Array.from(detectedMediaMap.values());
-      if (allEntries.length > 0) media = allEntries[allEntries.length - 1] || [];
-    }
     sendResponse({ success: true, status: 'ok', media: media });
     return false; // Instant synchronous response
   }
 
+  if (request.type === 'RESOLVE_M3U8_VARIANTS') {
+    let effectiveBaseUrl = request.url;
+    const tabId = (sender && sender.tab && sender.tab.id) || lastActiveTabId;
+    const tabUrl = (sender && sender.tab && sender.tab.url) || null;
+    const cachedHeaders = getCachedStreamHeaders(effectiveBaseUrl);
+    const initiator = (cachedHeaders && cachedHeaders.referer) || (sender && sender.tab && sender.tab.url) || null;
+    (async () => {
+      let text = await fetchM3u8Text(effectiveBaseUrl, tabUrl, initiator);
+      if ((text && !text.includes('#EXT-X-STREAM-INF') && text.includes('#EXTINF')) || !text) {
+        const candidates = [];
+        const addCand = (cand) => {
+          if (cand && cand !== effectiveBaseUrl && !candidates.includes(cand)) {
+            candidates.push(cand);
+          }
+        };
+        addCand(effectiveBaseUrl.replace(/\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/master.m3u8$1'));
+        addCand(effectiveBaseUrl.replace(/\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/playlist.m3u8$1'));
+        addCand(effectiveBaseUrl.replace(/\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/index.m3u8$1'));
+        addCand(effectiveBaseUrl.replace(/[-_]?(?:f\d+|v\d+|a\d+|\d+p|\d+)(?=\.m3u8)/i, ''));
+        const parentMatch = effectiveBaseUrl.match(/\/([^\/?#]+)\/[^\/?#]+\.m3u8(?:\?[^#]*)?$/i);
+        if (parentMatch) {
+          const parentDir = parentMatch[1];
+          const isSecurityToken = parentDir.length > 16 || (parentDir.length >= 8 && /^[a-f0-9]{8,}$|^[a-zA-Z0-9_\-]{20,}$/i.test(parentDir));
+          if (!isSecurityToken) {
+            addCand(effectiveBaseUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/master.m3u8$1'));
+            addCand(effectiveBaseUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/playlist.m3u8$1'));
+            addCand(effectiveBaseUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/index.m3u8$1'));
+          }
+        }
+
+        for (const candUrl of candidates) {
+          const parentText = await fetchM3u8Text(candUrl, tabUrl, initiator);
+          if (parentText && parentText.includes('#EXT-X-STREAM-INF')) {
+            text = parentText;
+            effectiveBaseUrl = candUrl;
+            break;
+          }
+        }
+      }
+
+      // If in-extension fetch did not yield master variants (e.g. cross-origin referrer blocked by browser),
+      // query SmartDM Desktop App IPC which has full C# HttpClient capabilities with 0 CORS restrictions
+      if (!text || !text.includes('#EXT-X-STREAM-INF')) {
+        try {
+          const desktopRes = await postToDesktopApp({
+            type: 'RESOLVE_M3U8_VARIANTS',
+            url: effectiveBaseUrl,
+            referer: initiator,
+            userAgent: navigator.userAgent
+          });
+          if (desktopRes && (desktopRes.status === 'ok' || desktopRes.success) && desktopRes.formats && desktopRes.formats.length > 0) {
+            const itemReferer = (cachedHeaders && cachedHeaders.referer) || tabUrl || initiator || null;
+            const itemOrigin = (cachedHeaders && cachedHeaders.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+            const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+            const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+            const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
+
+            const variants = desktopRes.formats.map(f => {
+              const h = f.height || extractResolutionNumber(f.resolution || f.directUrl || f.url) || 0;
+              const resLabel = f.resolution || getResolutionLabel(h, 'MP4');
+              return {
+                formatId: f.formatId || (h > 0 ? `hls_${h}p` : 'hls_stream'),
+                resolution: resLabel,
+                title: authoritativeTitle || resLabel,
+                badge: `${h}p`,
+                url: f.directUrl || f.url,
+                videoUrl: f.directUrl || f.url,
+                audioUrl: null,
+                height: h,
+                ext: 'mp4',
+                isAudioOnly: false,
+                referer: itemReferer,
+                origin: itemOrigin
+              };
+            });
+
+            if (tabId) {
+              if (!detectedMediaMap.has(tabId)) {
+                detectedMediaMap.set(tabId, []);
+              }
+              const mediaList = detectedMediaMap.get(tabId);
+              let addedAny = false;
+              variants.forEach(v => {
+                const finalTitle = (!v.title || isGenericTitle(v.title)) ? (authoritativeTitle || v.title || 'Video') : v.title;
+                const existing = mediaList.find(m => m.url === v.url || (m.contentType?.includes('mpegurl') && m.height > 0 && v.height > 0 && m.height === v.height));
+                if (!existing) {
+                  pushToMediaList(mediaList, {
+                    url: v.url,
+                    contentType: 'application/x-mpegurl',
+                    contentLength: 0,
+                    filename: finalTitle + '.mp4',
+                    customTitle: finalTitle,
+                    customBadge: v.badge || `${v.height}p`,
+                    height: v.height || 0,
+                    bandwidth: v.bandwidth || 0,
+                    referer: itemReferer,
+                    origin: itemOrigin,
+                    timestamp: Date.now()
+                  });
+                  addedAny = true;
+                }
+              });
+              if (addedAny) broadcastNewMedia(tabId, mediaList);
+            }
+
+            sendResponse({ success: true, status: 'ok', formats: variants });
+            return;
+          }
+        } catch(e) {}
+      }
+
+      if (text && text.includes('#EXT-X-STREAM-INF')) {
+        const variants = parseM3u8Formats(text, effectiveBaseUrl);
+        if (variants && variants.length > 0) {
+          const itemReferer = (cachedHeaders && cachedHeaders.referer) || tabUrl || null;
+          const itemOrigin = (cachedHeaders && cachedHeaders.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+          const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+          const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+          const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
+
+          variants.forEach(v => {
+            v.referer = itemReferer;
+            v.origin = itemOrigin;
+          });
+
+          // Also register variants into tab's mediaList so GET_DETECTED_MEDIA has them immediately!
+          if (tabId) {
+            if (!detectedMediaMap.has(tabId)) {
+              detectedMediaMap.set(tabId, []);
+            }
+            const mediaList = detectedMediaMap.get(tabId);
+            let addedAny = false;
+            variants.forEach(v => {
+              const finalTitle = (!v.title || isGenericTitle(v.title)) ? (authoritativeTitle || v.title || 'Video') : v.title;
+              const existing = mediaList.find(m => m.url === v.url || (m.contentType?.includes('mpegurl') && m.height > 0 && v.height > 0 && m.height === v.height));
+              if (!existing) {
+                pushToMediaList(mediaList, {
+                  url: v.url,
+                  contentType: 'application/x-mpegurl',
+                  contentLength: 0,
+                  filename: finalTitle + '.mp4',
+                  customTitle: finalTitle,
+                  customBadge: v.badge || `${v.height}p`,
+                  height: v.height || 0,
+                  bandwidth: v.bandwidth || 0,
+                  referer: itemReferer,
+                  origin: itemOrigin,
+                  timestamp: Date.now()
+                });
+                addedAny = true;
+              }
+            });
+            if (addedAny) broadcastNewMedia(tabId, mediaList);
+          }
+
+          sendResponse({ success: true, status: 'ok', formats: variants });
+          return;
+        }
+      }
+      sendResponse({ success: false, status: 'error' });
+    })().catch(() => sendResponse({ success: false, status: 'error' }));
+    return true; // Async response
+  }
+
+  if (request.type === 'REGISTER_M3U8_VARIANTS') {
+    const tabId = (sender && sender.tab && sender.tab.id) || lastActiveTabId;
+    if (tabId && request.formats && request.formats.length > 0) {
+      if (!detectedMediaMap.has(tabId)) {
+        detectedMediaMap.set(tabId, []);
+      }
+      const mediaList = detectedMediaMap.get(tabId);
+      let addedAny = false;
+      const cachedHeaders = getCachedStreamHeaders(request.masterUrl);
+      const itemReferer = (cachedHeaders && cachedHeaders.referer) || (sender && sender.tab && sender.tab.url) || null;
+      const itemOrigin = (cachedHeaders && cachedHeaders.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+
+      const rawTabTitle = (sender && sender.tab && sender.tab.title) || tabTitleMap.get(tabId) || null;
+      const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+      const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
+
+      request.formats.forEach(v => {
+        const fRef = v.referer || itemReferer;
+        const fOrig = v.origin || itemOrigin;
+        const finalTitle = (!v.title || isGenericTitle(v.title)) ? (authoritativeTitle || v.title || 'Video') : v.title;
+        const existing = mediaList.find(m => m.url === v.url || (m.contentType?.includes('mpegurl') && m.height > 0 && v.height > 0 && m.height === v.height));
+        if (!existing) {
+          pushToMediaList(mediaList, {
+            url: v.url,
+            contentType: 'application/x-mpegurl',
+            contentLength: 0,
+            filename: finalTitle + '.mp4',
+            customTitle: finalTitle,
+            customBadge: v.badge || `${v.height}p`,
+            height: v.height || 0,
+            bandwidth: v.bandwidth || 0,
+            referer: fRef,
+            origin: fOrig,
+            timestamp: Date.now()
+          });
+          addedAny = true;
+        } else {
+          if (v.height > 0 && (!existing.height || existing.height <= 0)) {
+            existing.height = v.height;
+            existing.customBadge = v.badge || `${v.height}p`;
+            addedAny = true;
+          }
+          if (authoritativeTitle && (!existing.customTitle || isGenericTitle(existing.customTitle))) {
+            existing.customTitle = authoritativeTitle;
+            existing.filename = authoritativeTitle + '.mp4';
+            addedAny = true;
+          }
+          if (fRef && !existing.referer) existing.referer = fRef;
+          if (fOrig && !existing.origin) existing.origin = fOrig;
+          existing.timestamp = Date.now();
+        }
+      });
+      if (addedAny) broadcastNewMedia(tabId, mediaList);
+    }
+    sendResponse({ success: true, status: 'ok' });
+    return false;
+  }
+
   if (request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
+    const tabId = (sender && sender.tab && sender.tab.id) || lastActiveTabId;
+    const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+    const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+    if (cleanTabTitle && !isGenericTitle(cleanTabTitle)) {
+      if (!request.title || isGenericTitle(request.title)) {
+        request.title = cleanTabTitle;
+      }
+      if (!request.fileName || isGenericTitle(request.fileName)) {
+        const ext = (request.formatId && request.formatId.includes('bestaudio')) ? 'mp3' : (request.ext || 'mp4');
+        request.fileName = `${cleanTabTitle}.${ext}`;
+      }
+      if (Array.isArray(request.formats)) {
+        request.formats.forEach(f => {
+          if (!f.title || isGenericTitle(f.title)) {
+            f.title = cleanTabTitle;
+          }
+        });
+      }
+    }
+    if (request.title && !isGenericTitle(request.title)) {
+      if (!request.fileName || isGenericTitle(request.fileName)) {
+        const ext = (request.formatId && request.formatId.includes('bestaudio')) ? 'mp3' : (request.ext || 'mp4');
+        request.fileName = `${request.title}.${ext}`;
+      }
+    }
     appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }

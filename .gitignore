@@ -35,3 +35,17 @@ bad_cookies*.txt
 smartdm_crash.txt
 smartdm_worker_crash.txt
 scratch/
+
+# .NET
+bin/
+**/bin/
+obj/
+**/obj/
+*.user
+*.suo
+
+# Kotlin compiler session cache
+**/.kotlin/
+
+# Local audit download; preserve on disk, exclude from source snapshots
+/docs/audits/2026-10-26/youtube-test.mp4

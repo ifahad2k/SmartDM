@@ -28,10 +28,27 @@ public partial class CompletionInspectorViewModel : ViewModelBase
     private string _sha256Hash = string.Empty;
 
     [ObservableProperty]
-    private string _defenderStatus = "Clean • Zero Threats Detected";
+    private string _defenderStatus = "No scanner result available";
 
     [ObservableProperty]
-    private string _heuristicStatus = "No RTLO spoofing or zip slip hazards";
+    private string _heuristicStatus = "No heuristic result available";
+
+    [ObservableProperty]
+    private string _hashVerificationStatus = "No expected SHA-256 supplied";
+
+    [ObservableProperty]
+    private bool _showVerificationDetails;
+
+    [ObservableProperty]
+    private string _verificationButtonText = "Show verification details";
+
+    public event Action<bool>? RequestToggleVerification;
+
+    [ObservableProperty]
+    private bool _hasHashMatchAttempt = false;
+
+    [ObservableProperty]
+    private bool _isHashVerified = false;
 
     public event Action? RequestClose;
 
@@ -48,21 +65,55 @@ public partial class CompletionInspectorViewModel : ViewModelBase
                 PayloadSizeText = $"{download.TotalBytes} Bytes";
 
             SavedLocation = download.SavePath;
-            Sha256Hash = !string.IsNullOrEmpty(download.Sha256Hash) ? download.Sha256Hash : "Computed on completion";
-            AvgSpeedText = download.SpeedMbps > 0 ? $"{download.SpeedMbps:F1} MB/s" : "High-Speed";
+            Sha256Hash = !string.IsNullOrEmpty(download.Sha256Hash) ? download.Sha256Hash : "Not computed";
+            AvgSpeedText = download.SpeedMbps > 0 ? $"{download.SpeedMbps:F1} MB/s" : "--";
             
+            DefenderStatus = download.SafetyVerdict.ToString();
+            HeuristicStatus = download.SafetyDetails;
             if (download.IsQuarantined)
             {
-                DefenderStatus = "Threat Detected • Blocked by Scanner";
+                DefenderStatus = "File quarantined; review safety details";
                 HeuristicStatus = download.StatusDetail;
+            }
+
+            if (!string.IsNullOrWhiteSpace(download.ExpectedSha256))
+            {
+                HasHashMatchAttempt = true;
+                if (!string.IsNullOrWhiteSpace(download.Sha256Hash) &&
+                    Services.DownloadEngine.VerifyHashConstantTime(download.Sha256Hash, download.ExpectedSha256))
+                {
+                    IsHashVerified = true;
+                    HashVerificationStatus = "Match with Expected SHA-256 Verified";
+                }
+                else
+                {
+                    IsHashVerified = false;
+                    HashVerificationStatus = string.IsNullOrWhiteSpace(download.Sha256Hash)
+                        ? "Expected hash could not be verified"
+                        : "Expected SHA-256 mismatch";
+                }
+            }
+            else
+            {
+                HasHashMatchAttempt = false;
+                IsHashVerified = false;
+                HashVerificationStatus = "No expected SHA-256 supplied";
             }
         }
     }
 
     [RelayCommand]
+    private void ToggleVerification()
+    {
+        ShowVerificationDetails = !ShowVerificationDetails;
+        VerificationButtonText = ShowVerificationDetails ? "Hide verification details" : "Show verification details";
+        RequestToggleVerification?.Invoke(ShowVerificationDetails);
+    }
+
+    [RelayCommand]
     private void QuickOpenFile()
     {
-        if (Download != null && File.Exists(Download.SavePath))
+        if (Download != null && Download.IsCompletedFile && File.Exists(Download.SavePath))
         {
             try
             {

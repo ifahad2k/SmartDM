@@ -1,6 +1,7 @@
 package io.smartdm.media.ytdlp;
 
 import io.smartdm.media.api.MediaMetadata;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
@@ -9,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class NativeDirectExtractorTest {
 
     @Test
+    @Disabled("Manual live site compatibility test - not part of deterministic suite per ADR-009/AGENTS.md")
     public void testYouTubeExtraction() {
         NativeDirectExtractor extractor = new NativeDirectExtractor(new com.fasterxml.jackson.databind.ObjectMapper());
         Optional<MediaMetadata> result = extractor.tryExtract("https://www.youtube.com/watch?v=dQw4w9WgXcQ", null, null);

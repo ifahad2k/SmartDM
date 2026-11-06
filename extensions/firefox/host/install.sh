@@ -13,15 +13,7 @@ if [ ! -d "$LIB_DIR" ] && [ -f "$PROJECT_ROOT/gradlew" ]; then
 fi
 
 TARGET_DIRS=(
-    "$HOME/.config/google-chrome/NativeMessagingHosts"
-    "$HOME/.config/chromium/NativeMessagingHosts"
-    "$HOME/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
-    "$HOME/.config/microsoft-edge/NativeMessagingHosts"
-    "$HOME/snap/chromium/common/.config/chromium/NativeMessagingHosts"
-    "$HOME/snap/chromium/current/.config/chromium/NativeMessagingHosts"
-    "$HOME/snap/google-chrome/common/.config/google-chrome/NativeMessagingHosts"
-    "$HOME/.var/app/com.google.Chrome/config/google-chrome/NativeMessagingHosts"
-    "$HOME/.var/app/org.chromium.Chromium/config/chromium/NativeMessagingHosts"
+    "$HOME/.mozilla/native-messaging-hosts"
 )
 
 for TARGET_DIR in "${TARGET_DIRS[@]}"; do
@@ -37,22 +29,23 @@ for TARGET_DIR in "${TARGET_DIRS[@]}"; do
             cp -rf "$LIB_DIR/"* "$HOST_BUNDLE_DIR/lib/"
         fi
 
-        TEMP_JSON="/tmp/smartdm_chrome_host.json"
+        TEMP_JSON="$(mktemp)"
+        trap 'rm -f "$TEMP_JSON"' EXIT
         cat <<EOF > "$TEMP_JSON"
 {
   "name": "io.smartdm.host",
   "description": "SmartDM Native Messaging Host",
   "path": "$HOST_BUNDLE_DIR/host.sh",
   "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://lkbiimagmeaefiedjigomffpophipmck/"
+  "allowed_extensions": [
+    "smartdm-extension@smartdm.io"
   ]
 }
 EOF
         cp "$TEMP_JSON" "$TARGET_DIR/io.smartdm.host.json"
         rm -f "$TEMP_JSON"
-        echo "Installed Chrome Native Messaging Host manifest to: $TARGET_DIR/io.smartdm.host.json"
+        echo "Installed Firefox Native Messaging Host manifest to: $TARGET_DIR/io.smartdm.host.json"
     fi
 done
 
-echo "Chrome Native Messaging Host installation complete!"
+echo "Firefox Native Messaging Host installation complete!"

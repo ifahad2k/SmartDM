@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 namespace SmartDm.Desktop.Avalonia.Services;
 
+[Obsolete("Legacy Java daemon launcher. Decommissioned per ADR-009 / Package 1. Production code uses DownloadEngine directly.")]
 public static class EngineDaemonLauncher
 {
     private static Process? _daemonProcess;
@@ -65,6 +66,15 @@ public static class EngineDaemonLauncher
             _daemonProcess = Process.Start(psi);
             if (_daemonProcess != null)
             {
+                _daemonProcess.OutputDataReceived += (_, _) => { };
+                _daemonProcess.ErrorDataReceived += (_, _) => { };
+                try
+                {
+                    _daemonProcess.BeginOutputReadLine();
+                    _daemonProcess.BeginErrorReadLine();
+                }
+                catch { }
+
                 AppDomain.CurrentDomain.ProcessExit += (_, _) =>
                 {
                     try

@@ -1,13 +1,16 @@
 package io.smartdm.download.engine.ipc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.smartdm.download.engine.LocalTestHttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,20 +67,20 @@ public class EngineDaemonIpcTest {
     }
 
     @Test
-    void testDownloadViaIpc() throws Exception {
-        try (Socket client = new Socket("127.0.0.1", daemon.getPort())) {
+    void testDownloadViaIpc(@TempDir Path tempDir) throws Exception {
+        int testSizeBytes = 8 * 1024 * 1024; // 8 MB bounded synthetic payload
+        try (LocalTestHttpServer testServer = LocalTestHttpServer.createSynthetic(testSizeBytes, "/ipc-test.bin");
+             Socket client = new Socket("127.0.0.1", daemon.getPort())) {
             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(client.getOutputStream()));
             DataInputStream in = new DataInputStream(new BufferedInputStream(client.getInputStream()));
 
-            java.nio.file.Path tempDest = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "smartdm_ipc_test", "512MB.zip");
-            java.nio.file.Files.createDirectories(tempDest.getParent());
-            java.nio.file.Files.deleteIfExists(tempDest);
+            Path tempDest = tempDir.resolve("test_ipc_download.bin");
 
             // Send START_DOWNLOAD command
             IpcProtocol.CommandMessage cmd = new IpcProtocol.CommandMessage();
             cmd.command = "START_DOWNLOAD";
             cmd.downloadId = "test-ipc-dl-01";
-            cmd.url = "http://ipv4.download.thinkbroadband.com/512MB.zip";
+            cmd.url = testServer.getUrl();
             cmd.destinationPath = tempDest.toAbsolutePath().toString();
             byte[] payload = MAPPER.writeValueAsBytes(cmd);
 

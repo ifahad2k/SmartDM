@@ -65,6 +65,18 @@ public partial class AddDownloadViewModel : ViewModelBase
 
     private long _probedTotalBytes = -1;
     private bool _probedAcceptsRanges = true;
+    private ProbeResult? _lastProbe;
+    private int _probeGeneration;
+
+    partial void OnUrlChanged(string value)
+    {
+        _probeGeneration++;
+        _lastProbe = null;
+        _probedTotalBytes = -1;
+        _probedAcceptsRanges = true;
+        IsProbeSuccessful = false;
+        IsProbing = false;
+    }
 
     public ObservableCollection<MediaFormatItem> AvailableFormats { get; } = new();
 
@@ -81,6 +93,8 @@ public partial class AddDownloadViewModel : ViewModelBase
     private string? _initialReferer;
     private string? _initialUserAgent;
     private string? _initialCookies;
+    private string? _initialVideoUrl;
+    private string? _initialAudioUrl;
 
     public static bool IsGenericOrInvalidFileName(string? name)
     {
@@ -91,6 +105,9 @@ public partial class AddDownloadViewModel : ViewModelBase
         // Strip notification badge e.g. "(311) " or "(1) "
         lower = System.Text.RegularExpressions.Regex.Replace(lower, @"^\(\d+\)\s*", "").Trim();
 
+        // Strip duplicate counter suffix e.g. " (1)", " (2)", " (5)"
+        lower = System.Text.RegularExpressions.Regex.Replace(lower, @"\s*\(\d+\)$", "").Trim();
+
         if (lower == "youtube" ||
             lower == "youtube music" ||
             lower == "watch" ||
@@ -99,12 +116,36 @@ public partial class AddDownloadViewModel : ViewModelBase
             lower == "media stream" ||
             lower == "download" ||
             lower == "downloads" ||
+            lower == "notifications" ||
+            lower == "notification" ||
             lower == "facebook" ||
             lower == "pornhub" ||
             lower == "bin" ||
+            lower == "player" ||
+            lower == "embed" ||
+            lower == "video stream" ||
+            lower == "stream" ||
+            lower == "kwik" ||
+            lower == "megaplay" ||
             lower.Length < 2)
         {
             return true;
+        }
+
+        // Detect embed player host tokens or generic files like "file 179829 - megaplay" or "file 12345"
+        if (System.Text.RegularExpressions.Regex.IsMatch(lower, @"^file[\s_-]*\d+"))
+        {
+            return true;
+        }
+
+        if (lower.Contains("megaplay") || lower.Contains("kwik") || lower.Contains("streamwish") ||
+            lower.Contains("vidcloud") || lower.Contains("upcloud") || lower.Contains("filemoon") ||
+            lower.Contains("doodstream") || lower.Contains("streamtape") || lower.Contains("mp4upload"))
+        {
+            if (lower.StartsWith("file") || lower.StartsWith("player") || lower.StartsWith("embed") || lower.StartsWith("video") || lower.Contains("server") || lower == "megaplay" || lower == "kwik")
+            {
+                return true;
+            }
         }
 
         // Detect Facebook CDN tokens (e.g. AQPEv8rliM4qIQGkbci...)
@@ -194,17 +235,24 @@ public partial class AddDownloadViewModel : ViewModelBase
         string? initialUserAgent = null,
         string? initialCookies = null,
         Func<string, DownloadModel?>? findActiveDownloadByUrl = null,
-        Func<string, bool>? isPathInUse = null)
+        Func<string, bool>? isPathInUse = null,
+        string? initialVideoUrl = null,
+        string? initialAudioUrl = null,
+        AppSettingsModel? settings = null)
     {
-        _probeService = probeService ?? new HttpProbeService();
+        settings ??= new AppSettingsModel();
+        ParallelThreads = Math.Clamp(settings.MaxParallelSegments, 1, 32);
+        _probeService = probeService ?? new HttpProbeService(settings: settings);
         _catalogService = catalogService ?? new FileCatalogService();
         _findActiveDownloadByUrl = findActiveDownloadByUrl;
         _isPathInUse = isPathInUse;
         _initialReferer = initialReferer;
-        _initialUserAgent = initialUserAgent;
+        _initialUserAgent = initialUserAgent ?? settings.UserAgent;
         _initialCookies = initialCookies;
+        _initialVideoUrl = initialVideoUrl;
+        _initialAudioUrl = initialAudioUrl;
 
-        string downloadsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        string downloadsDir = settings.DefaultDownloadDirectory;
         SavePath = downloadsDir;
         UpdateDriveSpace(SavePath);
 
@@ -223,23 +271,35 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (!IsGenericOrInvalidFileName(initialFileName))
         {
-            FileName = initialFileName!.Trim();
+            FileName = _probeService.SanitizeFileName(initialFileName!.Trim());
         }
-        else if (!string.IsNullOrWhiteSpace(_authoritativeTitle))
+        else if (!string.IsNullOrWhiteSpace(_authoritativeTitle) && !IsGenericOrInvalidFileName(_authoritativeTitle))
         {
             string safeTitle = string.Join("_", _authoritativeTitle.Split(Path.GetInvalidFileNameChars())).Trim();
             string ext = (!string.IsNullOrWhiteSpace(initialFormatId) && initialFormatId.Contains("bestaudio")) ? "mp3" : "mp4";
             FileName = $"{safeTitle}.{ext}";
         }
+        else
+        {
+            string ext = (!string.IsNullOrWhiteSpace(initialFormatId) && initialFormatId.Contains("bestaudio")) ? "mp3" : "mp4";
+            FileName = $"video.{ext}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(FileName))
+        {
+            SavePath = Path.Combine(downloadsDir, FileName);
+            UpdateDriveSpace(SavePath);
+        }
 
         bool hasRealFormats = initialFormats != null && initialFormats.Count > 0 &&
-            (initialFormats.Count > 3 || initialFormats.Any(f => System.Text.RegularExpressions.Regex.IsMatch(f.Resolution, @"\d+p")));
+            initialFormats.Any(f => Uri.TryCreate(f.DirectUrl, UriKind.Absolute, out var address) && address.Scheme is "http" or "https");
 
         if (hasRealFormats && initialFormats != null)
         {
             AvailableFormats.Clear();
             foreach (var dto in initialFormats)
             {
+                if (!Uri.TryCreate(dto.DirectUrl, UriKind.Absolute, out var address) || address.Scheme is not ("http" or "https")) continue;
                 string sizeStr = dto.FileSize > 0 ? MediaFormatItem.FormatBytes(dto.FileSize) : "Direct Stream";
                 var item = new MediaFormatItem
                 {
@@ -251,6 +311,9 @@ public partial class AddDownloadViewModel : ViewModelBase
                     DisplayLabel = dto.Resolution,
                     FormattedSize = sizeStr,
                     DirectUrl = dto.DirectUrl,
+                    MediaKind = dto.MediaKind,
+                    ManifestText = dto.ManifestText,
+                    AudioManifestText = dto.AudioManifestText,
                     AudioUrl = dto.AudioUrl
                 };
                 AvailableFormats.Add(item);
@@ -404,6 +467,9 @@ public partial class AddDownloadViewModel : ViewModelBase
                     DisplayLabel = dto.Resolution,
                     FormattedSize = sizeStr,
                     DirectUrl = dto.DirectUrl,
+                    MediaKind = dto.MediaKind,
+                    ManifestText = dto.ManifestText,
+                    AudioManifestText = dto.AudioManifestText,
                     AudioUrl = dto.AudioUrl
                 });
             }
@@ -446,17 +512,25 @@ public partial class AddDownloadViewModel : ViewModelBase
             return;
         }
 
-        if (await TryResolveYouTubeFormatsAsync(Url.Trim()))
+        string requestedUrl = Url.Trim();
+        int generation = ++_probeGeneration;
+        _lastProbe = null;
+        _probedTotalBytes = -1;
+        _probedAcceptsRanges = true;
+        IsProbeSuccessful = false;
+        if (await TryResolveYouTubeFormatsAsync(requestedUrl))
         {
             return;
         }
+        if (generation != _probeGeneration) return;
 
         IsProbing = true;
         ProbeStatus = "• Probing remote endpoint & calculating chunk matrix...";
 
         try
         {
-            var res = await _probeService.ProbeUrlAsync(Url.Trim());
+            var res = await _probeService.ProbeUrlAsync(requestedUrl);
+            if (generation != _probeGeneration) return;
             IsProbing = false;
 
             if (res.IsSuccess)
@@ -474,6 +548,7 @@ public partial class AddDownloadViewModel : ViewModelBase
                 }
                 _probedTotalBytes = res.TotalBytes;
                 _probedAcceptsRanges = res.AcceptsRanges;
+                _lastProbe = res;
                 Category = !string.IsNullOrWhiteSpace(FileName) ? _probeService.DetectCategory(FileName, res.MimeType) : res.SuggestedCategory;
 
                 string rangeStr = res.AcceptsRanges ? "Range Requests Supported" : "Single Stream Only";
@@ -503,6 +578,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            if (generation != _probeGeneration) return;
             IsProbing = false;
             IsProbeSuccessful = false;
             ProbeStatus = $"• Probe failed: {ex.Message}";
@@ -522,6 +598,17 @@ public partial class AddDownloadViewModel : ViewModelBase
     [RelayCommand]
     private async Task StartDownloadAsync()
     {
+        await ProcessDownloadSubmissionAsync(asQueued: false);
+    }
+
+    [RelayCommand]
+    private async Task AddToQueueAsync()
+    {
+        await ProcessDownloadSubmissionAsync(asQueued: true);
+    }
+
+    private async Task ProcessDownloadSubmissionAsync(bool asQueued)
+    {
         if (string.IsNullOrWhiteSpace(Url))
         {
             ProbeStatus = "• Cannot start transfer without a download URL.";
@@ -530,7 +617,17 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(FileName))
         {
-            FileName = "download_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + ".mp4";
+            string inferredExt = ".bin";
+            if (Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var parsedUri))
+            {
+                string pathOnly = parsedUri.AbsolutePath;
+                string ext = Path.GetExtension(pathOnly);
+                if (!string.IsNullOrEmpty(ext) && ext.Length <= 5)
+                {
+                    inferredExt = ext;
+                }
+            }
+            FileName = "download_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + inferredExt;
         }
         else if (FileName.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
         {
@@ -569,11 +666,21 @@ public partial class AddDownloadViewModel : ViewModelBase
                 IsProbing = true;
                 ProbeStatus = "• Resolving YouTube streams & deciphering signatures...";
                 var res = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(ytUrl);
+                if (!res.Success || res.Formats.Count == 0)
+                {
+                    IsProbing = false;
+                    ProbeStatus = "Media discovery failed. Retry from the original video page.";
+                    return;
+                }
                 if (res.Success && res.Formats.Count > 0)
                 {
-                    var match = res.Formats.FirstOrDefault(f => f.FormatId.Equals(SelectedFormatId, StringComparison.OrdinalIgnoreCase) || f.Resolution.StartsWith(SelectedFormatId, StringComparison.OrdinalIgnoreCase))
-                             ?? res.Formats.FirstOrDefault(f => f.Resolution.StartsWith("1080p") && !f.IsAudioOnly)
-                             ?? res.Formats.FirstOrDefault();
+                    var match = res.Formats.FirstOrDefault(f => f.FormatId.Equals(SelectedFormatId, StringComparison.Ordinal));
+                    if (match == null)
+                    {
+                        IsProbing = false;
+                        ProbeStatus = "The selected format is unavailable. Refresh the format list and select again.";
+                        return;
+                    }
                     if (match != null)
                     {
                         targetUrl = match.DirectUrl ?? targetUrl;
@@ -595,19 +702,30 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         string sizeStr = targetBytes > 0 ? $"{((double)targetBytes / (1024 * 1024 * 1024)):F2} GB" : "Direct Stream";
 
+        string? effectiveAudioUrl = (SelectedFormat != null && SelectedFormat.IsAudioOnly) ? null : (SelectedFormat?.AudioUrl ?? _initialAudioUrl);
+        string? effectiveVideoUrl = SelectedFormat?.DirectUrl ?? _initialVideoUrl ?? Url.Trim();
+
+        // Validators/capabilities describe the probed resource only, never a
+        // different selected representation or a URL edited during the probe.
+        var probe = _lastProbe != null && string.Equals(_lastProbe.Url, targetUrl, StringComparison.Ordinal)
+            ? _lastProbe : null;
+
         var model = new DownloadModel
         {
             Title = FileName,
             Url = targetUrl,
-            SourcePageUrl = Url.Trim(),
-            AudioUrl = SelectedFormat?.AudioUrl,
+            SourcePageUrl = _initialReferer ?? Url.Trim(),
+            AudioUrl = effectiveAudioUrl,
             FormatId = SelectedFormatId,
+            MediaKind = SelectedFormat?.MediaKind,
+            ManifestText = SelectedFormat?.ManifestText,
+            AudioManifestText = SelectedFormat?.AudioManifestText,
             Domain = Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var u) ? u.Host : "Remote Host",
             TotalBytes = targetBytes,
             DownloadedBytes = 0,
             SpeedMbps = 0,
             ProgressPercentage = 0,
-            Status = DownloadStatus.Queued,
+            Status = asQueued ? DownloadStatus.Queued : DownloadStatus.Active,
             Category = Category,
             IconSource = icon,
             IconBg = "#EAF2FF",
@@ -617,8 +735,14 @@ public partial class AddDownloadViewModel : ViewModelBase
             Referer = _initialReferer,
             UserAgent = _initialUserAgent,
             Cookies = _initialCookies,
+            ETag = probe?.ETag ?? string.Empty,
+            LastModified = probe?.LastModified,
+            SupportsRanges = probe?.AcceptsRanges,
+            PageUrl = _initialReferer,
+            VideoUrl = effectiveVideoUrl,
+            ExpectedSha256 = ExpectedHash?.Trim() ?? string.Empty,
             StatusDetail = _probedAcceptsRanges ? $"{ParallelThreads}-Way Sliced Transfer" : "Single-Stream Sequential",
-            Subline = $"{sizeStr} • Waiting in Queue",
+            Subline = asQueued ? $"{sizeStr} • Waiting in Queue" : $"{sizeStr} • Starting transfer...",
             FooterDetail = "Target: " + finalSavePath,
             FooterRight = "Allocated"
         };
@@ -657,7 +781,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
 
         // 2. System-wide Duplicate Detection in Catalog Database (for completed files on disk)
-        var duplicate = await _catalogService.FindDuplicateAsync(model.Url, model.Title);
+        var duplicate = await _catalogService.FindDuplicateAsync(model.Url, model.Title, string.IsNullOrWhiteSpace(model.ExpectedSha256) ? null : model.ExpectedSha256);
         if (duplicate != null)
         {
             RequestOpenDuplicateDialog?.Invoke(duplicate, () =>
@@ -686,8 +810,18 @@ public partial class AddDownloadViewModel : ViewModelBase
                     return;
                 }
 
+                if (resolution == Views.CollisionResolution.Overwrite &&
+                    (_isPathInUse?.Invoke(chosenPath) == true))
+                {
+                    ProbeStatus = "• Cannot replace a file used by another transfer. Choose a different filename.";
+                    return;
+                }
+
                 model.SavePath = chosenPath;
                 model.Title = Path.GetFileName(chosenPath);
+                model.ConflictAction = resolution == Views.CollisionResolution.Overwrite
+                    ? DestinationConflictAction.Replace
+                    : DestinationConflictAction.DefaultNeverOverwrite;
                 FinalizeDownload(model);
             });
             return;

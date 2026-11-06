@@ -20,17 +20,18 @@ public partial class TransferMonitorWindow : Window
         if (DataContext is TransferMonitorViewModel vm)
         {
             vm.RequestClose += Close;
+            Closed += (s, ev) => vm.Dispose();
             vm.RequestToggleDetails += show =>
             {
                 if (show)
                 {
                     MinHeight = 600;
-                    Height = 750;
+                    Height = 650;
                 }
                 else
                 {
-                    MinHeight = 240;
-                    Height = 265;
+                    MinHeight = 470;
+                    Height = 500;
                 }
             };
         }

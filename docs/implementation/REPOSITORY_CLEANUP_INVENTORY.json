@@ -1,0 +1,80 @@
+{
+  "scope": "Tracked and untracked nonignored files, generated/vendor files inventoried but not modified",
+  "file_count": 1112,
+  "areas": {
+    "(root)": 21,
+    ".github": 1,
+    "apps": 130,
+    "build-logic": 6,
+    "design-prototypes": 25,
+    "dist_exe": 394,
+    "docs": 34,
+    "extensions": 43,
+    "gradle": 5,
+    "modules": 313,
+    "packaging": 2,
+    "scratch": 2,
+    "smartdm-website": 101,
+    "src": 6,
+    "tests": 12,
+    "tools": 17
+  },
+  "text_marker_counts_not_confirmed_defects": {
+    "TODO": 1,
+    "FIXME": 0,
+    "HACK": 0,
+    "placeholder": 37,
+    "catch {": 145,
+    "fallback": 154
+  },
+  "identical_source_groups": [
+    [
+      "extensions/chrome/background.js",
+      "extensions/firefox/background.js"
+    ],
+    [
+      "extensions/chrome/modules/format_engine.js",
+      "extensions/firefox/modules/format_engine.js"
+    ],
+    [
+      "extensions/chrome/modules/overlay_ui.js",
+      "extensions/firefox/modules/overlay_ui.js"
+    ],
+    [
+      "extensions/chrome/modules/utils.js",
+      "extensions/firefox/modules/utils.js"
+    ],
+    [
+      "extensions/chrome/modules/visual_mount.js",
+      "extensions/firefox/modules/visual_mount.js"
+    ],
+    [
+      "extensions/chrome/modules/watcher.js",
+      "extensions/firefox/modules/watcher.js"
+    ],
+    [
+      "extensions/chrome/smartdm_overlay.js",
+      "extensions/firefox/smartdm_overlay.js"
+    ],
+    [
+      "extensions/chrome/sniffer.js",
+      "extensions/firefox/sniffer.js"
+    ],
+    [
+      "modules/ai-api/build.gradle.kts",
+      "modules/download-http/build.gradle.kts",
+      "modules/media-api/build.gradle.kts",
+      "modules/platform-api/build.gradle.kts",
+      "modules/safety-api/build.gradle.kts"
+    ],
+    [
+      "modules/platform-linux/build.gradle.kts",
+      "modules/platform-windows/build.gradle.kts"
+    ],
+    [
+      "tools/catalog-benchmark/build.gradle.kts",
+      "tools/test-http-server/build.gradle.kts",
+      "tools/test-media-fixtures/build.gradle.kts"
+    ]
+  ]
+}

@@ -303,7 +303,7 @@ public partial class SettingsViewModel : ViewModelBase
         }
         else
         {
-            UpdateStatusText = $"SmartDM v{CurrentVersion} is the latest version.";
+            UpdateStatusText = "No newer compatible, verified C# release is available.";
         }
     }
 
@@ -324,8 +324,8 @@ public partial class SettingsViewModel : ViewModelBase
 
         try
         {
-            await _updateChecker.DownloadAndInstallUpdateAsync(UpdateDownloadUrl, progress);
-            UpdateStatusText = "Update downloaded! Launching installer...";
+            string archive = await _updateChecker.DownloadAndInstallUpdateAsync(UpdateDownloadUrl, progress);
+            UpdateStatusText = "Verified update archive ready: " + archive + ". Review and extract it to a new folder before switching versions.";
         }
         catch (Exception ex)
         {

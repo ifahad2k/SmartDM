@@ -1,0 +1,10 @@
+Synthetic audit fixtures only; no user profile reads.
+DB plaintext canaries: name=True, url=True, cookie=True
+AI key plaintext=True
+Missing file scanner: clean=True, threat=False, detail=File does not exist.
+Heuristic quarantine: claimed=True, originalStillExists=True
+Unverified filename duplicate claim=Identical File Already Exists on Drive C:
+Wrong Content-Range accepted=True, bytes=4, actualFileHex=0000000000010203
+Direct PDF URL probe filename=download_20261029_125257.mp4, success=True
+Unknown-length aborted HTTP body: status=Completed, bytes=4, finalExists=True, detail=Clean file • Checksum verified (AUDIT FAKE SCANNER)
+Audit fixture run finished.
