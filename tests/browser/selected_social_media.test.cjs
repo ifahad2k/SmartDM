@@ -22,4 +22,29 @@ for(const browser of ['chrome','firefox']){
  test(`${browser}: unknown quality is not fabricated as 720p`,()=>{const p=player('https://cdn.invalid/current.mp4');p.videoWidth=p.videoHeight=0;const r=engine.selectedSocialFormats(p,[]);assert.equal(r[0].height,0);assert.match(r[0].resolution,/unknown/);});
  test(`${browser}: known video-only stream requires paired audio`,()=>{const p=player('https://cdn.invalid/current.mp4');assert.equal(engine.selectedSocialFormats(p,[{url:p.currentSrc,hasAudio:false}]).length,0);assert.equal(engine.selectedSocialFormats(p,[{url:p.currentSrc,hasAudio:false,audioUrl:'https://cdn.invalid/audio.m4a'}])[0].audioUrl,'https://cdn.invalid/audio.m4a');});
  test(`${browser}: iframe popover fits narrow player viewport`,()=>{const p={style:{}};ctx.OverlayUiRenderer.positionPopover(p,{right:690,bottom:390},700,400);assert.ok(parseFloat(p.style.left)+parseFloat(p.style.width)<=692);assert.ok(parseFloat(p.style.top)+parseFloat(p.style.maxHeight)<=392);});
+ test(`${browser}: Instagram muted feed video binding allows download and pairs author title`,()=>{
+  ctx.window.location.hostname='instagram.com';
+  const attrs={'data-smartdm-bound-src':'blob:insta-1','data-smartdm-video-url':'https://scontent.cdninstagram.com/v/t16/feed.mp4','data-smartdm-separate-audio':'1'};
+  const p={currentSrc:'blob:insta-1',videoWidth:1080,videoHeight:1920,getAttribute:k=>attrs[k],closest(){return {querySelector(s){return s==='header a, h2 a, a[role="link"][tabindex="0"]'?{textContent:'athiiiiiiiiiiii'}:null;},querySelectorAll(){return [];}};}};
+  const result=engine.selectedSocialFormats(p,[]);
+  assert.equal(result.length,1);
+  assert.equal(result[0].url,'https://scontent.cdninstagram.com/v/t16/feed.mp4');
+  assert.equal(result[0].title,'athiiiiiiiiiiii');
+  assert.equal(result[0].audioUrl,null);
+  ctx.window.location.hostname='tiktok.com';
+ });
+ test(`${browser}: Instagram active player falls back to recent Instagram CDN media when unbound`,()=>{
+  ctx.window.location.hostname='instagram.com';
+  const p={currentSrc:'blob:unbound-insta',videoWidth:720,videoHeight:1280,getAttribute:()=>null,closest:()=>null};
+  const media=[
+    {url:'https://scontent.cdninstagram.com/v/t16/older.mp4',timestamp:1000},
+    {url:'https://scontent.cdninstagram.com/v/t16/active.mp4',timestamp:2000,fbVideoId:'123'},
+    {url:'https://scontent.cdninstagram.com/v/t16/audio.mp4',isAudio:true,fbVideoId:'123',timestamp:2050}
+  ];
+  const result=engine.selectedSocialFormats(p,media);
+  assert.equal(result.length,1);
+  assert.equal(result[0].url,'https://scontent.cdninstagram.com/v/t16/active.mp4');
+  assert.equal(result[0].audioUrl,'https://scontent.cdninstagram.com/v/t16/audio.mp4');
+  ctx.window.location.hostname='tiktok.com';
+ });
 }

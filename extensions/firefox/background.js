@@ -39,7 +39,7 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
         try {
           const oldU = new URL(oldUrl);
           const newU = new URL(tab.url);
-          if (oldU.origin !== newU.origin || (oldU.pathname !== newU.pathname && !tab.url.includes('facebook.com') && !oldUrl.includes('facebook.com'))) {
+          if (oldU.origin !== newU.origin || (oldU.pathname !== newU.pathname && !tab.url.includes('facebook.com') && !oldUrl.includes('facebook.com') && !tab.url.includes('instagram.com') && !oldUrl.includes('instagram.com'))) {
             detectedMediaMap.delete(tabId);
           }
         } catch(e) {}
@@ -675,7 +675,7 @@ if (chrome.webRequest && chrome.webRequest.onSendHeaders) {
 function pushToMediaList(mediaList, newItem) {
   if (!mediaList || !newItem || !newItem.url) return;
   const isNewAudio = !!newItem.isAudio || (newItem.contentType && newItem.contentType.includes('audio/'));
-  const isFb = !!newItem.fbVideoId || (newItem.url && (newItem.url.includes('fbcdn.net') || newItem.url.includes('facebook.com') || newItem.url.includes('fbsbx.com')));
+  const isFb = !!newItem.fbVideoId || (newItem.url && (newItem.url.includes('fbcdn.net') || newItem.url.includes('facebook.com') || newItem.url.includes('fbsbx.com') || newItem.url.includes('cdninstagram.com') || newItem.url.includes('instagram.com')));
   const isHls = (newItem.contentType && newItem.contentType.includes('mpegurl')) || (newItem.url && newItem.url.includes('.m3u8'));
 
   const existingIdx = mediaList.findIndex((m) => {
@@ -807,7 +807,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
       // Filter out tiny video tracking beacons, range probes, and init fragments (< 64KB)
       // Never drop Facebook media chunks since Facebook audio init fragments and DASH chunks can be < 64KB
-      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('fbsbx.com') || url.includes('facebook.net');
+      const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('fbsbx.com') || url.includes('facebook.net') || url.includes('cdninstagram.com') || url.includes('instagram.com');
       if (!isFbMedia && contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
         return;
       }
@@ -1310,14 +1310,15 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           }
 
           if (isFbMedia) {
+            const isInsta = targetUrl.includes('cdninstagram.com') || targetUrl.includes('instagram.com') || (tabUrl && tabUrl.includes('instagram.com'));
             if (isFbAudio) {
               badge = 'Audio Stream';
               customTitle = 'Audio Stream (MP3 / High Quality)';
-              title = 'facebook_audio.mp4';
+              title = isInsta ? 'instagram_audio.mp4' : 'facebook_audio.mp4';
             } else {
-              badge = 'Facebook Video';
+              badge = isInsta ? 'Instagram Video' : 'Facebook Video';
               customTitle = 'Video Stream (MP4)';
-              title = 'facebook_video.mp4';
+              title = isInsta ? 'instagram_video.mp4' : 'facebook_video.mp4';
             }
           } else if (isGoogleVideo) {
             const itagMatch = targetUrl.match(/[?&]itag=(\d+)/);

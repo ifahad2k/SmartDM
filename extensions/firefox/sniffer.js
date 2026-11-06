@@ -129,9 +129,10 @@
     // This fallback follows byte identity across worker transfers/remux copies.
     // Only media responses representing backing resources qualify; never JSON,
     // playlists or known isolated HLS/DASH fragment URLs.
+    const isMeta = /(?:cdninstagram\.com|fbcdn\.net|facebook\.com|instagram\.com)/i.test(metadata.url || "");
     if (!/^https?:\/\//i.test(metadata.url || '') || !/(?:video|audio)\/(?:mp4|webm)/i.test(metadata.type || '') ||
         /\.(?:m4s|ts|aac)(?:[?#]|$)|\/(?:seg-|fragment-)/i.test(metadata.url) ||
-        ![200, 206].includes(metadata.status) || !(metadata.length >= 65536 || metadata.range)) return;
+        ![200, 206].includes(metadata.status) || (!isMeta && !(metadata.length >= 65536 || metadata.range))) return;
     const span = byteSpan(bytes);
     if (!span || span.end - span.start < SAMPLE_BYTES * 2) return;
     const now = Date.now();
@@ -202,7 +203,8 @@
     const total = Number((range || '').match(/\/(\d+)$/)?.[1]) || 0;
     // Individual HLS/DASH fragments are not complete downloadable resources.
     // A ranged backing file is usable even when its URL has no extension.
-    const backingRange = total > (buffer.byteLength || 0) && total > 1048576 && /(?:video|audio)\/(?:mp4|webm)|octet-stream/i.test(contentType || '');
+    const isMeta = /(?:cdninstagram\.com|fbcdn\.net|facebook\.com|instagram\.com)/i.test(url || "");
+    const backingRange = (isMeta || (total > (buffer.byteLength || 0) && total > 1048576)) && /(?:video|audio)\/(?:mp4|webm)|octet-stream/i.test(contentType || "");
     let completeMp4 = false;
     try {
       const view = new DataView(span.buffer, span.start, span.end - span.start);

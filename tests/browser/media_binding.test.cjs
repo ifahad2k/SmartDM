@@ -233,4 +233,15 @@ for (const browser of ['chrome', 'firefox']) {
     assert.equal(c.Engine.mediaExtension('https://cdn.invalid/video.random-token', 'application/x-mpegurl'), 'm3u8');
     assert.equal(c.Engine.mediaExtension('https://cdn.invalid/video.random-token', 'video/mp4'), 'mp4');
   });
+
+  test(`${browser}: Instagram and Meta CORS hidden responses bind to MediaSource player`, async () => {
+    const f = fixture(), a = f.player();
+    const video = a.source.addSourceBuffer('video/mp4');
+    const chunk = new ArrayBuffer(1024);
+    await new f.Response('https://scontent.cdninstagram.com/o1/v/t16/video.mp4', chunk, 'video/mp4', 0).arrayBuffer();
+    assert.equal(a.el.getAttribute('data-smartdm-video-url'), undefined);
+    video.appendBuffer(new Uint8Array(chunk));
+    assert.equal(a.el.getAttribute('data-smartdm-video-url'), 'https://scontent.cdninstagram.com/o1/v/t16/video.mp4');
+    assert.equal(a.el.getAttribute('data-smartdm-bound-src'), a.el.currentSrc);
+  });
 }

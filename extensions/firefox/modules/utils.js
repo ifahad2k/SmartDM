@@ -95,7 +95,7 @@ class SmartDmUtils {
   }
 
   static getMediaCacheKey(videoUrl, mediaEl) {
-    const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
+    const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || window.location.hostname.includes('instagram.com');
     if (isFb && mediaEl) {
       if (!mediaEl._smartdm_uid) {
         mediaEl._smartdm_uid = 'vid_fb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();

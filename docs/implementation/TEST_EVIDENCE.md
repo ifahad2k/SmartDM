@@ -334,3 +334,16 @@ Two real Chrome TikTok downloads completed: original screenshot clip H.264/AAC,
 720×1280, 218.8 s, 17,248,469 bytes; clean-code feed clip HEVC/AAC, 720×1280,
 83.3 s, 8,012,300 bytes. Both full FFmpeg decodes exited 0; extracted frames matched
 their selected videos. See [exact evidence/limits](STREAM_BINDING_HANDOFF.md).
+
+
+## 2026-11-06 Instagram feed video stream binding & format resolution
+
+- `node --test tests/browser/*.test.cjs`: **101 passed, zero failed/skipped**.
+- `dotnet test tests/SmartDm.Architecture.Tests/SmartDm.Architecture.Tests.csproj --no-build`: **115 passed, zero failed, 1 skipped** (HlsPipeline skipped as expected).
+- All 8 shared extension JavaScript files verified with **100% SHA-256 byte parity** between Chrome and Firefox:
+  `sniffer.js`, `background.js`, `smartdm_overlay.js`, `modules/format_engine.js`, `modules/utils.js`, `modules/visual_mount.js`, `modules/watcher.js`, `modules/overlay_ui.js`.
+- Fixed Instagram Web feed stream resolution:
+  1. `sniffer.js`: Recognize Meta CDN streams (`cdninstagram.com`, `fbcdn.net`) when CORS hides `Content-Range` and `Content-Length` headers in page contexts, binding chunk buffers and payload samples to the active MediaSource video element.
+  2. `format_engine.js`: In `selectedSocialFormats`, support Instagram feed playback where videos start muted by default (avoiding false rejection when `audioExpected` is set but no separate audio chunk is loaded), pair matching audio from detected tab media when present, and extract clean post caption/author titles.
+  3. `background.js`: Classify `cdninstagram.com` as Meta media alongside Facebook, preserving stream requests from small-chunk filtering, extracting `efg` metadata, and exempting Instagram SPA path transitions from clearing detected tab media.
+  4. `utils.js`: Include Instagram in `getMediaCacheKey` to isolate formats per player UID in feed scrolls.

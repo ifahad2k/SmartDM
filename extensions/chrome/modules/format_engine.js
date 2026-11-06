@@ -799,27 +799,58 @@ class FormatRegistryEngine {
     const src = mediaEl && (mediaEl.currentSrc || mediaEl.src) || '';
     const poster = mediaEl && (mediaEl.poster || mediaEl.getAttribute?.('poster')) || '';
     const asset = poster.match(/(?:ext_tw_video_thumb|amplify_video_thumb)\/(\d+)/)?.[1];
-    const matches = media.filter(m => m.url === src || (asset && new RegExp('/(?:ext_tw_video|amplify_video)/' + asset + '/').test(m.url || '')));
-    const binding = this.playerBinding(mediaEl);
+    const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
+    const matches = (media || []).filter(m => m.url === src || (asset && new RegExp('/(?:ext_tw_video|amplify_video)/' + asset + '/').test(m.url || '')));
+    let binding = this.playerBinding(mediaEl);
     if (binding) {
-      if (binding.audioExpected && !binding.audio) return [];
-      matches.push({...(media.find(m => m.url === binding.video) || {}), url: binding.video, audioUrl: binding.audio});
+      if (!binding.audio && (media || []).length) {
+        const fbEfg = SmartDmUtils.parseFacebookEfg ? SmartDmUtils.parseFacebookEfg(binding.video) : null;
+        const vid = fbEfg ? (fbEfg.video_id || fbEfg.fbid || fbEfg.asset_id || fbEfg.media_id || fbEfg.reel_id) : null;
+        const matchedAudio = (media || []).find(m => m.isAudio && ((vid && m.fbVideoId === String(vid)) || /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url)));
+        if (matchedAudio) binding.audio = matchedAudio.url;
+      }
+      if (binding.audioExpected && !binding.audio && !isInsta) return [];
+      matches.push({...(media || []).find(m => m.url === binding.video) || {}, url: binding.video, audioUrl: binding.audio});
+    } else if (isInsta && !matches.length) {
+      const instaVideos = (media || []).filter(m => !m.isAudio && /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url || ''));
+      if (instaVideos.length > 0) {
+        const best = instaVideos.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0];
+        const matchingAudio = (media || []).find(m => m.isAudio && (best.fbVideoId && m.fbVideoId === best.fbVideoId || /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url)));
+        matches.push({...best, audioUrl: matchingAudio ? matchingAudio.url : null});
+      }
     }
     let caption = '';
-    const card = mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"]');
+    const card = mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"], [role="presentation"]');
     if (card) {
       for (const selector of ['[data-testid="tweetText"]', '[data-e2e="video-desc"]', 'h1', '[data-testid="post-caption"]', 'img[alt]']) {
         const node = card.querySelector?.(selector);
         const value = (node?.textContent || node?.getAttribute?.('alt') || '').trim();
         if (value.length > 3 && !/^(instagram|home.*x)$/i.test(value)) { caption = value; break; }
       }
+      if (isInsta) {
+        if (!caption) {
+          for (const el of card.querySelectorAll('span[dir="auto"], div[dir="auto"]')) {
+            const txt = (el.textContent || '').trim();
+            if (txt.length > 3 && !/^(instagram|home|follow|likes?|views?|comments?)$/i.test(txt)) {
+              caption = txt;
+              break;
+            }
+          }
+        }
+        if (!caption) {
+          const author = card.querySelector('header a, h2 a, a[role="link"][tabindex="0"]')?.textContent?.trim();
+          if (author && author.length > 1 && !SmartDmUtils.isGenericTitle(author)) {
+            caption = `${author} - Instagram Video`;
+          }
+        }
+      }
     }
     if (!caption) caption = mediaEl?.getAttribute?.('aria-label') || '';
-    const title = caption ? SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160) : 'Selected video';
+    const title = caption ? SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160) : (isInsta ? 'Instagram Video' : 'Selected video');
     const urls = new Map(matches.map(m => [m.url, m]));
     if (/^https?:/.test(src) && !urls.has(src)) urls.set(src, {url:src});
     const audio = [...urls.values()].filter(m => m.isAudio || /audio\//.test(m.contentType || ''));
-    return [...urls.values()].filter(m => !audio.includes(m)).flatMap(m => {
+      return [...urls.values()].filter(m => !audio.includes(m)).flatMap(m => {
       const audioUrl = m.audioUrl || (audio.length === 1 ? audio[0].url : null);
       if (m.hasAudio === false && !audioUrl) return [];
       const height = m.height || (m.url === src || m.url === binding?.video ? Math.min(mediaEl.videoWidth || Infinity, mediaEl.videoHeight || Infinity) : 0);
