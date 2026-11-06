@@ -141,3 +141,5 @@ Remote CI follow-up: Ubuntu C# build/tests and browser fixtures passed in run
 42264399155. The preserved Java cold build hit an incomplete dependency checksum
 entry; Windows build passed before matrix cancellation. Platforms now finish
 independently (`fail-fast: false`); dependency verification remains enforced.
+The Windows collision fixture now joins runner shutdown before staging deletion;
+this is test lifecycle synchronization, not a production architecture change.

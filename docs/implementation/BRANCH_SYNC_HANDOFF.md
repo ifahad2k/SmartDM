@@ -38,6 +38,14 @@ No checksum/trust gate is disabled or blindly regenerated. Matrix fail-fast is n
 off so one platform's failure cannot erase the other platform's test evidence.
 This legacy cold-build gate remains open and does not prevent cloning/running C#.
 
+Final independent run 42264918250 (`d83ff4c`) again passed Ubuntu C# and browser
+checks. Windows exposed a fixture cleanup race in Package2RegressionTests:
+the terminal notification arrived before the runner finished deleting staging.
+RunToTerminal now joins the owning session through the existing awaited pause
+command before the fixture removes staging; production behavior is unchanged.
+The focused command `dotnet test tests/SmartDm.Architecture.Tests/SmartDm.Architecture.Tests.csproj --artifacts-path "$env:TEMP/smartdm-sync-validation" --no-restore --filter FullyQualifiedName~Package2RegressionTests --verbosity quiet`
+rebuilt the affected tests and passed all 27 cases locally, with no skips.
+
 ## Pre-existing dirty files
 
 This snapshot intentionally includes the prior UI, engine, browser, cleanup,

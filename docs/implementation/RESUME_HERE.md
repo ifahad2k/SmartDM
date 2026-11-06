@@ -113,3 +113,8 @@ browser fixtures. Windows built successfully but was cancelled during testing
 after legacy Gradle checksum verification failed on Ubuntu. Matrix fail-fast is
 disabled in the follow-up. Investigate the missing coroutines BOM POM checksum
 using verified upstream bytes; never disable dependency verification to pass CI.
+
+The independent Windows run found a test cleanup race: terminal notification did
+not imply staging cleanup had finished. The Package2RegressionTests helper now
+joins the runner before deleting staging; 27 focused cases pass after rebuild.
+This fixture correction changes no transfer-engine behavior.

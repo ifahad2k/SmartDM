@@ -437,7 +437,11 @@ public sealed class Package2RegressionTests
         try
         {
             await engine.StartDownloadAsync(model);
-            return await done.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var status = await done.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // Terminal notification precedes runner cleanup. Join the owning
+            // session before a test deletes its staging directory on Windows.
+            await engine.PauseDownloadAsync(model.Id).WaitAsync(TimeSpan.FromSeconds(10));
+            return status;
         }
         finally { engine.DownloadStatusChanged -= Changed; }
     }
@@ -445,8 +449,7 @@ public sealed class Package2RegressionTests
     private static void RemoveStaging(string id)
     {
         string path = DownloadEngine.GetDownloadStagingDirectory(id);
-        // Completion is published before the engine removes staging. Either
-        // cleanup may win; missing directories are the expected successful state.
+        // A completed runner normally removes staging itself.
         try { Directory.Delete(path, true); }
         catch (DirectoryNotFoundException) { }
     }

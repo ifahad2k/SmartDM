@@ -69,3 +69,5 @@ Publication succeeded at `fb945a7` on both remote C# branches. A subsequent CI-o
 repair replaces invalid action pins; use `git ls-remote` for the resulting tip.
 Remote Ubuntu C# checks passed; the legacy Gradle cold-build verification gate
 remains open. See the publication handoff for exact evidence and subsequent runs.
+The Windows fixture cleanup correction is included in the synchronized source;
+both branch names continue to receive the identical publication tip.

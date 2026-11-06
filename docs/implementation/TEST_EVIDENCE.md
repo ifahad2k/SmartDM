@@ -318,3 +318,9 @@ Run 42264399155 (`e9d03e4`): Ubuntu restore/build passed, .NET 173 passed/one sk
 tests were cancelled by matrix fail-fast. Ubuntu's legacy Gradle cold build failed
 strict dependency verification on the `kotlinx-coroutines-bom:1.6.4` POM. No trust
 check is bypassed. Matrix fail-fast is disabled for independent platform evidence.
+
+Run 42264918250: Ubuntu C# tests/browser fixtures passed; Windows found a fixture
+staging-delete race after terminal notification. The fixture now awaits engine
+session shutdown before cleanup. Focused rebuilt Package2RegressionTests: 27
+passed, zero failed/skipped; exact command is in BRANCH_SYNC_HANDOFF.md. Production
+code is unchanged; legacy Gradle dependency verification still fails independently.
