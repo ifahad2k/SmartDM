@@ -107,3 +107,9 @@ The source push to both branches succeeded at `fb945a7`. The first CI run failed
 before checkout because two existing action hashes were invalid; the follow-up
 uses verified immutable references. Check the latest remote run for execution
 results. No package exit gate is closed by source synchronization.
+
+CI run 42264399155 passed Ubuntu C# build/tests (173 passed, one skipped) and 77
+browser fixtures. Windows built successfully but was cancelled during testing
+after legacy Gradle checksum verification failed on Ubuntu. Matrix fail-fast is
+disabled in the follow-up. Investigate the missing coroutines BOM POM checksum
+using verified upstream bytes; never disable dependency verification to pass CI.

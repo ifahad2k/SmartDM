@@ -28,6 +28,16 @@ also verified to exist. No application code or schema changed in this follow-up.
 Action paths were checked against their official repository files and tag refs;
 `git diff --check` passed. Remote execution results must be checked separately.
 
+Run 42264399155 at `e9d03e4` reached source validation. Ubuntu C# restore/build
+passed; .NET reported 173 passed, one skipped (opt-in media tests were not enabled),
+and all 77 browser fixtures passed. Windows C# build passed with zero warnings/errors,
+but the matrix cancelled its test step after the Ubuntu legacy Gradle build failed.
+Gradle's strict verification rejected missing checksum metadata for
+`org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.6.4`'s POM during build-logic setup.
+No checksum/trust gate is disabled or blindly regenerated. Matrix fail-fast is now
+off so one platform's failure cannot erase the other platform's test evidence.
+This legacy cold-build gate remains open and does not prevent cloning/running C#.
+
 ## Pre-existing dirty files
 
 This snapshot intentionally includes the prior UI, engine, browser, cleanup,

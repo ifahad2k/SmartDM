@@ -67,3 +67,5 @@ Both remote branch updates remain fast-forwards from their original `ecbafc7` ti
 
 Publication succeeded at `fb945a7` on both remote C# branches. A subsequent CI-only
 repair replaces invalid action pins; use `git ls-remote` for the resulting tip.
+Remote Ubuntu C# checks passed; the legacy Gradle cold-build verification gate
+remains open. See the publication handoff for exact evidence and subsequent runs.

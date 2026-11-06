@@ -136,3 +136,8 @@ negotiation, weak-map MSE association and latest-menu snapshot handoff are now i
 source. Firefox-specific manifest/host metadata is restored. Both C# branch names
 are owner-authorized synchronization targets; Java main remains preserved. Local
 verification: 177 .NET, 77 browser and 13 auth tests; package gates remain NO.
+
+Remote CI follow-up: Ubuntu C# build/tests and browser fixtures passed in run
+42264399155. The preserved Java cold build hit an incomplete dependency checksum
+entry; Windows build passed before matrix cancellation. Platforms now finish
+independently (`fail-fast: false`); dependency verification remains enforced.
