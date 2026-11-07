@@ -28,6 +28,23 @@ class Element {
 }
 
 for (const browser of ['chrome', 'firefox']) {
+  test(`${browser}: HLS quality labels never replace the selected movie filename`, () => {
+    const context = vm.createContext({document: {createElement: () => new Element()},
+      window: {location: {hostname: 'player.invalid'}}, URL, CSS: {escape: value => value},
+      FormatRegistryEngine: {drainStashedManifests() {}}});
+    for (const [file, name] of [['utils.js', 'SmartDmUtils'], ['overlay_ui.js', 'OverlayUiRenderer']])
+      vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/${file}`, 'utf8') + `\nthis.${name}=${name};`, context);
+    for (const label of ['1080p Full HD (MP4)', '720p HD (MP4)', '360p SD (MP4)', '4K UHD (MP4)', 'Playing quality (MP4)']) {
+      const container = new Element(); let sent;
+      const format = {formatId: 'quality', title: label, resolution: label, ext: 'mp4', height: 1080, url: 'https://cdn.invalid/content?v=selected'};
+      context.OverlayUiRenderer.renderFormatDropdown(container, [format], 'https://page.invalid/movie', {}, 'The Odyssey', false,
+        (_, target, title) => {sent = {target, title};});
+      container.children[0].listeners.click({preventDefault() {}, stopPropagation() {}});
+      assert.equal(sent.target.fileName, 'The Odyssey.mp4');
+      assert.equal(sent.title, 'The Odyssey');
+    }
+    assert.equal(context.SmartDmUtils.isGenericTitle('1080p: A Film About Cameras'), false);
+  });
   test(`${browser}: an existing menu row sends the latest video/audio snapshots and title`, () => {
     const context = vm.createContext({document: {createElement: () => new Element()},
       window: {location: {hostname: 'player.invalid'}}, URL, CSS: {escape: value => value},

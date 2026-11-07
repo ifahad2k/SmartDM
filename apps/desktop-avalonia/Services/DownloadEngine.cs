@@ -669,11 +669,10 @@ public class DownloadEngine : IDownloadEngine
                 await RunParallelHlsSessionAsync(session, manifest);
                 return;
             }
-            session.StagingDirectory = GetDownloadStagingDirectory(download.Id);
-            Directory.CreateDirectory(session.StagingDirectory);
-            var manifestPath = Path.Combine(session.StagingDirectory, "browser-playlist.m3u8");
-            await File.WriteAllTextAsync(manifestPath, manifest, session.Cts.Token);
-            await RunFfmpegSessionAsync(session, manifestPath);
+            await using var source = new CapturedHlsPlaylist(manifest, session.Cts.Token);
+            await using var audioSource = !string.IsNullOrEmpty(download.AudioManifestText) && !string.IsNullOrEmpty(download.AudioUrl)
+                ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(download.AudioManifestText, download.AudioUrl), session.Cts.Token) : null;
+            await RunFfmpegSessionAsync(session, source.Url, audioSource?.Url);
             return;
         }
 
@@ -2222,20 +2221,8 @@ public class DownloadEngine : IDownloadEngine
         return null;
     }
 
-    private static async Task<string> ReadManifestAsync(HttpContent content, CancellationToken token)
-    {
-        using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
-        budget.CancelAfter(TimeSpan.FromSeconds(15));
-        await using var stream = await content.ReadAsStreamAsync(budget.Token);
-        using var data = new MemoryStream();
-        byte[] buffer = new byte[8192]; int read;
-        while ((read = await stream.ReadAsync(buffer, budget.Token)) > 0)
-        {
-            if (data.Length + read > 500_000) throw new InvalidDataException("The media playlist exceeds the supported size.");
-            await data.WriteAsync(buffer.AsMemory(0, read), budget.Token);
-        }
-        return System.Text.Encoding.UTF8.GetString(data.ToArray());
-    }
+    private static Task<string> ReadManifestAsync(HttpContent content, CancellationToken token)
+        => HlsManifestSnapshot.ReadAsync(content, token);
 
     private async Task<HlsPlaylistInfo?> ParseHlsPlaylistAsync(
         string playlistUrl,
@@ -2949,7 +2936,7 @@ public class DownloadEngine : IDownloadEngine
         }
     }
 
-    private async Task RunFfmpegSessionAsync(DownloadSession session, string? capturedInput = null)
+    private async Task RunFfmpegSessionAsync(DownloadSession session, string? capturedInput = null, string? capturedAudioInput = null)
     {
         var dl = session.Download;
         var token = session.Cts.Token;
@@ -3085,7 +3072,7 @@ public class DownloadEngine : IDownloadEngine
         if (capturedInput != null)
         {
             psi.ArgumentList.Add("-protocol_whitelist");
-            psi.ArgumentList.Add("file,http,https,tcp,tls");
+            psi.ArgumentList.Add("http,https,tcp,tls");
         }
         psi.ArgumentList.Add("-i");
         psi.ArgumentList.Add(capturedInput ?? dl.Url);
@@ -3106,8 +3093,13 @@ public class DownloadEngine : IDownloadEngine
                 psi.ArgumentList.Add("-user_agent");
                 psi.ArgumentList.Add(uaString);
             }
+            if (capturedAudioInput != null)
+            {
+                psi.ArgumentList.Add("-protocol_whitelist");
+                psi.ArgumentList.Add("http,https,tcp,tls");
+            }
             psi.ArgumentList.Add("-i");
-            psi.ArgumentList.Add(dl.AudioUrl);
+            psi.ArgumentList.Add(capturedAudioInput ?? dl.AudioUrl);
             psi.ArgumentList.Add("-c:v");
             psi.ArgumentList.Add("copy");
             psi.ArgumentList.Add("-c:a");

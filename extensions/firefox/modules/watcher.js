@@ -119,6 +119,8 @@ class MediaWatcher {
 
     window.addEventListener('yt-navigate-finish', onSpaNavigate, { passive: true });
     window.addEventListener('yt-page-data-updated', onSpaNavigate, { passive: true });
+    window.addEventListener('ytmusic-page-data-updated', onSpaNavigate, { passive: true });
+    window.addEventListener('ytmusic-navigate-finish', onSpaNavigate, { passive: true });
     window.addEventListener('popstate', onSpaNavigate, { passive: true });
 
     // 4. Lightweight Debounced MutationObserver (zero removed-subtree recursion)
@@ -280,8 +282,375 @@ class MediaWatcher {
 
   static scanAll() {
     this.syncVisibleThumbnails();
+    this.scanYouTubeMusic();
     this.scanPlayers();
     this.scanThumbnails();
+  }
+
+  static scanYouTubeMusic() {
+    if (typeof window === 'undefined' || !window.location || !window.location.hostname.includes('music.youtube.com')) return;
+
+    // 1. Single Music Player Bar
+    const playerBar = document.querySelector('ytmusic-player-bar');
+    if (playerBar && !playerBar.getAttribute('data-smartdm-mounted')) {
+      this.attachYouTubeMusicPlayerBar(playerBar);
+    }
+
+    // 2. Playlist / Album Page Header
+    const header = document.querySelector('ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer');
+    if (header && !header.getAttribute('data-smartdm-playlist-mounted')) {
+      const isPlaylistOrAlbum = window.location.pathname.includes('/playlist') ||
+                                window.location.pathname.includes('/browse/MPREb') ||
+                                window.location.search.includes('list=') ||
+                                !!document.querySelector('ytmusic-responsive-list-item-renderer');
+      if (isPlaylistOrAlbum) {
+        this.attachYouTubeMusicPlaylistHeader(header);
+      }
+    }
+  }
+
+  static attachYouTubeMusicPlayerBar(playerBar) {
+    if (!playerBar || playerBar.getAttribute('data-smartdm-mounted')) return;
+    playerBar.setAttribute('data-smartdm-mounted', 'true');
+
+    const host = document.createElement('div');
+    host.className = 'smartdm-ytmusic-host smartdm-player-host';
+    host.style.display = 'inline-flex';
+    host.style.alignItems = 'center';
+    host.style.margin = '0 8px';
+    host.style.zIndex = '2147483647';
+
+    const rightControls = playerBar.querySelector('.right-controls-buttons, .right-controls, #right-controls, .middle-controls') || playerBar;
+    if (rightControls !== playerBar) {
+      rightControls.insertBefore(host, rightControls.firstChild);
+    } else {
+      host.style.position = 'absolute';
+      host.style.right = '200px';
+      host.style.top = '50%';
+      host.style.transform = 'translateY(-50%)';
+      playerBar.appendChild(host);
+    }
+
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = `
+      ${this.styleMarkup(shadow)}
+      <button class="banner-btn ytmusic-bar-btn" title="Download current track with SmartDM">
+        <span class="play-icon"></span>
+        <span>Download Music</span>
+      </button>
+      <div class="popover">
+        <div class="popover-title">SmartDM Music Download</div>
+        <div class="popover-content">
+          <div class="status-text">Fetching formats...</div>
+        </div>
+      </div>
+    `;
+
+    const btn = shadow.querySelector('.banner-btn');
+    const popover = shadow.querySelector('.popover');
+    const content = shadow.querySelector('.popover-content');
+
+    let pollTimer = null;
+    const stopPolling = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    host._smartdm_stop_poll = stopPolling;
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const isActive = popover.classList.contains('active');
+      if (isActive) {
+        popover.classList.remove('active');
+        stopPolling();
+        return;
+      }
+
+      document.querySelectorAll('.smartdm-player-host, .smartdm-thumb-host').forEach(h => {
+        if (h !== host && h.shadowRoot) {
+          const p = h.shadowRoot.querySelector('.popover');
+          if (p) p.classList.remove('active');
+          if (h._smartdm_stop_poll) h._smartdm_stop_poll();
+        }
+      });
+
+      content._smartdm_downloading = false;
+      content._mediaEl = null;
+
+      const rect = btn.getBoundingClientRect();
+      const popoverWidth = 290;
+      let left = Math.max(10, Math.min(window.innerWidth - popoverWidth - 10, rect.right - popoverWidth));
+      popover.style.position = 'fixed';
+      popover.style.left = left + 'px';
+      popover.style.bottom = Math.max(10, window.innerHeight - rect.top + 8) + 'px';
+      popover.style.top = 'auto';
+      popover.classList.add('active');
+
+      const meta = (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractYouTubeMusicTrackMetadata) ?
+        VisualMountDetector.extractYouTubeMusicTrackMetadata(playerBar) : null;
+      const trackUrl = meta?.trackUrl || SmartDmUtils.getCanonicalUrl(window.location.href);
+      const trackTitle = meta?.fullTitle || (meta?.title ? (meta.artist ? `${meta.title} - ${meta.artist}` : meta.title) : SmartDmUtils.extractWatchPageTitle()) || 'YouTube Music Track';
+
+      let currentFormats = [];
+      content.innerHTML = `
+        <div class="spinner-container">
+          <div class="spinner"></div>
+          <span class="status-text" style="padding:0;">Loading track options...</span>
+        </div>
+      `;
+
+      const updateFormatsFromFetch = (res, hasMorePending) => {
+        try {
+          if (!popover.classList.contains('active')) return;
+          if (content._smartdm_downloading) return;
+          const resolvedTitle = (res?.title && !SmartDmUtils.isGenericTitle(res.title) && res.title !== 'YouTube Video') ?
+            res.title : trackTitle;
+          if (res && res.formats && res.formats.length > 0) {
+            currentFormats = FormatRegistryEngine.mergeFormatLists(currentFormats, res.formats);
+            OverlayUiRenderer.renderFormatDropdown(content, currentFormats, trackUrl, popover, resolvedTitle, hasMorePending, this.onDownloadHandler);
+
+            const hasPlaylist = window.location.search.includes('list=') ||
+                                (meta && meta.playlistId) ||
+                                (typeof document !== 'undefined' && !!document.querySelector('ytmusic-responsive-list-item-renderer'));
+            if (hasPlaylist && !content.querySelector('.smartdm-playlist-quick-btn')) {
+              const playlistBtn = document.createElement('button');
+              playlistBtn.className = 'format-item smartdm-playlist-quick-btn';
+              playlistBtn.style.marginTop = '6px';
+              playlistBtn.style.background = 'rgba(56, 189, 248, 0.15)';
+              playlistBtn.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+              playlistBtn.innerHTML = `
+                <div class="format-info">
+                  <span class="format-title" style="color:#38bdf8;">Download Full Playlist</span>
+                  <span style="font-size:10px; color:#94a3b8;">Queue all playlist tracks</span>
+                </div>
+                <span class="format-badge">Playlist</span>
+              `;
+              playlistBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                MediaWatcher.triggerYouTubeMusicPlaylistDownload(content, popover, this.onDownloadHandler);
+              });
+              content.appendChild(playlistBtn);
+            }
+          } else if (currentFormats.length === 0) {
+            content.innerHTML = '<div class="status-text" style="color:#f87171;">' +
+              ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Play track briefly or ensure SmartDM desktop app is running.</span>') +
+              '</div>';
+          }
+        } catch(uiErr) {
+          if (currentFormats.length === 0) {
+            content.innerHTML = '<div class="status-text" style="color:#f87171;">Error rendering formats.</div>';
+          }
+        }
+      };
+
+      const refreshActivePopover = () => {
+        if (!popover.classList.contains('active') || content._smartdm_downloading) {
+          stopPolling();
+          return;
+        }
+        FormatRegistryEngine.fetchMediaFormats(trackUrl, null, updateFormatsFromFetch, true);
+      };
+      popover._smartdm_refresh = refreshActivePopover;
+
+      stopPolling();
+      pollTimer = setInterval(refreshActivePopover, 1400);
+      if (typeof pollTimer?.unref === 'function') pollTimer.unref();
+      FormatRegistryEngine.fetchMediaFormats(trackUrl, null, updateFormatsFromFetch);
+    });
+  }
+
+  static attachYouTubeMusicPlaylistHeader(header) {
+    if (!header || header.getAttribute('data-smartdm-playlist-mounted')) return;
+    header.setAttribute('data-smartdm-playlist-mounted', 'true');
+
+    const host = document.createElement('div');
+    host.className = 'smartdm-ytmusic-playlist-host smartdm-player-host';
+    host.style.display = 'inline-flex';
+    host.style.alignItems = 'center';
+    host.style.margin = '4px 8px';
+    host.style.zIndex = '9999';
+
+    const buttonsContainer = header.querySelector?.('.buttons, #buttons, #top-level-buttons, [slot="buttons"], ytmusic-menu-renderer, .action-buttons') || header;
+    buttonsContainer.appendChild(host);
+
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = `
+      ${this.styleMarkup(shadow)}
+      <button class="banner-btn ytmusic-playlist-header-btn" title="Download all tracks in this playlist">
+        <span class="download-icon"></span>
+        <span>Download Playlist</span>
+      </button>
+      <div class="popover">
+        <div class="popover-title">SmartDM Playlist Download</div>
+        <div class="popover-content">
+          <div class="status-text">Scanning playlist tracks...</div>
+        </div>
+      </div>
+    `;
+
+    const btn = shadow.querySelector('.banner-btn');
+    const popover = shadow.querySelector('.popover');
+    const content = shadow.querySelector('.popover-content');
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const isActive = popover.classList.contains('active');
+      if (isActive) {
+        popover.classList.remove('active');
+        return;
+      }
+
+      document.querySelectorAll('.smartdm-player-host, .smartdm-thumb-host').forEach(h => {
+        if (h !== host && h.shadowRoot) {
+          const p = h.shadowRoot.querySelector('.popover');
+          if (p) p.classList.remove('active');
+          if (h._smartdm_stop_poll) h._smartdm_stop_poll();
+        }
+      });
+
+      content._smartdm_downloading = false;
+      if (OverlayUiRenderer.positionPopover) {
+        OverlayUiRenderer.positionPopover(popover, btn.getBoundingClientRect(), window.innerWidth, window.innerHeight);
+      }
+      popover.classList.add('active');
+
+      MediaWatcher.triggerYouTubeMusicPlaylistDownload(content, popover, this.onDownloadHandler);
+    });
+  }
+
+  static triggerYouTubeMusicPlaylistDownload(content, popover, onDownloadHandler = null) {
+    if (!content) return;
+    const playlistMeta = (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractYouTubeMusicPlaylistMetadata) ?
+      VisualMountDetector.extractYouTubeMusicPlaylistMetadata() : null;
+
+    if (!playlistMeta || !playlistMeta.tracks || playlistMeta.tracks.length === 0) {
+      content.innerHTML = `
+        <div class="status-text" style="color:#f87171;">
+          No playlist tracks detected.<br>
+          <span style="font-size:10px; color:#94a3b8;">Navigate to a playlist page or scroll down to load tracks.</span>
+        </div>
+      `;
+      return;
+    }
+
+    const count = playlistMeta.tracks.length;
+    const title = playlistMeta.title || 'Playlist';
+
+    content.innerHTML = `
+      <div style="font-size:12px; font-weight:700; color:#f8fafc; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px;">${SmartDmUtils.sanitizeCleanTitle(title)}</span>
+        <span style="font-size:10px; color:#38bdf8; font-weight:normal;">${count} track${count === 1 ? '' : 's'}</span>
+      </div>
+      <button class="format-item download-playlist-audio" style="margin-bottom:4px; width:100%;">
+        <div class="format-info">
+          <span class="format-title">Download All as Audio</span>
+          <span style="font-size:10px; color:#94a3b8;">Queue ${count} tracks as MP3 High Quality</span>
+        </div>
+        <span class="format-badge">MP3 Audio</span>
+      </button>
+      <button class="format-item download-playlist-video" style="margin-bottom:6px; width:100%;">
+        <div class="format-info">
+          <span class="format-title">Download All as Video</span>
+          <span style="font-size:10px; color:#94a3b8;">Queue ${count} tracks as MP4 Video</span>
+        </div>
+        <span class="format-badge">MP4 Video</span>
+      </button>
+      <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; margin-top:4px; margin-bottom:2px;">Track list:</div>
+      <div class="playlist-preview-list" style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; padding-right:2px; font-size:11px;">
+        ${playlistMeta.tracks.slice(0, 100).map((t, i) => `
+          <div style="display:flex; justify-content:space-between; color:#cbd5e1; padding:2px 4px; background:rgba(255,255,255,0.03); border-radius:3px;">
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:210px;">${i + 1}. ${t.fullTitle}</span>
+            <span style="color:#64748b; font-size:10px; margin-left:4px;">${t.duration || ''}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    const queueTracks = (isAudio) => {
+      content._smartdm_downloading = true;
+      content.innerHTML = `
+        <div class="spinner-container">
+          <div class="spinner"></div>
+          <span class="status-text" style="padding:0;">Queueing ${count} tracks to SmartDM...</span>
+        </div>
+      `;
+
+      let queued = 0;
+      const handler = onDownloadHandler || MediaWatcher.onDownloadHandler;
+      const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : (typeof chrome !== 'undefined' ? chrome.runtime : null);
+
+      playlistMeta.tracks.forEach((track, index) => {
+        const ext = isAudio ? 'mp3' : 'mp4';
+        const formatId = isAudio ? 'bestaudio/best' : '1080p';
+        const targetUrl = track.trackUrl || (track.videoId ? `https://music.youtube.com/watch?v=${track.videoId}` : null);
+        if (!targetUrl) return;
+
+        queued++;
+        if (typeof handler === 'function') {
+          const fakeFormat = {
+            formatId: formatId,
+            ext: ext,
+            isAudioOnly: isAudio,
+            title: track.fullTitle,
+            url: targetUrl,
+            directUrl: targetUrl,
+            fileName: `${track.fullTitle}.${ext}`
+          };
+          handler([fakeFormat], fakeFormat, track.fullTitle);
+        } else if (runtime && runtime.sendMessage) {
+          runtime.sendMessage({
+            type: 'START_MEDIA_DOWNLOAD',
+            url: targetUrl,
+            formatId: formatId,
+            title: track.fullTitle,
+            fileName: `${track.fullTitle}.${ext}`,
+            referer: window.location.href,
+            pageUrl: window.location.href
+          });
+        }
+      });
+
+      const fbTimer = setTimeout(() => {
+        content.innerHTML = `
+          <div class="status-text" style="color:#38bdf8; font-weight:700; font-size:12px;">
+            ✓ Queued ${queued} tracks to SmartDM!
+          </div>
+          <div class="status-text" style="font-size:10px; color:#94a3b8;">
+            Check your SmartDM download queue.
+          </div>
+        `;
+        const cTimer = setTimeout(() => {
+          popover.classList.remove('active');
+        }, 2200);
+        if (typeof cTimer?.unref === 'function') cTimer.unref();
+      }, 500);
+      if (typeof fbTimer?.unref === 'function') fbTimer.unref();
+    };
+
+    const audioBtn = content.querySelector('.download-playlist-audio');
+    if (audioBtn) {
+      audioBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        queueTracks(true);
+      });
+    }
+
+    const videoBtn = content.querySelector('.download-playlist-video');
+    if (videoBtn) {
+      videoBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        queueTracks(false);
+      });
+    }
   }
 
   static scanPlayers() {
@@ -309,13 +678,14 @@ class MediaWatcher {
       return false;
     }
 
-    // Dedicated main video player detection for YouTube
+    // Dedicated main video player detection for YouTube and YouTube Music
     const isYouTube = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be');
     if (isYouTube) {
       if (mediaEl.closest('ytd-inline-preview-player, ytd-thumbnail, #inline-preview-player')) {
         return true;
       }
-      if (mediaEl.closest('#movie_player, .html5-video-player, ytd-watch-flexy, ytd-shorts, #shorts-player')) {
+      if (mediaEl.closest('#movie_player, .html5-video-player, ytd-watch-flexy, ytd-shorts, #shorts-player, ytmusic-player, #player, ytmusic-player-page') ||
+          (window.location.hostname.includes('music.youtube.com') && (mediaEl.closest('ytmusic-player-bar') || mediaEl.classList?.contains('html5-main-video')))) {
         return false;
       }
     }
@@ -556,7 +926,14 @@ class MediaWatcher {
       const pageTitle = (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : fallbackTitle;
 
       let initialFormats = null;
-      const videoUrl = SmartDmUtils.getCanonicalUrl(window.location.href);
+      let videoUrl = SmartDmUtils.getCanonicalUrl(window.location.href);
+      if (typeof window !== 'undefined' && window.location?.hostname?.includes('music.youtube.com')) {
+        const ytMusicMeta = typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractYouTubeMusicTrackMetadata ?
+          VisualMountDetector.extractYouTubeMusicTrackMetadata() : null;
+        if (ytMusicMeta && ytMusicMeta.trackUrl) {
+          videoUrl = ytMusicMeta.trackUrl;
+        }
+      }
       if (isYouTube) {
         initialFormats = FormatRegistryEngine.getInstantYouTubeFormats(videoUrl, pageTitle);
       }
@@ -578,7 +955,7 @@ class MediaWatcher {
         try {
           if (this.activePlayers.get(mediaEl)?.host !== host || !popover.classList.contains('active')) return;
           if (content._smartdm_downloading) return;
-          const resolvedTitle = FormatRegistryEngine.isSocialFeed?.() && res?.title ? res.title : (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !SmartDmUtils.isGenericTitle(res.title)) ? res.title : pageTitle);
+          const resolvedTitle = (FormatRegistryEngine.isSocialFeed?.() && res?.title && !SmartDmUtils.isGenericTitle(res.title)) ? res.title : (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !SmartDmUtils.isGenericTitle(res.title)) ? res.title : pageTitle);
           if (res && res.formats && res.formats.length > 0) {
             currentFormats = FormatRegistryEngine.isSocialFeed?.() ? res.formats.slice() : FormatRegistryEngine.mergeFormatLists(currentFormats, res.formats);
             OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, hasMorePending, this.onDownloadHandler);
@@ -661,31 +1038,47 @@ class MediaWatcher {
     // Sub-frame iframes are embed viewers or ads; thumbnail browsing shelves only exist in the top frame
     if (window.top !== window.self) return;
 
+    const isAction = (el) => typeof VisualMountDetector !== 'undefined' && VisualMountDetector.isActionElement && VisualMountDetector.isActionElement(el);
+    const isPill = (el, url) => typeof VisualMountDetector !== 'undefined' && VisualMountDetector.isCategoryOrTagPill && VisualMountDetector.isCategoryOrTagPill(el, url);
+    const isAnime = (el, url) => typeof VisualMountDetector !== 'undefined' && VisualMountDetector.isAnimeCatalogOrEpisode && VisualMountDetector.isAnimeCatalogOrEpisode(el, url);
+    const isFbCarousel = (el) => typeof VisualMountDetector !== 'undefined' && VisualMountDetector.isFacebookCarouselOrShelf && VisualMountDetector.isFacebookCarouselOrShelf(el);
+    const isLegit = (card, el) => typeof VisualMountDetector !== 'undefined' && VisualMountDetector.isLegitimateThumbnailCard ? VisualMountDetector.isLegitimateThumbnailCard(card, el) : true;
+    const findMount = (card) => typeof VisualMountDetector !== 'undefined' && VisualMountDetector.findVisualThumbnailMount ? VisualMountDetector.findVisualThumbnailMount(card) : card;
+
     const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
     const isDedicatedReelViewer = isFb && window.location.pathname.includes('/reel/');
     if (isDedicatedReelViewer) return; // Dedicated /reel/ page uses the full-screen player banner
 
     if (isFb) {
-      // In Facebook Feed, scan Reel carousel and shelf cards (a[href*="/reel/"])
+      // In Facebook Feed, scan standalone Reel cards, excluding carousels, trays, shelves, and nav links
       const reelLinks = document.querySelectorAll('a[href*="/reel/"]');
       reelLinks.forEach((el) => {
         if (el.closest('div[role="dialog"]')) return;
         if (el.getAttribute(this.ATTR_THUMB_ATTACHED)) return;
 
+        // Never mount on buttons, tag/category pills, or navigation
+        if (isAction(el)) return;
+        if (isPill(el)) return;
+        if (isFbCarousel(el)) return;
+
         const cardContainer = el.closest('div[role="listitem"], div[role="gridcell"], div[data-pagelet*="Reels"], div[aria-label*="Reels"], article, li') || el;
         if (cardContainer.getAttribute(this.ATTR_THUMB_ATTACHED)) return;
+        if (isAction(cardContainer)) return;
+        if (isPill(cardContainer)) return;
+        if (isFbCarousel(cardContainer)) return;
 
         const videoUrl = SmartDmUtils.getCanonicalUrl(el.href);
         if (!videoUrl || !videoUrl.includes('/reel/')) return;
 
+        if (!isLegit(cardContainer, el)) return;
+
         const rect = cardContainer.getBoundingClientRect();
         if (rect.height < 60 || rect.width < 50) return;
 
-        // The anchor is the identity of one Reel. A broad article or carousel
-        // wrapper may contain many Reel links and must never own their badges.
+        // The anchor is the identity of one Reel.
         el.setAttribute(this.ATTR_THUMB_ATTACHED, 'true');
 
-        const cardTitle = VisualMountDetector.extractFacebookMediaTitle(null, cardContainer);
+        const cardTitle = typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractFacebookMediaTitle ? VisualMountDetector.extractFacebookMediaTitle(null, cardContainer) : null;
         this.attachThumbnailBadge(el, videoUrl, cardTitle);
       });
       return;
@@ -701,11 +1094,8 @@ class MediaWatcher {
       '.bili-video-card',
       'a[href*="/video/BV"]',
       'a[href*="/view_video.php"]',
-      'a[href*="/video-"]',
-      'a[href*="/videos/"]',
-      'a[href*="/video/"]',
-      'a[href*="/watch/"]',
-      'a[href*="/watch?"]',
+      'a[href*="/watch?v="]',
+      'a[href*="/shorts/"]',
       '.phimage',
       '.thumbnailWrapper',
       '.pcVideoListItem',
@@ -718,15 +1108,27 @@ class MediaWatcher {
 
     const elements = document.querySelectorAll(selectors.join(','));
     elements.forEach((el) => {
+      // Exclude action buttons, category/tag suggestion pills, and anime catalog/episode items
+      if (isAction(el)) return;
+      if (isPill(el)) return;
+      if (isAnime(el)) return;
+
       const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
 
       if (cardContainer.getAttribute(this.ATTR_THUMB_ATTACHED)) return;
       if (cardContainer.closest('[' + this.ATTR_THUMB_ATTACHED + ']')) return;
 
+      if (isAction(cardContainer)) return;
+      if (isPill(cardContainer)) return;
+      if (isAnime(cardContainer)) return;
+
       if (cardContainer.clientHeight > 0 && cardContainer.clientHeight < 40) return;
 
       let videoUrl = null;
-      const link = cardContainer.querySelector('a[href*="/watch?v="], a[href*="/watch/"], a[href*="/shorts/"], a[href*="/video/"], a[href*="/view_video.php"]') || (cardContainer.tagName === 'A' ? cardContainer : null);
+      const link = cardContainer.querySelector(
+        'a[href*="/watch?v="], a[href*="/shorts/"], a[href*="/video/BV"], a[href*="/view_video.php"], ' +
+        'a[href*="/watch/"], a[href*="/video/"], a[href*="/videos/"], a[href*="/v/"]'
+      ) || (cardContainer.tagName === 'A' ? cardContainer : null);
       if (link && link.href) {
         videoUrl = link.href;
       } else if (cardContainer.tagName === 'A' && cardContainer.href) {
@@ -734,9 +1136,16 @@ class MediaWatcher {
       }
 
       if (!videoUrl) return;
+      if (isPill(link || el, videoUrl)) return;
+      if (isAnime(link || el, videoUrl)) return;
 
-      const targetMount = VisualMountDetector.findVisualThumbnailMount(cardContainer);
+      if (!isLegit(cardContainer, link || el)) return;
+
+      const targetMount = findMount(cardContainer);
       if (!targetMount) return;
+      if (isAction(targetMount)) return;
+      if (isPill(targetMount, videoUrl)) return;
+      if (isAnime(targetMount, videoUrl)) return;
 
       if (targetMount.getAttribute(this.ATTR_THUMB_ATTACHED) && targetMount.querySelector('.smartdm-thumb-host')) return;
 
@@ -747,13 +1156,19 @@ class MediaWatcher {
         targetMount.style.position = 'relative';
       }
 
-      const cardTitle = VisualMountDetector.extractCardTitle(cardContainer);
+      const cardTitle = typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractCardTitle ? VisualMountDetector.extractCardTitle(cardContainer) : null;
       this.attachThumbnailBadge(targetMount, SmartDmUtils.getCanonicalUrl(videoUrl), cardTitle);
     });
   }
 
   static attachThumbnailBadge(containerEl, videoUrl, cardTitle = null) {
-    if (this.thumbnailHosts.has(containerEl)) return;
+    if (!containerEl || this.thumbnailHosts.has(containerEl)) return;
+    if (typeof VisualMountDetector !== 'undefined') {
+      if (VisualMountDetector.isActionElement && VisualMountDetector.isActionElement(containerEl)) return;
+      if (VisualMountDetector.isCategoryOrTagPill && VisualMountDetector.isCategoryOrTagPill(containerEl, videoUrl)) return;
+      if (VisualMountDetector.isAnimeCatalogOrEpisode && VisualMountDetector.isAnimeCatalogOrEpisode(containerEl, videoUrl)) return;
+      if (VisualMountDetector.isFacebookCarouselOrShelf && VisualMountDetector.isFacebookCarouselOrShelf(containerEl)) return;
+    }
 
     const isFb = videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch'));
     const isFbReel = (videoUrl && videoUrl.includes('/reel/')) || (isFb && !containerEl.closest?.('ytd-thumbnail'));
@@ -882,7 +1297,7 @@ class MediaWatcher {
       }
 
       content._smartdm_downloading = false;
-      content._mediaEl = null;
+      content._mediaEl = containerEl.querySelector?.('video') || containerEl;
       popover.classList.add('active');
 
       const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
@@ -927,7 +1342,7 @@ class MediaWatcher {
         try {
           if (this.thumbnailHosts.get(containerEl) !== host || !popover.classList.contains('active')) return;
           if (content._smartdm_downloading) return;
-          const resolvedTitle = FormatRegistryEngine.isSocialFeed?.() && res?.title ? res.title : (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !SmartDmUtils.isGenericTitle(res.title)) ? res.title : pageTitle);
+          const resolvedTitle = (FormatRegistryEngine.isSocialFeed?.() && res?.title && !SmartDmUtils.isGenericTitle(res.title)) ? res.title : (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : ((res && res.title && !SmartDmUtils.isGenericTitle(res.title)) ? res.title : pageTitle);
           if (res && res.formats && res.formats.length > 0) {
             currentFormats = FormatRegistryEngine.isSocialFeed?.() ? res.formats.slice() : FormatRegistryEngine.mergeFormatLists(currentFormats, res.formats);
             OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, hasMorePending, this.onDownloadHandler);

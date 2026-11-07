@@ -135,6 +135,8 @@ public class TestHttpServer : IAsyncDisposable
     public string? LastIfRange { get; private set; }
     public string? ResponseETag { get; set; }
     public bool AdvertiseRanges { get; set; } = true;
+    public string? RequiredReferer { get; set; }
+    public ConcurrentQueue<string> ObservedReferers { get; } = new();
     public ConcurrentQueue<(long Start, long? End)> RangeRequests { get; } = new();
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -182,9 +184,11 @@ public class TestHttpServer : IAsyncDisposable
                 string? line;
                 long? rangeStart = null;
                 long? rangeEnd = null;
+                string? referer = null;
 
                 while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
                 {
+                    if (line.StartsWith("Referer:", StringComparison.OrdinalIgnoreCase)) referer = line[8..].Trim();
                     if (line.StartsWith("Range: bytes=", StringComparison.OrdinalIgnoreCase))
                     {
                         string rangeVal = line.Substring("Range: bytes=".Length).Trim();
@@ -204,6 +208,13 @@ public class TestHttpServer : IAsyncDisposable
                 }
 
                 if (rangeStart.HasValue) RangeRequests.Enqueue((rangeStart.Value, rangeEnd));
+                ObservedReferers.Enqueue(referer ?? "");
+                if (RequiredReferer != null && RequiredReferer != referer)
+                {
+                    await writer.WriteAsync("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    await writer.FlushAsync();
+                    return;
+                }
 
                 if (method.Equals("HEAD", StringComparison.OrdinalIgnoreCase))
                 {

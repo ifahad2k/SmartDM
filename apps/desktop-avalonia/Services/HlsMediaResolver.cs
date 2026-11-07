@@ -33,7 +33,7 @@ public static class HlsMediaResolver
         ConnectTimeout = TimeSpan.FromSeconds(5)
     };
 
-    internal static void SetHttpClientForTesting(HttpClient? client) => _httpClient = client ?? CreateDefaultHttpClient();
+    public static void SetHttpClientForTesting(HttpClient? client) => _httpClient = client ?? CreateDefaultHttpClient();
 
     public static async Task<HlsResolutionResult> ResolveHlsFormatsAsync(
         string streamUrl,
@@ -43,9 +43,9 @@ public static class HlsMediaResolver
         CancellationToken token = default)
     {
         var result = new HlsResolutionResult();
-        if (string.IsNullOrWhiteSpace(streamUrl) || !streamUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(streamUrl))
         {
-            result.ErrorMessage = "Not an HLS .m3u8 URL";
+            result.ErrorMessage = "Empty stream URL";
             return result;
         }
 
@@ -142,10 +142,10 @@ public static class HlsMediaResolver
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
                 cts.CancelAfter(TimeSpan.FromSeconds(4));
 
-                using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token);
+                using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
                 if (resp.IsSuccessStatusCode)
                 {
-                    string content = await resp.Content.ReadAsStringAsync(cts.Token);
+                    string content = await HlsManifestSnapshot.ReadAsync(resp.Content, cts.Token);
                     if (content.Contains("#EXTM3U", StringComparison.OrdinalIgnoreCase))
                     {
                         string effective = resp.RequestMessage?.RequestUri?.ToString() ?? targetUrl;
@@ -195,6 +195,12 @@ public static class HlsMediaResolver
                 Add(Regex.Replace(childUrl, @"\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$", "/index.m3u8$1", RegexOptions.IgnoreCase));
             }
         }
+
+        if (childUrl.Contains("/stream-embed/", StringComparison.OrdinalIgnoreCase))
+        {
+            Add(Regex.Replace(childUrl, @"\/stream-embed\/media\/", "/stream-embed/playlist/", RegexOptions.IgnoreCase));
+        }
+        Add(Regex.Replace(childUrl, @"\/media\/", "/playlist/", RegexOptions.IgnoreCase));
 
         return list;
     }
@@ -272,7 +278,8 @@ public static class HlsMediaResolver
                             Resolution = label,
                             Ext = "mp4",
                             DirectUrl = fullStreamUrl,
-                            Title = label
+                            Title = label,
+                            Height = height
                         });
                     }
                 }

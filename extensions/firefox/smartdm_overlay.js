@@ -116,7 +116,7 @@
 
     // A watch page is not a media fallback. Only the desktop's explicit YouTube
     // resolver accepts a page URL as its source.
-    const isYouTubePage = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?|shorts\/)|youtu\.be\/)/i.test(directDownloadUrl || '');
+    const isYouTubePage = /^https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?|shorts\/)|youtu\.be\/)/i.test(directDownloadUrl || '');
     if (!/^https?:\/\//i.test(directDownloadUrl || '') || (directDownloadUrl === window.location.href && !isYouTubePage)) {
       if (typeof onResult === 'function') onResult({success: false, status: 'error', message: 'No verified media address is available. Play this video and capture it again.'});
       return;

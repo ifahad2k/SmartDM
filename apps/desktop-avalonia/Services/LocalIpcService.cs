@@ -218,7 +218,10 @@ public class LocalIpcService : ILocalIpcService
                             return;
                         }
                     }
-                    else if (queryUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+                    else if (type.Equals("RESOLVE_M3U8_VARIANTS", StringComparison.OrdinalIgnoreCase) ||
+                             queryUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                             queryUrl.Contains("stream-embed", StringComparison.OrdinalIgnoreCase) ||
+                             queryUrl.Contains("playlist", StringComparison.OrdinalIgnoreCase))
                     {
                         var hlsRes = await HlsMediaResolver.ResolveHlsFormatsAsync(queryUrl, queryReferer, queryUa, queryCookies);
                         if (hlsRes.Success && hlsRes.Formats.Count > 0)
@@ -314,8 +317,18 @@ public class LocalIpcService : ILocalIpcService
                     else if (item.TryGetProperty("directUrl", out var du)) dto.DirectUrl = du.GetString();
                     if (item.TryGetProperty("audioUrl", out var au)) dto.AudioUrl = au.GetString();
                     if (item.TryGetProperty("mediaKind", out var mk)) dto.MediaKind = mk.GetString();
-                    if (item.TryGetProperty("manifestText", out var mt) && mt.ValueKind == JsonValueKind.String && mt.GetString()!.Length <= 500_000) dto.ManifestText = mt.GetString();
-                    if (item.TryGetProperty("audioManifestText", out var amt) && amt.ValueKind == JsonValueKind.String && amt.GetString()!.Length <= 500_000) dto.AudioManifestText = amt.GetString();
+                    if (item.TryGetProperty("manifestText", out var mt) && mt.ValueKind == JsonValueKind.String)
+                    {
+                        dto.ManifestText = mt.GetString();
+                        if (!HlsManifestSnapshot.IsWithinSizeLimit(dto.ManifestText!))
+                        { resp.StatusCode = 413; return; }
+                    }
+                    if (item.TryGetProperty("audioManifestText", out var amt) && amt.ValueKind == JsonValueKind.String)
+                    {
+                        dto.AudioManifestText = amt.GetString();
+                        if (!HlsManifestSnapshot.IsWithinSizeLimit(dto.AudioManifestText!))
+                        { resp.StatusCode = 413; return; }
+                    }
                     formats.Add(dto);
                 }
             }

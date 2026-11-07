@@ -2,36 +2,336 @@
 // Resolves preview box boundaries on cards and video players without site-specific hardcoding.
 
 class VisualMountDetector {
+  static isActionElement(el) {
+    if (!el || typeof el !== 'object') return false;
+    try {
+      const tag = (el.tagName || '').toUpperCase();
+      const role = (el.getAttribute?.('role') || '').toLowerCase();
+      const isButtonLike = tag === 'BUTTON' || role === 'button' ||
+        (tag === 'INPUT' && /^(?:button|submit|reset)$/i.test(el.type || ''));
+
+      // 1. Any direct button tag or role
+      if (isButtonLike) return true;
+
+      // 2. Anything enclosed inside a button
+      if (el.closest?.('button, [role="button"], input[type="button"], input[type="submit"]')) {
+        return true;
+      }
+
+      // 3. Action classes
+      const className = typeof el.className === 'string' ? el.className : (el.getAttribute?.('class') || '');
+      const isActionClass = /(?:^|[\s_-])(?:btn|button|play-btn|watch-btn|play-now|watch-now|hero-btn|hero-cta|cta-btn|action-btn|cta|btn-primary|btn-secondary|btn-watch|btn-play|watch-button|play-button|btn-danger|btn-info|btn-success)(?:[\s_-]|$)/i.test(className);
+
+      // 4. CTA and Action text patterns
+      const rawText = (el.textContent || '').trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+      const isExactActionText = /^(?:play|play now|watch|watch now|start watching|stream now|view now|watch episode(?:\s*\d+)?|watch movie|watch online|continue watching|resume|watch trailer|trailer|preview|download|subscribe|sign up|read more|view all|see all|click here|load more|explore now|read manga|read now|watch free|play free|watch here|play video|watch video)$/i.test(rawText);
+
+      if (isExactActionText) return true;
+      if (isActionClass && (rawText.length <= 40 || !el.querySelector?.('img, video'))) return true;
+      if (rawText.length <= 35 && /^(?:play|watch|stream|start watching|continue watching|watch online|watch now|play now)\b/i.test(rawText) && !el.querySelector?.('img, video')) {
+        return true;
+      }
+
+      // 5. Parent action button check
+      const btnParent = el.closest?.('a.btn, a[class*="play-now" i], a[class*="watch-now" i], a[class*="btn-" i], a[class*="btn " i], a[class*="cta" i]');
+      if (btnParent) {
+        const pText = (btnParent.textContent || '').trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+        if (/^(?:play|play now|watch|watch now|start watching|stream now|view now|watch episode(?:\s*\d+)?|watch movie|watch online|watch free|play free|watch video)$/i.test(pText)) {
+          return true;
+        }
+        if (!btnParent.querySelector?.('img, video') && pText.length <= 40) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  static isCategoryOrTagPill(el, urlStr = '') {
+    try {
+      const href = (urlStr || el?.getAttribute?.('href') || el?.href || '').toLowerCase();
+      if (href) {
+        if (/[?&](?:search|q|query|keyword|search_query)=/i.test(href) || /\/search(?:\/|\?|$)/i.test(href)) {
+          return true;
+        }
+        if (/[?&](?:c|cat|category|tag|tags|filter|sort|order|page|p|o|genre)=/i.test(href)) {
+          return true;
+        }
+        if (/\/(?:category|categories|tags|tag|genres|genre|channels|channel|models|model|pornstar|pornstars|filter|filters|nav|browse)(?:\/|\?|$)/i.test(href)) {
+          return true;
+        }
+        if (/\/(?:trending|popular|recommended|recent|latest|explore|feed|top|new|history)(?:\/|\?|$)/i.test(href)) {
+          return true;
+        }
+        if (/^https?:\/\/[^\/]+\/(?:video|videos|watch|shorts|home)?\/?$/i.test(href)) {
+          return true;
+        }
+        if (/^(?:#|javascript:)/i.test(href)) {
+          return true;
+        }
+      }
+
+      if (!el || typeof el !== 'object') return false;
+
+      const role = (el.getAttribute?.('role') || '').toLowerCase();
+      if (/^(?:tab|menuitem|navigation|search|breadcrumb)$/.test(role)) return true;
+
+      if (el.closest?.('nav, header, footer, aside, [role="navigation"], [role="search"], [role="tab"], [role="tablist"], [role="menu"], [role="menubar"], [role="menuitem"], [role="breadcrumb"]')) {
+        return true;
+      }
+
+      const className = typeof el.className === 'string' ? el.className : (el.getAttribute?.('class') || '');
+      if (/\b(?:tag|tags|pill|pills|chip|chips|badge-tag|category-pill|category-chip|suggestion-item|search-item|search-pill|keyword|filter-pill|filter-item|tag-item)\b/i.test(className)) {
+        return true;
+      }
+
+      // Check if el is inside a dedicated tag cloud / search suggestion wrapper
+      const tagCloudContainer = el.closest?.(
+        '.tagsWrapper, .tagWrapper, .searchSuggestions, [class*="search-suggest" i], [class*="search_suggest" i], ' +
+        '[class*="tag-cloud" i], [class*="tags-cloud" i], [id*="searchSuggestions" i], [id*="search-suggest" i], ' +
+        'ul.tags, div.tags, [class*="pills" i], [class*="chips" i]'
+      );
+      if (tagCloudContainer) {
+        return true;
+      }
+
+      // If el is an anchor or button inside a category/suggestion container with no video thumbnail
+      const catContainer = el.closest?.('[class*="category" i], [class*="categories" i], [class*="filter" i], [class*="suggestion" i]');
+      if (catContainer && (el.tagName === 'A' || el.tagName === 'BUTTON' || el.tagName === 'SPAN')) {
+        const hasThumb = el.querySelector?.('img, video') || el.closest?.('ytd-thumbnail, .phimage, .videoBox, .bili-video-card');
+        const textLen = (el.textContent || '').trim().length;
+        if (!hasThumb && textLen <= 40) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  static isAnimeCatalogOrEpisode(el, urlStr = '') {
+    try {
+      const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname.toLowerCase() : '';
+      const isAnimeHost = /(?:anime|aniwave|9anime|hianime|zoro|gogoanime|animesaturn|animixplay|kissanime|kickassanime|allanime|aniwatch|kaido|miruro|yugenanime)/i.test(host);
+
+      const hasPlayerIframe = typeof document !== 'undefined' && !!document.querySelector?.(
+        'iframe[src*="stream"], iframe[src*="embed"], iframe[src*="player"], iframe[src*="megaplay"], iframe[src*="vidstream"], iframe[src*="mp4upload"], iframe[src*="cloud"], iframe[src*="tape"], #player, #player-wrapper'
+      );
+
+      const isAnimeContext = isAnimeHost || (hasPlayerIframe && typeof window !== 'undefined' && window.top === window.self);
+
+      if (!el || typeof el !== 'object') {
+        return isAnimeHost;
+      }
+
+      // 1. Episode lists and server lists (never mount on episode numbers / servers)
+      if (el.closest?.('#episodes, .episodes, .episodes-list, [class*="episode" i], [id*="episode" i], [class*="server" i], [id*="server" i], [class*="ss-list" i], [class*="ep-item" i], [class*="eps" i], [data-ep-id], [data-number]')) {
+        return true;
+      }
+
+      const text = (el.textContent || '').trim();
+      if (/^(?:ep(?:\s*\.?)?\s*\d+|\d{1,4}|episode\s*\d+|sub|dub)$/i.test(text)) {
+        return true;
+      }
+
+      // 2. Anime catalog items, sidebars, and series posters
+      if (isAnimeContext) {
+        if (el.closest?.('.top-anime, .recently-updated, [class*="sidebar" i], [class*="catalog" i], [class*="film-list" i], [class*="film_list" i], [class*="animes-list" i], [class*="top-view" i], [class*="widget-body" i], [class*="ranking" i], [class*="trending" i], [class*="grid" i], .items, .item, .poster, .film-poster')) {
+          return true;
+        }
+
+        if (this.isActionElement(el)) {
+          return true;
+        }
+
+        const href = (urlStr || el.getAttribute?.('href') || el.href || '').toLowerCase();
+        if (/\/watch\//i.test(href) && typeof window !== 'undefined' && window.top === window.self && isAnimeHost) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  static isFacebookCarouselOrShelf(el) {
+    if (!el || typeof el !== 'object') return false;
+    try {
+      const isFb = typeof window !== 'undefined' && window.location?.hostname &&
+        (window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch'));
+      if (!isFb) return false;
+
+      // 1. Explicit carousel containers
+      if (el.closest?.(
+        '[aria-label*="Reels" i], [data-pagelet*="Reels" i], [class*="carousel" i], ' +
+        '[class*="tray" i], [class*="shelf" i], [class*="slider" i], [role="region"][aria-label*="Reel" i], ' +
+        '[aria-roledescription="carousel" i]'
+      )) {
+        return true;
+      }
+
+      // 2. Header / navigation / sidebar
+      if (el.closest?.('header, nav, [role="navigation"], [data-pagelet*="LeftRail"], [role="banner"], [role="menubar"], [role="tablist"]')) {
+        return true;
+      }
+
+      // 3. Multi-reel check within a single feed post / unit
+      const postUnit = el.closest?.('[role="article"], [data-pagelet*="FeedUnit"], [role="region"]');
+      if (postUnit) {
+        const reelLinks = postUnit.querySelectorAll ? postUnit.querySelectorAll('a[href*="/reel/"]') : [];
+        if (reelLinks.length > 1) {
+          return true;
+        }
+      } else {
+        // Fallback for markup without role="article": traverse parents stopping at feed/main
+        let curr = el.parentElement;
+        for (let depth = 0; depth < 6 && curr && curr !== document.body; depth++) {
+          const role = (curr.getAttribute?.('role') || '').toLowerCase();
+          if (role === 'feed' || role === 'main') break;
+          const pagelet = (curr.getAttribute?.('data-pagelet') || '').toLowerCase();
+          if (pagelet.includes('feed')) break;
+
+          const reelCount = curr.querySelectorAll ? curr.querySelectorAll('a[href*="/reel/"]').length : 0;
+          if (reelCount > 1) {
+            return true;
+          }
+          curr = curr.parentElement;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  static isLegitimateThumbnailCard(cardContainer, linkEl = null) {
+    if (!cardContainer || typeof cardContainer !== 'object') return false;
+    try {
+      if (this.isActionElement(cardContainer) || (linkEl && this.isActionElement(linkEl))) {
+        return false;
+      }
+
+      if (this.isCategoryOrTagPill(cardContainer) || (linkEl && this.isCategoryOrTagPill(linkEl))) {
+        return false;
+      }
+
+      if (this.isFacebookCarouselOrShelf(cardContainer) || (linkEl && this.isFacebookCarouselOrShelf(linkEl))) {
+        return false;
+      }
+
+      if (this.isAnimeCatalogOrEpisode(cardContainer) || (linkEl && this.isAnimeCatalogOrEpisode(linkEl))) {
+        return false;
+      }
+
+      const href = (linkEl?.href || linkEl?.getAttribute?.('href') ||
+                    cardContainer.getAttribute?.('href') || cardContainer.href ||
+                    cardContainer.querySelector?.('a[href]')?.getAttribute?.('href') || '').toLowerCase().trim();
+
+      if (!href || href === '#' || href.startsWith('javascript:')) return false;
+
+      if (this.isCategoryOrTagPill(null, href)) return false;
+
+      // Platform-specific watch URL enforcement
+      const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname.toLowerCase() : '';
+      if (host.includes('pornhub.com')) {
+        if (!href.includes('view_video.php') || !href.includes('viewkey=')) {
+          return false;
+        }
+      }
+
+      if (host.includes('youtube.com') || host.includes('youtu.be')) {
+        if (!href.includes('watch?v=') && !href.includes('/shorts/') && !href.includes('youtu.be/')) {
+          return false;
+        }
+      }
+
+      // Check for duration badge (strong signal of genuine video card)
+      const hasDuration = !!cardContainer.querySelector?.(
+        '[class*="duration" i], [class*="time-status" i], var.duration, span.duration, .badge-shape, ytd-thumbnail-overlay-time-status-renderer'
+      );
+
+      const isKnownThumbnailContainer = cardContainer.tagName === 'YTD-THUMBNAIL' ||
+        cardContainer.classList?.contains?.('phimage') ||
+        cardContainer.classList?.contains?.('thumbnailWrapper') ||
+        cardContainer.classList?.contains?.('bili-video-card');
+
+      const mediaList = Array.from(
+        cardContainer.querySelectorAll ? cardContainer.querySelectorAll('img, video, canvas, [style*="background-image"]') : []
+      );
+
+      let hasValidMedia = isKnownThumbnailContainer;
+      for (const m of mediaList) {
+        if (m.closest?.('[class*="avatar"], [class*="channel"], [class*="author"], [class*="badge"], [class*="icon"], [class*="user"], [class*="profile"], [class*="logo"], [class*="meta"]')) {
+          continue;
+        }
+        const mClass = typeof m.className === 'string' ? m.className : (m.getAttribute?.('class') || '');
+        if (/\b(?:icon|logo|avatar|channel-img|arrow|badge)\b/i.test(mClass)) {
+          continue;
+        }
+
+        const r = m.getBoundingClientRect ? m.getBoundingClientRect() : { width: 0, height: 0 };
+        const w = r.width || m.offsetWidth || m.naturalWidth || (m.getAttribute?.('width') ? parseInt(m.getAttribute('width'), 10) : 0);
+        const h = r.height || m.offsetHeight || m.naturalHeight || (m.getAttribute?.('height') ? parseInt(m.getAttribute('height'), 10) : 0);
+
+        if (w > 0 || h > 0) {
+          // Standard landscape: w >= 60, h >= 35
+          // Portrait (Reels/Shorts/TikTok): w >= 50, h >= 70
+          if ((w >= 60 && h >= 35) || (w >= 50 && h >= 70)) {
+            hasValidMedia = true;
+            break;
+          }
+        } else if (m.tagName === 'IMG' || m.tagName === 'VIDEO') {
+          // In headless tests or before layout, check image attributes
+          const src = m.getAttribute?.('src') || m.src || '';
+          const isIcon = /\b(?:icon|logo|avatar|search|arrow|svg)\b/i.test(src);
+          if (src && !isIcon) {
+            hasValidMedia = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasValidMedia && !hasDuration) {
+        return false;
+      }
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static findMountContainer(cardContainer) {
+    return this.findVisualThumbnailMount(cardContainer);
+  }
+
   static findVisualThumbnailMount(cardContainer) {
     if (!cardContainer) return null;
+
+    if (!this.isLegitimateThumbnailCard(cardContainer)) return null;
 
     if (cardContainer.tagName === 'IMG' || cardContainer.tagName === 'VIDEO') {
       return cardContainer.parentElement || cardContainer;
     }
 
-    // 1. Gather all potential visual media elements in the card (images, videos, canvases)
     const mediaList = Array.from(
-      cardContainer.querySelectorAll('img, video, canvas, [style*="background-image"]')
+      cardContainer.querySelectorAll ? cardContainer.querySelectorAll('img, video, canvas, [style*="background-image"]') : []
     );
 
     let bestThumbMedia = null;
     let maxArea = 0;
 
     for (const el of mediaList) {
-      if (el.closest('[class*="avatar"], [class*="channel"], [class*="author"], [class*="badge"], [class*="icon"], [class*="user"], [class*="profile"], [class*="meta"], [class*="detail"], [id*="title"], h1, h2, h3, h4')) {
+      if (el.closest?.('[class*="avatar"], [class*="channel"], [class*="author"], [class*="badge"], [class*="icon"], [class*="user"], [class*="profile"], [class*="logo"], [class*="meta"], [class*="detail"], [id*="title"], h1, h2, h3, h4')) {
         continue;
       }
 
-      const r = el.getBoundingClientRect();
-      const w = r.width || el.offsetWidth || (el.naturalWidth ? Math.min(el.naturalWidth, 400) : 0);
-      const h = r.height || el.offsetHeight || (el.naturalHeight ? Math.min(el.naturalHeight, 300) : 0);
+      const r = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 0, height: 0 };
+      const w = r.width || el.offsetWidth || el.naturalWidth || (el.getAttribute?.('width') ? parseInt(el.getAttribute('width'), 10) : 0);
+      const h = r.height || el.offsetHeight || el.naturalHeight || (el.getAttribute?.('height') ? parseInt(el.getAttribute('height'), 10) : 0);
 
-      if (w < 60 || h < 35) continue;
+      if ((w > 0 && w < 50) || (h > 0 && h < 35)) continue;
 
       const aspect = w / (h || 1);
-      if (aspect > 0.85 && aspect < 1.15 && w < 100) continue;
+      if (aspect > 0.85 && aspect < 1.15 && w < 100 && w > 0) continue;
 
-      const area = w * h;
+      const area = (w || 100) * (h || 56);
       if (area > maxArea) {
         maxArea = area;
         bestThumbMedia = el;
@@ -39,7 +339,7 @@ class VisualMountDetector {
     }
 
     if (bestThumbMedia) {
-      const mediaRect = bestThumbMedia.getBoundingClientRect();
+      const mediaRect = bestThumbMedia.getBoundingClientRect ? bestThumbMedia.getBoundingClientRect() : { width: 0, height: 0 };
       const mW = mediaRect.width || bestThumbMedia.offsetWidth || 100;
       const mH = mediaRect.height || bestThumbMedia.offsetHeight || 56;
 
@@ -49,12 +349,12 @@ class VisualMountDetector {
         const parent = curr.parentElement;
         if (!parent || parent === cardContainer || parent === document.body) break;
 
-        const titleEl = parent.querySelector('[id*="title"], h1, h2, h3, h4, [class*="title"], [class*="metadata"], [id*="metadata"], [class*="detail"], [id*="detail"], [class*="meta"], [id*="meta"]');
+        const titleEl = parent.querySelector ? parent.querySelector('[id*="title"], h1, h2, h3, h4, [class*="title"], [class*="metadata"], [id*="metadata"], [class*="detail"], [id*="detail"], [class*="meta"], [id*="meta"]') : null;
         if (titleEl && !curr.contains(titleEl)) {
           break;
         }
 
-        const pRect = parent.getBoundingClientRect();
+        const pRect = parent.getBoundingClientRect ? parent.getBoundingClientRect() : { width: 0, height: 0 };
         const pW = pRect.width || parent.offsetWidth || 0;
         const pH = pRect.height || parent.offsetHeight || 0;
 
@@ -69,25 +369,29 @@ class VisualMountDetector {
         curr = parent;
       }
 
-      return curr;
+      if (curr && !this.isActionElement(curr) && !this.isCategoryOrTagPill(curr)) {
+        return curr;
+      }
     }
 
-    const visualElement = cardContainer.querySelector(
-      '[class*="visual"], [class*="thumbnail"], [class*="thumb"], [id*="thumbnail"], [id*="thumb"], [class*="preview"], [class*="cover"], [class*="poster"], [class*="media"]'
-    );
+    const visualElement = cardContainer.querySelector ? cardContainer.querySelector(
+      'ytd-thumbnail, .phimage, .thumbnailWrapper, [class*="visual"], [class*="thumbnail"], [class*="thumb"], [id*="thumbnail"], [id*="thumb"], [class*="preview"], [class*="cover"], [class*="poster"], [class*="media"]'
+    ) : null;
     if (visualElement && visualElement !== cardContainer) {
-      const vRect = visualElement.getBoundingClientRect();
-      const cRect = cardContainer.getBoundingClientRect();
-      const vW = vRect.width || visualElement.offsetWidth || 0;
-      const cW = cRect.width || cardContainer.offsetWidth || 0;
-      if (vW > 0 && cW > 0) {
-        if (vW < cW * 0.85) return visualElement;
-      } else {
+      if (!this.isActionElement(visualElement) && !this.isCategoryOrTagPill(visualElement)) {
         return visualElement;
       }
     }
 
-    return cardContainer;
+    if (cardContainer.tagName === 'YTD-THUMBNAIL' || cardContainer.classList?.contains?.('phimage') || cardContainer.classList?.contains?.('thumbnailWrapper')) {
+      return cardContainer;
+    }
+
+    if (bestThumbMedia && !this.isActionElement(cardContainer) && !this.isCategoryOrTagPill(cardContainer)) {
+      return cardContainer;
+    }
+
+    return null;
   }
 
   static extractTextWithEmojis(el) {
@@ -340,23 +644,50 @@ class VisualMountDetector {
 
   static findInstagramPostCard(mediaEl) {
     if (!mediaEl) return null;
-    let card = mediaEl.closest?.('article, [role="dialog"], [role="presentation"]');
-    if (card) return card;
+    let card = mediaEl.closest?.('article, [role="dialog"]');
+    if (card && (card.querySelector?.('header a, h2 a, a[role="link"][tabindex="0"]') || card.querySelector?.('header, a[href*="/p/"], a[href*="/reel/"]') || card.querySelector?.('[aria-label*="Like" i]'))) {
+      return card;
+    }
     let curr = mediaEl.parentElement;
     let candidate = null;
     const docBody = typeof document !== 'undefined' ? document.body : null;
     const docEl = typeof document !== 'undefined' ? document.documentElement : null;
-    for (let i = 0; i < 12 && curr && curr !== docBody && curr !== docEl; i++) {
+    for (let i = 0; i < 30 && curr && curr !== docBody && curr !== docEl; i++) {
+      const role = curr.getAttribute?.('role');
+      if (role === 'feed' || role === 'main' || curr.tagName === 'MAIN') break;
+      const articles = curr.querySelectorAll ? curr.querySelectorAll('article') : [];
+      if (articles.length > 1 && candidate) break;
       const vids = curr.querySelectorAll ? curr.querySelectorAll('video') : [];
       if (vids.length > 1 && candidate) break;
-      const hasHeader = curr.querySelector?.('header, [role="heading"], a[href*="/p/"], a[href*="/reel/"]');
-      const hasActions = curr.querySelector?.('[aria-label*="Like" i], [aria-label*="Comment" i], [aria-label*="Share" i]');
-      if (hasHeader || hasActions) {
-        candidate = curr;
-        if ((hasHeader && hasActions) || curr.querySelector?.('a[href*="/p/"], a[href*="/reel/"]')) {
-          break;
+      const headers = curr.querySelectorAll ? curr.querySelectorAll('header') : [];
+      if (headers.length > 1 && candidate) break;
+      const postLinks = curr.querySelectorAll ? curr.querySelectorAll('a[href*="/p/"], a[href*="/reel/"]') : [];
+      if (postLinks.length > 0 && candidate) {
+        const postCodes = new Set();
+        for (const a of postLinks) {
+          const m = (a.getAttribute?.('href') || a.href || '').match(/\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
+          if (m) postCodes.add(m[1]);
         }
+        if (postCodes.size > 1) break;
       }
+
+      const hasHeader = curr.querySelector?.('header, [role="heading"], a[role="link"][tabindex="0"], a[href*="/p/"], a[href*="/reel/"]');
+      const hasActions = curr.querySelector?.('[aria-label*="Like" i], [aria-label*="Comment" i], [aria-label*="Share" i]');
+      const hasCaption = curr.querySelector?.('h1, [data-testid="post-caption"], div[class*="_a9zs"], span[class*="_a9zs"], div[dir="auto"], span[dir="auto"]');
+      const hasComment = curr.querySelector?.('form, [aria-label*="comment" i], textarea, a[href*="/p/"], a[href*="/reel/"]');
+
+      if ((hasHeader && (hasActions || hasCaption || hasComment)) || (hasActions && (hasCaption || hasComment))) {
+        return curr;
+      }
+
+      if (hasHeader || hasActions || hasCaption) {
+        candidate = curr;
+      }
+
+      if (curr.parentElement && (curr.parentElement.getAttribute?.('role') === 'feed' || curr.parentElement.getAttribute?.('role') === 'main' || curr.parentElement.tagName === 'MAIN')) {
+        return candidate || curr;
+      }
+
       curr = curr.parentElement;
     }
     return candidate;
@@ -369,54 +700,149 @@ class VisualMountDetector {
       let caption = '';
 
       if (card) {
-        const authorEl = card.querySelector?.('header a, h2 a, a[role="link"][tabindex="0"]') || card.querySelector?.('header a[role="link"], header a[href]');
-        if (authorEl) {
-          const raw = (authorEl.textContent || '').trim();
-          if (raw && !SmartDmUtils.isGenericTitle(raw) && !/^(follow|following|sponsored|suggested)/i.test(raw)) {
-            author = raw;
-          } else {
-            const href = authorEl.getAttribute?.('href') || '';
-            const m = href.match(/^\/([A-Za-z0-9_.]+)\/?$/);
-            if (m && !/^(explore|reels|stories|direct|p|reel)/i.test(m[1])) author = m[1];
+        let authorLinks = card.querySelectorAll ? Array.from(card.querySelectorAll('header a, h2 a, a[role="link"][tabindex="0"], a[role="link"], a[href^="/"], a[href*="instagram.com/"]')) : [];
+        if (!authorLinks.length && card.querySelector) {
+          const single = card.querySelector('header a, h2 a, a[role="link"][tabindex="0"], a[role="link"], a[href^="/"], a[href*="instagram.com/"]');
+          if (single) authorLinks = [single];
+        }
+        for (const a of authorLinks) {
+          if (mediaEl && (mediaEl === a || mediaEl.contains?.(a))) continue;
+          let path = a.getAttribute?.('href') || a.href || '';
+          path = path.replace(/[?#].*$/, '');
+          try {
+            if (path.startsWith('http')) path = new URL(path).pathname;
+          } catch (_) {}
+          path = path.replace(/\/+$/, '');
+          const m = path.match(/^\/([A-Za-z0-9_.]+)$/);
+          if (m && !/^(explore|reels|stories|direct|p|reel|accounts|about|legal|terms|privacy|developer)/i.test(m[1])) {
+            const raw = (a.textContent || '').trim();
+            if (raw && !SmartDmUtils.isGenericTitle(raw) && !/^(follow|following|sponsored|suggested)/i.test(raw)) {
+              author = raw;
+              break;
+            } else if (!author) {
+              author = m[1];
+            }
           }
         }
         if (!author) {
-          const links = card.querySelectorAll ? card.querySelectorAll('header a, a[href^="/"]') : [];
-          for (const a of links) {
-            const href = a.getAttribute?.('href') || '';
-            const m = href.match(/^\/([A-Za-z0-9_.]+)\/?$/);
-            if (m && !/^(explore|reels|stories|direct|p|reel|accounts)/i.test(m[1])) {
-              const txt = (a.textContent || '').trim();
-              if (txt && !SmartDmUtils.isGenericTitle(txt) && !/^(follow|following)/i.test(txt)) {
-                author = txt;
-                break;
-              }
-            }
-          }
+          const img = card.querySelector?.('header img[alt], [role="heading"] img[alt], img[alt*="profile picture" i]');
+          const alt = img?.getAttribute?.('alt') || '';
+          const mAlt = alt.match(/^([A-Za-z0-9_.]+)'s profile picture/i);
+          if (mAlt) author = mAlt[1];
         }
 
-        for (const sel of ['h1', '[data-testid="post-caption"]', 'div[class*="_a9zs"]', 'span[dir="auto"]', 'div[dir="auto"]']) {
+        const isSkipNode = (node, txt) => {
+          if (!txt || txt.length < 2) return true;
+          if (mediaEl && (mediaEl.contains?.(node) || node.contains?.(mediaEl))) return true;
+          if (node.tagName === 'TIME' || node.closest?.('time')) return true;
+          if (node.closest?.('header')) return true;
+          if (node.closest?.('form, div[role="textbox"], [aria-label*="comment" i], [aria-label*="reply" i]')) return true;
+          if (node.closest?.('button, [role="button"]') && !node.querySelector?.('span, p')) return true;
+          if (node.closest?.('a[href*="/audio/"], a[href*="/music/"], a[href*="/sound/"], [class*="audio" i], [aria-label*="audio" i], [class*="music" i]')) return true;
+          if (node.closest?.('a[href*="/explore/locations/"]')) return true;
+          if (/^(?:instagram|home|likes?|views?|comments?|original audio|more|share|photo|video)$/i.test(txt)) return true;
+          if (/^(?:follow|following|sponsored|suggested for you)$/i.test(txt)) return true;
+          if (/^\d+[\d.,KkMmbB\s]*(?:likes?|views?|comments?|shares?|いいね|件|reproducciones|j’aime|gefällt)$/i.test(txt)) return true;
+          if (/^(?:liked by\b|be the first to like|les gusta a|aimé par|piace a|curtido por|нравится|いいね|他.*人)/i.test(txt)) return true;
+          if (/^(?:view (?:all )?[\d,.]*\s*comments?|add a comment(?:\.{3}|…)?|reply$|ver los|afficher les|alle.*kommentare|コメント.*件|返信)/i.test(txt)) return true;
+          if (/^(?:original audio|audio track|sonido original|audio original|originaler ton|son original|オリジナル音源)$/i.test(txt)) return true;
+          if (/^(?:♫|♬|\b[\w\s.-]+(?:•|·)\s*(?:original audio|audio\b|オリジナル音源))/i.test(txt)) return true;
+          if (/^(?:\d+\s*(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?|sec|min|hr|d|w|m|y)\s*ago|see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る)$/i.test(txt)) return true;
+          if (/^(?:more|…\s*more|\.\.\.\s*more|続きを読む|その他|más|plus|mehr)$/i.test(txt)) return true;
+          if (author && txt.toLowerCase() === author.toLowerCase()) return true;
+          return false;
+        };
+
+        const cleanCandidateText = (rawTxt) => {
+          if (!rawTxt) return '';
+          let txt = rawTxt.trim();
+          txt = txt.replace(/(?:\s*[\r\n\s]+)?(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i, '').trim();
+          txt = txt.replace(/(?:\.\.\.|…)?\s*(?:more|続きを読む|その他|más|plus|mehr)$/i, '').trim();
+          txt = txt.replace(/(?:\s*[\r\n\s]+)?(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i, '').trim();
+          if (author) {
+            const low = txt.toLowerCase();
+            const aLow = author.toLowerCase();
+            if (low.startsWith(aLow)) {
+              txt = txt.slice(author.length).trim();
+            } else if (low.startsWith('@' + aLow)) {
+              txt = txt.slice(author.length + 1).trim();
+            }
+            txt = txt.replace(/^[:\-—•~|\s]+/, '').trim();
+          }
+          txt = txt.replace(/(?:\s*[\r\n\s]+)?(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i, '').trim();
+          txt = txt.replace(/(?:\.\.\.|…)?\s*(?:more|続きを読む|その他|más|plus|mehr)$/i, '').trim();
+          txt = txt.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+          return txt;
+        };
+
+        // Priority 1: Semantic caption containers
+        const captionSelectors = [
+          'h1',
+          '[data-testid="post-caption"]',
+          'div[class*="_a9zs"]',
+          'span[class*="_a9zs"]',
+          '[class*="caption" i]'
+        ];
+        for (const sel of captionSelectors) {
           const nodes = card.querySelectorAll ? card.querySelectorAll(sel) : [];
           for (const node of nodes) {
-            if (node.closest?.('button, [role="button"], header')) continue;
-            if (mediaEl && (mediaEl.contains?.(node) || node.contains?.(mediaEl))) continue;
-            let txt = (node.textContent || '').trim();
-            if (!txt || txt.length < 3) continue;
-            if (/^(instagram|home|follow|following|likes?|views?|comments?|original audio|more)$/i.test(txt)) continue;
-            if (author && txt.toLowerCase().startsWith(author.toLowerCase())) {
-              txt = txt.slice(author.length).trim();
-              if (txt.startsWith(':') || txt.startsWith('-') || txt.startsWith('—') || txt.startsWith('•')) {
-                txt = txt.slice(1).trim();
-              }
-            }
-            if (txt.length >= 3 && !SmartDmUtils.isGenericTitle(txt)) {
-              caption = txt;
+            const raw = (node.innerText || node.textContent || '').trim();
+            if (isSkipNode(node, raw)) continue;
+            const cleaned = cleanCandidateText(raw);
+            if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned)) {
+              caption = cleaned;
               break;
             }
           }
           if (caption) break;
         }
 
+        // Priority 2: Post body container enclosing author link (outside header & outside mediaEl)
+        if (!caption && author) {
+          const authorLinksInBody = card.querySelectorAll ? card.querySelectorAll(`a[href*="/${author}"], a[role="link"]`) : [];
+          for (const a of authorLinksInBody) {
+            if (a.closest?.('header')) continue;
+            if (mediaEl && (a.closest?.(mediaEl.tagName) || mediaEl.contains?.(a))) continue;
+            const aText = (a.textContent || '').trim();
+            let aHref = a.getAttribute?.('href') || a.href || '';
+            aHref = aHref.replace(/[?#].*$/, '').replace(/\/+$/, '');
+            if (aText.toLowerCase() !== author.toLowerCase() && !aHref.toLowerCase().endsWith('/' + author.toLowerCase())) continue;
+
+            let p = a.parentElement;
+            for (let k = 0; k < 4 && p && p !== card; k++) {
+              if (p.closest?.('header, form, [aria-label*="comment" i]')) break;
+              const raw = (p.innerText || p.textContent || '').trim();
+              if (raw.length > author.length + 2 && !isSkipNode(p, raw)) {
+                const cleaned = cleanCandidateText(raw);
+                if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned)) {
+                  caption = cleaned;
+                  break;
+                }
+              }
+              p = p.parentElement;
+            }
+            if (caption) break;
+          }
+        }
+
+        // Priority 3: General text nodes with dir="auto" or p
+        if (!caption) {
+          for (const sel of ['span[dir="auto"]', 'div[dir="auto"]', 'p']) {
+            const nodes = card.querySelectorAll ? card.querySelectorAll(sel) : [];
+            for (const node of nodes) {
+              const raw = (node.innerText || node.textContent || '').trim();
+              if (isSkipNode(node, raw)) continue;
+              const cleaned = cleanCandidateText(raw);
+              if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned)) {
+                caption = cleaned;
+                break;
+              }
+            }
+            if (caption) break;
+          }
+        }
+
+        // Priority 4: Image alt
         if (!caption) {
           const img = card.querySelector?.('img[alt]');
           const alt = img?.getAttribute?.('alt')?.trim();
@@ -427,7 +853,7 @@ class VisualMountDetector {
       }
 
       if (caption) {
-        return SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 120);
+        return SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160);
       }
       if (author) {
         return `${author} - Instagram Video`;
@@ -683,6 +1109,23 @@ class VisualMountDetector {
       if (isInsta) {
         return this.extractInstagramMediaTitle(null, containerEl);
       }
+      const isYtMusic = typeof window !== 'undefined' && window.location?.hostname?.includes('music.youtube.com');
+      if (isYtMusic) {
+        const item = containerEl.closest ? (containerEl.closest('ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer') || containerEl) : containerEl;
+        const titleEl = item.querySelector?.('.title a, yt-formatted-string.title a, yt-formatted-string.title, [class*="title-column"] a, .title');
+        const bylineEl = item.querySelector?.('.byline a, yt-formatted-string.byline a, yt-formatted-string.byline, [class*="byline"] a, [class*="secondary-flex-columns"] a, .subtitle');
+        const songTitle = titleEl ? (titleEl.getAttribute?.('title') || titleEl.textContent || '').trim() : '';
+        let artist = bylineEl ? (bylineEl.getAttribute?.('title') || bylineEl.textContent || '').trim() : '';
+        if (artist && artist.includes('•')) {
+          artist = artist.split('•')[0].trim();
+        }
+        if (songTitle && artist && !songTitle.toLowerCase().includes(artist.toLowerCase())) {
+          return SmartDmUtils.sanitizeCleanTitle(`${songTitle} - ${artist}`);
+        }
+        if (songTitle && !SmartDmUtils.isGenericTitle(songTitle)) {
+          return SmartDmUtils.sanitizeCleanTitle(songTitle);
+        }
+      }
 
       const card = containerEl.closest(
         'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ' +
@@ -719,5 +1162,253 @@ class VisualMountDetector {
       }
     } catch(e) {}
     return null;
+  }
+
+  static extractYouTubeMusicTrackMetadata(playerBarEl = null) {
+    try {
+      const playerBar = playerBarEl || (typeof document !== 'undefined' ? document.querySelector('ytmusic-player-bar') : null);
+
+      // 1. Title
+      let rawTitle = '';
+      const titleEl = playerBar?.querySelector?.('.title, [class*="title"]') ||
+                      (typeof document !== 'undefined' ? document.querySelector('ytmusic-player .title, h1.title') : null);
+      if (titleEl) {
+        rawTitle = (titleEl.getAttribute?.('title') || titleEl.textContent || '').trim();
+      }
+      if (!rawTitle && typeof document !== 'undefined' && document.title) {
+        const docTitle = document.title.replace(/\s*-\s*YouTube Music.*$/i, '').trim();
+        if (docTitle && typeof SmartDmUtils !== 'undefined' && !SmartDmUtils.isGenericTitle(docTitle)) {
+          rawTitle = docTitle;
+        }
+      }
+
+      // 2. Byline (Artist, Album)
+      const bylineEl = playerBar?.querySelector?.('.byline, [class*="byline"], .subtitle');
+      let artist = '';
+      let album = '';
+      if (bylineEl) {
+        const rawByline = (bylineEl.getAttribute?.('title') || bylineEl.textContent || '').trim();
+        if (rawByline && rawByline.includes('•')) {
+          const parts = rawByline.split('•').map(p => p.trim()).filter(Boolean);
+          if (parts.length > 0) artist = parts[0];
+          if (parts.length > 1) album = parts[1];
+        } else {
+          const links = Array.from(bylineEl.querySelectorAll ? bylineEl.querySelectorAll('a') : []);
+          if (links.length > 0) {
+            artist = (links[0].textContent || '').trim();
+            if (links.length > 1) {
+              album = (links[1].textContent || '').trim();
+            }
+          } else if (rawByline) {
+            artist = rawByline;
+          }
+        }
+      }
+
+      // 3. Duration
+      let duration = '';
+      const timeInfoEl = playerBar?.querySelector?.('.time-info, [class*="time-info"]');
+      if (timeInfoEl) {
+        const timeText = (timeInfoEl.textContent || '').trim();
+        if (timeText.includes('/')) {
+          duration = timeText.split('/')[1].trim();
+        } else {
+          duration = timeText;
+        }
+      }
+
+      // 4. Video ID and Track URL
+      let videoId = null;
+      let playlistId = null;
+      const linkEl = playerBar?.querySelector?.('a[href*="watch?v="], [href*="watch?v="]');
+      if (linkEl) {
+        const href = linkEl.getAttribute?.('href') || linkEl.href || '';
+        const m = href.match(/[?&]v=([^&#]+)/);
+        if (m) videoId = m[1];
+        const pMatch = href.match(/[?&]list=([^&#]+)/);
+        if (pMatch) playlistId = pMatch[1];
+      }
+      if (!videoId && typeof window !== 'undefined' && window.location) {
+        const m = window.location.href.match(/[?&]v=([^&#]+)/);
+        if (m) videoId = m[1];
+        const pMatch = window.location.href.match(/[?&]list=([^&#]+)/);
+        if (pMatch) playlistId = pMatch[1];
+      }
+      if (!videoId && typeof document !== 'undefined') {
+        const videoEl = document.querySelector('ytmusic-player video, video');
+        if (videoEl) {
+          videoId = videoEl.getAttribute?.('data-video-id') || videoEl.dataset?.videoId || null;
+        }
+        if (!videoId) {
+          const btnWithId = playerBar?.querySelector?.('[data-video-id], [video-id]');
+          if (btnWithId) {
+            videoId = btnWithId.getAttribute('data-video-id') || btnWithId.getAttribute('video-id');
+          }
+        }
+      }
+
+      const trackUrl = videoId ? `https://music.youtube.com/watch?v=${videoId}` : null;
+
+      // 5. Build proper composite title (Song title + Artist)
+      let fullTitle = rawTitle;
+      if (rawTitle && artist) {
+        if (!rawTitle.toLowerCase().includes(artist.toLowerCase())) {
+          fullTitle = `${rawTitle} - ${artist}`;
+        }
+      } else if (!fullTitle && artist) {
+        fullTitle = artist;
+      }
+      if (fullTitle && typeof SmartDmUtils !== 'undefined') {
+        fullTitle = SmartDmUtils.sanitizeCleanTitle(fullTitle);
+      }
+      if (!fullTitle || (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.isGenericTitle(fullTitle))) {
+        fullTitle = 'YouTube Music Track';
+      }
+
+      return {
+        title: rawTitle,
+        artist,
+        album,
+        duration,
+        videoId,
+        trackUrl,
+        playlistId,
+        fullTitle
+      };
+    } catch(e) {
+      return null;
+    }
+  }
+
+  static extractYouTubeMusicPlaylistMetadata(headerEl = null) {
+    try {
+      const header = headerEl || (typeof document !== 'undefined' ?
+        document.querySelector('ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer') : null);
+
+      // 1. Playlist / Album Title
+      let title = '';
+      const titleEl = header?.querySelector?.('.title, h1, yt-formatted-string.title, [class*="title"]') ||
+                      (typeof document !== 'undefined' ? document.querySelector('h1.title, .heading-name') : null);
+      if (titleEl) {
+        title = (titleEl.getAttribute?.('title') || titleEl.textContent || '').trim();
+      }
+      if (!title && typeof document !== 'undefined' && document.title) {
+        title = document.title.replace(/\s*-\s*YouTube Music.*$/i, '').trim();
+      }
+
+      // 2. Subtitle / Track count / Year
+      const subEl = header?.querySelector?.('.subtitle, .strapline-text, .byline, [slot="subtitle"]');
+      const subtitle = subEl ? (subEl.textContent || '').trim() : '';
+
+      // 3. Playlist ID
+      let playlistId = null;
+      if (typeof window !== 'undefined' && window.location) {
+        const m = window.location.href.match(/[?&]list=([^&#]+)/);
+        if (m) playlistId = m[1];
+      }
+      if (!playlistId && header) {
+        const link = header.querySelector?.('a[href*="list="]');
+        if (link) {
+          const m = (link.getAttribute?.('href') || link.href || '').match(/[?&]list=([^&#]+)/);
+          if (m) playlistId = m[1];
+        }
+      }
+
+      // 4. Extract tracks from list items (prefer playlist containers, exclude queue)
+      const tracks = [];
+      let itemEls = [];
+      if (typeof document !== 'undefined') {
+        const playlistContainer = document.querySelector('ytmusic-playlist-shelf-renderer #contents, ytmusic-shelf-renderer #contents, #contents.ytmusic-playlist-shelf-renderer');
+        if (playlistContainer) {
+          itemEls = Array.from(playlistContainer.querySelectorAll('ytmusic-responsive-list-item-renderer'));
+        }
+        if (itemEls.length === 0) {
+          itemEls = Array.from(document.querySelectorAll('ytmusic-responsive-list-item-renderer')).filter(el => {
+            return !el.closest?.('#queue, ytmusic-player-page, [page-type="queue"]');
+          });
+        }
+      }
+
+      itemEls.forEach((itemEl, index) => {
+        const tEl = itemEl.querySelector?.('.title a, yt-formatted-string.title a, yt-formatted-string.title, [class*="title-column"] a, .title');
+        const songTitle = tEl ? (tEl.getAttribute?.('title') || tEl.textContent || '').trim() : '';
+
+        const bylineGeneric = itemEl.querySelector?.('.byline, [class*="byline"], .subtitle');
+        const rawByline = bylineGeneric ? (bylineGeneric.getAttribute?.('title') || bylineGeneric.textContent || '').trim() : '';
+        let artist = '';
+        let album = '';
+
+        if (rawByline && rawByline.includes('•')) {
+          const parts = rawByline.split('•').map(p => p.trim()).filter(Boolean);
+          if (parts.length > 0) artist = parts[0];
+          if (parts.length > 1) album = parts[1];
+        } else {
+          const bylineLinks = Array.from(itemEl.querySelectorAll ? itemEl.querySelectorAll('.byline a, yt-formatted-string.byline a, [class*="secondary-flex-columns"] a') : []);
+          if (bylineLinks.length > 0) {
+            artist = (bylineLinks[0].textContent || '').trim();
+            if (bylineLinks.length > 1) album = (bylineLinks[1].textContent || '').trim();
+          } else if (rawByline) {
+            artist = rawByline;
+          }
+        }
+
+        const dEl = itemEl.querySelector?.('.fixed-column, span.duration, [class*="duration"], yt-formatted-string.fixed-columns');
+        const duration = dEl ? (dEl.textContent || '').trim() : '';
+
+        const linkEl = itemEl.querySelector?.('a[href*="watch?v="], a[href*="v="], [href*="watch?v="], ytmusic-play-button-renderer [href*="watch"]');
+        let videoId = null;
+        if (linkEl) {
+          const href = linkEl.getAttribute?.('href') || linkEl.href || '';
+          const m = href.match(/[?&]v=([^&#]+)/);
+          if (m) videoId = m[1];
+        }
+        if (!videoId) {
+          videoId = itemEl.getAttribute?.('data-video-id') || itemEl.getAttribute?.('video-id') ||
+                    itemEl.querySelector?.('[data-video-id]')?.getAttribute?.('data-video-id') || null;
+        }
+
+        const trackUrl = videoId ? `https://music.youtube.com/watch?v=${videoId}` : null;
+
+        let fullTitle = songTitle;
+        if (songTitle && artist && !songTitle.toLowerCase().includes(artist.toLowerCase())) {
+          fullTitle = `${songTitle} - ${artist}`;
+        }
+        if (fullTitle && typeof SmartDmUtils !== 'undefined') {
+          fullTitle = SmartDmUtils.sanitizeCleanTitle(fullTitle);
+        }
+        if (!fullTitle) {
+          fullTitle = `Track ${index + 1}`;
+        }
+
+        tracks.push({
+          index: index + 1,
+          title: songTitle,
+          artist,
+          album,
+          duration,
+          videoId,
+          trackUrl,
+          fullTitle
+        });
+      });
+
+      let cleanTitle = title;
+      if (cleanTitle && typeof SmartDmUtils !== 'undefined') {
+        cleanTitle = SmartDmUtils.sanitizeCleanTitle(cleanTitle);
+      }
+      if (!cleanTitle || (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.isGenericTitle(cleanTitle))) {
+        cleanTitle = 'YouTube Music Playlist';
+      }
+
+      return {
+        title: cleanTitle,
+        subtitle,
+        playlistId,
+        trackCount: tracks.length,
+        tracks
+      };
+    } catch(e) {
+      return null;
+    }
   }
 }

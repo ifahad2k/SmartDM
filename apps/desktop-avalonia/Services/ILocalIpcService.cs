@@ -17,6 +17,7 @@ public class MediaFormatDto
     public string? MediaKind { get; set; }
     public string? ManifestText { get; set; }
     public string? AudioManifestText { get; set; }
+    public int Height { get; set; }
 }
 
 public class BrowserDownloadRequest

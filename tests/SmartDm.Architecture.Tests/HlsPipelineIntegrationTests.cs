@@ -9,6 +9,68 @@ namespace SmartDm.Architecture.Tests;
 
 public sealed class HlsPipelineIntegrationTests
 {
+    [HlsPipelineTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RealEngine_RemuxesLongFmp4Playlist_WithRequiredReferrer(bool captured, bool separateAudio)
+    {
+        string ffmpeg = DownloadEngine.ResolveFfmpegPath() ?? throw new InvalidOperationException("Verified FFmpeg required.");
+        string dir = Path.Combine(Path.GetTempPath(), "smartdm-movie-fixture-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        const string referer = "https://player.invalid/embed/movie";
+        var model = new DownloadModel { SavePath = Path.Combine(dir, "result.mp4"), MediaKind = "hls", Referer = referer };
+        DownloadEngine? engine = null;
+        try
+        {
+            var videoArgs = new List<string> { "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+                "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-hls_time", "4", "-hls_segment_type", "fmp4",
+                "-hls_playlist_type", "vod", "-hls_fmp4_init_filename", "init.mp4", "-hls_segment_filename", Path.Combine(dir, "part%d.m4s") };
+            if (separateAudio) videoArgs.Add("-an");
+            videoArgs.Add(Path.Combine(dir, "source.m3u8"));
+            await RunFfmpeg(ffmpeg, videoArgs, dir);
+            if (separateAudio)
+                await RunFfmpeg(ffmpeg, new[] { "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-t", "2", "-c:a", "aac",
+                    "-hls_time", "4", "-hls_segment_type", "fmp4", "-hls_playlist_type", "vod", "-hls_fmp4_init_filename", "audio-init.mp4",
+                    "-hls_segment_filename", Path.Combine(dir, "audio%d.m4s"), Path.Combine(dir, "audio.m3u8") }, dir);
+            await using var initServer = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "init.mp4"))) { RequiredReferer = referer };
+            await using var segmentServer = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "part0.m4s"))) { RequiredReferer = referer };
+            await using var audioInitServer = separateAudio ? new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio-init.mp4"))) { RequiredReferer = referer } : null;
+            await using var audioSegmentServer = separateAudio ? new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio0.m4s"))) { RequiredReferer = referer } : null;
+            string playlist = (await File.ReadAllTextAsync(Path.Combine(dir, "source.m3u8")))
+                .Replace("init.mp4", initServer.BaseUrl + "/init.mp4").Replace("part0.m4s", segmentServer.BaseUrl + "/part.m4s")
+                + "#" + new string('s', 704_377) + "\n";
+            await using var manifestServer = new TestHttpServer(Encoding.UTF8.GetBytes(playlist)) { RequiredReferer = referer };
+            model.Url = manifestServer.BaseUrl + "/movie.m3u8";
+            if (captured) model.ManifestText = playlist;
+            if (separateAudio)
+            {
+                model.AudioUrl = manifestServer.BaseUrl + "/audio.m3u8";
+                model.AudioManifestText = (await File.ReadAllTextAsync(Path.Combine(dir, "audio.m3u8")))
+                    .Replace("audio-init.mp4", audioInitServer!.BaseUrl + "/init.mp4").Replace("audio0.m4s", audioSegmentServer!.BaseUrl + "/part.m4s");
+            }
+            engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner());
+            await engine.StartDownloadAsync(model);
+            var deadline = Stopwatch.StartNew();
+            while (deadline.Elapsed < TimeSpan.FromSeconds(25) && model.Status is not (DownloadStatus.Completed or DownloadStatus.Failed))
+                await Task.Delay(50);
+            Assert.True(model.Status == DownloadStatus.Completed, model.StatusDetail);
+            Assert.Contains(referer, initServer.ObservedReferers);
+            Assert.Contains(referer, segmentServer.ObservedReferers);
+            if (separateAudio)
+            {
+                Assert.Contains(referer, audioInitServer!.ObservedReferers);
+                Assert.Contains(referer, audioSegmentServer!.ObservedReferers);
+            }
+            await RunFfmpeg(ffmpeg, new[] { "-i", model.SavePath, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-" });
+        }
+        finally
+        {
+            if (engine != null) await engine.PauseDownloadAsync(model.Id);
+            Directory.Delete(dir, true);
+        }
+    }
+
     // Explicit opt-in: invokes the user's checksum-verified FFmpeg, uses synthetic
     // media and loopback servers, and never contacts an anime site or user profile DB.
     [HlsPipelineTheory]
@@ -77,9 +139,10 @@ public sealed class HlsPipelineIntegrationTests
         }
     }
 
-    private static async Task RunFfmpeg(string path, IEnumerable<string> args)
+    private static async Task RunFfmpeg(string path, IEnumerable<string> args, string? workingDirectory = null)
     {
         var start = new ProcessStartInfo(path) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+        if (workingDirectory != null) start.WorkingDirectory = workingDirectory;
         foreach (var arg in new[] { "-hide_banner", "-nostdin", "-y" }.Concat(args)) start.ArgumentList.Add(arg);
         using var process = Process.Start(start)!;
         var error = process.StandardError.ReadToEndAsync();

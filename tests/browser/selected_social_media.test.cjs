@@ -82,4 +82,67 @@ for(const browser of ['chrome','firefox']){
    ctx.window.location.hostname = 'tiktok.com';
   });
 
+
+   test(`${browser}: Instagram feed with multi-line bilingual Japanese caption and author link extracts full caption`, () => {
+    ctx.window.location.hostname = 'instagram.com';
+    const captionText = 'waiting for summer to cool down.\n夏が少し涼しくなるのを待ってる。... more';
+    const captionNode = {
+      textContent: `naomiii.live ${captionText}`,
+      closest: () => null,
+      parentElement: null
+    };
+    const authorLinkInCaption = {
+      getAttribute: (k) => k === 'href' ? '/naomiii.live/' : null,
+      closest: () => null,
+      parentElement: captionNode
+    };
+    const feedPostContainer = {
+      querySelectorAll(sel) {
+        if (sel === 'video') return [{}];
+        if (sel.includes('header a')) return [{ textContent: 'naomiii.live', getAttribute: () => '/naomiii.live/' }];
+        if (sel.includes('a[href*="/naomiii.live"]')) return [authorLinkInCaption];
+        if (sel === 'span[dir="auto"]') {
+          return [
+            { textContent: 'Sabrina Carpenter • Original audio', closest: () => null },
+            { textContent: 'Liked by alex and 5,432 others', closest: () => null },
+            { textContent: `naomiii.live ${captionText}`, closest: () => null },
+            { textContent: 'View all 88 comments', closest: () => null }
+          ];
+        }
+        return [];
+      },
+      querySelector(sel) {
+        if (sel.includes('header a')) return { textContent: 'naomiii.live', getAttribute: () => '/naomiii.live/' };
+        if (sel.includes('Like')) return {};
+        return null;
+      }
+    };
+    const p = {
+      currentSrc: 'blob:insta-feed-naomi',
+      videoWidth: 1080,
+      videoHeight: 1920,
+      parentElement: feedPostContainer,
+      closest: () => null,
+      getAttribute: k => ({
+        'data-smartdm-bound-src': 'blob:insta-feed-naomi',
+        'data-smartdm-video-url': 'https://scontent.cdninstagram.com/v/t16/summer.mp4',
+        'data-smartdm-separate-audio': '0'
+      }[k])
+    };
+    const result = engine.selectedSocialFormats(p, []);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].title, 'waiting for summer to cool down. 夏が少し涼しくなるのを待ってる。');
+    ctx.window.location.hostname = 'tiktok.com';
+   });
+
+   test(`${browser}: Instagram generic titles are correctly identified by SmartDmUtils`, () => {
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram Video'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram Reel'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram Reels'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('video'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('naomiii.live'), false);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('waiting for summer to cool down. 夏が少し涼しくなるのを待ってる。'), false);
+   });
+
 }

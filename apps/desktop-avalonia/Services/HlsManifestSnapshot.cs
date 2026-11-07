@@ -1,7 +1,10 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SmartDm.Desktop.Avalonia.Services;
 
@@ -9,9 +12,31 @@ namespace SmartDm.Desktop.Avalonia.Services;
 // media playlists may become input; HTTP identity AES-128 is handled natively.
 public static class HlsManifestSnapshot
 {
+    // Match the browser capture/read budget, including long signed-URL VOD.
+    public const int MaxBytes = 4 * 1024 * 1024;
+
+    public static bool IsWithinSizeLimit(string text) => text.Length <= MaxBytes && Encoding.UTF8.GetByteCount(text) <= MaxBytes;
+
+    public static async Task<string> ReadAsync(HttpContent content, CancellationToken token)
+    {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+        budget.CancelAfter(TimeSpan.FromSeconds(15));
+        await using var stream = await content.ReadAsStreamAsync(budget.Token);
+        using var data = new MemoryStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(buffer, budget.Token)) > 0)
+        {
+            if (data.Length + read > MaxBytes)
+                throw new InvalidDataException("The media playlist exceeds the supported size.");
+            await data.WriteAsync(buffer.AsMemory(0, read), budget.Token);
+        }
+        return Encoding.UTF8.GetString(data.ToArray());
+    }
+
     public static string Normalize(string text, string baseUrl)
     {
-        if (text.Length > 500_000 || !text.TrimStart().StartsWith("#EXTM3U", StringComparison.Ordinal) ||
+        if (!IsWithinSizeLimit(text) || !text.TrimStart().StartsWith("#EXTM3U", StringComparison.Ordinal) ||
             !text.Contains("#EXTINF:") || !text.Contains("#EXT-X-ENDLIST"))
             throw new InvalidDataException("A complete media playlist is required. Play the video and capture it again.");
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var origin) || !IsHttp(origin))

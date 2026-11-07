@@ -7,9 +7,11 @@ class SmartDmUtils {
     try {
       const u = new URL(rawUrl, window.location.origin);
       if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+        const v = u.searchParams.get('v');
+        if (v) return 'https://www.youtube.com/watch?v=' + v;
         if (u.pathname.includes('/watch')) {
-          const v = u.searchParams.get('v');
-          if (v) return 'https://www.youtube.com/watch?v=' + v;
+          const m = u.search.match(/[?&]v=([^&#]+)/);
+          if (m) return 'https://www.youtube.com/watch?v=' + m[1];
         } else if (u.pathname.includes('/shorts/')) {
           const shortId = u.pathname.split('/shorts/')[1].split('/')[0].split('?')[0];
           return 'https://www.youtube.com/shorts/' + shortId;
@@ -172,7 +174,8 @@ class SmartDmUtils {
     if (!clean || clean.length < 2) return true;
 
     const genericExact = new Set([
-      'instagram', 'tiktok', 'x', 'home _ x', 'home / x', 'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
+      'instagram', 'instagram video', 'instagram reel', 'instagram reels', 'instagram_video', 'instagram_reel',
+      'tiktok', 'x', 'home _ x', 'home / x', 'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
       'trending', 'watch later', 'video', 'media stream', 'download', 'downloads',
       'facebook', 'facebook_video', 'facebook_reel', 'facebook video', 'facebook reel', 'facebook reels',
       'notifications', 'notification', 'chats', 'messages', 'menu', 'shortcuts', 'your shortcuts',
@@ -183,10 +186,13 @@ class SmartDmUtils {
       'watch', 'play', 'index', 'untitled', 'html5 player', 'video player'
     ]);
     if (genericExact.has(clean)) return true;
+      if (/^(?:\d{3,4}p|[248]k)\s*(?:(?:full|ultra|quad)\s*)?(?:hd|sd|uhd)?\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean) ||
+          /^playing quality\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean)) return true;
 
     if (clean.startsWith('reels - video') || clean.startsWith('reel - video') ||
         clean.startsWith('reels and short') || clean.startsWith('facebook video') ||
-        clean.startsWith('facebook reel')) {
+        clean.startsWith('facebook reel') || clean.startsWith('instagram video') ||
+        clean.startsWith('instagram reel')) {
       return true;
     }
 
@@ -310,6 +316,20 @@ class SmartDmUtils {
   static findActiveVideoElement() {
     try {
       const videos = Array.from(document.querySelectorAll('video'));
+      if (document.querySelectorAll) {
+        try {
+          const allEls = document.querySelectorAll('*');
+          for (let i = 0; i < allEls.length; i++) {
+            const root = allEls[i].shadowRoot;
+            if (root && root.querySelectorAll) {
+              const shadowVideos = root.querySelectorAll('video');
+              for (let j = 0; j < shadowVideos.length; j++) {
+                videos.push(shadowVideos[j]);
+              }
+            }
+          }
+        } catch(_) {}
+      }
       if (videos.length === 0) return null;
       // 1. Currently playing video
       const playing = videos.find(v => !v.paused && !v.ended && v.currentTime > 0);
@@ -421,7 +441,19 @@ class SmartDmUtils {
 
   static extractWatchPageTitle() {
     try {
+      if (typeof window !== 'undefined' && window.location?.hostname?.includes('music.youtube.com')) {
+        if (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractYouTubeMusicTrackMetadata) {
+          const meta = VisualMountDetector.extractYouTubeMusicTrackMetadata();
+          if (meta && meta.fullTitle && !this.isGenericTitle(meta.fullTitle)) {
+            return this.sanitizeCleanTitle(meta.fullTitle);
+          }
+        }
+      }
       const selectors = [
+        'ytmusic-player-bar .title',
+        'ytmusic-player-bar [class*="title"]',
+        'ytmusic-header-renderer .title',
+        'ytmusic-responsive-header-renderer .title',
         'h1.ytd-watch-metadata yt-formatted-string',
         '#title h1 yt-formatted-string',
         'h1.title yt-formatted-string',
@@ -430,7 +462,7 @@ class SmartDmUtils {
       for (const sel of selectors) {
         const el = document.querySelector(sel);
         if (el) {
-          const t = (el.textContent || '').trim();
+          const t = (el.getAttribute?.('title') || el.textContent || '').trim();
           if (t && !this.isGenericTitle(t)) return this.sanitizeCleanTitle(t);
         }
       }

@@ -37,11 +37,15 @@
   } catch(e) {}
 
   const MANIFEST_EXT_REGEX = /\.(m3u8|mpd)(?:$|[?#])/i;
+  const MANIFEST_PATH_REGEX = /(?:stream-embed\/(?:playlist|media)|\/(?:playlist|manifest|master|hls|dash)(?:[?#/]|$))/i;
   const BINARY_EXT_REGEX = /\.(ts|m4s|mp4|m4a|m4v|webm|mkv|aac|mp3|flac|wav|ogg|png|jpg|jpeg|webp|gif|svg|ico|css|js|wasm|json)(?:$|[?#])/i;
   const IGNORED_DOMAINS_REGEX = /(?:fbcdn\.net|facebook\.com|messenger\.com|instagram\.com|googlevideo\.com|ytimg\.com|googleads|doubleclick\.net)/i;
   const capturedUrls = new Set();
   const pendingReads = new Set();
-  const MAX_MANIFEST_BYTES = 500000;
+  // Long VOD playlists contain thousands of signed URLs. Bound both reads and
+  // retained snapshots; a three-entry count alone is insufficient for movies.
+  const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
+  const MAX_STASH_CHARS = 8 * 1024 * 1024;
 
   function stripByteRangeParams(url) {
     if (!url || typeof url !== 'string') return url;
@@ -419,15 +423,15 @@
     if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:')) return false;
     if (BINARY_EXT_REGEX.test(url) || IGNORED_DOMAINS_REGEX.test(url)) return false;
     if (url.includes('bytestart=') || url.includes('byteend=') || url.includes('/seg-') || url.includes('/fragment-') || url.includes('/sq/')) return false;
-    return MANIFEST_EXT_REGEX.test(url);
+    return MANIFEST_EXT_REGEX.test(url) || MANIFEST_PATH_REGEX.test(url);
   }
 
   function stashAndEmitManifest(url, text, playerId = null, height = 0, track = "video") {
-    if (!text || typeof text !== 'string' || text.length > 500000) return;
+    if (!text || typeof text !== 'string' || text.length > MAX_MANIFEST_BYTES) return;
     const manifestUrl = url || window.location.href;
     if (capturedUrls.has(manifestUrl) && !playerId) return;
 
-    if (text.includes('#EXT-X-STREAM-INF') || text.includes('<MPD') || text.includes('&lt;MPD') || (text.includes('#EXTM3U') && text.includes('#EXTINF'))) {
+    if (text.includes('#EXT-X-STREAM-INF') || text.includes('<MPD') || text.includes('&lt;MPD') || (text.includes('#EXTM3U') && (text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-MEDIA')))) {
       if (capturedUrls.size >= 50) {
         const first = capturedUrls.values().next().value;
         if (first) capturedUrls.delete(first);
@@ -438,21 +442,25 @@
         const root = document.head || document.documentElement || document.body;
         if (root) {
           const existing = root.querySelector(`smartdm-manifest-stash[data-smartdm-url="${CSS.escape(manifestUrl)}"]`);
+          if (existing && playerId && existing.textContent === text && existing.getAttribute('data-smartdm-player') === playerId &&
+              existing.getAttribute('data-smartdm-height') === String(height) && existing.getAttribute('data-smartdm-track') === track) return;
+          const retained = Array.from(root.querySelectorAll('smartdm-manifest-stash')).filter(s => s !== existing);
+          let retainedChars = retained.reduce((sum, s) => sum + (s.textContent || '').length, 0);
+          while (retained.length && (retained.length >= 4 || retainedChars + text.length > MAX_STASH_CHARS)) {
+            const nonMasterIdx = retained.findIndex(s => !(s.textContent || '').includes('#EXT-X-STREAM-INF'));
+            const oldest = nonMasterIdx !== -1 ? retained.splice(nonMasterIdx, 1)[0] : retained.shift();
+            retainedChars -= (oldest.textContent || '').length;
+            oldest.remove();
+          }
           if (existing) {
-            if (playerId && existing.textContent === text && existing.getAttribute('data-smartdm-player') === playerId &&
-                existing.getAttribute('data-smartdm-height') === String(height) && existing.getAttribute('data-smartdm-track') === track) return;
             existing.textContent = text;
             if (playerId) { existing.setAttribute("data-smartdm-player", playerId); existing.setAttribute("data-smartdm-height", String(height)); existing.setAttribute("data-smartdm-track", track); }
           } else {
-            const stashes = root.querySelectorAll('smartdm-manifest-stash');
-            if (stashes.length >= 3 && stashes[0]) {
-              stashes[0].remove();
-            }
             const stashEl = document.createElement('smartdm-manifest-stash');
             stashEl.setAttribute('data-smartdm-url', manifestUrl);
             stashEl.textContent = text;
             if (playerId) { stashEl.setAttribute('data-smartdm-player', playerId); stashEl.setAttribute('data-smartdm-height', String(height)); stashEl.setAttribute('data-smartdm-track', track); }
-            stashEl.style.display = 'none';
+            if (stashEl.style) stashEl.style.display = 'none';
             root.appendChild(stashEl);
           }
         }
@@ -477,18 +485,27 @@
       const instance = Reflect.construct(target, args, newTarget);
       try {
         const id = `hls-${++nextPlayerId}`;
+        let expectsAudio = false;
+        const markAudio = tracks => {
+          if ((tracks || []).some(t => !!t.url)) expectsAudio = true;
+          if (instance.media) instance.media.setAttribute('data-smartdm-hls-external-audio', expectsAudio ? '1' : '0');
+        };
         const clear = () => {
+          expectsAudio = false;
+          if (instance.media) instance.media.setAttribute('data-smartdm-hls-external-audio', '0');
           document.querySelectorAll('smartdm-manifest-stash').forEach(s => {
             if (s.getAttribute('data-smartdm-player') === id) s.remove();
           });
         };
         instance.on(Hls.Events.MANIFEST_LOADING, clear);
-        instance.on(Hls.Events.MEDIA_ATTACHED, () => { if (instance.media) instance.media.setAttribute('data-smartdm-hls-player', id); });
-        instance.on(Hls.Events.DESTROYING, clear);
-        instance.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (instance.media) instance.media.setAttribute('data-smartdm-hls-external-audio',
-            (instance.audioTracks || []).some(t => !!t.url) ? '1' : '0');
+        instance.on(Hls.Events.MEDIA_ATTACHED, () => {
+          if (instance.media) instance.media.setAttribute('data-smartdm-hls-player', id);
+          markAudio(instance.audioTracks);
         });
+        instance.on(Hls.Events.DESTROYING, clear);
+        instance.on(Hls.Events.MANIFEST_PARSED, (_event, data) => markAudio(data?.audioTracks || instance.audioTracks));
+        if (Hls.Events.AUDIO_TRACKS_UPDATED)
+          instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => markAudio(data?.audioTracks || instance.audioTracks));
         const capture = (track, data) => {
           try {
             const video = instance.media;
@@ -497,8 +514,17 @@
             // A detached/recycled player must not hand off an earlier episode.
             if (!video.isConnected) return;
             video.setAttribute('data-smartdm-hls-player', id);
-            if (track === 'audio' && data.id !== undefined && data.id !== instance.audioTrack) return;
-            const level = track === 'audio' ? (instance.audioTracks || [])[data.id] : data.levelInfo || (instance.levels && instance.levels[data.level]);
+            markAudio(instance.audioTracks);
+            const selectedAudio = (instance.audioTracks || [])[instance.audioTrack];
+            if (track === 'audio') {
+              // Event IDs belong to a rendition group; audioTrack is an index
+              // into the currently exposed tracks, not necessarily that ID.
+              if (!selectedAudio || (data.id !== undefined && data.id !== (selectedAudio.id ?? instance.audioTrack)) ||
+                  (data.groupId && selectedAudio.groupId && data.groupId !== selectedAudio.groupId)) return;
+              expectsAudio = true;
+              markAudio([]);
+            }
+            const level = track === 'audio' ? selectedAudio : data.levelInfo || (instance.levels && instance.levels[data.level]);
             const url = details.url || (level && (Array.isArray(level.url) ? level.url[0] : level.url)) || instance.url;
             if (!/^https?:\/\//i.test(url || '')) return;
             const height = level && level.height || video.videoHeight || 0;
@@ -530,11 +556,8 @@
       window.fetch = async function(...args) {
         try {
           const opts = args[1];
-          if (opts && opts.headers) {
-            const h = opts.headers;
-            if (h['x-smartdm-probe'] || (typeof h.get === 'function' && h.get('x-smartdm-probe'))) {
-              return origFetch.apply(this, args);
-            }
+          if (opts && (opts._smartdm_probe || opts.headers?.['x-smartdm-probe'] || (typeof opts.headers?.get === 'function' && opts.headers.get('x-smartdm-probe')))) {
+            return origFetch.apply(this, args);
           }
         } catch(e) {}
 
@@ -542,18 +565,19 @@
         try {
           const reqUrl = (typeof args[0] === 'string') ? args[0] : (args[0] && (args[0].url || args[0].href));
           const playlistMime = /mpegurl|dash\+xml/i.test(resp.headers?.get('content-type') || '') && !IGNORED_DOMAINS_REGEX.test(reqUrl || '');
-          if ((isLikelyManifestUrl(reqUrl) || playlistMime) && !capturedUrls.has(reqUrl) && !pendingReads.has(reqUrl) && pendingReads.size < 4) {
+          const isManifestUrl = isLikelyManifestUrl(reqUrl);
+          if ((isManifestUrl || playlistMime) && !capturedUrls.has(reqUrl) && !pendingReads.has(reqUrl) && pendingReads.size < 4) {
             const headers = resp.headers;
             if (headers) {
               const contentType = (headers.get('content-type') || '').toLowerCase();
               if (contentType.includes('video/') || contentType.includes('audio/') ||
-                  contentType.includes('image/') || contentType.includes('octet-stream')) {
+                  contentType.includes('image/') || (!isManifestUrl && !playlistMime && contentType.includes('octet-stream'))) {
                 return resp;
               }
               const lenStr = headers.get('content-length');
               if (lenStr) {
                 const len = parseInt(lenStr, 10);
-                if (!isNaN(len) && len > 500000) return resp;
+                if (!isNaN(len) && len > MAX_MANIFEST_BYTES) return resp;
               }
             }
             pendingReads.add(reqUrl);
@@ -576,21 +600,33 @@
     };
     XMLHttpRequest.prototype.send = function() {
       const xhr = this;
-      // A reused XHR previously acquired another permanent load listener on
-      // every send, including ordinary API/segment requests.
-      if (!isLikelyManifestUrl(xhr._smartdm_req_url) || observedXhrs.has(xhr)) return origSend.apply(this, arguments);
+      // MIME-typed proxy/extensionless playlists cannot be identified at send.
+      // One weakly tracked listener per XHR checks headers before touching text.
+      if (observedXhrs.has(xhr)) return origSend.apply(this, arguments);
       observedXhrs.add(xhr);
       this.addEventListener('load', function() {
         try {
           const reqUrl = xhr._smartdm_req_url;
-          if (isLikelyManifestUrl(reqUrl) && !capturedUrls.has(reqUrl)) {
+          const responseUrl = xhr.responseURL || reqUrl;
+          if (!capturedUrls.has(responseUrl)) {
             const respType = xhr.responseType;
-            if (respType === 'blob' || respType === 'arraybuffer') return;
+            let txt = null;
+            if (!respType || respType === 'text') {
+              txt = xhr.responseText;
+            } else if (respType === 'arraybuffer' && (xhr.response instanceof ArrayBuffer || typeof xhr.response?.byteLength === 'number')) {
+              if (xhr.response.byteLength <= MAX_MANIFEST_BYTES) {
+                try { txt = new TextDecoder().decode(xhr.response); } catch(_) {}
+              }
+            } else {
+              return;
+            }
             const cType = (xhr.getResponseHeader('content-type') || '').toLowerCase();
-            if (cType.includes('video/') || cType.includes('audio/') || cType.includes('image/') || cType.includes('octet-stream')) return;
-            const txt = xhr.responseText;
-            if (txt && txt.length <= 500000) {
-              stashAndEmitManifest(xhr.responseURL || reqUrl, txt);
+            const typedManifest = /mpegurl|dash\+xml/.test(cType);
+            const isManifest = isLikelyManifestUrl(responseUrl);
+            if (!typedManifest && !isManifest) return;
+            if (!typedManifest && !isManifest && /video\/|audio\/|image\/|octet-stream/.test(cType)) return;
+            if (txt && txt.length <= MAX_MANIFEST_BYTES) {
+              stashAndEmitManifest(responseUrl, txt);
             }
           }
         } catch(e) {}

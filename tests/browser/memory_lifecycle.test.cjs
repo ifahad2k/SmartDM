@@ -246,7 +246,7 @@ for (const browser of ['chrome', 'firefox']) {
     });
     const engine = load(c, source(browser, 'modules/format_engine.js'), 'FormatRegistryEngine');
     assert.equal(await engine.resolveM3u8VariantsInPage('https://cdn.invalid/master.m3u8'), null);
-    assert.equal(reads, 6);
+    assert.equal(reads, Math.floor(4 * 1024 * 1024 / 100000) + 1);
     assert.equal(aborted, true);
     oversized = false;
     const formats = await engine.resolveM3u8VariantsInPage('https://cdn.invalid/master.m3u8');
@@ -273,14 +273,38 @@ for (const browser of ['chrome', 'firefox']) {
     return {window, Xhr, nodes, captured};
   }
 
-  test(`${browser}: reused XHR has one manifest listener and ordinary requests have none`, () => {
+  test(`${browser}: reused XHR has one header-check listener without reading ordinary response bodies`, () => {
     const f = snifferFixture();
     const xhr = new f.Xhr();
     for (let i = 0; i < 1000; i++) {xhr.open('GET', 'https://cdn.invalid/list.m3u8'); xhr.send();}
     assert.equal(xhr.handlers.length, 1);
     const api = new f.Xhr();
     for (let i = 0; i < 1000; i++) {api.open('GET', 'https://player.invalid/api'); api.send();}
-    assert.equal(api.handlers.length, 0);
+    assert.equal(api.handlers.length, 1);
+    api.getResponseHeader = () => 'application/json';
+    Object.defineProperty(api, 'responseText', {get() {throw new Error('ordinary API body must not be read');}});
+    for (const handler of api.handlers) handler();
+    assert.equal(f.nodes.length, 0);
+  });
+
+  test(`${browser}: MIME-typed proxy and extensionless XHR playlists preserve opaque HLS variant types`, () => {
+    const f = snifferFixture();
+    const master = '#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080\n/content?v=opaque';
+    for (const url of ['https://proxy.invalid/m3u8-proxy?url=encoded.m3u8&headers=encoded', 'https://proxy.invalid/content?v=master']) {
+      const xhr = new f.Xhr();
+      xhr.open('GET', url); xhr.send();
+      xhr.responseURL = url; xhr.responseText = master;
+      xhr.getResponseHeader = () => 'application/vnd.apple.mpegurl';
+      for (const handler of xhr.handlers) handler();
+    }
+    assert.equal(f.captured.length, 2);
+    const c = vm.createContext({URL, window: {location: {href: 'https://page.invalid', origin: 'https://page.invalid'}},
+      SmartDmUtils: {normalizeVideoResolution: (_,h) => Number(h), getResolutionLabel: h => `${h}p`}});
+    const engine = load(c, source(browser, 'modules/format_engine.js'), 'FormatRegistryEngine');
+    const format = engine.parseM3u8Formats(master, 'https://proxy.invalid/m3u8-proxy?url=encoded')[0];
+    assert.equal(format.directUrl, 'https://proxy.invalid/content?v=opaque');
+    assert.equal(format.mediaKind, 'hls');
+    assert.equal(format.height, 1080);
   });
 
   test(`${browser}: oversized chunked playlist clone cancels early without touching original`, async () => {
@@ -292,7 +316,7 @@ for (const browser of ['chrome', 'firefox']) {
     const f = snifferFixture(async () => response);
     assert.equal(await f.window.fetch('https://cdn.invalid/list.m3u8'), response);
     await new Promise(setImmediate);
-    assert.equal(reads, 6);
+    assert.equal(reads, Math.floor(4 * 1024 * 1024 / 100000) + 1);
     assert.equal(cancelled, 1);
     assert.equal(f.nodes.length, 0);
   });

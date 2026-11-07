@@ -52,6 +52,14 @@ class OverlayUiRenderer {
         border-left: 7px solid #38bdf8;
       }
       .banner-btn:hover .play-icon { border-left-color: #ffffff; }
+      .download-icon {
+        width: 0; height: 0;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 6px solid #38bdf8;
+        display: inline-block;
+      }
+      .banner-btn:hover .download-icon { border-top-color: #ffffff; }
       .popover {
         position: fixed;
         width: 290px;

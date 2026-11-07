@@ -98,10 +98,34 @@ public class HlsCaptureTests
         => Assert.Throws<InvalidDataException>(() => HlsManifestSnapshot.Normalize(Playlist.Replace("#EXTINF", directive + "\n#EXTINF"), "https://cdn.invalid/level"));
 
     [Fact]
+    public void Snapshot_AcceptsLongMoviePlaylistWithSignedSegmentUrls()
+    {
+        var movie = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n" + string.Concat(Enumerable.Range(0, 974)
+            .Select(i => $"#EXTINF:6,\nhttps://cdn.invalid/{i}.m4s?token={new string('s', 700)}\n")) + "#EXT-X-ENDLIST\n";
+        Assert.True(movie.Length > 700_000);
+        var result = HlsManifestSnapshot.Normalize(movie, "https://cdn.invalid/v1.m3u8");
+        Assert.Equal(974, result.Split("#EXTINF:").Length - 1);
+        Assert.Contains("https://cdn.invalid/973.m4s?token=", result);
+    }
+
+    [Fact]
+    public async Task PlaylistReader_AcceptsMovieAndRejectsOversizedResponse()
+    {
+        string movie = Playlist + "#" + new string('s', 704_377);
+        using var valid = new System.Net.Http.StringContent(movie);
+        Assert.Equal(movie, await HlsManifestSnapshot.ReadAsync(valid, CancellationToken.None));
+        using var oversized = new System.Net.Http.ByteArrayContent(new byte[HlsManifestSnapshot.MaxBytes + 1]);
+        await Assert.ThrowsAsync<InvalidDataException>(() => HlsManifestSnapshot.ReadAsync(oversized, CancellationToken.None));
+        using var stop = new CancellationTokenSource(); stop.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => HlsManifestSnapshot.ReadAsync(valid, stop.Token));
+    }
+
+    [Fact]
     public void Snapshot_RejectsLiveAndOversizedData()
     {
         Assert.Throws<InvalidDataException>(() => HlsManifestSnapshot.Normalize(Playlist.Replace("#EXT-X-ENDLIST", ""), "https://cdn.invalid/level"));
-        Assert.Throws<InvalidDataException>(() => HlsManifestSnapshot.Normalize(new string('x', 500_001), "https://cdn.invalid/level"));
+        Assert.Throws<InvalidDataException>(() => HlsManifestSnapshot.Normalize(Playlist + "#" + new string('x', 4 * 1024 * 1024), "https://cdn.invalid/level"));
+        Assert.Throws<InvalidDataException>(() => HlsManifestSnapshot.Normalize(Playlist + "#" + new string('\u20ac', 2 * 1024 * 1024), "https://cdn.invalid/level"));
     }
 
     [Fact]
@@ -128,4 +152,83 @@ public class HlsCaptureTests
         }
         finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public async Task HlsMediaResolver_ResolvesExtensionlessMasterPlaylist()
+    {
+        var masterContent = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\nstream-1080p.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\nstream-720p.m3u8\n";
+        var handler = new MockHlsHttpMessageHandler((req) =>
+        {
+            var res = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(masterContent, System.Text.Encoding.UTF8, "application/vnd.apple.mpegurl")
+            };
+            return res;
+        });
+        using var client = new HttpClient(handler);
+        HlsMediaResolver.SetHttpClientForTesting(client);
+        try
+        {
+            var res = await HlsMediaResolver.ResolveHlsFormatsAsync("https://movy.sx/stream-embed/playlist/1263337");
+            Assert.True(res.Success);
+            Assert.Equal(2, res.Formats.Count);
+            Assert.Equal(1080, res.Formats[0].Height);
+            Assert.Equal(720, res.Formats[1].Height);
+        }
+        finally
+        {
+            HlsMediaResolver.SetHttpClientForTesting(null);
+        }
+    }
+
+    private sealed class MockHlsHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
+        public MockHlsHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) => _responder = responder;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(_responder(request));
+    }
+    [Fact]
+    public async Task HlsMediaResolver_ResolvesMasterFromChildStreamEmbedMediaCandidate()
+    {
+        var childContent = "#EXTM3U\n#EXTINF:6,\nchunk-0.ts\n#EXT-X-ENDLIST\n";
+        var masterContent = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080\nstream-1080p.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nstream-720p.m3u8\n";
+
+        var handler = new MockHlsHttpMessageHandler((req) =>
+        {
+            var uri = req.RequestUri?.ToString() ?? "";
+            if (uri.Contains("/stream-embed/playlist/"))
+            {
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(masterContent, System.Text.Encoding.UTF8, "application/vnd.apple.mpegurl")
+                };
+            }
+            if (uri.Contains("/stream-embed/media/"))
+            {
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(childContent, System.Text.Encoding.UTF8, "application/vnd.apple.mpegurl")
+                };
+            }
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        });
+
+        using var client = new HttpClient(handler);
+        HlsMediaResolver.SetHttpClientForTesting(client);
+        try
+        {
+            var res = await HlsMediaResolver.ResolveHlsFormatsAsync("https://primeshows.org/stream-embed/media/213375");
+            Assert.True(res.Success);
+            Assert.Equal("https://primeshows.org/stream-embed/playlist/213375", res.MasterUrl);
+            Assert.Equal(2, res.Formats.Count);
+            Assert.Equal(1080, res.Formats[0].Height);
+            Assert.Equal(720, res.Formats[1].Height);
+        }
+        finally
+        {
+            HlsMediaResolver.SetHttpClientForTesting(null);
+        }
+    }
+
 }

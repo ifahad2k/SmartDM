@@ -9,10 +9,12 @@
     "activeTab",
     "webRequest",
     "cookies",
-    "downloads"
+    "downloads",
+    "*://music.youtube.com/*"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "*://music.youtube.com/*"
   ],
   "background": {
     "scripts": [
@@ -25,7 +27,8 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "<all_urls>",
+        "*://music.youtube.com/*"
       ],
       "js": [
         "sniffer.js"
@@ -37,7 +40,8 @@
     },
     {
       "matches": [
-        "<all_urls>"
+        "<all_urls>",
+        "*://music.youtube.com/*"
       ],
       "js": [
         "modules/utils.js",
@@ -58,7 +62,8 @@
         "sniffer.js"
       ],
       "matches": [
-        "<all_urls>"
+        "<all_urls>",
+        "*://music.youtube.com/*"
       ]
     }
   ],

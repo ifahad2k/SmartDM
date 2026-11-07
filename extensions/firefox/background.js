@@ -232,47 +232,42 @@ function broadcastNewMedia(tabId, mediaList) {
 
 async function fetchM3u8Text(url, referrer, initiator = null) {
   if (!url) return null;
-  // Strategy 1: try with iframe initiator (e.g. https://megaplay.xyz/) which matches CDN anti-hotlink check
+  const options = [];
   if (initiator && initiator.startsWith('http')) {
-    try {
-      const initRef = initiator.endsWith('/') ? initiator : initiator + '/';
-      const res = await fetch(url, { referrer: initRef });
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.includes('#EXTM3U')) return text;
-      }
-    } catch(e) {}
+    options.push({referrer: initiator});
   }
-
-  // Strategy 2: try with tab referrer
-  if (referrer && referrer.startsWith('http') && !referrer.startsWith('chrome') && !referrer.startsWith('moz')) {
-    try {
-      const res = await fetch(url, { referrer: referrer });
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.includes('#EXTM3U')) return text;
-      }
-    } catch (e) {}
+  if (referrer && referrer.startsWith('http') && (!initiator || referrer !== initiator)) {
+    options.push({referrer});
   }
-
-  // Strategy 3: try with no-referrer
-  try {
-    const res = await fetch(url, { referrerPolicy: 'no-referrer' });
-    if (res.ok) {
-      const text = await res.text();
-      if (text && text.includes('#EXTM3U')) return text;
+  options.push({referrerPolicy: 'no-referrer'}, {});
+  for (const option of options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    let reader;
+    try {
+      const res = await fetch(url, {...option, signal: controller.signal});
+      if (!res.ok || !res.body) continue;
+      reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '', bytes = 0;
+      while (true) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > 4 * 1024 * 1024) { controller.abort(); break; }
+        text += decoder.decode(value, {stream: true});
+      }
+      if (!controller.signal.aborted) {
+        text += decoder.decode();
+        if (text.trimStart().startsWith('#EXTM3U')) return text;
+      }
+    } catch (_) {
+    } finally {
+      clearTimeout(timer);
+      try { await reader?.cancel(); } catch (_) {}
+      try { reader?.releaseLock(); } catch (_) {}
     }
-  } catch (e) {}
-
-  // Strategy 4: plain default fetch (extension background host_permissions grants cross-origin access)
-  try {
-    const res = await fetch(url);
-    if (res.ok) {
-      const text = await res.text();
-      if (text && text.includes('#EXTM3U')) return text;
-    }
-  } catch (e) {}
-
+  }
   return null;
 }
 
@@ -821,7 +816,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       // Filter out HLS/DASH segment chunks (preserve full stream URLs)
       const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
       const isM3u8OrMpd = url.includes('.m3u8') || url.includes('.mpd');
-      const isSegmentChunk = !isGoogleVideo && !isM3u8OrMpd && !isFbMedia && (
+      const isManifestPath = /(?:stream-embed\/(?:playlist|media)|\/(?:playlist|manifest|master|hls|dash|stream)(?:[?#/]|$))/i.test(url) || url.includes('/stream-embed/');
+      const isSegmentChunk = !isGoogleVideo && !isM3u8OrMpd && !isFbMedia && !isManifestPath && (
         /\.ts(\?|$)/i.test(url) ||
         /\.m4s(\?|$)/i.test(url) ||
         /\.f4m(\?|$)/i.test(url) ||
@@ -881,7 +877,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                           contentType.includes('application/vnd.apple.mpegurl') || 
                           contentType.includes('application/dash+xml');
       
-      const isMediaExt = url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
+      const isMediaExt = isManifestPath || url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
                          url.includes('.avi') || url.includes('.mkv');
@@ -911,7 +907,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
 
         // If this is an m3u8 playlist, fetch and parse variants BEFORE adding to mediaList
-        if (targetUrl.includes('.m3u8')) {
+        const isHlsManifest = targetUrl.includes('.m3u8') || /mpegurl/i.test(contentType) || isManifestPath;
+        if (isHlsManifest) {
           if (!shouldProbeM3u8(targetUrl)) return;
           (async () => {
             const cachedH = getCachedStreamHeaders(targetUrl);
@@ -950,6 +947,10 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                   addCand(targetUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/index.m3u8$1'));
                 }
               }
+              if (targetUrl.includes('/stream-embed/')) {
+                addCand(targetUrl.replace(/\/stream-embed\/media\//i, '/stream-embed/playlist/'));
+              }
+              addCand(targetUrl.replace(/\/media\//i, '/playlist/'));
 
               for (const candUrl of candidates) {
                 const parentText = await fetchM3u8Text(candUrl, tabUrl, itemReferer || initiatorUrl);
@@ -1079,7 +1080,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
               }
 
               // Delegate in-page probing to active tab's content script where cookies & referer are authentic
-              if (targetTabId && targetTabId > 0 && shouldProbeM3u8(targetUrl)) {
+              if (targetTabId && targetTabId > 0) {
                 if (details.frameId && details.frameId > 0) {
                   try {
                     chrome.tabs.sendMessage(targetTabId, {
@@ -1123,7 +1124,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
               broadcastNewMedia(targetTabId, mediaList);
             }
 
-            if (targetTabId && targetTabId > 0 && shouldProbeM3u8(targetUrl)) {
+            if (targetTabId && targetTabId > 0) {
               if (details.frameId && details.frameId > 0) {
                 try {
                   chrome.tabs.sendMessage(targetTabId, {
@@ -1946,6 +1947,8 @@ function isGenericTitle(t) {
   if (!clean || clean.length < 2) return true;
 
   const genericExact = new Set([
+    'instagram', 'instagram video', 'instagram reel', 'instagram reels', 'instagram_video', 'instagram_reel',
+    'tiktok', 'x', 'home _ x', 'home / x',
     'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
     'trending', 'watch later', 'video', 'media stream', 'download', 'downloads',
     'facebook', 'facebook_video', 'facebook_reel', 'facebook video', 'facebook reel', 'facebook reels',
@@ -1960,7 +1963,8 @@ function isGenericTitle(t) {
 
   if (clean.startsWith('reels - video') || clean.startsWith('reel - video') ||
       clean.startsWith('reels and short') || clean.startsWith('facebook video') ||
-      clean.startsWith('facebook reel')) {
+      clean.startsWith('facebook reel') || clean.startsWith('instagram video') ||
+      clean.startsWith('instagram reel')) {
     return true;
   }
 
@@ -2292,6 +2296,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             addCand(effectiveBaseUrl.replace(/\/[^/?#]+\/[^/?#]+\.m3u8(\?[^#]*)?$/i, '/index.m3u8$1'));
           }
         }
+        if (effectiveBaseUrl.includes('/stream-embed/')) {
+          addCand(effectiveBaseUrl.replace(/\/stream-embed\/media\//i, '/stream-embed/playlist/'));
+        }
+        addCand(effectiveBaseUrl.replace(/\/media\//i, '/playlist/'));
 
         for (const candUrl of candidates) {
           const parentText = await fetchM3u8Text(candUrl, tabUrl, initiator);
