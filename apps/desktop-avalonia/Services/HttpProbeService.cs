@@ -37,11 +37,14 @@ public class HttpProbeService : IHttpProbeService
             {
                 Timeout = TimeSpan.FromSeconds(Math.Clamp(settings?.ConnectionTimeoutSeconds ?? 15, 1, 300))
             };
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SmartDM/2.0 (Compatible; Mozilla/5.0; Windows NT 10.0; Win64; x64)");
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
         }
     }
 
-    public async Task<ProbeResult> ProbeUrlAsync(string url, CancellationToken cancellationToken = default)
+    public Task<ProbeResult> ProbeUrlAsync(string url, CancellationToken cancellationToken = default)
+        => ProbeUrlAsync(url, null, null, null, cancellationToken);
+
+    public async Task<ProbeResult> ProbeUrlAsync(string url, string? referer, string? userAgent, string? cookies, CancellationToken cancellationToken = default)
     {
         var result = new ProbeResult { Url = url };
 
@@ -55,10 +58,50 @@ public class HttpProbeService : IHttpProbeService
         var sw = Stopwatch.StartNew();
         HttpResponseMessage? response = null;
 
+        string effectiveUa = !string.IsNullOrWhiteSpace(userAgent)
+            ? userAgent
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+        string? effectiveRef = !string.IsNullOrWhiteSpace(referer)
+            ? referer
+            : $"{uri.Scheme}://{uri.Authority}/";
+
+        void ApplyHeaders(HttpRequestMessage req, string? rHeader)
+        {
+            req.Headers.TryAddWithoutValidation("User-Agent", effectiveUa);
+            req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,application/x-bittorrent,*/*;q=0.8");
+            req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+            if (!string.IsNullOrWhiteSpace(cookies))
+            {
+                string cookieVal = cookies;
+                if (cookieVal.StartsWith("# Netscape", StringComparison.OrdinalIgnoreCase))
+                {
+                    var pairs = new List<string>();
+                    foreach (var line in cookieVal.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (line.StartsWith("#") || string.IsNullOrWhiteSpace(line)) continue;
+                        var parts = line.Split('\t');
+                        if (parts.Length >= 7)
+                        {
+                            pairs.Add($"{parts[5]}={parts[6]}");
+                        }
+                    }
+                    if (pairs.Count > 0) cookieVal = string.Join("; ", pairs);
+                }
+                req.Headers.TryAddWithoutValidation("Cookie", cookieVal);
+            }
+            if (!string.IsNullOrWhiteSpace(rHeader))
+            {
+                req.Headers.TryAddWithoutValidation("Referer", rHeader);
+                try { req.Headers.TryAddWithoutValidation("Origin", new Uri(rHeader).GetLeftPart(UriPartial.Authority)); } catch { }
+            }
+        }
+
         try
         {
             // 1. Try HEAD request first
             using var headReq = HttpTransferRequest.Create(HttpMethod.Head, uri);
+            ApplyHeaders(headReq, effectiveRef);
             headReq.Headers.AcceptEncoding.ParseAdd("identity");
 
             try
@@ -71,7 +114,7 @@ public class HttpProbeService : IHttpProbeService
             }
 
             // Verify advertised ranges with an actual one-byte GET. A server
-            // may advertise bytes on HEAD but ignore Range on GET.
+            // may advertise bytes on HEAD but ignore Range on GET, or reject HEAD (e.g. 403 Forbidden on PHP scripts).
             bool usedRangeProbe = response == null || response.StatusCode == HttpStatusCode.MethodNotAllowed ||
                 response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.NotFound ||
                 (response.IsSuccessStatusCode && response.Headers.AcceptRanges.Contains("bytes"));
@@ -79,9 +122,47 @@ public class HttpProbeService : IHttpProbeService
             {
                 response?.Dispose();
                 using var getReq = HttpTransferRequest.Create(HttpMethod.Get, uri);
+                ApplyHeaders(getReq, effectiveRef);
                 getReq.Headers.Range = new RangeHeaderValue(0, 0);
                 getReq.Headers.AcceptEncoding.ParseAdd("identity");
-                response = await _httpClient.SendAsync(getReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                try
+                {
+                    response = await _httpClient.SendAsync(getReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                }
+                catch { }
+
+                // Dynamic download scripts (e.g. download.php on TorrentBD) often return 403 or 400 when Range: bytes=0-0 is present.
+                // Fall back to a standard GET without Range header, reading response headers only.
+                if (response == null || !response.IsSuccessStatusCode)
+                {
+                    response?.Dispose();
+                    using var fullGetReq = HttpTransferRequest.Create(HttpMethod.Get, uri);
+                    ApplyHeaders(fullGetReq, effectiveRef);
+                    fullGetReq.Headers.AcceptEncoding.ParseAdd("identity");
+                    try
+                    {
+                        response = await _httpClient.SendAsync(fullGetReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                    }
+                    catch { }
+                }
+
+                // If still 403/Forbidden, test site root origin referer fallback
+                if (response != null && (response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.Unauthorized))
+                {
+                    string siteRootRef = $"{uri.Scheme}://{uri.Authority}/";
+                    if (!string.Equals(effectiveRef, siteRootRef, StringComparison.OrdinalIgnoreCase))
+                    {
+                        response.Dispose();
+                        using var altGetReq = HttpTransferRequest.Create(HttpMethod.Get, uri);
+                        ApplyHeaders(altGetReq, siteRootRef);
+                        altGetReq.Headers.AcceptEncoding.ParseAdd("identity");
+                        try
+                        {
+                            response = await _httpClient.SendAsync(altGetReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                        }
+                        catch { }
+                    }
+                }
             }
 
             if (response == null) throw new HttpRequestException("Server returned no probe response.");
@@ -270,6 +351,10 @@ public class HttpProbeService : IHttpProbeService
     {
         if (uri == null) return null;
 
+        bool isTorrentContext = uri.Host.Contains("torrent", StringComparison.OrdinalIgnoreCase) ||
+                                uri.AbsolutePath.Contains("torrent", StringComparison.OrdinalIgnoreCase) ||
+                                uri.Query.Contains("torrent", StringComparison.OrdinalIgnoreCase);
+
         // 1. Check query parameters e.g. ?filename=setup.exe or ?file=installer.msi or ?name=sintel.torrent
         if (!string.IsNullOrWhiteSpace(uri.Query))
         {
@@ -289,6 +374,13 @@ public class HttpProbeService : IHttpProbeService
                         }
                     }
                 }
+
+                // If in torrent context and has id e.g. download.php?id=1338395
+                string? id = queryParams["id"] ?? queryParams["tid"] ?? queryParams["torrent_id"];
+                if (!string.IsNullOrWhiteSpace(id) && (isTorrentContext || uri.AbsolutePath.EndsWith(".php", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return $"torrent_{id.Trim()}.torrent";
+                }
             }
             catch { }
         }
@@ -300,8 +392,17 @@ public class HttpProbeService : IHttpProbeService
             string pathBaseName = Path.GetFileName(absPath);
             if (!string.IsNullOrWhiteSpace(pathBaseName) && !IsGenericName(pathBaseName))
             {
-                try { pathBaseName = Uri.UnescapeDataString(pathBaseName); } catch { }
-                return pathBaseName;
+                string ext = Path.GetExtension(pathBaseName).ToLowerInvariant();
+                if (ext is not (".php" or ".asp" or ".aspx" or ".jsp" or ".cgi" or ".html" or ".htm"))
+                {
+                    try { pathBaseName = Uri.UnescapeDataString(pathBaseName); } catch { }
+                    return pathBaseName;
+                }
+            }
+
+            if (isTorrentContext)
+            {
+                return "download.torrent";
             }
         }
         catch { }
@@ -348,6 +449,13 @@ public class HttpProbeService : IHttpProbeService
     public string DetectCategory(string fileName, string mimeType)
     {
         string ext = Path.GetExtension(fileName).ToLowerInvariant();
+
+        if (fileName.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Contains(".torrent", StringComparison.OrdinalIgnoreCase) ||
+            (ext is ".torrent" or ".php" or "" && fileName.Contains("torrent", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Torrents";
+        }
 
         return ext switch
         {

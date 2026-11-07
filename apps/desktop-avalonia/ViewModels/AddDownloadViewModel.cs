@@ -328,6 +328,7 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(FileName))
         {
+            Category = _probeService.DetectCategory(FileName, string.Empty);
             SavePath = Path.Combine(downloadsDir, FileName);
             UpdateDriveSpace(SavePath);
         }
@@ -666,7 +667,7 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         try
         {
-            var res = await _probeService.ProbeUrlAsync(requestedUrl);
+            var res = await _probeService.ProbeUrlAsync(requestedUrl, _initialReferer, _initialUserAgent, _initialCookies);
             if (generation != _probeGeneration) return;
             IsProbing = false;
 
@@ -680,7 +681,10 @@ public partial class AddDownloadViewModel : ViewModelBase
                     FileName.Equals("download", StringComparison.OrdinalIgnoreCase) ||
                     (FileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && res.SuggestedCategory != "Media") ||
                     !FileName.Contains(".") ||
-                    IsGenericOrInvalidFileName(FileName);
+                    IsGenericOrInvalidFileName(FileName) ||
+                    FileName.StartsWith("torrent_", StringComparison.OrdinalIgnoreCase) ||
+                    FileName.StartsWith("download.", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(FileName, _probeService.InferFileNameFromUrl(requestedUrl), StringComparison.OrdinalIgnoreCase);
 
                 if (shouldReplaceFileName && !string.IsNullOrWhiteSpace(res.FileName))
                 {
@@ -717,6 +721,23 @@ public partial class AddDownloadViewModel : ViewModelBase
             {
                 IsProbeSuccessful = false;
                 ProbeStatus = $"• Probe Error: {res.ErrorMessage}";
+                if (string.IsNullOrWhiteSpace(FileName) || IsGenericOrInvalidFileName(FileName))
+                {
+                    string? fallback = _probeService.InferFileNameFromUrl(requestedUrl);
+                    if (!string.IsNullOrWhiteSpace(fallback))
+                    {
+                        FileName = fallback;
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(FileName))
+                {
+                    Category = _probeService.DetectCategory(FileName, string.Empty);
+                    string defaultDir = !string.IsNullOrWhiteSpace(_settings.DefaultDownloadDirectory)
+                        ? _settings.DefaultDownloadDirectory
+                        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                    SavePath = Path.Combine(defaultDir, FileName);
+                    UpdateDriveSpace(SavePath);
+                }
             }
         }
         catch (Exception ex)
@@ -765,9 +786,13 @@ public partial class AddDownloadViewModel : ViewModelBase
             {
                 string pathOnly = parsedUri.AbsolutePath;
                 string ext = Path.GetExtension(pathOnly);
-                if (!string.IsNullOrEmpty(ext) && ext.Length <= 16)
+                if (!string.IsNullOrEmpty(ext) && ext.Length <= 16 && ext is not (".php" or ".asp" or ".aspx" or ".jsp" or ".cgi" or ".html" or ".htm"))
                 {
                     inferredExt = ext;
+                }
+                else if (parsedUri.Host.Contains("torrent", StringComparison.OrdinalIgnoreCase) || pathOnly.Contains("torrent", StringComparison.OrdinalIgnoreCase))
+                {
+                    inferredExt = ".torrent";
                 }
             }
             FileName = "download_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + inferredExt;
@@ -889,7 +914,7 @@ public partial class AddDownloadViewModel : ViewModelBase
             ParallelThreads = effectiveThreads,
             ActiveMirrors = MirrorNodes.Count > 0 ? MirrorNodes.Count : 1,
             SavePath = finalSavePath,
-            Referer = _initialReferer,
+            Referer = !string.IsNullOrWhiteSpace(_initialReferer) ? _initialReferer : (Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var tUri) ? $"{tUri.Scheme}://{tUri.Host}/" : null),
             UserAgent = _initialUserAgent,
             Cookies = _initialCookies,
             ETag = probe?.ETag ?? string.Empty,

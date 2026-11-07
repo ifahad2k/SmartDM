@@ -265,6 +265,86 @@ public class FileExtensionAndCategoryTests
     }
 
     [Fact]
+    public void TorrentBD_UrlInference_ExtractsTorrentIdAndCategory()
+    {
+        string url = "https://www.torrentbd.net/download.php?id=1338395";
+        string? fileName = _probeService.InferFileNameFromUrl(url);
+        Assert.Equal("torrent_1338395.torrent", fileName);
+
+        string category = _probeService.DetectCategory(fileName!, "application/octet-stream");
+        Assert.Equal("Torrents", category);
+    }
+
+    [Fact]
+    public async Task TorrentBD_AddDownloadViewModel_Probe403_NeverLeavesFileNameBlankOrCategoryGeneral()
+    {
+        // Simulate a 403 Forbidden probe response (unauthenticated or bot-blocked)
+        var forbiddenResp = new HttpResponseMessage(HttpStatusCode.Forbidden);
+        var testClient = new HttpClient(new TestMockHandler(forbiddenResp));
+        var probeService = new HttpProbeService(testClient);
+        var settings = new AppSettingsModel();
+
+        var vm = new AddDownloadViewModel(
+            settings: settings,
+            initialUrl: "https://www.torrentbd.net/download.php?id=1338395",
+            probeService: probeService
+        );
+
+        // Immediately inferred from URL
+        Assert.Equal("torrent_1338395.torrent", vm.FileName);
+        Assert.Equal("Torrents", vm.Category);
+        Assert.EndsWith("torrent_1338395.torrent", vm.SavePath);
+
+        // Execute probe (which fails with 403)
+        await vm.ProbeUrlCommand.ExecuteAsync(null);
+
+        // Even though probe failed with 403, FileName and Category must NOT be cleared or set to General!
+        Assert.False(vm.IsProbeSuccessful);
+        Assert.Contains("403", vm.ProbeStatus);
+        Assert.Equal("torrent_1338395.torrent", vm.FileName);
+        Assert.Equal("Torrents", vm.Category);
+        Assert.EndsWith("torrent_1338395.torrent", vm.SavePath);
+    }
+
+    [Fact]
+    public async Task TorrentBD_WithSessionCookiesAndReferer_SucceedsAndReadsContentDisposition()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var okResp = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[15000])
+        };
+        okResp.Content.Headers.ContentLength = 15000;
+        okResp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-bittorrent");
+        okResp.Content.Headers.TryAddWithoutValidation("Content-Disposition", "attachment; filename=\"Devara.Part.1.2024.1080p.WEB-DL.torrent\"");
+
+        var testClient = new HttpClient(new CustomCaptureHandler(req =>
+        {
+            capturedRequest = req;
+            return okResp;
+        }));
+        var probeService = new HttpProbeService(testClient);
+        var settings = new AppSettingsModel();
+
+        var vm = new AddDownloadViewModel(
+            settings: settings,
+            initialUrl: "https://www.torrentbd.net/download.php?id=1338395",
+            probeService: probeService,
+            initialReferer: "https://www.torrentbd.net/torrent/view/1338395",
+            initialCookies: "uid=12345; pass=abcdef123456"
+        );
+
+        await vm.ProbeUrlCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsProbeSuccessful);
+        Assert.Equal("Devara.Part.1.2024.1080p.WEB-DL.torrent", vm.FileName);
+        Assert.Equal("Torrents", vm.Category);
+        Assert.NotNull(capturedRequest);
+        Assert.True(capturedRequest.Headers.Contains("Cookie"));
+        Assert.True(capturedRequest.Headers.Contains("Referer"));
+    }
+
+    [Fact]
     public void MainViewModel_MatchesCategory_RoutesAllCategories()
     {
         var vm = new MainViewModel(isDemoMode: true);
@@ -300,6 +380,17 @@ public class FileExtensionAndCategoryTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(_response);
+        }
+    }
+
+    private sealed class CustomCaptureHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+        public CustomCaptureHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) => _handler = handler;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_handler(request));
         }
     }
 }

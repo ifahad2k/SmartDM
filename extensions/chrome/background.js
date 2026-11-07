@@ -2754,6 +2754,15 @@ if (chrome.downloads && chrome.downloads.onCreated) {
         }
       } catch (e) {}
     }
+    if (!basename || basename.endsWith('.php') || basename.endsWith('.asp')) {
+      const dlUrl = downloadItem.finalUrl || downloadItem.url || '';
+      const idMatch = dlUrl.match(/(?:id|torrent|tid)=([0-9a-zA-Z_-]+)/i);
+      if (idMatch) {
+        basename = 'torrent_' + idMatch[1] + '.torrent';
+      } else if (dlUrl.toLowerCase().includes('torrent')) {
+        basename = 'download.torrent';
+      }
+    }
 
     const message = {
       type: 'ADD_DOWNLOAD',

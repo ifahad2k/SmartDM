@@ -183,10 +183,12 @@
             if (hrefStr && typeof hrefStr === 'string') {
               const urlLower = hrefStr.toLowerCase();
               const isFileExt = urlLower.match(/\.(zip|rar|7z|tar|gz|bz2|xz|zst|iso|img|cab|exe|msi|apk|dmg|pkg|deb|rpm|appx|msix|appimage|torrent|pdf|epub|mobi|docx?|xlsx?|pptx?|txt|csv|tsv|rtf|odt|ods|odp|mp4|mkv|webm|avi|mov|wmv|flv|ts|mp3|flac|wav|aac|ogg|opus|m4a|wma|json|xml|whl|jar)(\?.*)?$/i);
+              const isTorrentScript = /(?:download|torrent|dl)\.php\?(?:id|torrent|tid|hash)=/i.test(urlLower) ||
+                                      /(?:torrentbd\.net|1337x|nyaa\.si|yts\.mx|webtorrent)\/(?:download|torrents)/i.test(urlLower);
               const downloadAttrVal = el.getAttribute ? el.getAttribute('download') : null;
               const isDownloadAttr = el.hasAttribute && el.hasAttribute('download');
               
-              if ((isFileExt || isDownloadAttr) && urlLower.startsWith('http')) {
+              if ((isFileExt || isTorrentScript || isDownloadAttr) && urlLower.startsWith('http')) {
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -205,6 +207,15 @@
                       basename = decodeURIComponent(parsedUrl.pathname.split('/').pop() || '');
                     }
                   } catch(err) {}
+                }
+
+                if (!basename || basename.endsWith('.php') || basename.endsWith('.asp')) {
+                  const idMatch = hrefStr.match(/(?:id|torrent|tid)=([0-9a-zA-Z_-]+)/i);
+                  if (idMatch) {
+                    basename = 'torrent_' + idMatch[1] + '.torrent';
+                  } else if (urlLower.includes('torrent')) {
+                    basename = 'download.torrent';
+                  }
                 }
                 
                 runtime.sendMessage({
