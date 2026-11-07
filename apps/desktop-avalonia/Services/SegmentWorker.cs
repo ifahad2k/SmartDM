@@ -502,7 +502,9 @@ public class SegmentWorker
         CancellationToken cancellationToken,
         Action<HlsSegmentTask, long>? onChunkCompleted = null,
         Action<string>? onFatalError = null,
-        Func<string, HlsSegmentEncryption, CancellationToken, Task>? decryptSegment = null)
+        Func<string, HlsSegmentEncryption, CancellationToken, Task>? decryptSegment = null,
+        Func<string?>? getSharedReferer = null,
+        Action<string?>? setSharedReferer = null)
     {
         Progress.IsActive = true;
         Progress.IsCompleted = false;
@@ -533,10 +535,11 @@ public class SegmentWorker
 
                     using var req = HttpTransferRequest.Create(HttpMethod.Get, chunk.Url);
 
-                    if (!string.IsNullOrEmpty(_referer))
+                    string? activeReferer = getSharedReferer?.Invoke() ?? _referer;
+                    if (!string.IsNullOrEmpty(activeReferer))
                     {
-                        req.Headers.TryAddWithoutValidation("Referer", _referer);
-                        try { req.Headers.TryAddWithoutValidation("Origin", new Uri(_referer).GetLeftPart(UriPartial.Authority)); } catch { }
+                        req.Headers.TryAddWithoutValidation("Referer", activeReferer);
+                        try { req.Headers.TryAddWithoutValidation("Origin", new Uri(activeReferer).GetLeftPart(UriPartial.Authority)); } catch { }
                     }
                     if (!string.IsNullOrEmpty(_userAgent)) req.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
                     if (!string.IsNullOrEmpty(_cookies)) req.Headers.TryAddWithoutValidation("Cookie", _cookies);
@@ -549,24 +552,7 @@ public class SegmentWorker
                         (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized))
                     {
                         resp.Dispose();
-                        var workerCandidates = new List<string?>();
-                        if (!string.IsNullOrEmpty(_referer))
-                        {
-                            try
-                            {
-                                var rUri = new Uri(_referer);
-                                workerCandidates.Add(rUri.GetLeftPart(UriPartial.Authority) + "/");
-                                workerCandidates.Add(rUri.GetLeftPart(UriPartial.Authority));
-                            }
-                            catch { }
-                        }
-                        try
-                        {
-                            var cUri = new Uri(chunk.Url);
-                            workerCandidates.Add(cUri.GetLeftPart(UriPartial.Authority) + "/");
-                        }
-                        catch { }
-                        workerCandidates.Add(null); // No referer (anti-hotlink bypass)
+                        var workerCandidates = DownloadEngine.GetCandidateReferers(chunk.Url, activeReferer, null);
 
                         foreach (var cand in workerCandidates)
                         {
@@ -586,6 +572,7 @@ public class SegmentWorker
                             {
                                 resp = candResp;
                                 _referer = cand; // Update working referer for remaining chunks
+                                setSharedReferer?.Invoke(cand);
                                 break;
                             }
                             else
@@ -652,6 +639,7 @@ public class SegmentWorker
                         await MediaCheckpoint.SaveAsync(chunk.TargetPath, chunk.Identity + chunk.Url, resp.Headers.ETag is { IsWeak: false } tag ? tag.Tag : null, resp.Content.Headers.ContentLength, timeoutCts.Token);
                         chunkSuccess = true;
                         LastError = null;
+                        Progress.DownloadedBytes = 0;
                         onChunkCompleted?.Invoke(chunk, chunkBytes);
                     }
                 }
@@ -698,6 +686,7 @@ public class SegmentWorker
             Progress.IsActive = false;
             Progress.IsCompleted = !cancellationToken.IsCancellationRequested && string.IsNullOrEmpty(LastError) && queue.IsEmpty;
             Progress.SpeedMbps = 0;
+            Progress.DownloadedBytes = 0;
         }
     }
 }

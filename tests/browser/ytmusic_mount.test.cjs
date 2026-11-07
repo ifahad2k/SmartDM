@@ -118,6 +118,26 @@ for (const browser of ['chrome', 'firefox']) {
       insertBefore(node) { this.children.unshift(node); node.parentNode = this; },
       appendChild(node) { this.children.push(node); node.parentNode = this; }
     };
+    const middleControls = {
+      children: [],
+      insertBefore(node, ref) {
+        const idx = this.children.indexOf(ref);
+        if (idx !== -1) this.children.splice(idx, 0, node);
+        else this.children.unshift(node);
+        node.parentNode = this;
+      },
+      appendChild(node) { this.children.push(node); node.parentNode = this; }
+    };
+    const menuButton = {
+      tagName: 'YTMUSIC-MENU-RENDERER',
+      parentNode: middleControls,
+      nextSibling: null
+    };
+    middleControls.children.push(menuButton);
+    middleControls.querySelector = (sel) => {
+      if (sel.includes('ytmusic-menu-renderer') || sel.includes('.menu')) return menuButton;
+      return null;
+    };
 
     const attributes = {};
     const playerBar = {
@@ -130,6 +150,7 @@ for (const browser of ['chrome', 'firefox']) {
         if (sel.includes('.byline')) return playerBarByline;
         if (sel.includes('.time-info')) return timeInfo;
         if (sel.includes('watch?v=')) return trackLink;
+        if (sel.includes('.middle-controls')) return middleControls;
         if (sel.includes('.right-controls')) return rightControls;
         return null;
       }
@@ -205,11 +226,41 @@ for (const browser of ['chrome', 'firefox']) {
     };
     assert.equal(MediaWatcher.isThumbnailOrPreviewMedia(ytMusicVideo), false, 'Active YouTube Music video stream must not be flagged as preview/thumbnail');
 
-    // C. Verify MediaWatcher mounts button onto <ytmusic-player-bar>
+    // C. Verify MediaWatcher mounts button cleanly in .middle-controls adjacent to menu
     MediaWatcher.scanYouTubeMusic();
     assert.equal(playerBar.getAttribute('data-smartdm-mounted'), 'true');
     assert.ok(createdHost, 'Host must be created');
-    assert.equal(createdHost.parentNode, rightControls);
+    assert.equal(createdHost.parentNode, middleControls, 'Must mount into middleControls action area');
+    assert.equal(middleControls.children.indexOf(createdHost), middleControls.children.indexOf(menuButton) + 1, 'Must mount immediately adjacent to menu button');
+    assert.ok(createdHost.shadowRoot.innerHTML.includes('<svg class="ytmusic-svg-icon"'), 'SVG icon must use ytmusic-svg-icon');
+    assert.ok(!createdHost.shadowRoot.innerHTML.includes('play-icon download-icon'), 'SVG icon must not retain legacy triangle border hack classes');
+
+    // Priority test: when middle-controls has both like-button and menu-button, button must mount next to menu button
+    const likeButton = { tagName: 'YTMUSIC-LIKE-BUTTON-RENDERER', parentNode: middleControls };
+    middleControls.children = [likeButton, menuButton];
+    middleControls.querySelector = (sel) => {
+      if (sel.includes('ytmusic-menu-renderer') || sel.includes('.menu')) return menuButton;
+      if (sel.includes('ytmusic-like-button-renderer')) return likeButton;
+      return null;
+    };
+    createdHost.isConnected = false;
+    playerBar.removeAttribute?.('data-smartdm-mounted');
+    delete attributes['data-smartdm-mounted'];
+    MediaWatcher.attachYouTubeMusicPlayerBar(playerBar);
+    assert.equal(middleControls.children.indexOf(createdHost), middleControls.children.indexOf(menuButton) + 1, 'Must prioritize menu button and mount adjacent to it');
+
+    // Fallback: when middle-controls is absent, verify mounting into right-controls
+    const fallbackPlayerBar = {
+      tagName: 'YTMUSIC-PLAYER-BAR',
+      getAttribute(k) { return null; },
+      setAttribute() {},
+      querySelector(sel) {
+        if (sel.includes('.right-controls')) return rightControls;
+        return null;
+      }
+    };
+    MediaWatcher.attachYouTubeMusicPlayerBar(fallbackPlayerBar);
+    assert.equal(createdHost.parentNode, rightControls, 'Must fallback to right-controls when middle-controls is absent');
 
     // D. Click button -> Popover opens and requests formats with composite title
     let fetchedUrl = null;
@@ -482,7 +533,23 @@ for (const browser of ['chrome', 'firefox']) {
 
     // 2. Editable Playlist Header Test
     const editableHeaderTitle = { textContent: 'My Favorite Jams' };
-    const buttonsContainer = { children: [], appendChild(n) { this.children.push(n); n.parentNode = this; } };
+    const actionButtonsContainer = {
+      children: [],
+      insertBefore(node, ref) {
+        const idx = this.children.indexOf(ref);
+        if (idx !== -1) this.children.splice(idx, 0, node);
+        else this.children.unshift(node);
+        node.parentNode = this;
+      },
+      appendChild(n) { this.children.push(n); n.parentNode = this; }
+    };
+    const playlistMenuButton = {
+      tagName: 'YTMUSIC-MENU-RENDERER',
+      parentNode: actionButtonsContainer,
+      parentElement: actionButtonsContainer
+    };
+    actionButtonsContainer.children.push(playlistMenuButton);
+
     const editableHeaderAttrs = {};
     const editableHeader = {
       tagName: 'YTMUSIC-EDITABLE-PLAYLIST-DETAIL-HEADER-RENDERER',
@@ -490,7 +557,8 @@ for (const browser of ['chrome', 'firefox']) {
       setAttribute(k, v) { editableHeaderAttrs[k] = v; },
       querySelector(sel) {
         if (sel.includes('.title') || sel.includes('h1')) return editableHeaderTitle;
-        if (sel.includes('.buttons')) return buttonsContainer;
+        if (sel.includes('.action-buttons') || sel.includes('#top-level-buttons-computed') || sel.includes('.buttons')) return actionButtonsContainer;
+        if (sel.includes('ytmusic-menu-renderer') || sel.includes('.menu')) return playlistMenuButton;
         return null;
       }
     };
@@ -519,17 +587,19 @@ for (const browser of ['chrome', 'firefox']) {
       }
     };
 
+    let createdHost = null;
     const documentMock = {
       body: { appendChild() {} },
       createElement() {
         const btn = { addEventListener() {}, getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0 }; } };
         const pop = { classList: { add() {}, remove() {}, contains() { return false; } }, style: {} };
         const cont = { appendChild() {}, querySelector() { return null; } };
-        return {
+        const host = {
           style: {},
           setAttribute() {},
           attachShadow() {
-            return {
+            createdHost = this;
+            this.shadowRoot = {
               innerHTML: '',
               querySelector(sel) {
                 if (sel.includes('.banner-btn')) return btn;
@@ -538,8 +608,10 @@ for (const browser of ['chrome', 'firefox']) {
                 return null;
               }
             };
+            return this.shadowRoot;
           }
         };
+        return host;
       },
       querySelector(sel) {
         if (sel.includes('ytmusic-player-bar')) return playerBar;
@@ -585,16 +657,64 @@ for (const browser of ['chrome', 'firefox']) {
     assert.equal(trackMeta.album, 'Starboy');
     assert.equal(trackMeta.fullTitle, 'I Feel It Coming - The Weeknd, Daft Punk');
 
-    // B. Verify editable playlist header is mounted
+    // B. Verify editable playlist header is mounted cleanly into action buttons before the menu
     MediaWatcher.scanYouTubeMusic();
     assert.equal(editableHeader.getAttribute('data-smartdm-playlist-mounted'), 'true');
-    assert.equal(buttonsContainer.children.length, 1);
+    assert.equal(actionButtonsContainer.children.length, 2);
+    assert.equal(actionButtonsContainer.children[0], createdHost, 'Must be inserted before the menu button in action buttons');
+    assert.equal(createdHost.parentNode, actionButtonsContainer);
 
-    // C. Verify queue exclusion in playlist extraction
+    // C. Verify SPA navigation re-mount when header content updates (host cleared from DOM)
+    actionButtonsContainer.children = [playlistMenuButton];
+    createdHost.isConnected = false;
+    MediaWatcher.scanYouTubeMusic();
+    assert.equal(actionButtonsContainer.children.length, 2, 'Must re-attach host after SPA DOM refresh');
+
+    // D. Verify queue exclusion in playlist extraction
     const playlistMeta = VisualMountDetector.extractYouTubeMusicPlaylistMetadata(editableHeader);
     assert.equal(playlistMeta.title, 'My Favorite Jams');
     assert.equal(playlistMeta.trackCount, 1, 'Queue track must be excluded');
     assert.equal(playlistMeta.tracks[0].title, 'Blinding Lights');
     assert.equal(playlistMeta.tracks[0].artist, 'The Weeknd');
+
+    // E. Verify playlist SVG icon does not have legacy triangle border hack classes
+    assert.ok(createdHost.shadowRoot.innerHTML.includes('<svg class="ytmusic-svg-icon"'), 'Playlist button must use ytmusic-svg-icon');
+    assert.ok(!createdHost.shadowRoot.innerHTML.includes('class="ytmusic-svg-icon download-icon"'), 'Playlist button must not have legacy download-icon class on SVG');
+
+    // F. Verify nested container: when action-buttons wraps #top-level-buttons-computed, host mounts inside top-level-buttons before menu
+    const innerTopLevelButtons = {
+      children: [playlistMenuButton],
+      insertBefore(node, ref) {
+        const idx = this.children.indexOf(ref);
+        if (idx !== -1) this.children.splice(idx, 0, node);
+        else this.children.unshift(node);
+        node.parentNode = this;
+      },
+      appendChild(n) { this.children.push(n); n.parentNode = this; }
+    };
+    playlistMenuButton.parentNode = innerTopLevelButtons;
+    playlistMenuButton.parentElement = innerTopLevelButtons;
+
+    const outerActionButtons = {
+      children: [innerTopLevelButtons],
+      appendChild(n) { this.children.push(n); n.parentNode = this; }
+    };
+    innerTopLevelButtons.parentNode = outerActionButtons;
+    innerTopLevelButtons.parentElement = outerActionButtons;
+
+    const nestedHeader = {
+      tagName: 'YTMUSIC-EDITABLE-PLAYLIST-DETAIL-HEADER-RENDERER',
+      getAttribute() { return null; },
+      setAttribute() {},
+      querySelector(sel) {
+        if (sel.includes('.action-buttons')) return outerActionButtons;
+        if (sel.includes('#top-level-buttons-computed')) return innerTopLevelButtons;
+        if (sel.includes('ytmusic-menu-renderer') || sel.includes('.menu')) return playlistMenuButton;
+        return null;
+      }
+    };
+    createdHost.isConnected = false;
+    MediaWatcher.attachYouTubeMusicPlaylistHeader(nestedHeader);
+    assert.equal(innerTopLevelButtons.children[0], createdHost, 'Must insert cleanly before menu inside inner top level buttons container');
   });
 }

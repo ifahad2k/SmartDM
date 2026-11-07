@@ -60,6 +60,88 @@ class OverlayUiRenderer {
         display: inline-block;
       }
       .banner-btn:hover .download-icon { border-top-color: #ffffff; }
+      /* YouTube Music native dark-theme pill styling */
+      .banner-btn.ytmusic-bar-btn {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 18px;
+        color: #f1f1f1;
+        padding: 0 12px;
+        height: 32px;
+        font-family: "YouTube Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        box-shadow: none;
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .banner-btn.ytmusic-bar-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        color: #ffffff;
+        box-shadow: none;
+        transform: none;
+      }
+      .banner-btn.ytmusic-bar-btn:active {
+        background: rgba(255, 255, 255, 0.28);
+        transform: scale(0.97);
+      }
+      .banner-btn.ytmusic-playlist-header-btn {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 18px;
+        color: #f1f1f1;
+        padding: 0 16px;
+        height: 36px;
+        font-family: "YouTube Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        box-shadow: none;
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .banner-btn.ytmusic-playlist-header-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        color: #ffffff;
+        box-shadow: none;
+        transform: none;
+      }
+      .banner-btn.ytmusic-playlist-header-btn:active {
+        background: rgba(255, 255, 255, 0.28);
+        transform: scale(0.97);
+      }
+      .ytmusic-svg-icon {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+        display: inline-block;
+        flex-shrink: 0;
+        border: none;
+        outline: none;
+      }
+      .banner-btn.ytmusic-playlist-header-btn .ytmusic-svg-icon {
+        width: 18px;
+        height: 18px;
+        border: none;
+        outline: none;
+      }
       .popover {
         position: fixed;
         width: 290px;

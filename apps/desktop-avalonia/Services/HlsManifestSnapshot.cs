@@ -56,9 +56,11 @@ public static class HlsManifestSnapshot
                 line = key.Url == null ? "#EXT-X-KEY:METHOD=NONE" :
                     "#EXT-X-KEY:METHOD=AES-128,URI=\"" + key.Url + "\"" + (key.Iv == null ? "" : ",IV=0x" + key.Iv);
             }
-            else if (line is "#EXT-X-ALLOW-CACHE:YES" or "#EXT-X-ALLOW-CACHE:NO" ||
+            else if (line is "#EXT-X-ALLOW-CACHE:YES" or "#EXT-X-ALLOW-CACHE:NO" or "#EXT-X-I-FRAMES-ONLY" ||
                 line.StartsWith("#EXT-X-PROGRAM-DATE-TIME:", StringComparison.Ordinal) ||
                 line.StartsWith("#EXT-X-DATERANGE:", StringComparison.Ordinal) ||
+                line.StartsWith("#EXT-X-START:", StringComparison.Ordinal) ||
+                line.StartsWith("#EXT-X-MEDIA:", StringComparison.Ordinal) ||
                 (line.StartsWith('#') && !line.StartsWith("#EXT", StringComparison.Ordinal))) continue;
             else if (line.StartsWith("#EXT-X-MAP:", StringComparison.Ordinal))
             {
@@ -67,8 +69,9 @@ public static class HlsManifestSnapshot
             }
             else if (!(line == "#EXTM3U" || line == "#EXT-X-ENDLIST" || line == "#EXT-X-DISCONTINUITY" ||
                 line == "#EXT-X-INDEPENDENT-SEGMENTS" || line.StartsWith("#EXTINF:", StringComparison.Ordinal) ||
-                Regex.IsMatch(line, "^#EXT-X-(VERSION|TARGETDURATION|MEDIA-SEQUENCE|DISCONTINUITY-SEQUENCE):[0-9]+$") ||
-                Regex.IsMatch(line, "^#EXT-X-BYTERANGE:[0-9]+(@[0-9]+)?$") || line == "#EXT-X-PLAYLIST-TYPE:VOD"))
+                Regex.IsMatch(line, "^#EXT-X-(VERSION|TARGETDURATION|MEDIA-SEQUENCE|DISCONTINUITY-SEQUENCE|BITRATE):[0-9]+$") ||
+                Regex.IsMatch(line, "^#EXT-X-BYTERANGE:[0-9]+(@[0-9]+)?$") ||
+                Regex.IsMatch(line, "^#EXT-X-PLAYLIST-TYPE:(VOD|EVENT)$")))
                 throw new InvalidDataException("This captured playlist contains unsupported features. Use a clear, complete stream.");
             output.AppendLine(line);
         }

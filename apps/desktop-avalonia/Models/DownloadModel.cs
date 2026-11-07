@@ -55,6 +55,8 @@ public partial class DownloadModel : ObservableObject
     public string? MediaKind { get; set; }
     public string? ManifestText { get; set; }
     public string? AudioManifestText { get; set; }
+    public long Bandwidth { get; set; }
+    public double TotalDuration { get; set; }
     public Services.SafetyVerdict SafetyVerdict { get; set; } = Services.SafetyVerdict.NotScanned;
     public string SafetyDetails { get; set; } = "No scan evidence recorded";
     public string? QuarantinePath { get; set; }

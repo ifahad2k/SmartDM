@@ -329,6 +329,16 @@ public class LocalIpcService : ILocalIpcService
                         if (!HlsManifestSnapshot.IsWithinSizeLimit(dto.AudioManifestText!))
                         { resp.StatusCode = 413; return; }
                     }
+                    if (item.TryGetProperty("bandwidth", out var bwProp))
+                    {
+                        if (bwProp.ValueKind == JsonValueKind.Number) dto.Bandwidth = bwProp.GetInt64();
+                        else if (bwProp.ValueKind == JsonValueKind.String && long.TryParse(bwProp.GetString(), out var bwVal)) dto.Bandwidth = bwVal;
+                    }
+                    if (item.TryGetProperty("totalDuration", out var durProp))
+                    {
+                        if (durProp.ValueKind == JsonValueKind.Number) dto.TotalDuration = durProp.GetDouble();
+                        else if (durProp.ValueKind == JsonValueKind.String && double.TryParse(durProp.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var durVal)) dto.TotalDuration = durVal;
+                    }
                     formats.Add(dto);
                 }
             }

@@ -22,6 +22,12 @@ public partial class MediaFormatItem : ObservableObject
     private long _fileSize = 0;
 
     [ObservableProperty]
+    private long _bandwidth = 0;
+
+    [ObservableProperty]
+    private double _totalDuration = 0;
+
+    [ObservableProperty]
     private bool _isAudioOnly = false;
 
     [ObservableProperty]

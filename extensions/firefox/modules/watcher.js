@@ -114,14 +114,32 @@ class MediaWatcher {
         }
       });
       this.spaScanTimers.forEach(clearTimeout);
-      this.spaScanTimers = [150, 600].map(delay => setTimeout(() => this.scanAll(), delay));
+      this.spaScanTimers = [150, 500, 1000, 2000].map(delay => setTimeout(() => this.scanAll(), delay));
     };
 
-    window.addEventListener('yt-navigate-finish', onSpaNavigate, { passive: true });
-    window.addEventListener('yt-page-data-updated', onSpaNavigate, { passive: true });
-    window.addEventListener('ytmusic-page-data-updated', onSpaNavigate, { passive: true });
-    window.addEventListener('ytmusic-navigate-finish', onSpaNavigate, { passive: true });
-    window.addEventListener('popstate', onSpaNavigate, { passive: true });
+    const spaEvents = ['yt-navigate-finish', 'yt-page-data-updated', 'ytmusic-page-data-updated', 'ytmusic-navigate-finish', 'yt-navigate-start', 'popstate'];
+    spaEvents.forEach(evt => {
+      window.addEventListener(evt, onSpaNavigate, { passive: true });
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener(evt, onSpaNavigate, { passive: true });
+      }
+    });
+
+    if (typeof history !== 'undefined' && history.pushState && !history._smartdm_patched) {
+      const origPush = history.pushState;
+      const origReplace = history.replaceState;
+      history.pushState = function(...args) {
+        const res = origPush.apply(this, args);
+        onSpaNavigate();
+        return res;
+      };
+      history.replaceState = function(...args) {
+        const res = origReplace.apply(this, args);
+        onSpaNavigate();
+        return res;
+      };
+      history._smartdm_patched = true;
+    }
 
     // 4. Lightweight Debounced MutationObserver (zero removed-subtree recursion)
     this.domObserver = new MutationObserver((mutations) => {
@@ -142,9 +160,9 @@ class MediaWatcher {
                 continue;
               }
               // Only trigger a scan if the added subtree actually contains media elements or video card links
-              const tag = node.tagName;
-              if (tag === 'VIDEO' || tag === 'AUDIO' ||
-                  (node.querySelector && node.querySelector('video, audio, ytd-thumbnail, yt-lockup-view-model, a[href*="/watch"], a[href*="/reel/"], a[href*="/shorts/"]'))) {
+              const tag = (node.tagName || '').toUpperCase();
+              if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'IFRAME' || tag.startsWith('YTMUSIC-') ||
+                  (node.querySelector && node.querySelector('video, audio, iframe, ytd-thumbnail, yt-lockup-view-model, ytmusic-player-bar, ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-list-item-renderer, .action-buttons, #top-level-buttons-computed, #top-level-buttons, .middle-controls, .middle-controls-buttons, a[href*="/watch"], a[href*="/reel/"], a[href*="/shorts/"]'))) {
                 hasAddedElements = true;
                 break;
               }
@@ -292,42 +310,106 @@ class MediaWatcher {
 
     // 1. Single Music Player Bar
     const playerBar = document.querySelector('ytmusic-player-bar');
-    if (playerBar && !playerBar.getAttribute('data-smartdm-mounted')) {
-      this.attachYouTubeMusicPlayerBar(playerBar);
+    if (playerBar) {
+      const existingHost = playerBar.querySelector?.('.smartdm-ytmusic-host') ||
+                           playerBar.shadowRoot?.querySelector?.('.smartdm-ytmusic-host');
+      if (!playerBar.getAttribute('data-smartdm-mounted') || !existingHost || !existingHost.isConnected) {
+        this.attachYouTubeMusicPlayerBar(playerBar);
+      }
     }
 
     // 2. Playlist / Album Page Header
-    const header = document.querySelector('ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer');
-    if (header && !header.getAttribute('data-smartdm-playlist-mounted')) {
-      const isPlaylistOrAlbum = window.location.pathname.includes('/playlist') ||
-                                window.location.pathname.includes('/browse/MPREb') ||
-                                window.location.search.includes('list=') ||
-                                !!document.querySelector('ytmusic-responsive-list-item-renderer');
-      if (isPlaylistOrAlbum) {
+    const isPlaylistOrAlbum = window.location.pathname.includes('/playlist') ||
+                              window.location.pathname.includes('/browse/MPREb') ||
+                              window.location.pathname.includes('/browse/VL') ||
+                              window.location.pathname.includes('/browse/FEmusic_library') ||
+                              window.location.pathname.includes('/channel/') ||
+                              window.location.search.includes('list=') ||
+                              (typeof document !== 'undefined' && !!document.querySelector('ytmusic-responsive-list-item-renderer'));
+    if (isPlaylistOrAlbum) {
+      let headers = [];
+      try {
+        headers = Array.from(document.querySelectorAll(
+          'ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-header-renderer'
+        ));
+      } catch (_) {}
+      if (headers.length === 0) {
+        const h = document.querySelector?.(
+          'ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-header-renderer'
+        );
+        if (h) headers = [h];
+      }
+
+      // Filter to prefer visible/active headers (avoid attaching to stale hidden SPA headers)
+      const visibleHeaders = headers.filter(h => {
+        if (!h) return false;
+        if (h.hasAttribute?.('hidden') || h.closest?.('[hidden]')) return false;
+        if (typeof h.offsetParent !== 'undefined' && h.offsetParent === null && h.offsetWidth === 0 && h.offsetHeight === 0) {
+          return false;
+        }
+        return true;
+      });
+      const candidateHeaders = visibleHeaders.length > 0 ? visibleHeaders : headers;
+
+      for (const header of candidateHeaders) {
+        const existingHost = header.querySelector?.('.smartdm-ytmusic-playlist-host') ||
+                             header.shadowRoot?.querySelector?.('.smartdm-ytmusic-playlist-host');
+        if (existingHost && existingHost.isConnected) continue;
+
+        const outerHeader = header.parentElement?.closest?.(
+          'ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-header-renderer'
+        );
+        if (outerHeader) {
+          const outerExisting = outerHeader.querySelector?.('.smartdm-ytmusic-playlist-host') ||
+                                outerHeader.shadowRoot?.querySelector?.('.smartdm-ytmusic-playlist-host');
+          if (outerExisting && outerExisting.isConnected) continue;
+        }
+
         this.attachYouTubeMusicPlaylistHeader(header);
+        break;
       }
     }
   }
 
   static attachYouTubeMusicPlayerBar(playerBar) {
-    if (!playerBar || playerBar.getAttribute('data-smartdm-mounted')) return;
+    if (!playerBar) return;
+    const existingHost = playerBar.querySelector?.('.smartdm-ytmusic-host') ||
+                         playerBar.shadowRoot?.querySelector?.('.smartdm-ytmusic-host');
+    if (existingHost && existingHost.isConnected) return;
     playerBar.setAttribute('data-smartdm-mounted', 'true');
 
     const host = document.createElement('div');
     host.className = 'smartdm-ytmusic-host smartdm-player-host';
     host.style.display = 'inline-flex';
     host.style.alignItems = 'center';
-    host.style.margin = '0 8px';
-    host.style.zIndex = '2147483647';
+    host.style.margin = '0 6px';
+    host.style.flexShrink = '0';
+    host.style.zIndex = '100';
 
-    const rightControls = playerBar.querySelector('.right-controls-buttons, .right-controls, #right-controls, .middle-controls') || playerBar;
-    if (rightControls !== playerBar) {
-      rightControls.insertBefore(host, rightControls.firstChild);
-    } else {
-      host.style.position = 'absolute';
-      host.style.right = '200px';
-      host.style.top = '50%';
-      host.style.transform = 'translateY(-50%)';
+    // Place cleanly in player bar action buttons area:
+    // 1. In .middle-controls immediately adjacent to three-dots menu (⋮) or like/dislike buttons
+    // 2. Or in .right-controls-buttons next to volume/queue controls
+    const root = playerBar.shadowRoot || playerBar;
+    const middleControls = root.querySelector?.('.middle-controls') || playerBar.querySelector?.('.middle-controls');
+    const menuEl = middleControls?.querySelector?.('ytmusic-menu-renderer, .menu') ||
+                   middleControls?.querySelector?.('ytmusic-like-button-renderer');
+    const mcButtons = middleControls?.querySelector?.('.middle-controls-buttons, #middle-controls-buttons');
+    const rightControls = root.querySelector?.('.right-controls-buttons, #right-controls-buttons, .right-controls, #right-controls') ||
+                          playerBar.querySelector?.('.right-controls-buttons, #right-controls-buttons, .right-controls, #right-controls');
+
+    if (menuEl && menuEl.parentNode) {
+      if (menuEl.nextSibling && typeof menuEl.parentNode.insertBefore === 'function') {
+        menuEl.parentNode.insertBefore(host, menuEl.nextSibling);
+      } else if (typeof menuEl.parentNode.appendChild === 'function') {
+        menuEl.parentNode.appendChild(host);
+      }
+    } else if (mcButtons && typeof mcButtons.appendChild === 'function') {
+      mcButtons.appendChild(host);
+    } else if (middleControls && typeof middleControls.appendChild === 'function') {
+      middleControls.appendChild(host);
+    } else if (rightControls && typeof rightControls.appendChild === 'function') {
+      rightControls.appendChild(host);
+    } else if (typeof playerBar.appendChild === 'function') {
       playerBar.appendChild(host);
     }
 
@@ -335,8 +417,10 @@ class MediaWatcher {
     shadow.innerHTML = `
       ${this.styleMarkup(shadow)}
       <button class="banner-btn ytmusic-bar-btn" title="Download current track with SmartDM">
-        <span class="play-icon"></span>
-        <span>Download Music</span>
+        <svg class="ytmusic-svg-icon" viewBox="0 0 24 24">
+          <path d="M17 18v1H6v-1h11zm-.5-6.6-.7-.7-3.8 3.7V4h-1v10.4l-3.8-3.8-.7.7 5 5 5-5z"/>
+        </svg>
+        <span>Download</span>
       </button>
       <div class="popover">
         <div class="popover-title">SmartDM Music Download</div>
@@ -383,7 +467,7 @@ class MediaWatcher {
 
       const rect = btn.getBoundingClientRect();
       const popoverWidth = 290;
-      let left = Math.max(10, Math.min(window.innerWidth - popoverWidth - 10, rect.right - popoverWidth));
+      let left = Math.max(10, Math.min(window.innerWidth - popoverWidth - 10, rect.left + (rect.width - popoverWidth) / 2));
       popover.style.position = 'fixed';
       popover.style.left = left + 'px';
       popover.style.bottom = Math.max(10, window.innerHeight - rect.top + 8) + 'px';
@@ -449,7 +533,7 @@ class MediaWatcher {
       };
 
       const refreshActivePopover = () => {
-        if (!popover.classList.contains('active') || content._smartdm_downloading) {
+        if (!popover.classList.contains('active') || content._smartdm_downloading || !host.isConnected) {
           stopPolling();
           return;
         }
@@ -465,24 +549,66 @@ class MediaWatcher {
   }
 
   static attachYouTubeMusicPlaylistHeader(header) {
-    if (!header || header.getAttribute('data-smartdm-playlist-mounted')) return;
+    if (!header) return;
+    const innerHeader = header.querySelector?.('ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer') ||
+                        header.shadowRoot?.querySelector?.('ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer');
+    const targetHeader = innerHeader || header;
+
+    const existingHost = targetHeader.querySelector?.('.smartdm-ytmusic-playlist-host') ||
+                         targetHeader.shadowRoot?.querySelector?.('.smartdm-ytmusic-playlist-host') ||
+                         header.querySelector?.('.smartdm-ytmusic-playlist-host') ||
+                         header.shadowRoot?.querySelector?.('.smartdm-ytmusic-playlist-host');
+    if (existingHost && existingHost.isConnected) return;
     header.setAttribute('data-smartdm-playlist-mounted', 'true');
+    if (targetHeader !== header) {
+      targetHeader.setAttribute('data-smartdm-playlist-mounted', 'true');
+    }
 
     const host = document.createElement('div');
     host.className = 'smartdm-ytmusic-playlist-host smartdm-player-host';
     host.style.display = 'inline-flex';
     host.style.alignItems = 'center';
-    host.style.margin = '4px 8px';
+    host.style.margin = '4px 6px';
     host.style.zIndex = '9999';
 
-    const buttonsContainer = header.querySelector?.('.buttons, #buttons, #top-level-buttons, [slot="buttons"], ytmusic-menu-renderer, .action-buttons') || header;
-    buttonsContainer.appendChild(host);
+    // Find action button targets: .action-buttons, #top-level-buttons-computed, .buttons, or immediately adjacent to play/menu
+    const findInTarget = (sel) => {
+      return targetHeader.querySelector?.(sel) ||
+             targetHeader.shadowRoot?.querySelector?.(sel) ||
+             header.querySelector?.(sel) ||
+             header.shadowRoot?.querySelector?.(sel) ||
+             null;
+    };
+
+    const menuEl = findInTarget('ytmusic-menu-renderer, .menu');
+    const playEl = findInTarget('ytmusic-play-button-renderer, #play-button');
+    const buttonsContainer = findInTarget(
+      '.action-buttons, #top-level-buttons-computed, #top-level-buttons, .top-level-buttons, .buttons, #buttons, [slot="buttons"], #actions, .actions'
+    );
+
+    if (menuEl && menuEl.parentNode && typeof menuEl.parentNode.insertBefore === 'function') {
+      menuEl.parentNode.insertBefore(host, menuEl);
+    } else if (playEl && playEl.parentNode) {
+      if (playEl.nextSibling && typeof playEl.parentNode.insertBefore === 'function') {
+        playEl.parentNode.insertBefore(host, playEl.nextSibling);
+      } else if (typeof playEl.parentNode.appendChild === 'function') {
+        playEl.parentNode.appendChild(host);
+      }
+    } else if (buttonsContainer && typeof buttonsContainer.appendChild === 'function') {
+      buttonsContainer.appendChild(host);
+    } else if (typeof targetHeader.appendChild === 'function') {
+      targetHeader.appendChild(host);
+    } else if (typeof header.appendChild === 'function') {
+      header.appendChild(host);
+    }
 
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
       ${this.styleMarkup(shadow)}
       <button class="banner-btn ytmusic-playlist-header-btn" title="Download all tracks in this playlist">
-        <span class="download-icon"></span>
+        <svg class="ytmusic-svg-icon" viewBox="0 0 24 24">
+          <path d="M17 18v1H6v-1h11zm-.5-6.6-.7-.7-3.8 3.7V4h-1v10.4l-3.8-3.8-.7.7 5 5 5-5z"/>
+        </svg>
         <span>Download Playlist</span>
       </button>
       <div class="popover">
@@ -653,6 +779,55 @@ class MediaWatcher {
     }
   }
 
+  static isPlayerIframe(el) {
+    if (!el || el.tagName !== 'IFRAME') return false;
+
+    // Filter out hidden, miniature, ad or tracking iframes
+    const w = el.clientWidth || el.offsetWidth || parseInt(el.width, 10) || 0;
+    const h = el.clientHeight || el.offsetHeight || parseInt(el.height, 10) || 0;
+    if ((w > 0 && w < 280) || (h > 0 && h < 140)) return false;
+
+    const src = (el.src || el.getAttribute('src') || el.getAttribute('data-src') || '').toLowerCase();
+    const id = (el.id || '').toLowerCase();
+    const cls = (typeof el.className === 'string' ? el.className : '').toLowerCase();
+    const title = (el.getAttribute('title') || '').toLowerCase();
+
+    // Ignore known ads/analytics/captchas
+    if (src.includes('google') || src.includes('doubleclick') || src.includes('recaptcha') ||
+        src.includes('hcaptcha') || src.includes('analytics') || src.includes('disqus') ||
+        src.includes('facebook.com/plugins') || src.includes('twitter.com/widgets') ||
+        id.includes('ad-') || cls.includes('ad-') || id.includes('banner') || cls.includes('banner')) {
+      return false;
+    }
+
+    // Direct player host patterns or streaming embed indicators
+    const playerKeywords = /stream|embed|player|video|movie|watch|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|cloud|tape|filemoon|dood|mixdrop|voe|streamtape|rabbitstream|megacloud|streamwish|mp4upload|upstream|play/i;
+    if (playerKeywords.test(src) || playerKeywords.test(id) || playerKeywords.test(cls) || playerKeywords.test(title)) {
+      return true;
+    }
+
+    // Check parent container for player id/class (e.g. #player, .player-wrapper)
+    const container = el.closest ? el.closest('#player, #player-wrapper, #player-holder, #iframe-player, .player, .player-container, .embed-responsive, [class*="player" i]') : null;
+    if (container) return true;
+
+    // Check iframe allow attribute (e.g. allow="autoplay; fullscreen; encrypted-media")
+    const allow = (el.getAttribute('allow') || '').toLowerCase();
+    if (allow.includes('fullscreen') || allow.includes('autoplay') || allow.includes('encrypted-media')) {
+      if (w >= 300 || h >= 180 || el.getAttribute('allowfullscreen') !== null) {
+        return true;
+      }
+    }
+
+    // On movie / watch pages, any sufficiently large iframe without local video is likely a player
+    const path = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname.toLowerCase() : '';
+    const isWatchPage = path.includes('/watch') || path.includes('/movie') || path.includes('/film') || path.includes('/episode') || path.includes('/play') || path.includes('/series') || path.includes('/tv') || path.includes('/show') || path.includes('/view');
+    if (isWatchPage && (w >= 400 || h >= 250 || el.getAttribute('allowfullscreen') !== null)) {
+      return true;
+    }
+
+    return false;
+  }
+
   static scanPlayers() {
     for (const [el] of this.activePlayers.entries()) {
       if (!el.isConnected) {
@@ -661,6 +836,15 @@ class MediaWatcher {
     }
     const mediaElements = document.querySelectorAll('video:not([' + this.ATTR_PLAYER_ATTACHED + ']), audio:not([' + this.ATTR_PLAYER_ATTACHED + '])');
     mediaElements.forEach(el => this.attachPlayerBanner(el));
+
+    if (typeof window !== 'undefined' && window.top === window.self) {
+      const iframes = document.querySelectorAll('iframe:not([' + this.ATTR_PLAYER_ATTACHED + '])');
+      iframes.forEach(iframe => {
+        if (this.isPlayerIframe(iframe)) {
+          this.attachPlayerBanner(iframe);
+        }
+      });
+    }
   }
 
   static isThumbnailOrPreviewMedia(mediaEl) {
@@ -975,7 +1159,7 @@ class MediaWatcher {
       };
 
       const refreshActivePopover = () => {
-        if (!popover.classList.contains('active') || content._smartdm_downloading) {
+        if (!popover.classList.contains('active') || content._smartdm_downloading || !host.isConnected) {
           stopPolling();
           return;
         }

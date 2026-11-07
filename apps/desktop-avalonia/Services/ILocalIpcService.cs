@@ -18,6 +18,8 @@ public class MediaFormatDto
     public string? ManifestText { get; set; }
     public string? AudioManifestText { get; set; }
     public int Height { get; set; }
+    public long Bandwidth { get; set; }
+    public double TotalDuration { get; set; }
 }
 
 public class BrowserDownloadRequest

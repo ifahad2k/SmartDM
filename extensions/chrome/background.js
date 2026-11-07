@@ -259,7 +259,7 @@ async function fetchM3u8Text(url, referrer, initiator = null) {
       }
       if (!controller.signal.aborted) {
         text += decoder.decode();
-        if (text.trimStart().startsWith('#EXTM3U')) return text;
+        if (text.includes('#EXTM3U') || text.includes('#EXT-X-STREAM-INF') || text.includes('<MPD') || text.includes('#EXTINF')) return text;
       }
     } catch (_) {
     } finally {
@@ -785,9 +785,15 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         return;
       }
 
+      // Filter out HLS/DASH segment chunks (preserve full stream URLs)
+      const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
+      const isM3u8OrMpd = url.includes('.m3u8') || url.includes('.mpd');
+      const isManifestPath = /(?:stream-embed\/(?:playlist|media)|\/(?:playlists?|manifests?|master|hls|dash|streams?|sources?|prox(?:y|ies)|embeds?|videos?|media|play(?:back)?|prorcp|chunklists?|vod|live|file|serve)(?:[?#/]|$)|[?&](?:format=m3u8|type=m3u8|source=m3u8|file=.*\.m3u8))/i.test(url) || url.includes('/stream-embed/');
+
       // Exclude web assets, images, scripts, stylesheets, fonts, archives, torrents, executables, wasm
-      if (contentType.includes('image/') || contentType.includes('wasm') || contentType.includes('javascript') || contentType.includes('text/css')) return;
-      const isNonMediaAsset = url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
+      if (contentType.includes('image/') || contentType.includes('wasm') || contentType.includes('text/css')) return;
+      if (contentType.includes('javascript') && !isManifestPath && !isM3u8OrMpd) return;
+      const isNonMediaAsset = (!isManifestPath && !isM3u8OrMpd) && (url.includes('.js') || url.includes('.css') || url.includes('.jpg') ||
                               url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') ||
                               url.includes('.svg') || url.includes('.webp') || url.includes('.avif') ||
                               url.includes('.json') || url.includes('.woff') || url.includes('.woff2') ||
@@ -797,7 +803,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                               url.includes('.zip') || url.includes('.7z') || url.includes('.tar') ||
                               url.includes('.gz') || url.includes('.iso') || url.includes('.exe') ||
                               url.includes('.msi') || url.includes('.pdf') || contentType.includes('bittorrent') ||
-                              contentType.includes('zip') || contentType.includes('x-rar');
+                              contentType.includes('zip') || contentType.includes('x-rar'));
       if (isNonMediaAsset) return;
 
       // Filter out tiny video tracking beacons, range probes, and init fragments (< 64KB)
@@ -813,10 +819,6 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         if (url.includes('success') || url.includes('failure') || url.includes('no_input') || url.includes('open') || url.includes('sound')) return;
       }
 
-      // Filter out HLS/DASH segment chunks (preserve full stream URLs)
-      const isGoogleVideo = url.includes('videoplayback') || url.includes('googlevideo.com');
-      const isM3u8OrMpd = url.includes('.m3u8') || url.includes('.mpd');
-      const isManifestPath = /(?:stream-embed\/(?:playlist|media)|\/(?:playlist|manifest|master|hls|dash|stream)(?:[?#/]|$))/i.test(url) || url.includes('/stream-embed/');
       const isSegmentChunk = !isGoogleVideo && !isM3u8OrMpd && !isFbMedia && !isManifestPath && (
         /\.ts(\?|$)/i.test(url) ||
         /\.m4s(\?|$)/i.test(url) ||
@@ -871,11 +873,14 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
       }
 
+      const isDisguisedManifest = isManifestPath && (contentType.includes('text/plain') || contentType.includes('octet-stream') || contentType.includes('javascript') || !contentType);
+
       const isMediaMime = contentType.includes('video/') || 
                           contentType.includes('audio/') || 
                           contentType.includes('application/x-mpegurl') || 
                           contentType.includes('application/vnd.apple.mpegurl') || 
-                          contentType.includes('application/dash+xml');
+                          contentType.includes('application/dash+xml') ||
+                          isDisguisedManifest;
       
       const isMediaExt = isManifestPath || url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
@@ -907,7 +912,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         }
 
         // If this is an m3u8 playlist, fetch and parse variants BEFORE adding to mediaList
-        const isHlsManifest = targetUrl.includes('.m3u8') || /mpegurl/i.test(contentType) || isManifestPath;
+        const isHlsManifest = targetUrl.includes('.m3u8') || /mpegurl/i.test(contentType) || isManifestPath || isDisguisedManifest;
         if (isHlsManifest) {
           if (!shouldProbeM3u8(targetUrl)) return;
           (async () => {
@@ -1058,8 +1063,11 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                   customTitle: singleTitle,
                   customBadge: resH > 0 ? `${resH}p` : 'HLS Stream',
                   height: resH,
+                  bandwidth: 0,
                   referer: itemReferer,
                   origin: itemOrigin,
+                  mediaKind: 'hls',
+                  manifestText: text || null,
                   timestamp: Date.now()
                 });
                 broadcastNewMedia(targetTabId, mediaList);
@@ -1434,20 +1442,30 @@ function getFilenameFromUrl(url) {
   return 'media_stream';
 }
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'download-link') {
-    let url = info.linkUrl || info.srcUrl || info.pageUrl;
-    if (url) {
-      sendToSmartDM(url, tab ? tab.url : null);
+if (typeof chrome !== 'undefined' && chrome.contextMenus && chrome.contextMenus.onClicked) {
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === 'download-link') {
+      let url = info.linkUrl || info.srcUrl || info.pageUrl;
+      if (url) {
+        sendToSmartDM(url, tab ? tab.url : null);
+      }
     }
-  }
-});
+  });
+}
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab && tab.url) {
-    sendToSmartDM(tab.url, tab.url);
-  }
-});
+if (typeof chrome !== 'undefined' && chrome.action && chrome.action.onClicked) {
+  chrome.action.onClicked.addListener((tab) => {
+    if (tab && tab.url) {
+      sendToSmartDM(tab.url, tab.url);
+    }
+  });
+} else if (typeof chrome !== 'undefined' && chrome.browserAction && chrome.browserAction.onClicked) {
+  chrome.browserAction.onClicked.addListener((tab) => {
+    if (tab && tab.url) {
+      sendToSmartDM(tab.url, tab.url);
+    }
+  });
+}
 
 let cachedActivePort = 18420;
 
@@ -1915,6 +1933,9 @@ function sanitizeCleanTitle(str) {
   // Strip leading action verbs: Watch, Streaming, Play, Download, Free
   clean = clean.replace(/^(?:watch|streaming|play|download|free)\s+/i, '').trim();
 
+  // Strip leading site brands (e.g. "67movies - ", "123movies | ")
+  clean = clean.replace(/^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies)\s*[\-\|\•\—:\s]\s*/i, '').trim();
+
   // Strip resolution brackets like [1080p], [720p], (1080p), [1080p HD], [Full HD]
   clean = clean.replace(/\[\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\]/gi, '').trim();
   clean = clean.replace(/\(\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\)/gi, '').trim();
@@ -1923,11 +1944,12 @@ function sanitizeCleanTitle(str) {
   clean = clean.replace(/\s*::\s*.*$/, '').trim();
 
   // Strip site/brand suffixes separated by - or | or • or —
-  clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+  clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
 
   // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>"
   clean = clean.replace(/\s+(?:online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
   clean = clean.replace(/\s+(?:at|on)\s+[a-z0-9.-]+\.[a-z]{2,}\b.*$/i, '').trim();
+  clean = clean.replace(/\s+(?:on|at)\s+(?:67movies|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed)\b.*$/i, '').trim();
 
   // Strip trailing " - Watch", " - Free", " - Online" etc if left behind
   clean = clean.replace(/\s*[\-\|\•\—]\s*(?:watch|free|online|stream|download)$/i, '').trim();
@@ -1957,9 +1979,15 @@ function isGenericTitle(t) {
     'pornhub', 'pornhub.com', 'video stream', 'stream', 'hls video stream', 'dash video stream',
     'reels', 'reel', 'player', 'embed', 'kwik', 'megaplay', 'streamwish', 'vidcloud', 'upcloud',
     'mp4upload', 'filemoon', 'doodstream', 'streamtape', 'mixdrop', 'luluvdo', 'voe',
-    'watch', 'play', 'index', 'untitled', 'html5 player', 'video player'
+    'vidqueen', 'vidsrc', '2embed', 'autoembed', 'superembed', 'streamembed', 'rabbitstream', 'megacloud',
+    'watch', 'play', 'index', 'untitled', 'html5 player', 'video player', 'just now', 'now'
   ]);
   if (genericExact.has(clean)) return true;
+
+  const noBullets = clean.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
+  if (/^\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i.test(noBullets)) return true;
+  if (/^[a-z0-9_.]+\s*[•·\s\-–—|]\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i.test(clean)) return true;
+  if (/^\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?\s*[-–—|]\s*instagram\s*video$/i.test(clean)) return true;
 
   if (clean.startsWith('reels - video') || clean.startsWith('reel - video') ||
       clean.startsWith('reels and short') || clean.startsWith('facebook video') ||
@@ -1972,12 +2000,14 @@ function isGenericTitle(t) {
   if (/^file[\s_-]*\d+/i.test(clean)) return true;
 
   // Generic player embed titles like "MegaPlay - Player", "Kwik Player", etc.
-  if (/^(?:kwik|megaplay|streamwish|vidcloud|upcloud|filemoon|doodstream|streamtape|mp4upload)\s*(?:[-_:]\s*)?(?:player|embed|stream|video)?$/i.test(clean)) return true;
+  if (/^(?:kwik|megaplay|streamwish|vidcloud|upcloud|filemoon|doodstream|streamtape|mp4upload|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed)\s*(?:[-_:]\s*)?(?:player|embed|stream|video)?$/i.test(clean)) return true;
+  if (/^(?:vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|vidcloud|server)\s*(?:4k|\d+p)?$/i.test(clean)) return true;
 
   if (clean.includes('megaplay') || clean.includes('kwik') || clean.includes('streamwish') ||
       clean.includes('vidcloud') || clean.includes('upcloud') || clean.includes('filemoon') ||
-      clean.includes('doodstream') || clean.includes('streamtape') || clean.includes('mp4upload')) {
-    if (clean.startsWith('file') || clean.startsWith('player') || clean.startsWith('embed') || clean.startsWith('video') || clean.includes('server') || clean === 'megaplay' || clean === 'kwik') {
+      clean.includes('doodstream') || clean.includes('streamtape') || clean.includes('mp4upload') ||
+      clean.includes('vidqueen') || clean.includes('vidsrc')) {
+    if (clean.startsWith('file') || clean.startsWith('player') || clean.startsWith('embed') || clean.startsWith('video') || clean.startsWith('server') || /^(?:server|player|embed)\b/i.test(clean) || clean === 'megaplay' || clean === 'kwik' || clean === 'vidqueen') {
       return true;
     }
   }
@@ -2208,8 +2238,8 @@ async function fetchPageMediaFormats(pageUrl) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'GET_DETECTED_MEDIA') {
-    const tabId = sender.tab ? sender.tab.id : lastActiveTabId;
+  if (request.type === 'GET_DETECTED_MEDIA' || request.type === 'GET_TAB_MEDIA') {
+    const tabId = request.tabId || (sender && sender.tab ? sender.tab.id : lastActiveTabId);
     if (request.currentUrl && tabId) {
       tabUrlMap.set(tabId, request.currentUrl);
     }
@@ -2269,7 +2299,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'RESOLVE_M3U8_VARIANTS') {
     let effectiveBaseUrl = request.url;
-    const tabId = (sender && sender.tab && sender.tab.id) || lastActiveTabId;
+    const tabId = (sender && sender.tab && sender.tab.id) || request.tabId || lastActiveTabId;
+    if (!effectiveBaseUrl && tabId) {
+      const tabMedia = detectedMediaMap.get(tabId) || [];
+      const m3u8Item = tabMedia.slice().reverse().find(m => (m.url && (m.url.includes('.m3u8') || m.url.includes('.mpd'))) ||
+        m.contentType?.includes('mpegurl') || m.contentType?.includes('dash') ||
+        /(?:stream-embed\/(?:playlist|media)|\/(?:playlists?|manifests?|master|hls|dash|streams?|sources?|prox(?:y|ies)|embeds?|videos?|media|play(?:back)?|prorcp|chunklists?|vod|live|file|serve)(?:[?#/]|$)|[?&](?:format=m3u8|type=m3u8|source=m3u8|file=.*\.m3u8))/i.test(m.url || ''));
+      if (m3u8Item) {
+        effectiveBaseUrl = m3u8Item.url;
+      } else {
+        const directVideo = tabMedia.slice().reverse().find(m => m.url && (m.contentType?.includes('video/') || /\.(?:mp4|webm|mkv|mov)(?:[?#]|$)/i.test(m.url)));
+        if (directVideo) {
+          const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+          const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+          const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : (directVideo.customTitle || 'Video');
+          const h = directVideo.height || extractResolutionNumber(directVideo.url, authoritativeTitle) || 0;
+          sendResponse({
+            success: true,
+            status: 'ok',
+            formats: [{
+              formatId: h > 0 ? `direct_${h}p` : 'direct_video',
+              resolution: h > 0 ? `${h}p (MP4)` : 'Video Stream (MP4)',
+              title: authoritativeTitle,
+              badge: h > 0 ? `${h}p` : 'Video',
+              url: directVideo.url,
+              directUrl: directVideo.url,
+              videoUrl: directVideo.url,
+              audioUrl: null,
+              height: h,
+              ext: 'mp4',
+              fileSize: directVideo.contentLength || 0,
+              isAudioOnly: false
+            }]
+          });
+          return false;
+        }
+      }
+    }
+    if (!effectiveBaseUrl) {
+      sendResponse({ success: false, status: 'error', message: 'No manifest URL provided or detected' });
+      return false;
+    }
     const tabUrl = (sender && sender.tab && sender.tab.url) || null;
     const cachedHeaders = getCachedStreamHeaders(effectiveBaseUrl);
     const initiator = (cachedHeaders && cachedHeaders.referer) || (sender && sender.tab && sender.tab.url) || null;
@@ -2382,18 +2452,62 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } catch(e) {}
       }
 
-      if (text && text.includes('#EXT-X-STREAM-INF')) {
-        const variants = parseM3u8Formats(text, effectiveBaseUrl);
-        if (variants && variants.length > 0) {
-          const itemReferer = (cachedHeaders && cachedHeaders.referer) || tabUrl || null;
-          const itemOrigin = (cachedHeaders && cachedHeaders.origin) || (itemReferer ? new URL(itemReferer).origin : null);
-          const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
-          const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
-          const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
+      if (text && (text.includes('#EXT-X-STREAM-INF') || text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-ENDLIST'))) {
+        let variants = text.includes('#EXT-X-STREAM-INF') ? parseM3u8Formats(text, effectiveBaseUrl) : [];
+        const itemReferer = (cachedHeaders && cachedHeaders.referer) || tabUrl || null;
+        const itemOrigin = (cachedHeaders && cachedHeaders.origin) || (itemReferer ? new URL(itemReferer).origin : null);
+        const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+        const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+        const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
 
+        if ((!variants || variants.length === 0) && (text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-ENDLIST'))) {
+          let h = extractResolutionNumber(effectiveBaseUrl);
+          if (h <= 0 && request.height) h = Number(request.height);
+          if (h <= 0) h = 1080;
+          const resLabel = getResolutionLabel(h, 'MP4');
+          let parsedBw = 0;
+          const bwMatch = text.match(/AVERAGE-BANDWIDTH=(\d+)/i) || text.match(/BANDWIDTH=(\d+)/i) || text.match(/#EXT-X-BITRATE:\s*(\d+)/i);
+          if (bwMatch) parsedBw = parseInt(bwMatch[1], 10);
+          let parsedDur = 0;
+          const infMatches = text.match(/#EXTINF:\s*([0-9]+(?:\.[0-9]+)?)/gi);
+          if (infMatches) {
+            for (const im of infMatches) {
+              const dm = im.match(/#EXTINF:\s*([0-9]+(?:\.[0-9]+)?)/i);
+              if (dm && dm[1]) parsedDur += parseFloat(dm[1]);
+            }
+          }
+          if (parsedDur <= 0) {
+            const targetDurMatch = text.match(/#EXT-X-TARGETDURATION:\s*([0-9]+)/i);
+            const count = (text.match(/#EXTINF/gi) || []).length;
+            if (targetDurMatch && count > 0) parsedDur = count * parseFloat(targetDurMatch[1]);
+          }
+          variants = [{
+            formatId: h > 0 ? `hls_${h}p` : 'hls_stream',
+            resolution: resLabel,
+            title: authoritativeTitle || resLabel,
+            badge: `${h}p`,
+            url: effectiveBaseUrl,
+            directUrl: effectiveBaseUrl,
+            videoUrl: effectiveBaseUrl,
+            audioUrl: null,
+            height: h,
+            ext: 'mp4',
+            mediaKind: 'hls',
+            manifestText: text,
+            bandwidth: parsedBw,
+            totalDuration: parsedDur,
+            isAudioOnly: false,
+            referer: itemReferer,
+            origin: itemOrigin
+          }];
+        }
+
+        if (variants && variants.length > 0) {
           variants.forEach(v => {
             v.referer = itemReferer;
             v.origin = itemOrigin;
+            if (!v.mediaKind) v.mediaKind = 'hls';
+            if (!v.manifestText && text) v.manifestText = text;
           });
 
           // Also register variants into tab's mediaList so GET_DETECTED_MEDIA has them immediately!
@@ -2418,6 +2532,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   bandwidth: v.bandwidth || 0,
                   referer: itemReferer,
                   origin: itemOrigin,
+                  mediaKind: v.mediaKind || 'hls',
+                  manifestText: v.manifestText || text || null,
                   timestamp: Date.now()
                 });
                 addedAny = true;
@@ -2468,6 +2584,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             bandwidth: v.bandwidth || 0,
             referer: fRef,
             origin: fOrig,
+            mediaKind: v.mediaKind || 'hls',
+            manifestText: v.manifestText || null,
             timestamp: Date.now()
           });
           addedAny = true;

@@ -142,6 +142,9 @@ class SmartDmUtils {
     // Strip leading action verbs: Watch, Streaming, Play, Download, Free
     clean = clean.replace(/^(?:watch|streaming|play|download|free)\s+/i, '').trim();
 
+    // Strip leading site brands (e.g. "67movies - ", "123movies | ")
+    clean = clean.replace(/^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies)\s*[\-\|\•\—:\s]\s*/i, '').trim();
+
     // Strip resolution brackets like [1080p], [720p], (1080p), [1080p HD], [Full HD]
     clean = clean.replace(/\[\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\]/gi, '').trim();
     clean = clean.replace(/\(\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\)/gi, '').trim();
@@ -150,11 +153,12 @@ class SmartDmUtils {
     clean = clean.replace(/\s*::\s*.*$/, '').trim();
 
     // Strip site/brand suffixes separated by - or | or • or —
-    clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+    clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
 
     // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>"
     clean = clean.replace(/\s+(?:online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
     clean = clean.replace(/\s+(?:at|on)\s+[a-z0-9.-]+\.[a-z]{2,}\b.*$/i, '').trim();
+    clean = clean.replace(/\s+(?:on|at)\s+(?:67movies|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed)\b.*$/i, '').trim();
 
     // Strip trailing " - Watch", " - Free", " - Online" etc if left behind
     clean = clean.replace(/\s*[\-\|\•\—]\s*(?:watch|free|online|stream|download)$/i, '').trim();
@@ -183,11 +187,17 @@ class SmartDmUtils {
       'pornhub', 'pornhub.com', 'video stream', 'stream', 'hls video stream', 'dash video stream',
       'reels', 'reel', 'player', 'embed', 'kwik', 'megaplay', 'streamwish', 'vidcloud', 'upcloud',
       'mp4upload', 'filemoon', 'doodstream', 'streamtape', 'mixdrop', 'luluvdo', 'voe',
-      'watch', 'play', 'index', 'untitled', 'html5 player', 'video player'
+      'vidqueen', 'vidsrc', '2embed', 'autoembed', 'superembed', 'streamembed', 'rabbitstream', 'megacloud',
+      'watch', 'play', 'index', 'untitled', 'html5 player', 'video player', 'just now', 'now'
     ]);
     if (genericExact.has(clean)) return true;
-      if (/^(?:\d{3,4}p|[248]k)\s*(?:(?:full|ultra|quad)\s*)?(?:hd|sd|uhd)?\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean) ||
-          /^playing quality\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean)) return true;
+    if (/^(?:\d{3,4}p|[248]k)\s*(?:(?:full|ultra|quad)\s*)?(?:hd|sd|uhd)?\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean) ||
+        /^playing quality\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean)) return true;
+
+    const noBullets = clean.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
+    if (/^\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i.test(noBullets)) return true;
+    if (/^[a-z0-9_.]+\s*[•·\s\-–—|]\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i.test(clean)) return true;
+    if (/^\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?\s*[-–—|]\s*instagram\s*video$/i.test(clean)) return true;
 
     if (clean.startsWith('reels - video') || clean.startsWith('reel - video') ||
         clean.startsWith('reels and short') || clean.startsWith('facebook video') ||
@@ -198,12 +208,14 @@ class SmartDmUtils {
 
     if (/^file[\s_-]*\d+/i.test(clean)) return true;
 
-    if (/^(?:kwik|megaplay|streamwish|vidcloud|upcloud|filemoon|doodstream|streamtape|mp4upload)\s*(?:[-_:]\s*)?(?:player|embed|stream|video)?$/i.test(clean)) return true;
+    if (/^(?:kwik|megaplay|streamwish|vidcloud|upcloud|filemoon|doodstream|streamtape|mp4upload|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed)\s*(?:[-_:]\s*)?(?:player|embed|stream|video)?$/i.test(clean)) return true;
+    if (/^(?:vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|vidcloud|server)\s*(?:4k|\d+p)?$/i.test(clean)) return true;
 
     if (clean.includes('megaplay') || clean.includes('kwik') || clean.includes('streamwish') ||
         clean.includes('vidcloud') || clean.includes('upcloud') || clean.includes('filemoon') ||
-        clean.includes('doodstream') || clean.includes('streamtape') || clean.includes('mp4upload')) {
-      if (clean.startsWith('file') || clean.startsWith('player') || clean.startsWith('embed') || clean.startsWith('video') || clean.includes('server') || clean === 'megaplay' || clean === 'kwik') {
+        clean.includes('doodstream') || clean.includes('streamtape') || clean.includes('mp4upload') ||
+        clean.includes('vidqueen') || clean.includes('vidsrc')) {
+      if (clean.startsWith('file') || clean.startsWith('player') || clean.startsWith('embed') || clean.startsWith('video') || clean.startsWith('server') || /^(?:server|player|embed)\b/i.test(clean) || clean === 'megaplay' || clean === 'kwik' || clean === 'vidqueen') {
         return true;
       }
     }

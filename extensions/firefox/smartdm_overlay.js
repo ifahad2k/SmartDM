@@ -256,8 +256,24 @@
         };
         // Player-bound decoded playlists are read from their bounded stash.
         // Do not copy/reprobe them through the generic network discovery path.
-        if (e.detail?.playerId) refresh();
-        else if (e.detail?.text) FormatRegistryEngine.processCapturedManifest(e.detail.url, e.detail.text, refresh);
+        if (e.detail?.playerId) {
+          try {
+            const stashEl = document.querySelector ? document.querySelector(`smartdm-manifest-stash[data-smartdm-url="${CSS.escape(e.detail.url)}"]`) : null;
+            if (stashEl && stashEl.textContent && typeof FormatRegistryEngine !== 'undefined' && FormatRegistryEngine.processCapturedManifest) {
+              FormatRegistryEngine.processCapturedManifest(e.detail.url, stashEl.textContent, refresh, Number(stashEl.getAttribute('data-smartdm-height')) || 0);
+            }
+          } catch (_) {}
+          refresh();
+        }
+        else if (e.detail?.text) {
+          FormatRegistryEngine.processCapturedManifest(e.detail.url, e.detail.text, refresh, e.detail.height || 0);
+        } else if (e.detail?.candidateUrl && runtime && runtime.sendMessage) {
+          runtime.sendMessage({
+            type: 'RESOLVE_M3U8_VARIANTS',
+            url: e.detail.candidateUrl
+          }, () => { if (runtime.lastError) {} });
+          refresh();
+        }
       });
     }
 

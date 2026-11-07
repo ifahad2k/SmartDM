@@ -300,13 +300,20 @@ public partial class AddDownloadViewModel : ViewModelBase
             foreach (var dto in initialFormats)
             {
                 if (!Uri.TryCreate(dto.DirectUrl, UriKind.Absolute, out var address) || address.Scheme is not ("http" or "https")) continue;
-                string sizeStr = dto.FileSize > 0 ? MediaFormatItem.FormatBytes(dto.FileSize) : "Direct Stream";
+                long effectiveSize = dto.FileSize;
+                if (effectiveSize <= 0 && dto.Bandwidth > 0 && dto.TotalDuration > 0)
+                {
+                    effectiveSize = (long)(dto.Bandwidth * dto.TotalDuration / 8.0);
+                }
+                string sizeStr = effectiveSize > 0 ? MediaFormatItem.FormatBytes(effectiveSize) : "Direct Stream";
                 var item = new MediaFormatItem
                 {
                     FormatId = dto.FormatId,
                     Resolution = dto.Resolution,
                     Ext = dto.Ext.Equals("m3u8", StringComparison.OrdinalIgnoreCase) ? "mp4" : dto.Ext,
-                    FileSize = dto.FileSize,
+                    FileSize = effectiveSize,
+                    Bandwidth = dto.Bandwidth,
+                    TotalDuration = dto.TotalDuration,
                     IsAudioOnly = dto.IsAudioOnly,
                     DisplayLabel = dto.Resolution,
                     FormattedSize = sizeStr,
@@ -502,6 +509,94 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
     }
 
+    private async Task<bool> TryResolveHlsFormatsAsync(string targetUrl)
+    {
+        if (string.IsNullOrWhiteSpace(targetUrl)) return false;
+        if (!targetUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) &&
+            !targetUrl.Contains("/playlist", StringComparison.OrdinalIgnoreCase) &&
+            !targetUrl.Contains("stream-embed", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        IsProbing = true;
+        ProbeStatus = "• Resolving HLS streams & parsing playlist metadata...";
+
+        try
+        {
+            var res = await HlsMediaResolver.ResolveHlsFormatsAsync(targetUrl, _initialReferer, null, null);
+            if (!res.Success || res.Formats.Count == 0)
+            {
+                IsProbing = false;
+                return false;
+            }
+
+            AvailableFormats.Clear();
+            foreach (var dto in res.Formats)
+            {
+                long effectiveSize = dto.FileSize;
+                if (effectiveSize <= 0 && dto.Bandwidth > 0 && dto.TotalDuration > 0)
+                {
+                    effectiveSize = (long)(dto.Bandwidth * dto.TotalDuration / 8.0);
+                }
+                string sizeStr = effectiveSize > 0 ? MediaFormatItem.FormatBytes(effectiveSize) : "Direct Stream";
+                AvailableFormats.Add(new MediaFormatItem
+                {
+                    FormatId = dto.FormatId,
+                    Resolution = dto.Resolution,
+                    Ext = dto.Ext.Equals("m3u8", StringComparison.OrdinalIgnoreCase) ? "mp4" : dto.Ext,
+                    FileSize = effectiveSize,
+                    Bandwidth = dto.Bandwidth,
+                    TotalDuration = dto.TotalDuration,
+                    IsAudioOnly = dto.IsAudioOnly,
+                    DisplayLabel = dto.Resolution,
+                    FormattedSize = sizeStr,
+                    DirectUrl = dto.DirectUrl,
+                    MediaKind = "hls",
+                    ManifestText = dto.ManifestText,
+                    AudioManifestText = dto.AudioManifestText,
+                    AudioUrl = dto.AudioUrl
+                });
+            }
+
+            IsMediaFormatSelectorVisible = true;
+            IsProbeSuccessful = true;
+            IsProbing = false;
+
+            var preferred = AvailableFormats.FirstOrDefault(f => f.Resolution.StartsWith("1080p") && !f.IsAudioOnly)
+                         ?? AvailableFormats.FirstOrDefault(f => f.Resolution.StartsWith("720p") && !f.IsAudioOnly)
+                         ?? AvailableFormats.FirstOrDefault();
+
+            SelectedFormat = preferred;
+            if (string.IsNullOrWhiteSpace(FileName) || FileName.Equals("watch", StringComparison.OrdinalIgnoreCase) || FileName.Equals("download", StringComparison.OrdinalIgnoreCase) || !FileName.Contains("."))
+            {
+                string safeName = "movie_stream_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+                if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var u))
+                {
+                    string seg = Path.GetFileNameWithoutExtension(u.AbsolutePath);
+                    if (!string.IsNullOrEmpty(seg) && !seg.Equals("index", StringComparison.OrdinalIgnoreCase) && !seg.Equals("master", StringComparison.OrdinalIgnoreCase) && !seg.Equals("playlist", StringComparison.OrdinalIgnoreCase))
+                    {
+                        safeName = seg;
+                    }
+                }
+                FileName = $"{safeName}.{SelectedFormat?.Ext ?? "mp4"}";
+            }
+
+            if (SelectedFormat != null && SelectedFormat.FileSize > 0)
+            {
+                _probedTotalBytes = SelectedFormat.FileSize;
+                UpdateDriveSpace(SavePath);
+            }
+
+            ProbeStatus = $"• Found {AvailableFormats.Count} formats • Selected: {SelectedFormat?.DisplayLabel} • {SelectedFormat?.FormattedSize}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"HLS format resolution error: {ex.Message}");
+            IsProbing = false;
+            return false;
+        }
+    }
+
     [RelayCommand]
     private async Task ProbeUrlAsync()
     {
@@ -519,6 +614,10 @@ public partial class AddDownloadViewModel : ViewModelBase
         _probedAcceptsRanges = true;
         IsProbeSuccessful = false;
         if (await TryResolveYouTubeFormatsAsync(requestedUrl))
+        {
+            return;
+        }
+        if (await TryResolveHlsFormatsAsync(requestedUrl))
         {
             return;
         }
@@ -696,9 +795,17 @@ public partial class AddDownloadViewModel : ViewModelBase
             }
         }
 
+        bool isHls = (SelectedFormat?.MediaKind == "hls" || targetUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(SelectedFormat?.ManifestText));
+        int effectiveThreads = (isHls || _probedAcceptsRanges) ? ParallelThreads : 1;
+
         long targetBytes = (SelectedFormat != null && SelectedFormat.FileSize > 0)
             ? SelectedFormat.FileSize
             : _probedTotalBytes;
+
+        if (targetBytes <= 0 && SelectedFormat != null && SelectedFormat.Bandwidth > 0 && SelectedFormat.TotalDuration > 0)
+        {
+            targetBytes = (long)(SelectedFormat.Bandwidth * SelectedFormat.TotalDuration / 8.0);
+        }
 
         string sizeStr = targetBytes > 0 ? $"{((double)targetBytes / (1024 * 1024 * 1024)):F2} GB" : "Direct Stream";
 
@@ -720,6 +827,8 @@ public partial class AddDownloadViewModel : ViewModelBase
             MediaKind = SelectedFormat?.MediaKind,
             ManifestText = SelectedFormat?.ManifestText,
             AudioManifestText = SelectedFormat?.AudioManifestText,
+            Bandwidth = SelectedFormat?.Bandwidth ?? 0,
+            TotalDuration = SelectedFormat?.TotalDuration ?? 0,
             Domain = Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var u) ? u.Host : "Remote Host",
             TotalBytes = targetBytes,
             DownloadedBytes = 0,
@@ -729,7 +838,7 @@ public partial class AddDownloadViewModel : ViewModelBase
             Category = Category,
             IconSource = icon,
             IconBg = "#EAF2FF",
-            ParallelThreads = _probedAcceptsRanges ? ParallelThreads : 1,
+            ParallelThreads = effectiveThreads,
             ActiveMirrors = MirrorNodes.Count > 0 ? MirrorNodes.Count : 1,
             SavePath = finalSavePath,
             Referer = _initialReferer,
@@ -741,7 +850,7 @@ public partial class AddDownloadViewModel : ViewModelBase
             PageUrl = _initialReferer,
             VideoUrl = effectiveVideoUrl,
             ExpectedSha256 = ExpectedHash?.Trim() ?? string.Empty,
-            StatusDetail = _probedAcceptsRanges ? $"{ParallelThreads}-Way Sliced Transfer" : "Single-Stream Sequential",
+            StatusDetail = effectiveThreads > 1 ? $"{effectiveThreads}-Way Sliced Transfer" : "Single-Stream Sequential",
             Subline = asQueued ? $"{sizeStr} • Waiting in Queue" : $"{sizeStr} • Starting transfer...",
             FooterDetail = "Target: " + finalSavePath,
             FooterRight = "Allocated"

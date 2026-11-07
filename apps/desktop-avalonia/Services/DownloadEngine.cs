@@ -670,6 +670,15 @@ public class DownloadEngine : IDownloadEngine
                 return;
             }
             await using var source = new CapturedHlsPlaylist(manifest, session.Cts.Token);
+            if (download.TotalDuration <= 0 && source.TotalDuration > 0) download.TotalDuration = source.TotalDuration;
+            if (download.TotalBytes <= 0)
+            {
+                long bw = source.Bandwidth > 0 ? source.Bandwidth : download.Bandwidth;
+                int h = HlsMediaResolver.ExtractResolutionNumber(download.FormatId);
+                if (h <= 0) h = HlsMediaResolver.ExtractResolutionNumber(download.Title);
+                long expected = HlsMediaResolver.CalculateExpectedTotalBytes(source.TotalDuration, bw, h, source.SegmentCount);
+                if (expected > 0) download.TotalBytes = expected;
+            }
             await using var audioSource = !string.IsNullOrEmpty(download.AudioManifestText) && !string.IsNullOrEmpty(download.AudioUrl)
                 ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(download.AudioManifestText, download.AudioUrl), session.Cts.Token) : null;
             await RunFfmpegSessionAsync(session, source.Url, audioSource?.Url);
@@ -1980,6 +1989,11 @@ public class DownloadEngine : IDownloadEngine
         public bool IsEncrypted { get; set; }
         public List<string> SegmentUrls { get; set; } = new();
         public List<HlsSegmentEncryption?> SegmentEncryption { get; set; } = new();
+        public List<double> SegmentDurations { get; set; } = new();
+        public double TotalDuration { get; set; }
+        public long Bandwidth { get; set; }
+        public long ExpectedBytes { get; set; }
+        public string? AudioPlaylistUrl { get; set; }
         public int HttpStatusCode { get; set; } = 200;
         public string? ErrorMessage { get; set; }
         public string? EffectiveReferer { get; set; }
@@ -2303,6 +2317,12 @@ public class DownloadEngine : IDownloadEngine
                 // If it's a master playlist with variant streams (#EXT-X-STREAM-INF), pick highest bandwidth stream
                 if (content.Contains("#EXT-X-STREAM-INF"))
                 {
+                    var masterAudioMatch = Regex.Match(content, @"#EXT-X-MEDIA:TYPE=AUDIO.*?[,\s]URI=""([^""]+)""", RegexOptions.IgnoreCase);
+                    if (masterAudioMatch.Success)
+                    {
+                        info.AudioPlaylistUrl = CombineHlsUri(currentBaseUrl, masterAudioMatch.Groups[1].Value);
+                    }
+
                     var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     long maxBandwidth = -1;
                     string? bestStreamUri = null;
@@ -2313,8 +2333,13 @@ public class DownloadEngine : IDownloadEngine
                         if (line.StartsWith("#EXT-X-STREAM-INF", StringComparison.OrdinalIgnoreCase))
                         {
                             long bw = 0;
-                            var bwMatch = Regex.Match(line, @"BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
-                            if (bwMatch.Success) long.TryParse(bwMatch.Groups[1].Value, out bw);
+                            var avgBwMatch = Regex.Match(line, @"AVERAGE-BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
+                            if (avgBwMatch.Success) long.TryParse(avgBwMatch.Groups[1].Value, out bw);
+                            if (bw <= 0)
+                            {
+                                var bwMatch = Regex.Match(line, @"BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
+                                if (bwMatch.Success) long.TryParse(bwMatch.Groups[1].Value, out bw);
+                            }
 
                             if (i + 1 < lines.Length && !lines[i + 1].StartsWith("#"))
                             {
@@ -2326,6 +2351,11 @@ public class DownloadEngine : IDownloadEngine
                                 }
                             }
                         }
+                    }
+
+                    if (maxBandwidth > 0)
+                    {
+                        info.Bandwidth = maxBandwidth;
                     }
 
                     if (!string.IsNullOrEmpty(bestStreamUri))
@@ -2391,18 +2421,31 @@ public class DownloadEngine : IDownloadEngine
                 }
 
                 content = HlsManifestSnapshot.Normalize(content, currentBaseUrl);
+
+                // Parse duration and bitrate from media manifest
+                info.TotalDuration = HlsMediaResolver.ParseTotalDuration(content);
+                if (info.Bandwidth <= 0)
+                {
+                    info.Bandwidth = HlsMediaResolver.ParseBitrate(content);
+                }
+
+                // Check for separate audio streams if not already found in master
+                if (string.IsNullOrEmpty(info.AudioPlaylistUrl))
+                {
+                    var audioMatch = Regex.Match(content, @"#EXT-X-MEDIA:TYPE=AUDIO.*?[,\s]URI=""([^""]+)""", RegexOptions.IgnoreCase);
+                    if (audioMatch.Success)
+                    {
+                        info.AudioPlaylistUrl = CombineHlsUri(currentBaseUrl, audioMatch.Groups[1].Value);
+                    }
+                }
+
                 // Byte-range/fMP4 layouts still require a demuxer. Identity
                 // AES-128 TS segments use the native bounded transfer workers.
                 if (content.Contains("#EXT-X-BYTERANGE") ||
                     content.Contains("#EXT-X-MAP"))
                 {
-                    info.IsEncrypted = true;
-                    return info;
-                }
-
-                // Check for separate audio streams (#EXT-X-MEDIA:TYPE=AUDIO with URI) -> require FFmpeg native demuxing
-                if (Regex.IsMatch(content, @"#EXT-X-MEDIA:TYPE=AUDIO.*?URI=""([^""]+)""", RegexOptions.IgnoreCase))
-                {
+                    int segCount = Regex.Matches(content, @"#EXTINF", RegexOptions.IgnoreCase).Count;
+                    info.ExpectedBytes = HlsMediaResolver.CalculateExpectedTotalBytes(info.TotalDuration, info.Bandwidth, 0, segCount);
                     info.IsEncrypted = true;
                     return info;
                 }
@@ -2413,6 +2456,9 @@ public class DownloadEngine : IDownloadEngine
                     info.SegmentUrls.Add(segment.Url);
                     info.SegmentEncryption.Add(segment.Encryption);
                 }
+
+                // Calculate expected total bytes
+                info.ExpectedBytes = HlsMediaResolver.CalculateExpectedTotalBytes(info.TotalDuration, info.Bandwidth, 0, info.SegmentUrls.Count);
 
                 return info;
             }
@@ -2481,7 +2527,17 @@ public class DownloadEngine : IDownloadEngine
         if (playlistInfo == null || !string.IsNullOrEmpty(playlistInfo.ErrorMessage))
         {
             Debug.WriteLine($"[DownloadEngine] ParseHlsPlaylistAsync could not parse playlist ({playlistInfo?.ErrorMessage}), delegating to FFmpeg native pipeline.");
-            await RunFfmpegSessionAsync(session);
+            if (capturedPlaylist != null)
+            {
+                await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
+                await using var capAudioSrc = !string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl)
+                    ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl), token) : null;
+                await RunFfmpegSessionAsync(session, capSrc.Url, capAudioSrc?.Url);
+            }
+            else
+            {
+                await RunFfmpegSessionAsync(session);
+            }
             return;
         }
 
@@ -2492,10 +2548,37 @@ public class DownloadEngine : IDownloadEngine
             session.Download.Referer = playlistInfo.EffectiveReferer;
         }
 
+        if (playlistInfo.TotalDuration > 0 && dl.TotalDuration <= 0)
+        {
+            dl.TotalDuration = playlistInfo.TotalDuration;
+        }
+        if (playlistInfo.Bandwidth > 0 && dl.Bandwidth <= 0)
+        {
+            dl.Bandwidth = playlistInfo.Bandwidth;
+        }
+        if (playlistInfo.ExpectedBytes > 0 && dl.TotalBytes <= 0)
+        {
+            dl.TotalBytes = playlistInfo.ExpectedBytes;
+        }
+        if (string.IsNullOrEmpty(dl.AudioUrl) && !string.IsNullOrEmpty(playlistInfo.AudioPlaylistUrl))
+        {
+            dl.AudioUrl = playlistInfo.AudioPlaylistUrl;
+        }
+
         if (playlistInfo.IsEncrypted || playlistInfo.SegmentUrls.Count == 0)
         {
             Debug.WriteLine("[DownloadEngine] HLS stream requires FFmpeg native handling, delegating to FFmpeg.");
-            await RunFfmpegSessionAsync(session);
+            if (capturedPlaylist != null)
+            {
+                await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
+                await using var capAudioSrc = !string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl)
+                    ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl), token) : null;
+                await RunFfmpegSessionAsync(session, capSrc.Url, capAudioSrc?.Url);
+            }
+            else
+            {
+                await RunFfmpegSessionAsync(session);
+            }
             return;
         }
 
@@ -2505,17 +2588,52 @@ public class DownloadEngine : IDownloadEngine
         bool pairedAudio = !string.IsNullOrEmpty(dl.AudioManifestText) || !string.IsNullOrEmpty(dl.AudioUrl);
         if (pairedAudio)
         {
-            if (string.IsNullOrEmpty(dl.AudioUrl)) throw new InvalidDataException("The audio playlist address is missing.");
-            string? audioText = dl.AudioManifestText == null ? null : HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl);
+            if (string.IsNullOrEmpty(dl.AudioUrl))
+            {
+                Debug.WriteLine("[DownloadEngine] Audio playlist URL missing, falling back to FFmpeg session.");
+                if (capturedPlaylist != null)
+                {
+                    await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
+                    await RunFfmpegSessionAsync(session, capSrc.Url);
+                }
+                else
+                {
+                    await RunFfmpegSessionAsync(session);
+                }
+                return;
+            }
+            string? audioText = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl))
+                {
+                    audioText = HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl);
+                }
+            }
+            catch { }
             var audioInfo = await ParseHlsPlaylistAsync(dl.AudioUrl, referer, uaString, cookieHeader, token, dl.PageUrl, audioText);
             if (audioInfo == null || audioInfo.IsEncrypted || audioInfo.SegmentUrls.Count == 0 || !string.IsNullOrEmpty(audioInfo.ErrorMessage))
-                throw new InvalidDataException("The captured audio playlist cannot be downloaded as a clear segmented stream.");
+            {
+                Debug.WriteLine("[DownloadEngine] Paired audio requires FFmpeg handling, delegating to FFmpeg.");
+                if (capturedPlaylist != null)
+                {
+                    await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
+                    await using var capAudioSrc = !string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl)
+                        ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl), token) : null;
+                    await RunFfmpegSessionAsync(session, capSrc.Url, capAudioSrc?.Url);
+                }
+                else
+                {
+                    await RunFfmpegSessionAsync(session);
+                }
+                return;
+            }
             segmentUrls.AddRange(audioInfo.SegmentUrls);
             segmentEncryption.AddRange(audioInfo.SegmentEncryption);
         }
         int totalSegments = segmentUrls.Count;
-        int threadCount = Math.Clamp(dl.ParallelThreads > 0 ? dl.ParallelThreads : 8, 1, 10);
-        threadCount = Math.Min(threadCount, totalSegments);
+        int threadCount = Math.Clamp(dl.ParallelThreads > 0 ? dl.ParallelThreads : 8, 1, 32);
+        threadCount = Math.Max(1, Math.Min(threadCount, totalSegments));
         dl.ParallelThreads = threadCount;
 
         // Adaptively test candidate referers on segment CDN host (anti-hotlink bypass)
@@ -2537,9 +2655,9 @@ public class DownloadEngine : IDownloadEngine
                     if (!string.IsNullOrEmpty(uaString)) testReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
                     if (!string.IsNullOrEmpty(cookieHeader)) testReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
                     testReq.Headers.TryAddWithoutValidation("Accept", "*/*");
-                    using var testCts = new CancellationTokenSource(3500);
+                    using var testCts = new CancellationTokenSource(4000);
                     using var testResp = await _httpClient.SendAsync(testReq, HttpCompletionOption.ResponseHeadersRead, testCts.Token);
-                    if (testResp.IsSuccessStatusCode)
+                    if (testResp.IsSuccessStatusCode || testResp.StatusCode == System.Net.HttpStatusCode.PartialContent)
                     {
                         segmentAccessible = true;
                         referer = cand;
@@ -2556,9 +2674,8 @@ public class DownloadEngine : IDownloadEngine
         }
 
         // If primary segment CDN is blocked (e.g. Cloudflare 403 / banned CDN host), probe alternate stream variants
-        if (!segmentAccessible && segmentUrls.Count > 0)
+        if (!segmentAccessible && segmentUrls.Count > 0 && capturedPlaylist == null)
         {
-            if (capturedPlaylist != null) throw new InvalidDataException("The captured stream is no longer accessible. Play the video and capture it again.");
             Debug.WriteLine($"[DownloadEngine] Primary segment CDN for {dl.Url} is blocked or unreachable. Probing alternate stream variants...");
             dl.StatusDetail = "Checking alternate stream qualities...";
             DownloadProgressChanged?.Invoke(dl);
@@ -2590,9 +2707,9 @@ public class DownloadEngine : IDownloadEngine
                                 if (!string.IsNullOrEmpty(uaString)) cReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
                                 if (!string.IsNullOrEmpty(cookieHeader)) cReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
                                 cReq.Headers.TryAddWithoutValidation("Accept", "*/*");
-                                using var cCts = new CancellationTokenSource(3000);
+                                using var cCts = new CancellationTokenSource(4000);
                                 using var cResp = await _httpClient.SendAsync(cReq, HttpCompletionOption.ResponseHeadersRead, cCts.Token);
-                                if (cResp.IsSuccessStatusCode)
+                                if (cResp.IsSuccessStatusCode || cResp.StatusCode == System.Net.HttpStatusCode.PartialContent)
                                 {
                                     Debug.WriteLine($"[DownloadEngine] Auto-failover: switched from blocked stream to working variant ({variant.Resolution}) -> {variant.DirectUrl}");
                                     dl.Url = variant.DirectUrl;
@@ -2618,16 +2735,16 @@ public class DownloadEngine : IDownloadEngine
             }
         }
 
-        // If direct parallel segments probe was unverified or blocked, delegate cleanly to native FFmpeg engine with authentic credentials
+        // If direct parallel segments probe was unverified, proceed with adaptive workers (SegmentWorker has per-chunk adaptive referer recovery and 35s timeout)
         if (!segmentAccessible && segmentUrls.Count > 0)
         {
-            if (capturedPlaylist != null) throw new InvalidDataException("The captured stream is no longer accessible. Play the video and capture it again.");
-            Debug.WriteLine("[DownloadEngine] Direct segment probe was blocked or unverified. Delegating to native FFmpeg engine with full headers...");
-            dl.StatusDetail = "Delegating to stream processor with authentic credentials...";
-            DownloadProgressChanged?.Invoke(dl);
-            session.Workers.Clear();
-            await RunFfmpegSessionAsync(session);
-            return;
+            Debug.WriteLine("[DownloadEngine] Segment pre-flight probe unverified, proceeding with adaptive segment workers...");
+            if (string.IsNullOrEmpty(referer) && !string.IsNullOrEmpty(dl.PageUrl))
+            {
+                referer = dl.PageUrl;
+                dl.Referer = dl.PageUrl;
+                session.Download.Referer = dl.PageUrl;
+            }
         }
 
         var segmentQueue = new System.Collections.Concurrent.ConcurrentQueue<HlsSegmentTask>();
@@ -2650,16 +2767,17 @@ public class DownloadEngine : IDownloadEngine
             };
             allTasks.Add(taskItem);
 
-            using var chunkProbe = HttpTransferRequest.Create(HttpMethod.Head, taskItem.Url);
-            if (!string.IsNullOrEmpty(referer)) chunkProbe.Headers.TryAddWithoutValidation("Referer", referer);
-            if (!string.IsNullOrEmpty(uaString)) chunkProbe.Headers.TryAddWithoutValidation("User-Agent", uaString);
-            using var checkpointBudget = CancellationTokenSource.CreateLinkedTokenSource(token);
-            checkpointBudget.CancelAfter(TimeSpan.FromSeconds(5));
             bool reusable = false;
-            // A key can rotate behind a stable key URI. Do not reuse decrypted
-            // bytes based on the segment ETag alone.
-            try { if (taskItem.Encryption == null) reusable = await MediaCheckpoint.CanReuseAsync(chunkFile, taskItem.Identity + taskItem.Url, _httpClient, chunkProbe, checkpointBudget.Token); }
-            catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
+            if (File.Exists(chunkFile) && File.Exists(chunkFile + ".checkpoint") && taskItem.Encryption == null)
+            {
+                using var chunkProbe = HttpTransferRequest.Create(HttpMethod.Head, taskItem.Url);
+                if (!string.IsNullOrEmpty(referer)) chunkProbe.Headers.TryAddWithoutValidation("Referer", referer);
+                if (!string.IsNullOrEmpty(uaString)) chunkProbe.Headers.TryAddWithoutValidation("User-Agent", uaString);
+                using var checkpointBudget = CancellationTokenSource.CreateLinkedTokenSource(token);
+                checkpointBudget.CancelAfter(TimeSpan.FromSeconds(5));
+                try { reusable = await MediaCheckpoint.CanReuseAsync(chunkFile, taskItem.Identity + taskItem.Url, _httpClient, chunkProbe, checkpointBudget.Token); }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
+            }
             if (reusable)
             {
                 baseDownloadedBytes += new FileInfo(chunkFile).Length;
@@ -2712,7 +2830,16 @@ public class DownloadEngine : IDownloadEngine
         void FailSegment(string error) { Interlocked.CompareExchange(ref fatalSegmentError, error, null); workerFailure.Cancel(); }
         using var keys = new HlsAes128KeyCache(referer, uaString, keyUrl =>
             dl.Cookies?.Contains('\t') == true || new Uri(keyUrl).Host == new Uri(dl.Url).Host ? FormatCookieHeader(dl.Cookies, keyUrl) : null);
-        var workerTasks = session.Workers.Select(w => w.ExecuteHlsChunkQueueAsync(segmentQueue, isCompletedCheck, workerFailure.Token, onChunkDone, FailSegment, keys.DecryptAsync)).ToList();
+        var workerTasks = session.Workers.Select(w => w.ExecuteHlsChunkQueueAsync(
+            segmentQueue,
+            isCompletedCheck,
+            workerFailure.Token,
+            onChunkDone,
+            FailSegment,
+            keys.DecryptAsync,
+            getSharedReferer: () => dl.Referer,
+            setSharedReferer: cand => { dl.Referer = cand; session.Download.Referer = cand; }
+        )).ToList();
 
         // High-precision Telemetry Monitor loop with EMA smoothing & dynamic total size estimation
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -2720,6 +2847,7 @@ public class DownloadEngine : IDownloadEngine
         {
             long lastReportedBytes = baseDownloadedBytes;
             var sw = Stopwatch.StartNew();
+            var totalSw = Stopwatch.StartNew();
 
             while (!monitorCts.Token.IsCancellationRequested && !token.IsCancellationRequested && dl.Status != DownloadStatus.Paused)
             {
@@ -2755,11 +2883,27 @@ public class DownloadEngine : IDownloadEngine
                     sw.Restart();
                 }
 
-                // Estimate total bytes dynamically based on average segment size
-                if (completedCount > 0)
+                // Dynamically refine TotalBytes with fallback and EMA smoothing
+                if (dl.TotalBytes <= 0)
+                {
+                    int h = HlsMediaResolver.ExtractResolutionNumber(dl.FormatId);
+                    if (h <= 0) h = HlsMediaResolver.ExtractResolutionNumber(dl.Title);
+                    long expected = HlsMediaResolver.CalculateExpectedTotalBytes(dl.TotalDuration, dl.Bandwidth, h, totalSegments);
+                    if (expected > 0) dl.TotalBytes = expected;
+                }
+
+                if (completedCount >= 5 && dynamicCompletedBytes > 0)
                 {
                     long avgBytesPerChunk = dynamicCompletedBytes / completedCount;
-                    dl.TotalBytes = avgBytesPerChunk * totalSegments;
+                    long estimatedTotal = avgBytesPerChunk * totalSegments;
+                    if (dl.TotalBytes <= 0)
+                    {
+                        dl.TotalBytes = estimatedTotal;
+                    }
+                    else
+                    {
+                        dl.TotalBytes = (long)(dl.TotalBytes * 0.75 + estimatedTotal * 0.25);
+                    }
                 }
                 else if (dl.TotalBytes <= 0 && inFlightBytes > 0)
                 {
@@ -2775,6 +2919,16 @@ public class DownloadEngine : IDownloadEngine
                     {
                         long remaining = Math.Max(0, dl.TotalBytes - dl.DownloadedBytes);
                         dl.EtaSeconds = (int)(remaining / (dl.SpeedMbps * 1024 * 1024));
+                    }
+                }
+                else if (totalSegments > 0)
+                {
+                    dl.ProgressPercentage = Math.Clamp(((double)completedCount / totalSegments) * 100.0, 0.0, 99.0);
+                    double totalSecElapsed = totalSw.Elapsed.TotalSeconds;
+                    if (completedCount > 0 && totalSecElapsed > 0)
+                    {
+                        double secPerChunk = totalSecElapsed / completedCount;
+                        dl.EtaSeconds = (int)(secPerChunk * (totalSegments - completedCount));
                     }
                 }
 
@@ -2800,13 +2954,11 @@ public class DownloadEngine : IDownloadEngine
                 return;
             }
 
-            if (fatalSegmentError != null) throw new InvalidDataException(fatalSegmentError);
             bool allChunksPresent = allTasks.All(t => File.Exists(t.TargetPath) && new FileInfo(t.TargetPath).Length > 0);
-            bool hasFatalError = session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || (!segmentQueue.IsEmpty && !token.IsCancellationRequested);
+            bool hasFatalError = fatalSegmentError != null || session.Workers.Any(w => !string.IsNullOrEmpty(w.LastError)) || (!segmentQueue.IsEmpty && !token.IsCancellationRequested);
 
             if (!allChunksPresent || hasFatalError)
             {
-                if (capturedPlaylist != null) throw new InvalidDataException("A captured video segment failed. Play the video and capture a fresh download.");
                 Debug.WriteLine("[DownloadEngine] Direct parallel HLS download encountered segment errors. Falling back to native FFmpeg stream engine...");
                 dl.StatusDetail = "Parallel stream throttled; switching to native FFmpeg engine...";
                 dl.SpeedMbps = 0;
@@ -2814,7 +2966,17 @@ public class DownloadEngine : IDownloadEngine
 
                 // Seamlessly fall back to native FFmpeg stream session
                 session.Workers.Clear();
-                await RunFfmpegSessionAsync(session);
+                if (capturedPlaylist != null)
+                {
+                    await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
+                    await using var capAudioSrc = !string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl)
+                        ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl), token) : null;
+                    await RunFfmpegSessionAsync(session, capSrc.Url, capAudioSrc?.Url);
+                }
+                else
+                {
+                    await RunFfmpegSessionAsync(session);
+                }
                 return;
             }
 
@@ -2956,9 +3118,17 @@ public class DownloadEngine : IDownloadEngine
         session.StagingFilePath = Path.Combine(session.StagingDirectory, Path.GetFileName(dl.SavePath));
 
         // Initialize synthetic segment workers for Transfer Monitor UI
+        int threadCount = Math.Clamp(dl.ParallelThreads > 0 ? dl.ParallelThreads : 8, 1, 32);
         session.Workers.Clear();
-        session.Workers.Add(new SegmentWorker(_httpClient, dl.Url, session.StagingFilePath, 1, 0, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, 0, speedLimiter: _speedLimiter));
-        session.Workers.Add(new SegmentWorker(_httpClient, dl.AudioUrl ?? dl.Url, session.StagingFilePath, 2, dl.TotalBytes > 0 ? dl.TotalBytes / 2 : 0, dl.TotalBytes, 0, speedLimiter: _speedLimiter));
+        long initialShare = dl.TotalBytes > 0 ? dl.TotalBytes / threadCount : 0;
+        for (int i = 0; i < threadCount; i++)
+        {
+            long start = i * initialShare;
+            long end = (i == threadCount - 1 && dl.TotalBytes > 0) ? dl.TotalBytes : (i + 1) * initialShare;
+            var w = new SegmentWorker(_httpClient, dl.Url, session.StagingFilePath, i + 1, start, end, 0, speedLimiter: _speedLimiter);
+            w.Progress.IsActive = true;
+            session.Workers.Add(w);
+        }
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
         string referer = dl.Referer ?? "";
@@ -3160,8 +3330,27 @@ public class DownloadEngine : IDownloadEngine
 
                 // FFmpeg output format example:
                 // frame=  462 fps=0.0 q=-1.0 size=    2677KiB time=00:00:05.01 bitrate=4371.7kbits/s speed=7.46x
+                var durMatch = Regex.Match(line, @"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+                if (durMatch.Success)
+                {
+                    if (double.TryParse(durMatch.Groups[1].Value, out double dh) &&
+                        double.TryParse(durMatch.Groups[2].Value, out double dm) &&
+                        double.TryParse(durMatch.Groups[3].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ds))
+                    {
+                        double parsedDur = dh * 3600 + dm * 60 + ds;
+                        if (parsedDur > 0 && dl.TotalDuration <= 0)
+                        {
+                            dl.TotalDuration = parsedDur;
+                            if (dl.Bandwidth > 0 && dl.TotalBytes <= 0)
+                            {
+                                dl.TotalBytes = (long)(dl.Bandwidth * dl.TotalDuration / 8.0);
+                            }
+                        }
+                    }
+                }
+
                 var sizeMatch = Regex.Match(line, @"size=\s*(\d+)(KiB|kB|B)", RegexOptions.IgnoreCase);
-                var timeMatch = Regex.Match(line, @"time=\s*(\d+:\d+:\d+\.\d+)", RegexOptions.IgnoreCase);
+                var timeMatch = Regex.Match(line, @"time=\s*(\d+:\d+:\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
 
                 long currentBytes = 0;
                 if (sizeMatch.Success)
@@ -3170,6 +3359,24 @@ public class DownloadEngine : IDownloadEngine
                     string unit = sizeMatch.Groups[2].Value.ToUpperInvariant();
                     currentBytes = unit.Contains("K") ? val * 1024 : val;
                     lastParsedBytes = currentBytes;
+                }
+
+                var bitrateMatch = Regex.Match(line, @"bitrate=\s*([0-9.]+)\s*kbits/s", RegexOptions.IgnoreCase);
+                if (!bitrateMatch.Success)
+                {
+                    bitrateMatch = Regex.Match(line, @"bitrate:\s*([0-9.]+)\s*kb/s", RegexOptions.IgnoreCase);
+                }
+                if (bitrateMatch.Success)
+                {
+                    if (double.TryParse(bitrateMatch.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double kbps) && kbps > 0)
+                    {
+                        long bwBits = (long)(kbps * 1000);
+                        if (dl.Bandwidth <= 0) dl.Bandwidth = bwBits;
+                        if (dl.TotalDuration > 0 && (dl.TotalBytes <= 0 || dl.TotalBytes < currentBytes))
+                        {
+                            dl.TotalBytes = (long)(bwBits * dl.TotalDuration / 8.0);
+                        }
+                    }
                 }
 
                 if (currentBytes > 0)
@@ -3186,37 +3393,74 @@ public class DownloadEngine : IDownloadEngine
                         lastBytes = currentBytes;
                         sw.Restart();
 
-                        string timeStr = timeMatch.Success ? timeMatch.Groups[1].Value : "";
+                        double curSec = 0;
+                        if (timeMatch.Success)
+                        {
+                            var timeParts = timeMatch.Groups[1].Value.Split(':');
+                            if (timeParts.Length == 3 &&
+                                double.TryParse(timeParts[0], out double th) &&
+                                double.TryParse(timeParts[1], out double tm) &&
+                                double.TryParse(timeParts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ts))
+                            {
+                                curSec = th * 3600 + tm * 60 + ts;
+                            }
+                        }
+
+                        // Refine TotalBytes dynamically if TotalDuration is known
+                        if (dl.TotalDuration > 0 && curSec > 1.0 && dl.TotalBytes <= 0)
+                        {
+                            dl.TotalBytes = (long)((currentBytes / curSec) * dl.TotalDuration);
+                        }
+
+                        // ETA calculation
+                        var speedMatch = Regex.Match(line, @"speed=\s*([0-9.]+)x", RegexOptions.IgnoreCase);
+                        if (speedMatch.Success && double.TryParse(speedMatch.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double playbackSpeed) && playbackSpeed > 0 && dl.TotalDuration > curSec)
+                        {
+                            dl.EtaSeconds = (int)((dl.TotalDuration - curSec) / playbackSpeed);
+                        }
+                        else if (dl.TotalBytes > dl.DownloadedBytes && dl.SpeedMbps > 0.01)
+                        {
+                            dl.EtaSeconds = (int)((dl.TotalBytes - dl.DownloadedBytes) / (dl.SpeedMbps * 1024 * 1024));
+                        }
 
                         if (dl.TotalBytes > 0)
                         {
-                            dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 100.0);
-                            if (dl.SpeedMbps > 0.01)
-                            {
-                                long remaining = dl.TotalBytes - dl.DownloadedBytes;
-                                dl.EtaSeconds = (int)(remaining / (dl.SpeedMbps * 1024 * 1024));
-                            }
+                            dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 99.9);
                             dl.StatusDetail = $"Streaming via FFmpeg ({dl.ProgressPercentage:F1}%)...";
-                            dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / {MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s";
+                            dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / ~{MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s";
+                        }
+                        else if (dl.TotalDuration > 0 && curSec > 0)
+                        {
+                            dl.ProgressPercentage = Math.Clamp((curSec / dl.TotalDuration) * 100.0, 0.0, 99.9);
+                            dl.StatusDetail = $"Streaming via FFmpeg ({dl.ProgressPercentage:F1}%)...";
+                            dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} • {dl.SpeedMbps:F1} MB/s";
                         }
                         else
                         {
-                            // Live HLS stream with unknown total size: display streamed bytes, speed, and time
+                            string timeStr = timeMatch.Success ? timeMatch.Groups[0].Value : "";
                             dl.StatusDetail = !string.IsNullOrEmpty(timeStr)
                                 ? $"Streaming via FFmpeg: {timeStr} ({MediaFormatItem.FormatBytes(dl.DownloadedBytes)})..."
                                 : $"Streaming via FFmpeg: {MediaFormatItem.FormatBytes(dl.DownloadedBytes)}...";
                             dl.Subline = $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} • {dl.SpeedMbps:F1} MB/s";
-                            // Active visual pulse so UI shows ongoing transfer rather than static 0%
                             dl.ProgressPercentage = Math.Min(99.0, Math.Max(1.0, (dl.DownloadedBytes % (100 * 1024 * 1024)) / (double)(100 * 1024 * 1024) * 100.0));
                         }
 
-                        // Update synthetic segment progress for visualizer
-                        if (session.Workers.Count >= 2)
+                        // Update synthetic segment progress across all configured workers
+                        if (session.Workers.Count > 0)
                         {
-                            session.Workers[0].Progress.DownloadedBytes = currentBytes / 2;
-                            session.Workers[1].Progress.DownloadedBytes = currentBytes / 2;
-                            session.Workers[0].Progress.IsActive = true;
-                            session.Workers[1].Progress.IsActive = true;
+                            long perWorker = currentBytes / session.Workers.Count;
+                            long chunkShare = dl.TotalBytes > 0 ? dl.TotalBytes / session.Workers.Count : 0;
+                            for (int wIdx = 0; wIdx < session.Workers.Count; wIdx++)
+                            {
+                                session.Workers[wIdx].Progress.DownloadedBytes = perWorker;
+                                session.Workers[wIdx].Progress.IsActive = true;
+                                session.Workers[wIdx].Progress.SpeedMbps = dl.SpeedMbps / session.Workers.Count;
+                                if (chunkShare > 0)
+                                {
+                                    session.Workers[wIdx].Progress.StartByte = wIdx * chunkShare;
+                                    session.Workers[wIdx].Progress.EndByte = (wIdx == session.Workers.Count - 1) ? dl.TotalBytes : (wIdx + 1) * chunkShare;
+                                }
+                            }
                             _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
                         }
 

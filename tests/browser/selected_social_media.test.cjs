@@ -135,14 +135,234 @@ for(const browser of ['chrome','firefox']){
     ctx.window.location.hostname = 'tiktok.com';
    });
 
+   test(`${browser}: Instagram post header containing juiceditup • 1 w and caption resolves to caption and rejects 1 w`, () => {
+     ctx.window.location.hostname = 'instagram.com';
+     const headerTimeNode = {
+       tagName: 'TIME',
+       textContent: '1 w',
+       closest: (sel) => sel === 'time' ? headerTimeNode : null,
+       querySelector: () => null
+     };
+     const headerTimeLink = {
+       tagName: 'A',
+       textContent: '1 w',
+       getAttribute: (k) => k === 'href' ? '/juiceditup/p/DF123/' : null,
+       closest: (sel) => sel === 'header' ? headerEl : null,
+       querySelector: (sel) => sel === 'time' ? headerTimeNode : null
+     };
+     const headerAuthorLink = {
+       tagName: 'A',
+       textContent: 'juiceditup',
+       getAttribute: (k) => k === 'href' ? '/juiceditup/' : null,
+       closest: (sel) => sel === 'header' ? headerEl : null,
+       querySelector: () => null
+     };
+     const headerEl = {
+       tagName: 'HEADER',
+       textContent: 'juiceditup • 1 w',
+       querySelectorAll(sel) {
+         if (sel.includes('a')) return [headerAuthorLink, headerTimeLink];
+         return [];
+       },
+       querySelector(sel) {
+         if (sel.includes('a')) return headerAuthorLink;
+         if (sel === 'time') return headerTimeNode;
+         return null;
+       },
+       closest: () => null
+     };
+
+     const captionNode = {
+       tagName: 'DIV',
+       textContent: 'juiceditup average teen experience in writing an essay',
+       closest: () => null,
+       querySelector: () => null
+     };
+
+     const postContainer = {
+       querySelectorAll(sel) {
+         if (sel === 'video') return [{}];
+         if (sel.includes('header a')) return [headerAuthorLink, headerTimeLink];
+         if (sel === 'div[class*="_a9zs"]') return [captionNode];
+         if (sel === 'span[dir="auto"]') {
+           return [
+             { textContent: 'juiceditup', closest: (s) => s === 'header' ? headerEl : null },
+             { textContent: '1 w', closest: (s) => s === 'header' ? headerEl : null, querySelector: (s) => s === 'time' ? headerTimeNode : null },
+             { textContent: 'juiceditup average teen experience in writing an essay', closest: () => null }
+           ];
+         }
+         return [];
+       },
+       querySelector(sel) {
+         if (sel.includes('header a')) return headerAuthorLink;
+         if (sel.includes('Like')) return {};
+         if (sel === 'header') return headerEl;
+         return null;
+       }
+     };
+
+     const p = {
+       currentSrc: 'blob:insta-feed-juiced',
+       videoWidth: 1080,
+       videoHeight: 1920,
+       parentElement: postContainer,
+       closest: () => null,
+       getAttribute: (k) => ({
+         'data-smartdm-bound-src': 'blob:insta-feed-juiced',
+         'data-smartdm-video-url': 'https://scontent.cdninstagram.com/v/t16/juiced.mp4',
+         'data-smartdm-separate-audio': '0'
+       }[k])
+     };
+
+     const result = engine.selectedSocialFormats(p, []);
+     assert.equal(result.length, 1);
+     assert.equal(result[0].title, 'average teen experience in writing an essay');
+     assert.notEqual(result[0].title, '1 w');
+     assert.notEqual(result[0].title, '1 w.mp4');
+
+     // Direct VisualMountDetector extraction
+     const directTitle = ctx.VisualMountDetector.extractInstagramMediaTitle(p, postContainer);
+     assert.equal(directTitle, 'average teen experience in writing an essay');
+     assert.notEqual(directTitle, '1 w');
+
+     // Header with div container (non-semantic header) also rejects 1 w and extracts caption
+     const postContainerDivHeader = {
+       querySelectorAll(sel) {
+         if (sel === 'video') return [{}];
+         if (sel.includes('header a')) return [headerAuthorLink, headerTimeLink];
+         if (sel === 'div[class*="_a9zs"]') return [captionNode];
+         return [];
+       },
+       querySelector(sel) {
+         if (sel.includes('header a')) return headerAuthorLink;
+         if (sel.includes('Like')) return {};
+         return null;
+       }
+     };
+     const divHeaderTitle = ctx.VisualMountDetector.extractInstagramMediaTitle(p, postContainerDivHeader);
+     assert.equal(divHeaderTitle, 'average teen experience in writing an essay');
+     assert.notEqual(divHeaderTitle, '1 w');
+
+     // Post with no caption falls back to author - Instagram Video, never timestamp
+     const postContainerNoCaption = {
+       querySelectorAll(sel) {
+         if (sel === 'video') return [{}];
+         if (sel.includes('header a')) return [headerAuthorLink, headerTimeLink];
+         if (sel === 'span[dir="auto"]') {
+           return [
+             { textContent: 'juiceditup', closest: (s) => s === 'header' ? headerEl : null },
+             { textContent: '1 w', closest: (s) => s === 'header' ? headerEl : null, querySelector: (s) => s === 'time' ? headerTimeNode : null }
+           ];
+         }
+         return [];
+       },
+       querySelector(sel) {
+         if (sel.includes('header a')) return headerAuthorLink;
+         if (sel.includes('Like')) return {};
+         if (sel === 'header') return headerEl;
+         return null;
+       }
+     };
+     const fallbackTitle = ctx.VisualMountDetector.extractInstagramMediaTitle(p, postContainerNoCaption);
+     assert.equal(fallbackTitle, 'juiceditup - Instagram Video');
+     assert.notEqual(fallbackTitle, '1 w');
+     assert.notEqual(fallbackTitle, '1 w - Instagram Video');
+
+     // Caption container with <time> child node must NOT be skipped as a timestamp node
+     const captionWithTimeChild = {
+       tagName: 'DIV',
+       textContent: 'juiceditup average teen experience in writing an essay 1 w',
+       closest: () => null,
+       querySelector: (s) => s === 'time' ? headerTimeNode : null,
+       querySelectorAll: (s) => s === 'time' ? [headerTimeNode] : [],
+       cloneNode: () => ({
+         innerText: 'juiceditup average teen experience in writing an essay',
+         querySelectorAll: () => [headerTimeNode]
+       })
+     };
+     const postContainerCaptionWithTime = {
+       querySelectorAll(sel) {
+         if (sel === 'video') return [{}];
+         if (sel.includes('header a')) return [headerAuthorLink, headerTimeLink];
+         if (sel === 'div[class*="_a9zs"]') return [captionWithTimeChild];
+         return [];
+       },
+       querySelector(sel) {
+         if (sel.includes('header a')) return headerAuthorLink;
+         if (sel.includes('Like')) return {};
+         return null;
+       }
+     };
+     const captionWithTimeTitle = ctx.VisualMountDetector.extractInstagramMediaTitle(p, postContainerCaptionWithTime);
+     assert.equal(captionWithTimeTitle, 'average teen experience in writing an essay');
+     assert.notEqual(captionWithTimeTitle, '1 w');
+
+     // Author link text containing relative timestamp "juiceditup • 1 w" is sanitized to "juiceditup"
+     const authorLinkWithTimestamp = {
+       tagName: 'A',
+       textContent: 'juiceditup • 1 w',
+       getAttribute: (k) => k === 'href' ? '/juiceditup/' : null,
+       closest: (sel) => sel === 'header' ? headerEl : null,
+       querySelector: () => null
+     };
+     const postContainerAuthorWithTimestamp = {
+       querySelectorAll(sel) {
+         if (sel === 'video') return [{}];
+         if (sel.includes('header a')) return [authorLinkWithTimestamp];
+         return [];
+       },
+       querySelector(sel) {
+         if (sel.includes('header a')) return headerAuthorLink;
+         if (sel.includes('Like')) return {};
+         return null;
+       }
+     };
+     const authorWithTimeTitle = ctx.VisualMountDetector.extractInstagramMediaTitle(p, postContainerAuthorWithTimestamp);
+     assert.equal(authorWithTimeTitle, 'juiceditup - Instagram Video');
+     assert.notEqual(authorWithTimeTitle, 'juiceditup • 1 w - Instagram Video');
+     assert.notEqual(authorWithTimeTitle, '1 w');
+
+     ctx.window.location.hostname = 'tiktok.com';
+   });
+
    test(`${browser}: Instagram generic titles are correctly identified by SmartDmUtils`, () => {
      assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram Video'), true);
      assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram Reel'), true);
      assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram Reels'), true);
      assert.equal(ctx.SmartDmUtils.isGenericTitle('Instagram'), true);
      assert.equal(ctx.SmartDmUtils.isGenericTitle('video'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 w'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 w.mp4'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1w'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('2 d'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('2d'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('3 h'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('3h'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('45 m'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('45m'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('10 s'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('10s'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 y'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1y'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('• 1 w'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 w •'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('• 1 w •'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 wk'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1wk'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 mo'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1mo'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 yr'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1yr'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('juiceditup • 1 w'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('juiceditup • 1w'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('juiceditup • 1 w.mp4'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1 w - Instagram Video'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('1w - Instagram Video'), true);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('2 weeks ago'), true);
      assert.equal(ctx.SmartDmUtils.isGenericTitle('naomiii.live'), false);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('juiceditup'), false);
      assert.equal(ctx.SmartDmUtils.isGenericTitle('waiting for summer to cool down. 夏が少し涼しくなるのを待ってる。'), false);
+     assert.equal(ctx.SmartDmUtils.isGenericTitle('average teen experience in writing an essay'), false);
    });
 
 }

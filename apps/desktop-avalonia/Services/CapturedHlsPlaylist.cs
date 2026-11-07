@@ -20,12 +20,21 @@ public sealed class CapturedHlsPlaylist : IAsyncDisposable
     private readonly byte[] _body;
     private readonly string _path = "/" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)) + ".m3u8";
     public string Url { get; }
+    public double TotalDuration { get; }
+    public int SegmentCount { get; }
+    public long Bandwidth { get; }
+
+    public long CalculateExpectedTotalBytes(int height = 0) =>
+        HlsMediaResolver.CalculateExpectedTotalBytes(TotalDuration, Bandwidth, height, SegmentCount);
 
     public CapturedHlsPlaylist(string normalizedPlaylist, CancellationToken token)
     {
         if (!HlsManifestSnapshot.IsWithinSizeLimit(normalizedPlaylist))
             throw new InvalidDataException("The media playlist exceeds the supported size.");
         _body = Encoding.UTF8.GetBytes(normalizedPlaylist);
+        TotalDuration = HlsMediaResolver.ParseTotalDuration(normalizedPlaylist);
+        SegmentCount = System.Text.RegularExpressions.Regex.Matches(normalizedPlaylist, @"#EXTINF", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
+        Bandwidth = HlsMediaResolver.ParseBitrate(normalizedPlaylist);
         _stop = CancellationTokenSource.CreateLinkedTokenSource(token);
         _listener.Start(4);
         Url = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}{_path}";

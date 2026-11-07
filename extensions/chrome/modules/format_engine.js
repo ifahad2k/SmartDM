@@ -259,7 +259,7 @@ class FormatRegistryEngine {
     return null;
   }
 
-  static processCapturedManifest(url, text, onRefresh = null) {
+  static processCapturedManifest(url, text, onRefresh = null, explicitHeight = 0) {
     if (!text || typeof text !== 'string') return;
     const manifestKey = (url || '') + '::' + text.length;
     if (this.processedManifests.has(manifestKey)) return;
@@ -277,17 +277,39 @@ class FormatRegistryEngine {
       const card = isFb ? (vEl ? (VisualMountDetector.findFacebookReelCard(vEl) || VisualMountDetector.findFacebookPostCard(vEl)) : null) : null;
       const pageTitle = isFb ? VisualMountDetector.extractFacebookMediaTitle(vEl, card) : (SmartDmUtils.extractWatchPageTitle() || 'video');
       parsed = this.parseFacebookDashManifest(text, url, pageTitle);
-    } else if (text.includes('#EXTINF') && url && (url.includes('.m3u8') || /mpegurl/i.test(url) || /stream-embed|\/(?:playlist|master|hls)/i.test(url))) {
+    } else if ((text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-ENDLIST')) && url) {
       this.resolveM3u8VariantsInPage(url).then(variants => {
-        if (variants && variants.length > 0) {
-          variants.forEach(vf => {
+        let finalVariants = variants;
+        if (!finalVariants || finalVariants.length === 0) {
+          const vEl = SmartDmUtils.findActiveVideoElement();
+          const h = explicitHeight || SmartDmUtils.extractResolutionNumber(url) || (vEl ? SmartDmUtils.normalizeVideoResolution(vEl.videoWidth || 0, vEl.videoHeight || 0) : 0) || 720;
+          const resLabel = SmartDmUtils.getResolutionLabel(h, 'MP4');
+          const pageTitle = SmartDmUtils.extractWatchPageTitle() || (typeof document !== 'undefined' && document.title) || 'Video';
+          finalVariants = [{
+            formatId: h > 0 ? `m3u8_${h}p` : 'm3u8_stream',
+            resolution: resLabel,
+            title: pageTitle,
+            badge: h > 0 ? `${h}p` : 'Stream',
+            url: url,
+            directUrl: url,
+            videoUrl: url,
+            height: h,
+            ext: 'mp4',
+            mediaKind: 'hls',
+            manifestText: text,
+            referer: (typeof window !== 'undefined' ? window.location.href : ''),
+            origin: (typeof window !== 'undefined' ? window.location.origin : '')
+          }];
+        }
+        if (finalVariants && finalVariants.length > 0) {
+          finalVariants.forEach(vf => {
             if (vf.height > 0 && vf.url) {
               this.streamHeightRegistry.set(vf.url, vf.height);
             }
           });
           const vEl = SmartDmUtils.findActiveVideoElement();
           const key = SmartDmUtils.getMediaCacheKey(window.location.href, vEl);
-          const merged = this.mergeFormatLists(this.accumulatedFormatsByCacheKey.get(key) || [], variants);
+          const merged = this.mergeFormatLists(this.accumulatedFormatsByCacheKey.get(key) || [], finalVariants);
           this.rememberFormats(key, merged.slice());
 
           const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
@@ -336,13 +358,13 @@ class FormatRegistryEngine {
     try {
       const stashed = document.querySelectorAll('smartdm-manifest-stash');
       stashed.forEach(el => {
-        if (el.getAttribute('data-smartdm-player')) return;
         const u = el.getAttribute('data-smartdm-url') || window.location.href;
         const txt = el.textContent;
+        const h = Number(el.getAttribute('data-smartdm-height')) || 0;
         if (txt) {
-          this.processCapturedManifest(u, txt, onRefresh);
+          this.processCapturedManifest(u, txt, onRefresh, h);
         }
-        el.remove();
+        if (!el.getAttribute('data-smartdm-player')) el.remove();
       });
     } catch(e) {}
   }
@@ -869,12 +891,19 @@ class FormatRegistryEngine {
         if (!caption) {
           for (const selector of ['[data-testid="tweetText"]', '[data-e2e="video-desc"]', 'h1', '[data-testid="post-caption"]', 'img[alt]']) {
             const node = card.querySelector?.(selector);
-            const value = (node?.textContent || node?.getAttribute?.('alt') || '').trim();
+            let value = (node?.textContent || node?.getAttribute?.('alt') || '').trim();
+            if (value) {
+              value = value.replace(/\s*[•·\s\-–—|]?\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i, '').trim();
+            }
             if (value.length > 3 && !/^(instagram|home.*x)$/i.test(value) && !SmartDmUtils.isGenericTitle(value)) { caption = value; break; }
           }
         }
         if (isInsta && !caption) {
-          const author = card.querySelector?.('header a, h2 a, a[role="link"][tabindex="0"]')?.textContent?.trim();
+          let author = card.querySelector?.('header a, h2 a, a[role="link"][tabindex="0"]')?.textContent?.trim();
+          if (author) {
+            author = author.replace(/\s*[•·\s\-–—|]?\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i, '').trim();
+            author = author.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
+          }
           if (author && author.length > 1 && !SmartDmUtils.isGenericTitle(author)) {
             caption = `${author} - Instagram Video`;
           }
@@ -950,11 +979,12 @@ class FormatRegistryEngine {
         return;
       }
 
-      runtime.sendMessage({ type: 'GET_DETECTED_MEDIA', currentUrl: window.location.href }, (response) => {
+      const queryType = (mediaEl && mediaEl.tagName === 'IFRAME') ? 'GET_TAB_MEDIA' : 'GET_DETECTED_MEDIA';
+      const handleMediaResponse = (response) => {
         try {
-          if (response && response.tabTitle && !SmartDmUtils.isGenericTitle(response.tabTitle)) {
+          if (response && response.tabTitle) {
             const cleanTitle = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeCleanTitle) ? SmartDmUtils.sanitizeCleanTitle(response.tabTitle) : response.tabTitle;
-            if (cleanTitle) {
+            if (cleanTitle && !SmartDmUtils.isGenericTitle(cleanTitle)) {
               window._smartdm_cached_tab_title = cleanTitle;
               if ((!isFb && !isInsta) || !pageTitle || SmartDmUtils.isGenericTitle(pageTitle)) {
                 pageTitle = cleanTitle;
@@ -1189,16 +1219,17 @@ class FormatRegistryEngine {
             return;
           }
 
-          const selectedSrc = mediaEl && (mediaEl.currentSrc || mediaEl.src || mediaEl.querySelector("source")?.src);
-          let prioritizedMedia = netMedia.filter(m => m.url === selectedSrc);
-          if (prioritizedMedia.length === 0 && !this.isSocialFeed() && (!selectedSrc || (mediaEl && (mediaEl.currentSrc || mediaEl.src || '').startsWith('blob:')))) {
+          const isIframePlayer = !!(mediaEl && mediaEl.tagName === 'IFRAME');
+          const selectedSrc = (!isIframePlayer && mediaEl) ? (mediaEl.currentSrc || mediaEl.src || (mediaEl.querySelector && mediaEl.querySelector("source")?.src)) : null;
+          let prioritizedMedia = selectedSrc ? netMedia.filter(m => m.url === selectedSrc) : [];
+          if (prioritizedMedia.length === 0 && !this.isSocialFeed() && (!selectedSrc || isIframePlayer || (mediaEl && (mediaEl.currentSrc || mediaEl.src || '').startsWith('blob:')))) {
             const videoMedia = netMedia.filter(m => {
               if (m.isAudio) return false;
               const u = m.url || '';
               const ct = m.contentType || '';
               return ct.includes('video/') || ct.includes('mpegurl') || ct.includes('dash') ||
                      /\.(m3u8|mp4|webm|mkv|mov|mpd)(?:[?#]|$)/i.test(u) ||
-                     /stream-embed\/(?:playlist|media)|\/(?:playlist|manifest|master|hls|dash|stream|source|embed|video)(?:[?#/]|$)/i.test(u);
+                     /(?:stream-embed\/(?:playlist|media)|\/(?:playlists?|manifests?|master|hls|dash|streams?|sources?|prox(?:y|ies)|embeds?|videos?|media|play(?:back)?|prorcp|chunklists?|vod|live|file|serve)(?:[?#/]|$)|[?&](?:format=m3u8|type=m3u8|source=m3u8|file=.*\.m3u8))/i.test(u);
             });
             if (videoMedia.length > 0) {
               prioritizedMedia = videoMedia;
@@ -1211,7 +1242,7 @@ class FormatRegistryEngine {
             return (b.timestamp || 0) - (a.timestamp || 0);
           });
 
-          let liveSrc = mediaEl ? (mediaEl.currentSrc || mediaEl.src) : null;
+          let liveSrc = (!isIframePlayer && mediaEl) ? (mediaEl.currentSrc || mediaEl.src) : null;
           if (liveSrc && liveSrc.startsWith('blob:')) {
             liveSrc = null;
             const sourceChild = mediaEl.querySelector('source');
@@ -1302,7 +1333,11 @@ class FormatRegistryEngine {
               formatId: fmtId,
               resolution: resLabel,
               ext: ext === 'm3u8' ? 'mp4' : ext,
-              mediaKind: ext === 'm3u8' ? 'hls' : /dash\+xml/i.test(m.contentType || '') ? 'dash' : null,
+              mediaKind: m.mediaKind || (ext === 'm3u8' ? 'hls' : /dash\+xml/i.test(m.contentType || '') ? 'dash' : null),
+              manifestText: m.manifestText || null,
+              bandwidth: m.bandwidth || 0,
+              totalDuration: m.totalDuration || null,
+              badge: m.customBadge || (vH > 0 ? `${vH}p` : null),
               fileSize: (m.contentLength && m.contentLength >= 1048576) ? m.contentLength : 0,
               isAudioOnly: isAudio,
               title: pageTitle,
@@ -1390,6 +1425,14 @@ class FormatRegistryEngine {
         } catch(e) {
           callback({ success: false, status: 'error', message: 'No media formats detected.' });
         }
+      };
+
+      runtime.sendMessage({ type: queryType, currentUrl: window.location.href }, (response) => {
+        if ((!response || !response.success) && queryType === 'GET_TAB_MEDIA') {
+          runtime.sendMessage({ type: 'GET_DETECTED_MEDIA', currentUrl: window.location.href }, handleMediaResponse);
+        } else {
+          handleMediaResponse(response);
+        }
       });
     } catch(err) {
       callback({ success: false, status: 'error', message: 'No media formats detected.' });
@@ -1422,7 +1465,7 @@ class FormatRegistryEngine {
 
   static capturedPlayerFormats(mediaEl) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return null;
-    const id = mediaEl && mediaEl.getAttribute('data-smartdm-hls-player');
+    const id = mediaEl && typeof mediaEl.getAttribute === 'function' ? mediaEl.getAttribute('data-smartdm-hls-player') : null;
     const stashes = Array.from(document.querySelectorAll('smartdm-manifest-stash'));
     let matching = id ? stashes.filter(s => s.getAttribute('data-smartdm-player') === id) : [];
     if (!matching.length) {
@@ -1433,7 +1476,7 @@ class FormatRegistryEngine {
     }
     if (!matching.length) return null;
     const audio = matching.find(s => s.getAttribute('data-smartdm-track') === 'audio');
-    if (!audio && mediaEl && mediaEl.getAttribute('data-smartdm-hls-external-audio') === '1')
+    if (!audio && mediaEl && typeof mediaEl.getAttribute === 'function' && mediaEl.getAttribute('data-smartdm-hls-external-audio') === '1')
       return {success: false, formats: [], message: 'Play the video until its audio playlist is available, then try again.'};
 
     const masterStash = matching.find(s => (s.textContent || '').includes('#EXT-X-STREAM-INF'));
@@ -1600,7 +1643,7 @@ class FormatRegistryEngine {
           return;
         }
 
-        const m3u8Candidates = instantRes.formats.filter(f => (f.url && f.url.includes('.m3u8')) || f.ext === 'm3u8' || f.mediaKind === 'hls' || /stream-embed|\/(?:playlist|master|hls)/i.test(f.url || ''));
+        const m3u8Candidates = instantRes.formats.filter(f => (f.url && f.url.includes('.m3u8')) || f.ext === 'm3u8' || f.mediaKind === 'hls' || /(?:stream-embed\/(?:playlist|media)|\/(?:playlists?|manifests?|master|hls|dash|streams?|sources?|prox(?:y|ies)|embeds?|videos?|media|play(?:back)?|prorcp|chunklists?|vod|live|file|serve)(?:[?#/]|$)|[?&](?:format=m3u8|type=m3u8|source=m3u8|file=.*\.m3u8))/i.test(f.url || ''));
         if (m3u8Candidates.length > 0) {
           (async () => {
             for (const candItem of m3u8Candidates) {
@@ -1674,6 +1717,17 @@ class FormatRegistryEngine {
       } else if (isFb) {
         clearTimeout(safetyTimer);
         notifyCallbacks(instantRes || { success: false, status: 'error', message: 'No verified stream for this video yet.' });
+      } else if (mediaEl && (mediaEl.tagName === 'IFRAME' || !mediaEl.currentSrc || (typeof mediaEl.currentSrc === 'string' && mediaEl.currentSrc.startsWith('blob:')))) {
+        runtime.sendMessage({ type: 'RESOLVE_M3U8_VARIANTS' }, (varRes) => {
+          if (varRes && varRes.success && varRes.formats && varRes.formats.length > 0) {
+            instantDelivered = true;
+            clearTimeout(safetyTimer);
+            notifyCallbacks(varRes);
+          } else {
+            clearTimeout(safetyTimer);
+            notifyCallbacks(instantRes || { success: false, status: 'error', message: 'No media formats detected for this video.' });
+          }
+        });
       }
     });
 

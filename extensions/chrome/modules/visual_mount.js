@@ -699,6 +699,59 @@ class VisualMountDetector {
       let author = '';
       let caption = '';
 
+      const isCompactTimestampText = (txt) => {
+        if (!txt || typeof txt !== 'string') return false;
+        const clean = txt.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
+        if (/^\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i.test(clean)) return true;
+        if (/^[a-z0-9_.]+\s*[•·\s\-–—|]\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i.test(clean)) return true;
+        if (/^\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?\s*[-–—|]\s*instagram\s*video$/i.test(clean)) return true;
+        return false;
+      };
+
+      const isTimestampNode = (node) => {
+        if (!node) return false;
+        if (node.tagName === 'TIME') return true;
+        if (node.closest?.('time')) return true;
+        if (node.tagName === 'A' && node.querySelector?.('time')) {
+          const txt = (node.textContent || '').trim();
+          if (!txt || isCompactTimestampText(txt)) return true;
+        }
+        if (node.closest?.('a')?.querySelector?.('time')) {
+          const a = node.closest('a');
+          const txt = (a.textContent || '').trim();
+          if (!txt || isCompactTimestampText(txt)) return true;
+        }
+        return false;
+      };
+
+      const isHeaderNode = (node) => {
+        if (!node) return false;
+        if (node.tagName === 'HEADER' || node.closest?.('header')) return true;
+        if (node.closest?.('[role="heading"], [data-testid="post-header"], [class*="header" i]')) return true;
+        if (mediaEl && mediaEl.compareDocumentPosition && (mediaEl.compareDocumentPosition(node) & 2 /* Node.DOCUMENT_POSITION_PRECEDING */)) {
+          return true;
+        }
+        return false;
+      };
+
+      const getNodeCleanText = (node) => {
+        if (!node) return '';
+        let text = '';
+        if (node.querySelector && node.querySelector('time') && node.cloneNode) {
+          try {
+            const clone = node.cloneNode(true);
+            const times = clone.querySelectorAll ? clone.querySelectorAll('time') : [];
+            for (const t of times) t.remove?.();
+            text = (clone.innerText || clone.textContent || '').trim();
+          } catch (_) {
+            text = (node.innerText || node.textContent || '').trim();
+          }
+        } else {
+          text = (node.innerText || node.textContent || '').trim();
+        }
+        return text;
+      };
+
       if (card) {
         let authorLinks = card.querySelectorAll ? Array.from(card.querySelectorAll('header a, h2 a, a[role="link"][tabindex="0"], a[role="link"], a[href^="/"], a[href*="instagram.com/"]')) : [];
         if (!authorLinks.length && card.querySelector) {
@@ -707,6 +760,7 @@ class VisualMountDetector {
         }
         for (const a of authorLinks) {
           if (mediaEl && (mediaEl === a || mediaEl.contains?.(a))) continue;
+          if (isTimestampNode(a)) continue;
           let path = a.getAttribute?.('href') || a.href || '';
           path = path.replace(/[?#].*$/, '');
           try {
@@ -715,27 +769,37 @@ class VisualMountDetector {
           path = path.replace(/\/+$/, '');
           const m = path.match(/^\/([A-Za-z0-9_.]+)$/);
           if (m && !/^(explore|reels|stories|direct|p|reel|accounts|about|legal|terms|privacy|developer)/i.test(m[1])) {
-            const raw = (a.textContent || '').trim();
-            if (raw && !SmartDmUtils.isGenericTitle(raw) && !/^(follow|following|sponsored|suggested)/i.test(raw)) {
+            let raw = (a.textContent || '').trim();
+            raw = raw.replace(/\s*[•·\s\-–—|]?\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i, '').trim();
+            raw = raw.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
+            if (raw && !SmartDmUtils.isGenericTitle(raw) && !isCompactTimestampText(raw) && !/^(follow|following|sponsored|suggested)/i.test(raw)) {
               author = raw;
               break;
-            } else if (!author) {
+            } else if (!author && m[1] && !SmartDmUtils.isGenericTitle(m[1]) && !isCompactTimestampText(m[1])) {
               author = m[1];
             }
           }
         }
-        if (!author) {
+        if (!author || SmartDmUtils.isGenericTitle(author) || isCompactTimestampText(author)) {
           const img = card.querySelector?.('header img[alt], [role="heading"] img[alt], img[alt*="profile picture" i]');
           const alt = img?.getAttribute?.('alt') || '';
           const mAlt = alt.match(/^([A-Za-z0-9_.]+)'s profile picture/i);
-          if (mAlt) author = mAlt[1];
+          if (mAlt && !SmartDmUtils.isGenericTitle(mAlt[1]) && !isCompactTimestampText(mAlt[1])) author = mAlt[1];
+        }
+        if (author) {
+          author = author.replace(/\s*[•·\s\-–—|]?\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i, '').trim();
+          author = author.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
+          if (SmartDmUtils.isGenericTitle(author) || isCompactTimestampText(author)) {
+            author = '';
+          }
         }
 
         const isSkipNode = (node, txt) => {
           if (!txt || txt.length < 2) return true;
           if (mediaEl && (mediaEl.contains?.(node) || node.contains?.(mediaEl))) return true;
-          if (node.tagName === 'TIME' || node.closest?.('time')) return true;
-          if (node.closest?.('header')) return true;
+          if (isTimestampNode(node)) return true;
+          if (isCompactTimestampText(txt)) return true;
+          if (isHeaderNode(node)) return true;
           if (node.closest?.('form, div[role="textbox"], [aria-label*="comment" i], [aria-label*="reply" i]')) return true;
           if (node.closest?.('button, [role="button"]') && !node.querySelector?.('span, p')) return true;
           if (node.closest?.('a[href*="/audio/"], a[href*="/music/"], a[href*="/sound/"], [class*="audio" i], [aria-label*="audio" i], [class*="music" i]')) return true;
@@ -747,18 +811,21 @@ class VisualMountDetector {
           if (/^(?:view (?:all )?[\d,.]*\s*comments?|add a comment(?:\.{3}|…)?|reply$|ver los|afficher les|alle.*kommentare|コメント.*件|返信)/i.test(txt)) return true;
           if (/^(?:original audio|audio track|sonido original|audio original|originaler ton|son original|オリジナル音源)$/i.test(txt)) return true;
           if (/^(?:♫|♬|\b[\w\s.-]+(?:•|·)\s*(?:original audio|audio\b|オリジナル音源))/i.test(txt)) return true;
-          if (/^(?:\d+\s*(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?|sec|min|hr|d|w|m|y)\s*ago|see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る)$/i.test(txt)) return true;
+          if (/^(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i.test(txt)) return true;
           if (/^(?:more|…\s*more|\.\.\.\s*more|続きを読む|その他|más|plus|mehr)$/i.test(txt)) return true;
           if (author && txt.toLowerCase() === author.toLowerCase()) return true;
+          if (SmartDmUtils.isGenericTitle(txt)) return true;
           return false;
         };
 
         const cleanCandidateText = (rawTxt) => {
           if (!rawTxt) return '';
           let txt = rawTxt.trim();
+          txt = txt.replace(/^[•·\s\-–—|]+/, '').trim();
           txt = txt.replace(/(?:\s*[\r\n\s]+)?(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i, '').trim();
           txt = txt.replace(/(?:\.\.\.|…)?\s*(?:more|続きを読む|その他|más|plus|mehr)$/i, '').trim();
           txt = txt.replace(/(?:\s*[\r\n\s]+)?(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i, '').trim();
+          txt = txt.replace(/\s*[•·\s\-–—|]?\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i, '').trim();
           if (author) {
             const low = txt.toLowerCase();
             const aLow = author.toLowerCase();
@@ -767,29 +834,32 @@ class VisualMountDetector {
             } else if (low.startsWith('@' + aLow)) {
               txt = txt.slice(author.length + 1).trim();
             }
-            txt = txt.replace(/^[:\-—•~|\s]+/, '').trim();
+            txt = txt.replace(/^[:\-—•·~|\s]+/, '').trim();
           }
+          txt = txt.replace(/\s*[•·\s\-–—|]?\s*\d+\s*(?:s|m|h|d|w|y|wk|mo|yr|sec|min|hr|day|week|month|year)s?(?:\s*ago)?$/i, '').trim();
           txt = txt.replace(/(?:\s*[\r\n\s]+)?(?:see translation|ver traducción|voir la traduction|übersetzung anzeigen|翻訳を見る|查看翻译)$/i, '').trim();
           txt = txt.replace(/(?:\.\.\.|…)?\s*(?:more|続きを読む|その他|más|plus|mehr)$/i, '').trim();
+          txt = txt.replace(/^[•·\s\-–—|]+|[•·\s\-–—|]+$/g, '').trim();
           txt = txt.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
           return txt;
         };
 
         // Priority 1: Semantic caption containers
         const captionSelectors = [
-          'h1',
           '[data-testid="post-caption"]',
           'div[class*="_a9zs"]',
           'span[class*="_a9zs"]',
+          'h1',
           '[class*="caption" i]'
         ];
         for (const sel of captionSelectors) {
           const nodes = card.querySelectorAll ? card.querySelectorAll(sel) : [];
           for (const node of nodes) {
-            const raw = (node.innerText || node.textContent || '').trim();
+            if (isHeaderNode(node) || isTimestampNode(node)) continue;
+            const raw = getNodeCleanText(node);
             if (isSkipNode(node, raw)) continue;
             const cleaned = cleanCandidateText(raw);
-            if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned)) {
+            if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned) && !isCompactTimestampText(cleaned)) {
               caption = cleaned;
               break;
             }
@@ -801,7 +871,7 @@ class VisualMountDetector {
         if (!caption && author) {
           const authorLinksInBody = card.querySelectorAll ? card.querySelectorAll(`a[href*="/${author}"], a[role="link"]`) : [];
           for (const a of authorLinksInBody) {
-            if (a.closest?.('header')) continue;
+            if (isHeaderNode(a) || isTimestampNode(a)) continue;
             if (mediaEl && (a.closest?.(mediaEl.tagName) || mediaEl.contains?.(a))) continue;
             const aText = (a.textContent || '').trim();
             let aHref = a.getAttribute?.('href') || a.href || '';
@@ -810,11 +880,12 @@ class VisualMountDetector {
 
             let p = a.parentElement;
             for (let k = 0; k < 4 && p && p !== card; k++) {
-              if (p.closest?.('header, form, [aria-label*="comment" i]')) break;
-              const raw = (p.innerText || p.textContent || '').trim();
+              if (isHeaderNode(p)) break;
+              if (p.closest?.('form, div[role="textbox"], [aria-label*="comment" i]')) break;
+              const raw = getNodeCleanText(p);
               if (raw.length > author.length + 2 && !isSkipNode(p, raw)) {
                 const cleaned = cleanCandidateText(raw);
-                if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned)) {
+                if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned) && !isCompactTimestampText(cleaned)) {
                   caption = cleaned;
                   break;
                 }
@@ -830,10 +901,11 @@ class VisualMountDetector {
           for (const sel of ['span[dir="auto"]', 'div[dir="auto"]', 'p']) {
             const nodes = card.querySelectorAll ? card.querySelectorAll(sel) : [];
             for (const node of nodes) {
-              const raw = (node.innerText || node.textContent || '').trim();
+              if (isHeaderNode(node) || isTimestampNode(node)) continue;
+              const raw = getNodeCleanText(node);
               if (isSkipNode(node, raw)) continue;
               const cleaned = cleanCandidateText(raw);
-              if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned)) {
+              if (cleaned.length >= 2 && !SmartDmUtils.isGenericTitle(cleaned) && !isCompactTimestampText(cleaned)) {
                 caption = cleaned;
                 break;
               }
@@ -846,16 +918,16 @@ class VisualMountDetector {
         if (!caption) {
           const img = card.querySelector?.('img[alt]');
           const alt = img?.getAttribute?.('alt')?.trim();
-          if (alt && alt.length > 5 && !/^(instagram|profile picture|photo by)/i.test(alt)) {
+          if (alt && alt.length > 5 && !/^(instagram|profile picture|photo by)/i.test(alt) && !SmartDmUtils.isGenericTitle(alt) && !isCompactTimestampText(alt)) {
             caption = alt;
           }
         }
       }
 
-      if (caption) {
+      if (caption && !SmartDmUtils.isGenericTitle(caption) && !isCompactTimestampText(caption)) {
         return SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160);
       }
-      if (author) {
+      if (author && !SmartDmUtils.isGenericTitle(author) && !isCompactTimestampText(author)) {
         return `${author} - Instagram Video`;
       }
       const permalinkLink = card?.querySelector?.('a[href*="/p/"], a[href*="/reel/"]');
@@ -868,7 +940,7 @@ class VisualMountDetector {
         if (m) return `Instagram_${m[1]}`;
       }
       const pageT = SmartDmUtils.extractWatchPageTitle();
-      if (pageT && !SmartDmUtils.isGenericTitle(pageT)) {
+      if (pageT && !SmartDmUtils.isGenericTitle(pageT) && !isCompactTimestampText(pageT)) {
         return SmartDmUtils.sanitizeCleanTitle(pageT);
       }
       return 'Instagram Video';
@@ -1220,18 +1292,19 @@ class VisualMountDetector {
       // 4. Video ID and Track URL
       let videoId = null;
       let playlistId = null;
-      const linkEl = playerBar?.querySelector?.('a[href*="watch?v="], [href*="watch?v="]');
+      const root = playerBar?.shadowRoot || playerBar;
+      const linkEl = root?.querySelector?.('a[href*="watch?v="], a[href*="/watch"], [href*="watch?v="]');
       if (linkEl) {
         const href = linkEl.getAttribute?.('href') || linkEl.href || '';
-        const m = href.match(/[?&]v=([^&#]+)/);
+        const m = href.match(/[?&]v=([^&#]+)/) || href.match(/\/watch\/([^?&#]+)/);
         if (m) videoId = m[1];
-        const pMatch = href.match(/[?&]list=([^&#]+)/);
+        const pMatch = href.match(/[?&]list=([^&#]+)/) || href.match(/\/browse\/(VL[^&#?/]+)/);
         if (pMatch) playlistId = pMatch[1];
       }
       if (!videoId && typeof window !== 'undefined' && window.location) {
-        const m = window.location.href.match(/[?&]v=([^&#]+)/);
+        const m = window.location.href.match(/[?&]v=([^&#]+)/) || window.location.href.match(/\/watch\/([^?&#]+)/);
         if (m) videoId = m[1];
-        const pMatch = window.location.href.match(/[?&]list=([^&#]+)/);
+        const pMatch = window.location.href.match(/[?&]list=([^&#]+)/) || window.location.href.match(/\/browse\/(VL[^&#?/]+)/);
         if (pMatch) playlistId = pMatch[1];
       }
       if (!videoId && typeof document !== 'undefined') {
@@ -1283,12 +1356,12 @@ class VisualMountDetector {
   static extractYouTubeMusicPlaylistMetadata(headerEl = null) {
     try {
       const header = headerEl || (typeof document !== 'undefined' ?
-        document.querySelector('ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer') : null);
+        document.querySelector('ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-header-renderer') : null);
 
       // 1. Playlist / Album Title
       let title = '';
       const titleEl = header?.querySelector?.('.title, h1, yt-formatted-string.title, [class*="title"]') ||
-                      (typeof document !== 'undefined' ? document.querySelector('h1.title, .heading-name') : null);
+                      (typeof document !== 'undefined' ? document.querySelector('ytmusic-editable-playlist-detail-header-renderer .title, ytmusic-responsive-header-renderer .title, h1.title, .heading-name') : null);
       if (titleEl) {
         title = (titleEl.getAttribute?.('title') || titleEl.textContent || '').trim();
       }
@@ -1303,13 +1376,18 @@ class VisualMountDetector {
       // 3. Playlist ID
       let playlistId = null;
       if (typeof window !== 'undefined' && window.location) {
-        const m = window.location.href.match(/[?&]list=([^&#]+)/);
+        const m = window.location.href.match(/[?&]list=([^&#]+)/) ||
+                  window.location.href.match(/\/browse\/(VL[^&#?/]+)/) ||
+                  window.location.href.match(/\/browse\/(MPREb[^&#?/]+)/);
         if (m) playlistId = m[1];
       }
       if (!playlistId && header) {
-        const link = header.querySelector?.('a[href*="list="]');
+        const link = header.querySelector?.('a[href*="list="], a[href*="/browse/VL"], a[href*="/browse/MPREb"]');
         if (link) {
-          const m = (link.getAttribute?.('href') || link.href || '').match(/[?&]list=([^&#]+)/);
+          const href = link.getAttribute?.('href') || link.href || '';
+          const m = href.match(/[?&]list=([^&#]+)/) ||
+                    href.match(/\/browse\/(VL[^&#?/]+)/) ||
+                    href.match(/\/browse\/(MPREb[^&#?/]+)/);
           if (m) playlistId = m[1];
         }
       }
@@ -1318,7 +1396,7 @@ class VisualMountDetector {
       const tracks = [];
       let itemEls = [];
       if (typeof document !== 'undefined') {
-        const playlistContainer = document.querySelector('ytmusic-playlist-shelf-renderer #contents, ytmusic-shelf-renderer #contents, #contents.ytmusic-playlist-shelf-renderer');
+        const playlistContainer = document.querySelector('ytmusic-playlist-shelf-renderer #contents, ytmusic-shelf-renderer #contents, #contents.ytmusic-playlist-shelf-renderer, ytmusic-section-list-renderer #contents');
         if (playlistContainer) {
           itemEls = Array.from(playlistContainer.querySelectorAll('ytmusic-responsive-list-item-renderer'));
         }
@@ -1355,11 +1433,11 @@ class VisualMountDetector {
         const dEl = itemEl.querySelector?.('.fixed-column, span.duration, [class*="duration"], yt-formatted-string.fixed-columns');
         const duration = dEl ? (dEl.textContent || '').trim() : '';
 
-        const linkEl = itemEl.querySelector?.('a[href*="watch?v="], a[href*="v="], [href*="watch?v="], ytmusic-play-button-renderer [href*="watch"]');
+        const linkEl = itemEl.querySelector?.('a[href*="watch?v="], a[href*="v="], [href*="watch?v="], a[href*="/watch"], ytmusic-play-button-renderer [href*="watch"]');
         let videoId = null;
         if (linkEl) {
           const href = linkEl.getAttribute?.('href') || linkEl.href || '';
-          const m = href.match(/[?&]v=([^&#]+)/);
+          const m = href.match(/[?&]v=([^&#]+)/) || href.match(/\/watch\/([^?&#]+)/);
           if (m) videoId = m[1];
         }
         if (!videoId) {

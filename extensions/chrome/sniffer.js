@@ -37,8 +37,8 @@
   } catch(e) {}
 
   const MANIFEST_EXT_REGEX = /\.(m3u8|mpd)(?:$|[?#])/i;
-  const MANIFEST_PATH_REGEX = /(?:stream-embed\/(?:playlist|media)|\/(?:playlist|manifest|master|hls|dash)(?:[?#/]|$))/i;
-  const BINARY_EXT_REGEX = /\.(ts|m4s|mp4|m4a|m4v|webm|mkv|aac|mp3|flac|wav|ogg|png|jpg|jpeg|webp|gif|svg|ico|css|js|wasm|json)(?:$|[?#])/i;
+  const MANIFEST_PATH_REGEX = /(?:stream-embed\/(?:playlist|media)|\/(?:playlists?|manifests?|master|hls|dash|streams?|sources?|prox(?:y|ies)|embeds?|videos?|media|play(?:back)?|api\/streams?|prorcp|chunklists?|vod|live|file|serve)(?:[?#/]|$)|[?&](?:format=m3u8|type=m3u8|source=m3u8|file=.*\.m3u8))/i;
+  const BINARY_EXT_REGEX = /\.(ts|m4s|mp4|m4a|m4v|webm|mkv|aac|mp3|flac|wav|ogg|png|jpg|jpeg|webp|gif|svg|ico|css|js|wasm)(?:$|[?#])/i;
   const IGNORED_DOMAINS_REGEX = /(?:fbcdn\.net|facebook\.com|messenger\.com|instagram\.com|googlevideo\.com|ytimg\.com|googleads|doubleclick\.net)/i;
   const capturedUrls = new Set();
   const pendingReads = new Set();
@@ -46,6 +46,54 @@
   // retained snapshots; a three-entry count alone is insufficient for movies.
   const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
   const MAX_STASH_CHARS = 8 * 1024 * 1024;
+
+  function inspectJsonResponseForManifests(text, requestUrl) {
+    if (!text || typeof text !== 'string' || text.length > 500000) return;
+    try {
+      const unescapedText = text.replace(/\\\/+/g, '/');
+      const m3u8Matches = unescapedText.match(/https?:\/\/[^"'\s\\]+?\.(?:m3u8|mpd)[^"'\s\\]*/gi);
+      if (m3u8Matches && m3u8Matches.length > 0) {
+        for (let mUrl of m3u8Matches) {
+          mUrl = mUrl.replace(/\\/g, '');
+          if (!capturedUrls.has(mUrl)) {
+            stashAndEmitManifest(mUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${mUrl}`);
+            try {
+              window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
+                detail: { url: mUrl, text: null, playerId: null, candidateUrl: mUrl }
+              }));
+            } catch (_) {}
+          }
+        }
+      }
+      if (unescapedText.includes('"file"') || unescapedText.includes('"url"') || unescapedText.includes('"sources"') ||
+          unescapedText.includes('"source"') || unescapedText.includes('"src"') || unescapedText.includes('"stream"') ||
+          unescapedText.includes('"link"')) {
+        try {
+          const data = JSON.parse(text);
+          const findSources = (obj) => {
+            if (!obj || typeof obj !== 'object') return;
+            const candidates = [obj.file, obj.url, obj.src, obj.source, obj.stream, obj.link, obj.video, obj.playlist, obj.manifest].filter(v => typeof v === 'string');
+            for (const cand of candidates) {
+              let fullUrl = cand;
+              try { fullUrl = new URL(cand, requestUrl || window.location.href).href; } catch(_) {}
+              if (!capturedUrls.has(fullUrl) && (isLikelyManifestUrl(fullUrl) || /\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(fullUrl) || /(?:stream|source|playlist|master|hls)/i.test(fullUrl))) {
+                stashAndEmitManifest(fullUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${fullUrl}`);
+                try {
+                  window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
+                    detail: { url: fullUrl, text: null, playerId: null, candidateUrl: fullUrl }
+                  }));
+                } catch (_) {}
+              }
+            }
+            for (const k in obj) {
+              if (typeof obj[k] === 'object') findSources(obj[k]);
+            }
+          };
+          findSources(data);
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
 
   function stripByteRangeParams(url) {
     if (!url || typeof url !== 'string') return url;
@@ -409,7 +457,11 @@
       }
       if (cancelled) return;
       text += decoder.decode();
-      stashAndEmitManifest(response.url || requestUrl, text);
+      if (text.includes('#EXT-X-STREAM-INF') || text.includes('<MPD') || text.includes('&lt;MPD') || (text.includes('#EXTM3U') && (text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-MEDIA')))) {
+        stashAndEmitManifest(response.url || requestUrl, text);
+      } else {
+        inspectJsonResponseForManifests(text, response.url || requestUrl);
+      }
     } catch (_) {
     } finally {
       clearTimeout(timer);
@@ -564,14 +616,20 @@
         const resp = await origFetch.apply(this, args);
         try {
           const reqUrl = (typeof args[0] === 'string') ? args[0] : (args[0] && (args[0].url || args[0].href));
-          const playlistMime = /mpegurl|dash\+xml/i.test(resp.headers?.get('content-type') || '') && !IGNORED_DOMAINS_REGEX.test(reqUrl || '');
+          const contentType = (resp.headers?.get('content-type') || '').toLowerCase();
+          const playlistMime = /mpegurl|dash\+xml/i.test(contentType) && !IGNORED_DOMAINS_REGEX.test(reqUrl || '');
           const isManifestUrl = isLikelyManifestUrl(reqUrl);
-          if ((isManifestUrl || playlistMime) && !capturedUrls.has(reqUrl) && !pendingReads.has(reqUrl) && pendingReads.size < 4) {
+          const isPotentialProxyStream = !BINARY_EXT_REGEX.test(reqUrl || '') && (
+            /text\/plain|application\/octet-stream|binary\/octet-stream/i.test(contentType) &&
+            /(?:stream|source|proxy|playlist|master|hls|embed|video|media|play|chunklist|vod)/i.test(reqUrl || '')
+          );
+          const isJsonApi = (contentType.includes('json') || (reqUrl && reqUrl.includes('.json')) || (reqUrl && /(?:api|ajax|source|stream|embed|player|prorcp|playback)/i.test(reqUrl))) && !IGNORED_DOMAINS_REGEX.test(reqUrl || '');
+
+          if ((isManifestUrl || playlistMime || isPotentialProxyStream || isJsonApi) && !capturedUrls.has(reqUrl) && !pendingReads.has(reqUrl) && pendingReads.size < 4) {
             const headers = resp.headers;
             if (headers) {
-              const contentType = (headers.get('content-type') || '').toLowerCase();
               if (contentType.includes('video/') || contentType.includes('audio/') ||
-                  contentType.includes('image/') || (!isManifestUrl && !playlistMime && contentType.includes('octet-stream'))) {
+                  contentType.includes('image/') || (!isManifestUrl && !playlistMime && !isPotentialProxyStream && contentType.includes('octet-stream'))) {
                 return resp;
               }
               const lenStr = headers.get('content-length');
@@ -617,16 +675,28 @@
               if (xhr.response.byteLength <= MAX_MANIFEST_BYTES) {
                 try { txt = new TextDecoder().decode(xhr.response); } catch(_) {}
               }
+            } else if (respType === 'json' && xhr.response) {
+              try { txt = typeof xhr.response === 'string' ? xhr.response : JSON.stringify(xhr.response); } catch(_) {}
             } else {
               return;
             }
             const cType = (xhr.getResponseHeader('content-type') || '').toLowerCase();
             const typedManifest = /mpegurl|dash\+xml/.test(cType);
             const isManifest = isLikelyManifestUrl(responseUrl);
-            if (!typedManifest && !isManifest) return;
-            if (!typedManifest && !isManifest && /video\/|audio\/|image\/|octet-stream/.test(cType)) return;
-            if (txt && txt.length <= MAX_MANIFEST_BYTES) {
-              stashAndEmitManifest(responseUrl, txt);
+            const isPotentialProxyStream = !BINARY_EXT_REGEX.test(responseUrl || '') && (
+              /text\/plain|application\/octet-stream|binary\/octet-stream/i.test(cType) &&
+              /(?:stream|source|proxy|playlist|master|hls|embed|video|media|play|chunklist|vod)/i.test(responseUrl || '')
+            );
+            const isJsonApi = (cType.includes('json') || (responseUrl && responseUrl.includes('.json')) || (responseUrl && /(?:api|ajax|source|stream|embed|player|prorcp|playback)/i.test(responseUrl))) && !IGNORED_DOMAINS_REGEX.test(responseUrl || '');
+
+            if (txt && (txt.includes('#EXTM3U') || typedManifest || isManifest || isPotentialProxyStream)) {
+              if (txt.includes('#EXT-X-STREAM-INF') || txt.includes('<MPD') || txt.includes('&lt;MPD') || (txt.includes('#EXTM3U') && (txt.includes('#EXTINF') || txt.includes('#EXT-X-TARGETDURATION') || txt.includes('#EXT-X-MEDIA')))) {
+                stashAndEmitManifest(responseUrl, txt);
+                return;
+              }
+            }
+            if (txt && isJsonApi) {
+              inspectJsonResponseForManifests(txt, responseUrl);
             }
           }
         } catch(e) {}

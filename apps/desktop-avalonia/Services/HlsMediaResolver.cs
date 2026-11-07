@@ -92,13 +92,23 @@ public static class HlsMediaResolver
             // Fallback: child playlist with no discoverable master -> return single format
             int singleHeight = ExtractResolutionNumber(streamUrl);
             if (singleHeight <= 0) singleHeight = 720;
+            double dur = ParseTotalDuration(initialText);
+            long br = ParseBitrate(initialText);
+            int segCount = Regex.Matches(initialText, @"#EXTINF", RegexOptions.IgnoreCase).Count;
+            long expectedBytes = CalculateExpectedTotalBytes(dur, br, singleHeight, segCount);
+
             result.Formats.Add(new MediaFormatDto
             {
                 FormatId = "hls_" + singleHeight + "p",
                 Resolution = GetResolutionLabel(singleHeight),
                 Ext = "mp4",
                 DirectUrl = streamUrl,
-                Title = GetResolutionLabel(singleHeight)
+                Title = GetResolutionLabel(singleHeight),
+                Height = singleHeight,
+                Bandwidth = br,
+                TotalDuration = dur,
+                FileSize = expectedBytes,
+                ManifestText = initialText
             });
             result.Success = true;
             return result;
@@ -230,6 +240,11 @@ public static class HlsMediaResolver
                 {
                     long.TryParse(bwMatch.Groups[1].Value, out bandwidth);
                 }
+                var avgBwMatch = Regex.Match(line, @"AVERAGE-BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
+                if (avgBwMatch.Success && long.TryParse(avgBwMatch.Groups[1].Value, out long avgBw) && avgBw > 0)
+                {
+                    bandwidth = avgBw;
+                }
 
                 if (height <= 0)
                 {
@@ -279,7 +294,8 @@ public static class HlsMediaResolver
                             Ext = "mp4",
                             DirectUrl = fullStreamUrl,
                             Title = label,
-                            Height = height
+                            Height = height,
+                            Bandwidth = bandwidth
                         });
                     }
                 }
@@ -315,5 +331,89 @@ public static class HlsMediaResolver
             >= 360 => "360p SD (MP4)",
             _ => $"{height}p (MP4)"
         };
+    }
+
+    public static double ParseTotalDuration(string manifestContent)
+    {
+        if (string.IsNullOrWhiteSpace(manifestContent)) return 0;
+        double totalSec = 0;
+        var matches = Regex.Matches(manifestContent, @"#EXTINF:\s*([0-9]+(?:\.[0-9]+)?)", RegexOptions.IgnoreCase);
+        foreach (Match m in matches)
+        {
+            if (double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double dur) && dur > 0)
+            {
+                totalSec += dur;
+            }
+        }
+
+        if (totalSec <= 0)
+        {
+            int segCount = Regex.Matches(manifestContent, @"#EXTINF", RegexOptions.IgnoreCase).Count;
+            if (segCount > 0)
+            {
+                var targetDurMatch = Regex.Match(manifestContent, @"#EXT-X-TARGETDURATION:\s*([0-9]+)", RegexOptions.IgnoreCase);
+                if (targetDurMatch.Success && double.TryParse(targetDurMatch.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double targetDur) && targetDur > 0)
+                {
+                    totalSec = segCount * targetDur;
+                }
+            }
+        }
+        return totalSec;
+    }
+
+    public static long ParseBitrate(string manifestContent)
+    {
+        if (string.IsNullOrWhiteSpace(manifestContent)) return 0;
+        var avgBwMatch = Regex.Match(manifestContent, @"AVERAGE-BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
+        if (avgBwMatch.Success && long.TryParse(avgBwMatch.Groups[1].Value, out long avgBw) && avgBw > 0)
+            return avgBw;
+
+        var bwMatch = Regex.Match(manifestContent, @"BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
+        if (bwMatch.Success && long.TryParse(bwMatch.Groups[1].Value, out long bw) && bw > 0)
+            return bw;
+
+        var brMatch = Regex.Match(manifestContent, @"#EXT-X-BITRATE:\s*(\d+)", RegexOptions.IgnoreCase);
+        if (brMatch.Success && long.TryParse(brMatch.Groups[1].Value, out long brVal) && brVal > 0)
+            return brVal > 100_000L ? brVal : brVal * 1000L;
+
+        return 0;
+    }
+
+    public static long CalculateExpectedTotalBytes(double totalDurationSec, long bandwidthBitsPerSec, int height = 0, int segmentCount = 0)
+    {
+        if (totalDurationSec <= 0 && segmentCount <= 0) return 0;
+
+        if (bandwidthBitsPerSec > 0 && totalDurationSec > 0)
+        {
+            return (long)(bandwidthBitsPerSec * totalDurationSec / 8.0);
+        }
+
+        if (bandwidthBitsPerSec > 0 && segmentCount > 0)
+        {
+            return (long)(segmentCount * (bandwidthBitsPerSec * 8.0 / 8.0));
+        }
+
+        long estimatedBps = height switch
+        {
+            >= 2160 => 12_000_000L,
+            >= 1440 => 6_000_000L,
+            >= 1080 => 3_500_000L,
+            >= 720 => 2_000_000L,
+            >= 480 => 1_000_000L,
+            >= 360 => 600_000L,
+            _ => 2_000_000L
+        };
+
+        if (totalDurationSec > 0)
+        {
+            return (long)(estimatedBps * totalDurationSec / 8.0);
+        }
+
+        if (segmentCount > 0)
+        {
+            return segmentCount * 2_000_000L;
+        }
+
+        return 0;
     }
 }
