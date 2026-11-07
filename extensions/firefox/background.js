@@ -1964,7 +1964,13 @@ function sanitizeCleanTitle(str) {
 
 function isGenericTitle(t) {
   if (!t || typeof t !== 'string') return true;
-  let clean = t.replace(/\.[a-z0-9]+$/i, '').trim();
+  let clean = t.trim();
+  const hasExt = /\.(zip|rar|7z|tar|gz|bz2|xz|zst|iso|img|cab|exe|msi|apk|dmg|pkg|deb|rpm|appx|msix|appimage|torrent|pdf|epub|mobi|docx?|xlsx?|pptx?|txt|csv|tsv|rtf|odt|ods|odp|mp4|mkv|webm|avi|mov|wmv|flv|ts|mp3|flac|wav|aac|ogg|opus|m4a|wma|json|xml|whl|jar)$/i.test(clean);
+  if (hasExt) {
+    const stem = clean.replace(/\.[a-z0-9]+$/i, '').trim();
+    return !stem;
+  }
+  clean = clean.replace(/\.[a-z0-9]+$/i, '').trim();
   clean = clean.replace(/^\(\d+\)\s*/, '').replace(/\s*\(\d+\)$/, '').trim().toLowerCase();
   if (!clean || clean.length < 2) return true;
 
@@ -2612,37 +2618,80 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
+    const isExplicitMedia = request.type !== 'ADD_DOWNLOAD' || Array.isArray(request.formats) || Boolean(request.formatId) || Boolean(request.videoUrl);
     const tabId = (sender && sender.tab && sender.tab.id) || lastActiveTabId;
     const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
     const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
-    if (cleanTabTitle && !isGenericTitle(cleanTabTitle)) {
-      if (!request.title || isGenericTitle(request.title)) {
-        request.title = cleanTabTitle;
+
+    if (isExplicitMedia) {
+      if (cleanTabTitle && !isGenericTitle(cleanTabTitle)) {
+        if (!request.title || isGenericTitle(request.title)) {
+          request.title = cleanTabTitle;
+        }
+        if (!request.fileName || isGenericTitle(request.fileName)) {
+          const ext = (request.formatId && request.formatId.includes('bestaudio')) ? 'mp3' : (request.ext || 'mp4');
+          request.fileName = `${cleanTabTitle}.${ext}`;
+        }
+        if (Array.isArray(request.formats)) {
+          request.formats.forEach(f => {
+            if (!f.title || isGenericTitle(f.title)) {
+              f.title = cleanTabTitle;
+            }
+          });
+        }
       }
+      if (request.title && !isGenericTitle(request.title)) {
+        if (!request.fileName || isGenericTitle(request.fileName)) {
+          const ext = (request.formatId && request.formatId.includes('bestaudio')) ? 'mp3' : (request.ext || 'mp4');
+          request.fileName = `${request.title}.${ext}`;
+        }
+      }
+    } else {
+      // General direct file download (e.g. .exe, .torrent, .zip, .pdf)
       if (!request.fileName || isGenericTitle(request.fileName)) {
-        const ext = (request.formatId && request.formatId.includes('bestaudio')) ? 'mp3' : (request.ext || 'mp4');
-        request.fileName = `${cleanTabTitle}.${ext}`;
-      }
-      if (Array.isArray(request.formats)) {
-        request.formats.forEach(f => {
-          if (!f.title || isGenericTitle(f.title)) {
-            f.title = cleanTabTitle;
+        try {
+          const parsed = new URL(request.url);
+          for (const qKey of ['filename', 'file', 'name', 'fn', 'path', 'attachment']) {
+            const qVal = parsed.searchParams.get(qKey);
+            if (qVal && qVal.includes('.')) {
+              request.fileName = decodeURIComponent(qVal.split(/[\\/]/).pop().trim());
+              break;
+            }
           }
-        });
+          if (!request.fileName || isGenericTitle(request.fileName)) {
+            const pathName = decodeURIComponent(parsed.pathname.split('/').pop() || '').trim();
+            if (pathName && pathName.includes('.')) {
+              request.fileName = pathName;
+            }
+          }
+        } catch (e) {}
       }
     }
-    if (request.title && !isGenericTitle(request.title)) {
-      if (!request.fileName || isGenericTitle(request.fileName)) {
-        const ext = (request.formatId && request.formatId.includes('bestaudio')) ? 'mp3' : (request.ext || 'mp4');
-        request.fileName = `${request.title}.${ext}`;
-      }
-    }
+
     appendCookiesAndSend(request, sendResponse);
     return true; // Async response
   }
 });
 
 function sendToSmartDM(url, referer, fileName = null) {
+  if (!fileName) {
+    try {
+      const parsed = new URL(url);
+      for (const qKey of ['filename', 'file', 'name', 'fn', 'path', 'attachment']) {
+        const qVal = parsed.searchParams.get(qKey);
+        if (qVal && qVal.includes('.')) {
+          fileName = decodeURIComponent(qVal.split(/[\\/]/).pop().trim());
+          break;
+        }
+      }
+      if (!fileName) {
+        const pathName = decodeURIComponent(parsed.pathname.split('/').pop() || '').trim();
+        if (pathName && pathName.includes('.')) {
+          fileName = pathName;
+        }
+      }
+    } catch (e) {}
+  }
   const message = {
     type: 'ADD_DOWNLOAD',
     url: url,
@@ -2686,6 +2735,24 @@ if (chrome.downloads && chrome.downloads.onCreated) {
           lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
         basename = null;
       }
+    }
+    if (!basename) {
+      try {
+        const parsedUrl = new URL(downloadItem.finalUrl || downloadItem.url);
+        for (const qKey of ['filename', 'file', 'name', 'fn', 'path', 'attachment']) {
+          const qVal = parsedUrl.searchParams.get(qKey);
+          if (qVal && qVal.includes('.')) {
+            basename = decodeURIComponent(qVal.split(/[\\/]/).pop().trim());
+            break;
+          }
+        }
+        if (!basename) {
+          const pathBase = decodeURIComponent(parsedUrl.pathname.split('/').pop() || '').trim();
+          if (pathBase && pathBase.includes('.')) {
+            basename = pathBase;
+          }
+        }
+      } catch (e) {}
     }
 
     const message = {

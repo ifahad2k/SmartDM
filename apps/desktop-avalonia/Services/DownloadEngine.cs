@@ -1110,7 +1110,7 @@ public class DownloadEngine : IDownloadEngine
                 ".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".ts", ".m4v", ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus"
             };
             string destExt = Path.GetExtension(dl.SavePath);
-            bool isMediaTarget = !string.IsNullOrEmpty(destExt) && mediaExts.Contains(destExt);
+            bool isMediaTarget = !string.IsNullOrEmpty(destExt) && mediaExts.Contains(destExt) && (dl.Category == "Media" || dl.Category == "Audio");
 
             if (!token.IsCancellationRequested && transferSucceeded)
             {

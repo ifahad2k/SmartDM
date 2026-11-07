@@ -95,6 +95,7 @@ public partial class AddDownloadViewModel : ViewModelBase
     private string? _initialCookies;
     private string? _initialVideoUrl;
     private string? _initialAudioUrl;
+    private readonly AppSettingsModel _settings;
 
     public static bool IsGenericOrInvalidFileName(string? name)
     {
@@ -107,6 +108,25 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         // Strip duplicate counter suffix e.g. " (1)", " (2)", " (5)"
         lower = System.Text.RegularExpressions.Regex.Replace(lower, @"\s*\(\d+\)$", "").Trim();
+
+        string ext = Path.GetExtension(clean).ToLowerInvariant();
+        var nonGenericExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".msi", ".apk", ".dmg", ".pkg", ".deb", ".rpm", ".appx", ".msix", ".appimage",
+            ".torrent",
+            ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz", ".zst", ".iso", ".img", ".vmdk", ".qcow2", ".cab",
+            ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".epub", ".mobi", ".odt", ".ods", ".odp", ".txt", ".csv", ".tsv", ".rtf",
+            ".mp3", ".flac", ".wav", ".aac", ".ogg", ".opus", ".m4a", ".wma",
+            ".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv", ".flv", ".ts", ".m4v", ".3gp",
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico", ".bmp", ".avif", ".tiff",
+            ".json", ".xml", ".html", ".css", ".js", ".py", ".sh", ".yaml", ".yml", ".sql", ".wasm", ".whl", ".jar", ".gem", ".patch",
+            ".gguf", ".safetensors", ".onnx", ".pt", ".pth"
+        };
+
+        if (!string.IsNullOrEmpty(ext) && nonGenericExtensions.Contains(ext))
+        {
+            return string.IsNullOrEmpty(lower);
+        }
 
         if (lower == "youtube" ||
             lower == "youtube music" ||
@@ -207,7 +227,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
         else if (value.Ext.Equals("jpg", StringComparison.OrdinalIgnoreCase) || value.Ext.Equals("png", StringComparison.OrdinalIgnoreCase) || value.Ext.Equals("webp", StringComparison.OrdinalIgnoreCase))
         {
-            Category = "Images";
+            Category = "Media";
         }
         else
         {
@@ -241,6 +261,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         AppSettingsModel? settings = null)
     {
         settings ??= new AppSettingsModel();
+        _settings = settings;
         ParallelThreads = Math.Clamp(settings.MaxParallelSegments, 1, 32);
         _probeService = probeService ?? new HttpProbeService(settings: settings);
         _catalogService = catalogService ?? new FileCatalogService();
@@ -269,20 +290,40 @@ public partial class AddDownloadViewModel : ViewModelBase
             }
         }
 
+        bool hasRealFormats = initialFormats != null && initialFormats.Count > 0 &&
+            initialFormats.Any(f => Uri.TryCreate(f.DirectUrl, UriKind.Absolute, out var address) && address.Scheme is "http" or "https");
+
+        string? inferredUrlName = !string.IsNullOrWhiteSpace(initialUrl) ? _probeService.InferFileNameFromUrl(initialUrl) : null;
+
         if (!IsGenericOrInvalidFileName(initialFileName))
         {
             FileName = _probeService.SanitizeFileName(initialFileName!.Trim());
         }
+        else if (!string.IsNullOrWhiteSpace(inferredUrlName) && !IsGenericOrInvalidFileName(inferredUrlName))
+        {
+            FileName = inferredUrlName;
+        }
         else if (!string.IsNullOrWhiteSpace(_authoritativeTitle) && !IsGenericOrInvalidFileName(_authoritativeTitle))
         {
             string safeTitle = string.Join("_", _authoritativeTitle.Split(Path.GetInvalidFileNameChars())).Trim();
-            string ext = (!string.IsNullOrWhiteSpace(initialFormatId) && initialFormatId.Contains("bestaudio")) ? "mp3" : "mp4";
-            FileName = $"{safeTitle}.{ext}";
+            if (hasRealFormats || (!string.IsNullOrWhiteSpace(initialFormatId) && (initialFormatId.Contains("bestaudio") || initialFormatId.Contains("video"))))
+            {
+                string ext = (!string.IsNullOrWhiteSpace(initialFormatId) && initialFormatId.Contains("bestaudio")) ? "mp3" : "mp4";
+                FileName = $"{safeTitle}.{ext}";
+            }
+            else
+            {
+                FileName = safeTitle;
+            }
         }
-        else
+        else if (hasRealFormats)
         {
             string ext = (!string.IsNullOrWhiteSpace(initialFormatId) && initialFormatId.Contains("bestaudio")) ? "mp3" : "mp4";
             FileName = $"video.{ext}";
+        }
+        else
+        {
+            FileName = string.Empty;
         }
 
         if (!string.IsNullOrWhiteSpace(FileName))
@@ -290,9 +331,6 @@ public partial class AddDownloadViewModel : ViewModelBase
             SavePath = Path.Combine(downloadsDir, FileName);
             UpdateDriveSpace(SavePath);
         }
-
-        bool hasRealFormats = initialFormats != null && initialFormats.Count > 0 &&
-            initialFormats.Any(f => Uri.TryCreate(f.DirectUrl, UriKind.Absolute, out var address) && address.Scheme is "http" or "https");
 
         if (hasRealFormats && initialFormats != null)
         {
@@ -635,15 +673,18 @@ public partial class AddDownloadViewModel : ViewModelBase
             if (res.IsSuccess)
             {
                 IsProbeSuccessful = true;
-                if (string.IsNullOrWhiteSpace(FileName) ||
+                bool shouldReplaceFileName = string.IsNullOrWhiteSpace(FileName) ||
+                    FileName.Equals("video.mp4", StringComparison.OrdinalIgnoreCase) ||
+                    FileName.Equals("video.mp3", StringComparison.OrdinalIgnoreCase) ||
                     FileName.Equals("watch", StringComparison.OrdinalIgnoreCase) ||
                     FileName.Equals("download", StringComparison.OrdinalIgnoreCase) ||
-                    !FileName.Contains("."))
+                    (FileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && res.SuggestedCategory != "Media") ||
+                    !FileName.Contains(".") ||
+                    IsGenericOrInvalidFileName(FileName);
+
+                if (shouldReplaceFileName && !string.IsNullOrWhiteSpace(res.FileName))
                 {
-                    if (!string.IsNullOrWhiteSpace(res.FileName))
-                    {
-                        FileName = res.FileName;
-                    }
+                    FileName = res.FileName;
                 }
                 _probedTotalBytes = res.TotalBytes;
                 _probedAcceptsRanges = res.AcceptsRanges;
@@ -665,8 +706,11 @@ public partial class AddDownloadViewModel : ViewModelBase
 
                 if (!string.IsNullOrWhiteSpace(FileName))
                 {
-                    string defaultDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                    string defaultDir = !string.IsNullOrWhiteSpace(_settings.DefaultDownloadDirectory)
+                        ? _settings.DefaultDownloadDirectory
+                        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
                     SavePath = Path.Combine(defaultDir, FileName);
+                    UpdateDriveSpace(SavePath);
                 }
             }
             else
@@ -721,7 +765,7 @@ public partial class AddDownloadViewModel : ViewModelBase
             {
                 string pathOnly = parsedUri.AbsolutePath;
                 string ext = Path.GetExtension(pathOnly);
-                if (!string.IsNullOrEmpty(ext) && ext.Length <= 5)
+                if (!string.IsNullOrEmpty(ext) && ext.Length <= 16)
                 {
                     inferredExt = ext;
                 }
@@ -746,10 +790,14 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         string icon = Category switch
         {
-            "ISO" => "/Assets/Icons/disc-blue.png",
-            "ZIP" or "Archives" => "/Assets/Icons/archive-gray.png",
-            "Media" => "/Assets/Icons/image-green.png",
+            "Torrents" => "/Assets/Icons/link-blue.png",
             "Software" => "/Assets/Icons/box-blue.png",
+            "Archives" or "ISO" or "ZIP" => "/Assets/Icons/archive-gray.png",
+            "Documents" => "/Assets/Icons/file-gray.png",
+            "Audio" => "/Assets/Icons/pulse-blue.png",
+            "Code" => "/Assets/Icons/code-gray.png",
+            "AI" => "/Assets/Icons/matrix-green.png",
+            "Media" => "/Assets/Icons/image-green.png",
             _ => "/Assets/Icons/disc-blue.png"
         };
 

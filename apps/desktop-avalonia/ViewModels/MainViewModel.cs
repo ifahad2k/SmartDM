@@ -271,14 +271,14 @@ public partial class MainViewModel : ViewModelBase
     {
         Categories.Clear();
         AddCat("All", "All Categories", "folder-gray.png", _allMasterDownloads.Count(d => !d.IsStorage), true);
-        AddCat("Archives", "Archives & Disk Images", "archive-gray.png", _allMasterDownloads.Count(d => d.Category == "ISO" || d.Category == "ZIP"));
-        AddCat("Media", "Media & Video Streams", "media-gray.png", _allMasterDownloads.Count(d => d.Category == "PNG" || d.Category == "MP4"));
-        AddCat("Audio", "Music & Soundtracks", "pulse-blue.png", 0);
-        AddCat("Software", "Software & Installers", "box-blue.png", _allMasterDownloads.Count(d => d.Category == "DMG" || d.Category == "EXE"));
-        AddCat("Code", "Packages & Source Repos", "code-gray.png", 0);
-        AddCat("Documents", "Documents & E-Books", "file-gray.png", 0);
-        AddCat("AI", "AI Weights & Datasets", "matrix-green.png", _allMasterDownloads.Count(d => d.Title.Contains("LLM") || d.Category == "ZIP"));
-        AddCat("Torrents", "Torrents & Magnet Links", "link-blue.png", 0);
+        AddCat("Archives", "Archives & Disk Images", "archive-gray.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Archives")));
+        AddCat("Media", "Media & Video Streams", "media-gray.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Media")));
+        AddCat("Audio", "Music & Soundtracks", "pulse-blue.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Audio")));
+        AddCat("Software", "Software & Installers", "box-blue.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Software")));
+        AddCat("Code", "Packages & Source Repos", "code-gray.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Code")));
+        AddCat("Documents", "Documents & E-Books", "file-gray.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Documents")));
+        AddCat("AI", "AI Weights & Datasets", "matrix-green.png", _allMasterDownloads.Count(d => MatchesCategory(d, "AI")));
+        AddCat("Torrents", "Torrents & Magnet Links", "link-blue.png", _allMasterDownloads.Count(d => MatchesCategory(d, "Torrents")));
         AddCat("Quarantine", "Quarantined Threats", "danger-red.png", _allMasterDownloads.Count(d => d.Status == DownloadStatus.Quarantined));
     }
 
@@ -839,6 +839,16 @@ public partial class MainViewModel : ViewModelBase
         ActiveCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Active && !d.IsStorage);
         CompletedCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Completed && !d.IsStorage);
         ScheduledCount = _allMasterDownloads.Count(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Failed) && !d.IsStorage);
+
+        foreach (var c in Categories)
+        {
+            c.Count = c.Id switch
+            {
+                "All" => AllCount,
+                "Quarantine" => _allMasterDownloads.Count(d => d.Status == DownloadStatus.Quarantined),
+                _ => _allMasterDownloads.Count(d => MatchesCategory(d, c.Id))
+            };
+        }
     }
 
     public DownloadModel? FindActiveDownloadByUrl(string? url)
@@ -1071,16 +1081,50 @@ public partial class MainViewModel : ViewModelBase
     private bool MatchesCategory(DownloadModel d, string cat)
     {
         if (d.IsStorage) return cat == "All";
+        string category = d.Category?.Trim() ?? string.Empty;
+        string ext = Path.GetExtension(d.SavePath ?? d.Title ?? string.Empty).ToLowerInvariant();
+
         return cat switch
         {
-            "Archives" => d.Category == "ISO" || d.Category == "ZIP",
-            "Media" => d.Category == "PNG" || d.Category == "MP4" || d.Title.EndsWith(".png") || d.Title.EndsWith(".mkv"),
-            "Audio" => d.Category == "MP3" || d.Category == "FLAC" || d.Title.EndsWith(".mp3"),
-            "Software" => d.Category == "DMG" || d.Category == "EXE" || d.Title.EndsWith(".dmg") || d.Title.EndsWith(".exe"),
-            "Code" => d.Category == "GIT" || d.Category == "JAR" || d.Title.EndsWith(".tar.gz"),
-            "Documents" => d.Category == "PDF" || d.Category == "DOC",
-            "AI" => d.Title.Contains("LLM") || d.Category == "ZIP" || d.Title.EndsWith(".gguf"),
-            "Torrents" => d.Category == "TORRENT",
+            "Archives" => category.Equals("Archives", StringComparison.OrdinalIgnoreCase) ||
+                          category.Equals("ISO", StringComparison.OrdinalIgnoreCase) ||
+                          category.Equals("ZIP", StringComparison.OrdinalIgnoreCase) ||
+                          ext is ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".tgz" or ".bz2" or ".tbz2" or ".xz" or ".txz" or ".zst" or ".iso" or ".img" or ".vmdk" or ".qcow2" or ".cab",
+
+            "Media" => category.Equals("Media", StringComparison.OrdinalIgnoreCase) ||
+                       category.Equals("MP4", StringComparison.OrdinalIgnoreCase) ||
+                       category.Equals("PNG", StringComparison.OrdinalIgnoreCase) ||
+                       ext is ".mp4" or ".mkv" or ".webm" or ".avi" or ".mov" or ".wmv" or ".flv" or ".ts" or ".m4v" or ".3gp" or
+                              ".png" or ".jpg" or ".jpeg" or ".webp" or ".gif" or ".svg" or ".ico" or ".bmp" or ".avif" or ".tiff",
+
+            "Audio" => category.Equals("Audio", StringComparison.OrdinalIgnoreCase) ||
+                       category.Equals("MP3", StringComparison.OrdinalIgnoreCase) ||
+                       category.Equals("FLAC", StringComparison.OrdinalIgnoreCase) ||
+                       ext is ".mp3" or ".flac" or ".wav" or ".aac" or ".ogg" or ".opus" or ".m4a" or ".wma",
+
+            "Software" => category.Equals("Software", StringComparison.OrdinalIgnoreCase) ||
+                          category.Equals("EXE", StringComparison.OrdinalIgnoreCase) ||
+                          category.Equals("DMG", StringComparison.OrdinalIgnoreCase) ||
+                          ext is ".exe" or ".msi" or ".apk" or ".dmg" or ".pkg" or ".deb" or ".rpm" or ".appx" or ".msix" or ".appimage",
+
+            "Code" => category.Equals("Code", StringComparison.OrdinalIgnoreCase) ||
+                      category.Equals("GIT", StringComparison.OrdinalIgnoreCase) ||
+                      category.Equals("JAR", StringComparison.OrdinalIgnoreCase) ||
+                      ext is ".whl" or ".jar" or ".gem" or ".patch" or ".json" or ".xml" or ".html" or ".css" or ".js" or ".py" or ".sh" or ".yaml" or ".yml" or ".sql" or ".wasm",
+
+            "Documents" => category.Equals("Documents", StringComparison.OrdinalIgnoreCase) ||
+                           category.Equals("PDF", StringComparison.OrdinalIgnoreCase) ||
+                           category.Equals("DOC", StringComparison.OrdinalIgnoreCase) ||
+                           ext is ".pdf" or ".doc" or ".docx" or ".xlsx" or ".xls" or ".pptx" or ".ppt" or ".txt" or ".csv" or ".tsv" or ".rtf" or ".epub" or ".mobi" or ".odt" or ".ods" or ".odp",
+
+            "AI" => category.Equals("AI", StringComparison.OrdinalIgnoreCase) ||
+                    ext is ".gguf" or ".safetensors" or ".onnx" or ".pt" or ".pth" ||
+                    (d.Title != null && d.Title.Contains("LLM", StringComparison.OrdinalIgnoreCase)),
+
+            "Torrents" => category.Equals("Torrents", StringComparison.OrdinalIgnoreCase) ||
+                          category.Equals("TORRENT", StringComparison.OrdinalIgnoreCase) ||
+                          ext is ".torrent",
+
             "Quarantine" => d.Status == DownloadStatus.Quarantined,
             _ => true
         };
@@ -1118,11 +1162,11 @@ public partial class MainViewModel : ViewModelBase
         }
         else if (CurrentChipFilter == "Video")
         {
-            query = query.Where(d => d.Category == "PNG" || d.Category == "MP4");
+            query = query.Where(d => MatchesCategory(d, "Media"));
         }
         else if (CurrentChipFilter == "Archives")
         {
-            query = query.Where(d => d.Category == "ISO" || d.Category == "ZIP");
+            query = query.Where(d => MatchesCategory(d, "Archives"));
         }
         else if (CurrentChipFilter == "Blocked")
         {

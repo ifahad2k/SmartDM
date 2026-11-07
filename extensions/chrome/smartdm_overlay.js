@@ -182,15 +182,30 @@
             let hrefStr = el.href || el.getAttribute('href') || '';
             if (hrefStr && typeof hrefStr === 'string') {
               const urlLower = hrefStr.toLowerCase();
-              const isFileExt = urlLower.match(/\.(zip|rar|7z|exe|msi|iso|bin|mp4|mkv|avi|mp3|flac|wav|pdf|epub|mobi|apk|tar|gz|bz2)(\?.*)?$/i);
+              const isFileExt = urlLower.match(/\.(zip|rar|7z|tar|gz|bz2|xz|zst|iso|img|cab|exe|msi|apk|dmg|pkg|deb|rpm|appx|msix|appimage|torrent|pdf|epub|mobi|docx?|xlsx?|pptx?|txt|csv|tsv|rtf|odt|ods|odp|mp4|mkv|webm|avi|mov|wmv|flv|ts|mp3|flac|wav|aac|ogg|opus|m4a|wma|json|xml|whl|jar)(\?.*)?$/i);
+              const downloadAttrVal = el.getAttribute ? el.getAttribute('download') : null;
               const isDownloadAttr = el.hasAttribute && el.hasAttribute('download');
               
               if ((isFileExt || isDownloadAttr) && urlLower.startsWith('http')) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                let basename = '';
-                try { basename = new URL(hrefStr).pathname.split('/').pop(); } catch(err) {}
+                let basename = (downloadAttrVal && typeof downloadAttrVal === 'string') ? downloadAttrVal.trim() : '';
+                if (!basename) {
+                  try {
+                    const parsedUrl = new URL(hrefStr);
+                    for (const qKey of ['filename', 'file', 'name', 'fn', 'path', 'attachment']) {
+                      const qVal = parsedUrl.searchParams.get(qKey);
+                      if (qVal && qVal.includes('.')) {
+                        basename = decodeURIComponent(qVal.split(/[\\/]/).pop().trim());
+                        break;
+                      }
+                    }
+                    if (!basename) {
+                      basename = decodeURIComponent(parsedUrl.pathname.split('/').pop() || '');
+                    }
+                  } catch(err) {}
+                }
                 
                 runtime.sendMessage({
                   type: 'ADD_DOWNLOAD',

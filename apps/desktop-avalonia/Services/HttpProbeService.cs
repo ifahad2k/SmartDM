@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -8,6 +9,7 @@ using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 using SmartDm.Desktop.Avalonia.Models;
 
 namespace SmartDm.Desktop.Avalonia.Services;
@@ -58,7 +60,6 @@ public class HttpProbeService : IHttpProbeService
             // 1. Try HEAD request first
             using var headReq = HttpTransferRequest.Create(HttpMethod.Head, uri);
             headReq.Headers.AcceptEncoding.ParseAdd("identity");
-
 
             try
             {
@@ -137,30 +138,16 @@ public class HttpProbeService : IHttpProbeService
             result.LastModified = response.Content.Headers.LastModified?.ToString("R");
 
             // Filename extraction
-            string? extractedName = null;
-            if (response.Content.Headers.ContentDisposition != null)
-            {
-                extractedName = response.Content.Headers.ContentDisposition.FileNameStar
-                             ?? response.Content.Headers.ContentDisposition.FileName;
-            }
+            string? extractedName = ExtractFileNameFromContentDisposition(response);
 
-            if (!string.IsNullOrWhiteSpace(extractedName))
-            {
-                extractedName = extractedName.Trim('\"', '\'');
-            }
-
-            // Fallback 1: Extract from URL path basename if Content-Disposition is absent or generic
+            // Fallback 1: Extract from URL path basename or query parameters if Content-Disposition is absent or generic
             if (string.IsNullOrWhiteSpace(extractedName) || IsGenericName(extractedName))
             {
-                try
+                string? urlExtracted = ExtractFileNameFromUrl(uri);
+                if (!string.IsNullOrWhiteSpace(urlExtracted) && !IsGenericName(urlExtracted))
                 {
-                    string pathBaseName = Path.GetFileName(uri.AbsolutePath);
-                    if (!string.IsNullOrWhiteSpace(pathBaseName) && !IsGenericName(pathBaseName))
-                    {
-                        extractedName = pathBaseName;
-                    }
+                    extractedName = urlExtracted;
                 }
-                catch { }
             }
 
             // Fallback 2: For HTML/video site pages, attempt HTML title extraction
@@ -180,7 +167,14 @@ public class HttpProbeService : IHttpProbeService
                             if (!string.IsNullOrWhiteSpace(pageTitle))
                             {
                                 string ext = GetExtensionFromMimeType(result.MimeType);
-                                if (ext == ".bin" || ext == ".html") ext = ".mp4";
+                                if (uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("tiktok.com"))
+                                {
+                                    if (ext == ".bin" || ext == ".html") ext = ".mp4";
+                                }
+                                else if (ext == ".bin")
+                                {
+                                    ext = ".html";
+                                }
                                 extractedName = pageTitle + ext;
                             }
                         }
@@ -224,6 +218,112 @@ public class HttpProbeService : IHttpProbeService
         return result;
     }
 
+    public static string? ExtractFileNameFromContentDisposition(HttpResponseMessage response)
+    {
+        string? extracted = null;
+        try
+        {
+            if (response.Content.Headers.ContentDisposition != null)
+            {
+                extracted = response.Content.Headers.ContentDisposition.FileNameStar
+                         ?? response.Content.Headers.ContentDisposition.FileName;
+            }
+        }
+        catch { }
+
+        if (string.IsNullOrWhiteSpace(extracted))
+        {
+            // Fallback to raw header value parsing
+            if (response.Content.Headers.TryGetValues("Content-Disposition", out var values))
+            {
+                string raw = string.Join(";", values);
+                // RFC 5987 filename*=UTF-8''filename.ext
+                var matchStar = Regex.Match(raw, @"filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;]+)", RegexOptions.IgnoreCase);
+                if (matchStar.Success)
+                {
+                    extracted = Uri.UnescapeDataString(matchStar.Groups[1].Value.Trim().Trim('\"', '\''));
+                }
+                else
+                {
+                    // filename="quoted" or filename=unquoted
+                    var matchFn = Regex.Match(raw, @"filename\s*=\s*(?:""([^""]+)""|'([^']+)'|([^;]+))", RegexOptions.IgnoreCase);
+                    if (matchFn.Success)
+                    {
+                        extracted = (matchFn.Groups[1].Success ? matchFn.Groups[1].Value
+                                   : matchFn.Groups[2].Success ? matchFn.Groups[2].Value
+                                   : matchFn.Groups[3].Value).Trim();
+                    }
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extracted))
+        {
+            extracted = extracted.Trim('\"', '\'').Trim();
+            try { extracted = Uri.UnescapeDataString(extracted); } catch { }
+        }
+
+        return string.IsNullOrWhiteSpace(extracted) ? null : extracted;
+    }
+
+    public static string? ExtractFileNameFromUrl(Uri uri)
+    {
+        if (uri == null) return null;
+
+        // 1. Check query parameters e.g. ?filename=setup.exe or ?file=installer.msi or ?name=sintel.torrent
+        if (!string.IsNullOrWhiteSpace(uri.Query))
+        {
+            try
+            {
+                var queryParams = HttpUtility.ParseQueryString(uri.Query);
+                foreach (string key in new[] { "filename", "file", "name", "fn", "path", "attachment" })
+                {
+                    string? val = queryParams[key];
+                    if (!string.IsNullOrWhiteSpace(val))
+                    {
+                        string candidate = Path.GetFileName(val.Trim().Trim('\"', '\''));
+                        if (!string.IsNullOrWhiteSpace(candidate) && !IsGenericName(candidate) && Path.HasExtension(candidate))
+                        {
+                            try { candidate = Uri.UnescapeDataString(candidate); } catch { }
+                            return candidate;
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 2. Basename of AbsolutePath
+        try
+        {
+            string absPath = uri.AbsolutePath;
+            string pathBaseName = Path.GetFileName(absPath);
+            if (!string.IsNullOrWhiteSpace(pathBaseName) && !IsGenericName(pathBaseName))
+            {
+                try { pathBaseName = Uri.UnescapeDataString(pathBaseName); } catch { }
+                return pathBaseName;
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
+    public string? InferFileNameFromUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        string? candidate = ExtractFileNameFromUrl(uri);
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            return SanitizeFileName(candidate);
+        }
+        return null;
+    }
+
     public string SanitizeFileName(string rawFileName)
     {
         if (string.IsNullOrWhiteSpace(rawFileName)) return "download.dat";
@@ -251,22 +351,25 @@ public class HttpProbeService : IHttpProbeService
 
         return ext switch
         {
-            ".iso" or ".img" or ".vmdk" or ".qcow2" => "ISO",
-            ".zip" or ".tar" or ".gz" or ".bz2" or ".xz" or ".7z" or ".rar" => "ZIP",
-            ".mp4" or ".mkv" or ".avi" or ".mov" or ".webm" or ".png" or ".jpg" or ".jpeg" or ".webp" => "Media",
-            ".mp3" or ".flac" or ".wav" or ".aac" or ".ogg" or ".m4a" => "Audio",
-            ".exe" or ".msi" or ".dmg" or ".pkg" or ".deb" or ".rpm" or ".AppImage" => "Software",
-            ".whl" or ".jar" or ".gem" or ".patch" => "Code",
-            ".pdf" or ".doc" or ".docx" or ".epub" or ".xlsx" or ".pptx" => "Documents",
-            ".gguf" or ".safetensors" or ".bin" or ".onnx" or ".pt" => "AI",
+            ".exe" or ".msi" or ".apk" or ".dmg" or ".pkg" or ".deb" or ".rpm" or ".appx" or ".msix" or ".appimage" => "Software",
             ".torrent" => "Torrents",
+            ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".tgz" or ".bz2" or ".tbz2" or ".xz" or ".txz" or ".zst" or ".iso" or ".img" or ".vmdk" or ".qcow2" or ".cab" => "Archives",
+            ".pdf" or ".doc" or ".docx" or ".epub" or ".mobi" or ".xlsx" or ".xls" or ".pptx" or ".ppt" or ".txt" or ".csv" or ".tsv" or ".rtf" or ".odt" or ".ods" or ".odp" => "Documents",
+            ".mp3" or ".flac" or ".wav" or ".aac" or ".ogg" or ".opus" or ".m4a" or ".wma" => "Audio",
+            ".mp4" or ".mkv" or ".avi" or ".mov" or ".webm" or ".wmv" or ".flv" or ".ts" or ".m4v" or ".3gp" or
+            ".png" or ".jpg" or ".jpeg" or ".webp" or ".gif" or ".svg" or ".ico" or ".bmp" or ".avif" or ".tiff" => "Media",
+            ".whl" or ".jar" or ".gem" or ".patch" or ".json" or ".xml" or ".html" or ".css" or ".js" or ".py" or ".sh" or ".yaml" or ".yml" or ".sql" or ".wasm" => "Code",
+            ".gguf" or ".safetensors" or ".bin" or ".onnx" or ".pt" or ".pth" => "AI",
             _ => mimeType.ToLowerInvariant() switch
             {
                 var m when m.StartsWith("video/") => "Media",
                 var m when m.StartsWith("audio/") => "Audio",
                 var m when m.StartsWith("image/") => "Media",
-                var m when m.Contains("zip") || m.Contains("compressed") || m.Contains("tar") => "Archives",
-                var m when m.Contains("executable") || m.Contains("x-msdownload") => "Software",
+                var m when m.Contains("bittorrent") || m.Contains("torrent") => "Torrents",
+                var m when m.Contains("zip") || m.Contains("compressed") || m.Contains("tar") || m.Contains("archive") || m.Contains("bzip2") || m.Contains("gzip") || m.Contains("iso9660") => "Archives",
+                var m when m.Contains("executable") || m.Contains("x-msdownload") || m.Contains("x-msi") || m.Contains("debian") || m.Contains("rpm") || m.Contains("android.package") || m.Contains("apple-diskimage") => "Software",
+                var m when m.Contains("pdf") || m.Contains("document") || m.Contains("spreadsheet") || m.Contains("presentation") || m.Contains("wordprocessing") => "Documents",
+                var m when m.Contains("javascript") || m.Contains("json") || m.Contains("xml") || m.Contains("python") || m.Contains("yaml") || m.Contains("shellscript") => "Code",
                 _ => "Other"
             }
         };
@@ -275,8 +378,29 @@ public class HttpProbeService : IHttpProbeService
     public static bool IsGenericName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return true;
-        string clean = Path.GetFileNameWithoutExtension(name).Trim().ToLowerInvariant();
-        return clean is "" or "watch" or "video" or "videoplayback" or "index" or "index.html" or "download" or "downloads" or "stream" or "media" or "bin";
+        string clean = name.Trim().Trim('\"', '\'');
+        string ext = Path.GetExtension(clean).ToLowerInvariant();
+        string stem = Path.GetFileNameWithoutExtension(clean).Trim().ToLowerInvariant();
+
+        var nonGenericExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".msi", ".apk", ".dmg", ".pkg", ".deb", ".rpm", ".appx", ".msix", ".appimage",
+            ".torrent",
+            ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz", ".zst", ".iso", ".img", ".vmdk", ".qcow2", ".cab",
+            ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".epub", ".mobi", ".odt", ".ods", ".odp", ".txt", ".csv", ".tsv", ".rtf",
+            ".mp3", ".flac", ".wav", ".aac", ".ogg", ".opus", ".m4a", ".wma",
+            ".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv", ".flv", ".ts", ".m4v", ".3gp",
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico", ".bmp", ".avif", ".tiff",
+            ".json", ".xml", ".html", ".css", ".js", ".py", ".sh", ".yaml", ".yml", ".sql", ".wasm", ".whl", ".jar", ".gem", ".patch",
+            ".gguf", ".safetensors", ".onnx", ".pt", ".pth"
+        };
+
+        if (!string.IsNullOrEmpty(ext) && nonGenericExtensions.Contains(ext))
+        {
+            return string.IsNullOrEmpty(stem);
+        }
+
+        return stem is "" or "watch" or "video" or "videoplayback" or "index" or "download" or "downloads" or "stream" or "media" or "bin" or "file";
     }
 
     public static string GetExtensionFromMimeType(string mimeType)
@@ -285,29 +409,98 @@ public class HttpProbeService : IHttpProbeService
         string lower = mimeType.Split(';')[0].Trim().ToLowerInvariant();
         return lower switch
         {
-            "application/pdf" => ".pdf",
+            // Executables & Installers
+            "application/vnd.microsoft.portable-executable" or "application/x-msdownload" or "application/x-msdos-program" or "application/x-executable" or "application/x-dosexec" => ".exe",
+            "application/x-msi" or "application/x-ms-installer" => ".msi",
+            "application/vnd.android.package-archive" => ".apk",
+            "application/x-apple-diskimage" => ".dmg",
+            "application/x-pkg" or "application/vnd.apple.installer+xml" => ".pkg",
+            "application/x-debian-package" or "application/vnd.debian.binary-package" => ".deb",
+            "application/x-rpm" or "application/x-redhat-package-manager" => ".rpm",
+            "application/appx" or "application/x-appx" => ".appx",
+            "application/msix" or "application/x-msix" => ".msix",
+            "application/vnd.appimage" or "application/x-appimage" => ".appimage",
+
+            // Torrents
+            "application/x-bittorrent" or "application/x-torrent" => ".torrent",
+
+            // Archives & Disk Images
             "application/zip" or "application/x-zip-compressed" => ".zip",
             "application/x-tar" => ".tar",
             "application/gzip" or "application/x-gzip" => ".gz",
             "application/x-7z-compressed" => ".7z",
-            "application/x-rar-compressed" or "application/vnd.rar" => ".rar",
-            "application/json" => ".json",
-            "application/xml" or "text/xml" => ".xml",
+            "application/x-rar-compressed" or "application/vnd.rar" or "application/x-rar" => ".rar",
+            "application/x-bzip2" or "application/x-bz2" => ".bz2",
+            "application/x-xz" => ".xz",
+            "application/zstd" => ".zst",
+            "application/x-iso9660-image" => ".iso",
+            "application/vnd.ms-cab-compressed" => ".cab",
+
+            // Documents
+            "application/pdf" => ".pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+            "application/msword" => ".doc",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => ".xlsx",
+            "application/vnd.ms-excel" => ".xls",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => ".pptx",
+            "application/vnd.ms-powerpoint" => ".ppt",
             "text/plain" => ".txt",
             "text/csv" => ".csv",
-            "text/html" => ".html",
+            "text/tab-separated-values" => ".tsv",
+            "application/rtf" or "text/rtf" => ".rtf",
+            "application/epub+zip" => ".epub",
+            "application/x-mobipocket-ebook" => ".mobi",
+            "application/vnd.oasis.opendocument.text" => ".odt",
+            "application/vnd.oasis.opendocument.spreadsheet" => ".ods",
+            "application/vnd.oasis.opendocument.presentation" => ".odp",
+
+            // Media - Video
+            "video/mp4" => ".mp4",
+            "video/x-matroska" => ".mkv",
+            "video/webm" => ".webm",
+            "video/x-msvideo" => ".avi",
+            "video/quicktime" => ".mov",
+            "video/x-ms-wmv" => ".wmv",
+            "video/x-flv" => ".flv",
+            "video/mp2t" => ".ts",
+            "video/x-m4v" => ".m4v",
+            "video/3gpp" => ".3gp",
+
+            // Media - Audio
+            "audio/mpeg" => ".mp3",
+            "audio/flac" => ".flac",
+            "audio/wav" or "audio/x-wav" => ".wav",
+            "audio/aac" => ".aac",
+            "audio/ogg" or "audio/vorbis" => ".ogg",
+            "audio/opus" => ".opus",
+            "audio/mp4" or "audio/m4a" or "audio/x-m4a" => ".m4a",
+            "audio/x-ms-wma" => ".wma",
+
+            // Media - Image
             "image/jpeg" => ".jpg",
             "image/png" => ".png",
             "image/gif" => ".gif",
             "image/webp" => ".webp",
-            "video/mp4" => ".mp4",
-            "video/x-matroska" => ".mkv",
-            "video/webm" => ".webm",
-            "audio/mpeg" => ".mp3",
-            "audio/flac" => ".flac",
-            "audio/wav" or "audio/x-wav" => ".wav",
-            "audio/ogg" => ".ogg",
-            "audio/mp4" or "audio/m4a" => ".m4a",
+            "image/svg+xml" => ".svg",
+            "image/x-icon" or "image/vnd.microsoft.icon" => ".ico",
+            "image/bmp" or "image/x-ms-bmp" => ".bmp",
+            "image/avif" => ".avif",
+            "image/tiff" => ".tiff",
+
+            // Developer / Code
+            "application/json" => ".json",
+            "application/xml" or "text/xml" => ".xml",
+            "text/html" => ".html",
+            "text/css" => ".css",
+            "text/javascript" or "application/javascript" or "application/x-javascript" => ".js",
+            "text/x-python" or "application/x-python-code" => ".py",
+            "text/x-shellscript" or "application/x-sh" => ".sh",
+            "text/yaml" or "text/x-yaml" or "application/x-yaml" => ".yaml",
+            "application/sql" => ".sql",
+            "application/wasm" => ".wasm",
+            "application/java-archive" => ".jar",
+            "application/x-wheel+zip" => ".whl",
+
             _ => ".bin"
         };
     }
