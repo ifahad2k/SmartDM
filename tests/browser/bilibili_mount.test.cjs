@@ -414,4 +414,368 @@ for (const browser of ['chrome', 'firefox']) {
     assert.equal(detector.isLegitimateThumbnailCard(mockCard, validLink), true, 'Bilibili video play link must be legitimate');
     assert.equal(detector.isLegitimateThumbnailCard(mockCard, invalidLink), false, 'Bilibili user link must NOT be accepted as video card');
   });
+
+  test(`${browser} SmartDmUtils.extractResolutionNumber accurately maps Bilibili stream IDs and qn parameters`, () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const context = vm.createContext({
+      URL,
+      window: { location: { hostname: 'www.bilibili.tv', origin: 'https://www.bilibili.tv' } }
+    });
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;`, context);
+    const utils = context.SmartDmUtils;
+
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30032.m4s'), 480);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30080.m4s'), 1080);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30064.m4s'), 720);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30016.m4s'), 360);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30120.m4s'), 2160);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30006.m4s'), 240);
+
+    assert.equal(utils.extractResolutionNumber('https://api.bilibili.tv/s/player/online/playurl?ep_id=2094139&qn=80'), 1080);
+    assert.equal(utils.extractResolutionNumber('https://api.bilibili.tv/s/player/online/playurl?ep_id=2094139&qn=32'), 480);
+    assert.equal(utils.extractResolutionNumber('qn=80'), 1080);
+    assert.equal(utils.extractResolutionNumber('qn=32'), 480);
+  });
+
+  test(`${browser} FormatRegistryEngine parses complete Bilibili DASH ladder pairing best audio track`, () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const engineSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'format_engine.js'), 'utf8');
+    const context = vm.createContext({
+      URL,
+      document: {
+        getElementById() { return null; },
+        getElementsByTagName() { return []; },
+        title: 'Bilibili Anime'
+      },
+      window: {
+        location: {
+          hostname: 'www.bilibili.tv',
+          origin: 'https://www.bilibili.tv',
+          href: 'https://www.bilibili.tv/en/play/2094139'
+        }
+      }
+    });
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;\n${engineSource}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, context);
+    const engine = context.FormatRegistryEngine;
+
+    const dashManifest = JSON.stringify({
+      code: 0,
+      data: {
+        dash: {
+          duration: 1400,
+          video: [
+            { id: 16, baseUrl: 'https://xy.bilivideo.com/video_360.m4s', bandwidth: 500000, codecs: 'avc1.64001e', height: 360 },
+            { id: 32, baseUrl: 'https://xy.bilivideo.com/video_480.m4s', bandwidth: 1000000, codecs: 'avc1.64001f', height: 480 },
+            { id: 64, baseUrl: 'https://xy.bilivideo.com/video_720.m4s', bandwidth: 2000000, codecs: 'avc1.640028', height: 720 },
+            { id: 80, baseUrl: 'https://xy.bilivideo.com/video_1080.m4s', bandwidth: 4000000, codecs: 'avc1.640032', height: 1080 }
+          ],
+          audio: [
+            { id: 30216, baseUrl: 'https://xy.bilivideo.com/audio_64k.m4s', bandwidth: 64000 },
+            { id: 30280, baseUrl: 'https://xy.bilivideo.com/audio_192k.m4s', bandwidth: 192000 }
+          ]
+        }
+      }
+    });
+
+    const formats = engine.parseBilibiliFormats(dashManifest, 'https://api.bilibili.tv/s/player/online/playurl', 'Anime Episode 1');
+    assert.equal(formats.length, 5, 'Must contain 4 video qualities (1080p, 720p, 480p, 360p) + 1 audio-only track');
+
+    const videoFormats = formats.filter(f => !f.isAudioOnly);
+    assert.equal(videoFormats.length, 4);
+    assert.equal(videoFormats[0].height, 1080);
+    assert.equal(videoFormats[1].height, 720);
+    assert.equal(videoFormats[2].height, 480);
+    assert.equal(videoFormats[3].height, 360);
+
+    videoFormats.forEach(vf => {
+      assert.ok(vf.audioStream, `Format ${vf.height}p must pair an audio stream`);
+      assert.equal(vf.audioStream.audioUrl, 'https://xy.bilivideo.com/audio_192k.m4s', 'Must select highest bandwidth audio stream');
+    });
+
+    const audioFmt = formats.find(f => f.isAudioOnly);
+    assert.ok(audioFmt, 'Must extract standalone audio option');
+    assert.equal(audioFmt.url, 'https://xy.bilivideo.com/audio_192k.m4s');
+  });
+
+  test(`${browser} FormatRegistryEngine.queryBilibiliPlayurlApi fetches higher qualities with credentials:include and fnval=4048`, async () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const engineSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'format_engine.js'), 'utf8');
+
+    let fetchedUrl = null;
+    let fetchedOptions = null;
+
+    const mockFetch = async (url, opts) => {
+      fetchedUrl = url;
+      fetchedOptions = opts;
+      const respData = {
+        code: 0,
+        data: {
+          dash: {
+            video: [
+              { id: 30080, baseUrl: 'https://xy.bilivideo.com/video_1080.m4s', height: 1080 },
+              { id: 30064, baseUrl: 'https://xy.bilivideo.com/video_720.m4s', height: 720 },
+              { id: 30032, baseUrl: 'https://xy.bilivideo.com/video_480.m4s', height: 480 }
+            ],
+            audio: [
+              { id: 30280, baseUrl: 'https://xy.bilivideo.com/audio_192k.m4s', bandwidth: 192000 }
+            ]
+          }
+        }
+      };
+      return {
+        ok: true,
+        text: async () => JSON.stringify(respData)
+      };
+    };
+
+    const context = vm.createContext({
+      URL,
+      URLSearchParams,
+      AbortController,
+      setTimeout,
+      clearTimeout,
+      fetch: mockFetch,
+      document: {
+        getElementById() { return null; },
+        getElementsByTagName() { return []; },
+        title: 'Bilibili Video'
+      },
+      window: {
+        location: {
+          hostname: 'www.bilibili.tv',
+          origin: 'https://www.bilibili.tv',
+          pathname: '/en/play/2094139',
+          href: 'https://www.bilibili.tv/en/play/2094139?bstar_from=bstar-web.anime-tab.for-you.all'
+        }
+      }
+    });
+
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;\n${engineSource}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, context);
+    const engine = context.FormatRegistryEngine;
+
+    const formats = await engine.queryBilibiliPlayurlApi('https://www.bilibili.tv/en/play/2094139');
+    assert.ok(fetchedUrl, 'Must invoke playurl API');
+    assert.ok(fetchedUrl.includes('ep_id=2094139'), 'URL must contain ep_id parsed from pathname');
+    assert.ok(fetchedUrl.includes('fnval=4048'), 'Must request DASH streams via fnval=4048');
+    assert.ok(fetchedUrl.includes('qn=80'), 'Must request high quality via qn=80');
+    assert.equal(fetchedOptions.credentials, 'include', 'Must include credentials to get logged-in/session qualities');
+
+    assert.ok(formats && formats.length >= 3, 'Must return fetched qualities');
+    const heights = formats.filter(f => !f.isAudioOnly).map(f => f.height);
+    assert.deepEqual([...heights], [1080, 720, 480]);
+  });
+
+  test(`${browser} FormatRegistryEngine.buildFallbackFormats preserves multi-quality ladder when active stream binds or changes`, () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const engineSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'format_engine.js'), 'utf8');
+
+    const context = vm.createContext({
+      URL,
+      document: {
+        querySelectorAll() { return []; },
+        querySelector() { return null; },
+        title: 'Bilibili Anime Episode'
+      },
+      window: {
+        location: {
+          hostname: 'www.bilibili.tv',
+          origin: 'https://www.bilibili.tv',
+          pathname: '/en/play/2094139',
+          href: 'https://www.bilibili.tv/en/play/2094139'
+        },
+        top: {},
+        self: {}
+      },
+      chrome: {
+        runtime: {
+          sendMessage(msg, cb) {
+            if (cb) cb({ success: true, media: [] });
+          }
+        }
+      }
+    });
+    context.window.top = context.window;
+    context.window.self = context.window;
+
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;\n${engineSource}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, context);
+    const engine = context.FormatRegistryEngine;
+
+    const cacheKey = context.SmartDmUtils.getMediaCacheKey('https://www.bilibili.tv/en/play/2094139', null);
+    // Seed existing accumulated formats (e.g. 1080p, 720p, 360p previously parsed from playurl API)
+    engine.accumulatedFormatsByCacheKey.set(cacheKey, [
+      { formatId: 'bili_1080p', resolution: '1080p Full HD (MP4)', height: 1080, url: 'https://xy.bilivideo.com/1080.m4s', ext: 'mp4' },
+      { formatId: 'bili_720p', resolution: '720p HD (MP4)', height: 720, url: 'https://xy.bilivideo.com/720.m4s', ext: 'mp4' },
+      { formatId: 'bili_360p', resolution: '360p SD (MP4)', height: 360, url: 'https://xy.bilivideo.com/360.m4s', ext: 'mp4' }
+    ]);
+
+    // Active media player binds to 480p stream
+    const mockMediaEl = {
+      tagName: 'VIDEO',
+      currentSrc: 'blob:https://www.bilibili.tv/uuid-1234',
+      getAttribute(attr) {
+        if (attr === 'data-smartdm-video-url') return 'https://upos-hz-mirrorakam.akamaized.net/video-30032.m4s';
+        if (attr === 'data-smartdm-audio-url') return 'https://upos-hz-mirrorakam.akamaized.net/audio-30280.m4s';
+        if (attr === 'data-smartdm-separate-audio') return '1';
+        return null;
+      }
+    };
+
+    return new Promise((resolve) => {
+      engine.buildFallbackFormats('https://www.bilibili.tv/en/play/2094139', mockMediaEl, (res) => {
+        assert.ok(res.success);
+        const heights = res.formats.filter(f => !f.isAudioOnly).map(f => f.height);
+        assert.ok(heights.includes(1080), 'Must retain 1080p');
+        assert.ok(heights.includes(720), 'Must retain 720p');
+        assert.ok(heights.includes(480), 'Must incorporate bound 480p');
+        assert.ok(heights.includes(360), 'Must retain 360p');
+        assert.deepEqual([...heights], [1080, 720, 480, 360], 'Must be properly sorted descending');
+        resolve();
+      });
+    });
+  });
+
+  test(`${browser} SmartDmUtils.extractResolutionNumber handles short Bilibili filenames and 144p`, () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const context = vm.createContext({
+      URL,
+      window: { location: { hostname: 'www.bilibili.tv', origin: 'https://www.bilibili.tv' } }
+    });
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;`, context);
+    const utils = context.SmartDmUtils;
+
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-32.m4s'), 480);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-64.m4s'), 720);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-80.m4s'), 1080);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-144.m4s'), 144);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30144.m4s'), 144);
+    assert.equal(utils.extractResolutionNumber('https://upos-hz-mirrorakam.akamaized.net/video-30001.m4s'), 144);
+    assert.equal(utils.extractResolutionNumber('qn=144'), 144);
+    assert.equal(utils.extractResolutionNumber('qn=1'), 144);
+  });
+
+  test(`${browser} FormatRegistryEngine.parseBilibiliFormats accurately parses 144p without mapping to 4320p`, () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const engineSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'format_engine.js'), 'utf8');
+    const context = vm.createContext({
+      URL,
+      document: { getElementById() { return null; }, getElementsByTagName() { return []; } },
+      window: { location: { hostname: 'www.bilibili.tv', origin: 'https://www.bilibili.tv', href: 'https://www.bilibili.tv' } }
+    });
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;\n${engineSource}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, context);
+    const engine = context.FormatRegistryEngine;
+
+    const manifestWith144 = JSON.stringify({
+      code: 0,
+      data: {
+        dash: {
+          video: [
+            { id: 80, baseUrl: 'https://xy.bilivideo.com/video_1080.m4s', height: 1080 },
+            { id: 144, baseUrl: 'https://xy.bilivideo.com/video_144.m4s', height: 144 }
+          ],
+          audio: [
+            { id: 30280, baseUrl: 'https://xy.bilivideo.com/audio.m4s', bandwidth: 128000 }
+          ]
+        }
+      }
+    });
+
+    const parsed = engine.parseBilibiliFormats(manifestWith144, 'https://api.bilibili.tv', 'Anime Test');
+    const v144 = parsed.find(f => f.height === 144);
+    assert.ok(v144, 'Must parse 144p stream');
+    assert.equal(v144.height, 144);
+    assert.ok(!parsed.some(f => f.height === 4320), '144p must NEVER be mapped to 4320p 8K');
+  });
+
+  test(`${browser} FormatRegistryEngine.mergeFormatLists preserves unkeyed formats when merged with keyed formats`, () => {
+    const engineSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'format_engine.js'), 'utf8');
+    const context = vm.createContext({
+      URL,
+      SmartDmUtils: { getCanonicalUrl(u) { return u.split('?')[0]; } }
+    });
+    vm.runInContext(`${engineSource}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, context);
+    const engine = context.FormatRegistryEngine;
+
+    const baseList = [
+      { formatId: 'bili_1080p', height: 1080, url: 'https://xy.bilivideo.com/1080.m4s', ext: 'mp4' },
+      { formatId: 'bili_720p', height: 720, url: 'https://xy.bilivideo.com/720.m4s', ext: 'mp4' }
+    ];
+    const incomingList = [
+      { formatId: 'bili_480p', height: 480, url: 'https://xy.bilivideo.com/480.m4s', ext: 'mp4', assetId: 'https://bilibili.tv/play/123?param=val' }
+    ];
+
+    const merged = engine.mergeFormatLists(baseList, incomingList);
+    assert.equal(merged.length, 3, 'Must retain both unkeyed base formats and keyed incoming format');
+    assert.deepEqual([...merged.map(f => f.height)], [1080, 720, 480]);
+  });
+
+  test(`${browser} FormatRegistryEngine.queryBilibiliPlayurlApi resolves ep_id from __NEXT_DATA__ and falls back between endpoints`, async () => {
+    const utilsSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const engineSource = fs.readFileSync(path.resolve('extensions', browser, 'modules', 'format_engine.js'), 'utf8');
+
+    const requestedUrls = [];
+    const mockFetch = async (url, opts) => {
+      requestedUrls.push(url);
+      if (url.includes('/s/player/online/playurl')) {
+        return { ok: false, status: 404, text: async () => '' };
+      }
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          code: 0,
+          data: {
+            dash: {
+              video: [{ id: 80, baseUrl: 'https://xy.bilivideo.com/video_1080.m4s', height: 1080 }],
+              audio: [{ id: 30280, baseUrl: 'https://xy.bilivideo.com/audio.m4s', bandwidth: 128000 }]
+            }
+          }
+        })
+      };
+    };
+
+    const nextDataObj = {
+      props: {
+        pageProps: {
+          videoInfo: {
+            ep_id: 998877,
+            title: 'Anime Ep 1'
+          }
+        }
+      }
+    };
+
+    const context = vm.createContext({
+      URL,
+      URLSearchParams,
+      AbortController,
+      setTimeout,
+      clearTimeout,
+      fetch: mockFetch,
+      document: {
+        getElementById(id) {
+          if (id === '__NEXT_DATA__') return { textContent: JSON.stringify(nextDataObj) };
+          return null;
+        },
+        getElementsByTagName() { return []; },
+        title: 'Bilibili Ep'
+      },
+      window: {
+        __NEXT_DATA__: nextDataObj,
+        location: {
+          hostname: 'www.bilibili.tv',
+          origin: 'https://www.bilibili.tv',
+          pathname: '/en/play/2094139',
+          href: 'https://www.bilibili.tv/en/play/2094139?bstar_from=bstar-web.anime-tab.for-you.all'
+        }
+      }
+    });
+
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;\n${engineSource}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, context);
+    const engine = context.FormatRegistryEngine;
+
+    const formats = await engine.queryBilibiliPlayurlApi('https://www.bilibili.tv/en/play/2094139');
+    assert.ok(requestedUrls.length >= 2, 'Must try fallback endpoint if first endpoint fails');
+    assert.ok(requestedUrls[0].includes('ep_id=998877'), 'Must extract ep_id from __NEXT_DATA__ instead of season_id');
+    assert.ok(formats && formats.length >= 1, 'Must return parsed formats from fallback endpoint');
+    assert.equal(formats[0].height, 1080);
+  });
 }

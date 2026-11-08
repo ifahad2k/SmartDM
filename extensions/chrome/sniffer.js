@@ -48,9 +48,9 @@
   const MAX_STASH_CHARS = 8 * 1024 * 1024;
 
   function inspectJsonResponseForManifests(text, requestUrl) {
-    if (!text || typeof text !== 'string' || text.length > 500000) return;
+    if (!text || typeof text !== 'string' || text.length > MAX_MANIFEST_BYTES) return;
     try {
-      if (text.includes('"playurl"') || text.includes('"video_resource"') || text.includes('"audio_resource"') || (text.includes('"dash"') && (text.includes('"video"') || text.includes('"baseUrl"')))) {
+      if (text.includes('"playurl"') || text.includes('"video_resource"') || text.includes('"audio_resource"') || text.includes('"video_data"') || (text.includes('"dash"') && (text.includes('"video"') || text.includes('"baseUrl"') || text.includes('"base_url"')))) {
         stashAndEmitManifest(requestUrl, text);
         try {
           window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
@@ -112,7 +112,7 @@
         try {
           if (obj && typeof obj === 'object') {
             const txt = JSON.stringify(obj);
-            if (txt.includes('"playurl"') || txt.includes('"video_resource"') || txt.includes('"dash"')) {
+            if (txt.includes('"playurl"') || txt.includes('"video_resource"') || txt.includes('"dash"') || txt.includes('"video_data"')) {
               inspectJsonResponseForManifests(txt, window.location.href);
             }
           }
@@ -132,8 +132,24 @@
           checkAndEmitBiliPlayinfo(val);
         }
       });
+      if (window.__NEXT_DATA__) {
+        checkAndEmitBiliPlayinfo(window.__NEXT_DATA__);
+      }
+      let currentNextData = window.__NEXT_DATA__;
+      try {
+        Object.defineProperty(window, '__NEXT_DATA__', {
+          configurable: true,
+          enumerable: true,
+          get() { return currentNextData; },
+          set(val) {
+            currentNextData = val;
+            checkAndEmitBiliPlayinfo(val);
+          }
+        });
+      } catch (_) {}
       document.addEventListener('DOMContentLoaded', () => {
         if (window.__playinfo__) checkAndEmitBiliPlayinfo(window.__playinfo__);
+        if (window.__NEXT_DATA__) checkAndEmitBiliPlayinfo(window.__NEXT_DATA__);
       });
     }
   } catch (_) {}
@@ -337,6 +353,7 @@
   }
   function bindSource(state) {
     state.lastSync = Date.now();
+    let anyBound = false;
     document.querySelectorAll('video, audio').forEach(media => {
       const src = media.currentSrc || media.src;
       if (!state.blobs.includes(src)) return;
@@ -349,7 +366,15 @@
       if (state.audio) media.setAttribute('data-smartdm-audio-url', stripByteRangeParams(state.audio.url));
       else media.removeAttribute?.('data-smartdm-audio-url');
       media.setAttribute('data-smartdm-separate-audio', state.audioExpected ? '1' : '0');
+      anyBound = true;
     });
+    if (anyBound) {
+      try {
+        window.dispatchEvent(new CustomEvent('__smartdm_stream_changed__', {
+          detail: { videoUrl: state.video?.url, audioUrl: state.audio?.url }
+        }));
+      } catch (_) {}
+    }
   }
   try {
     // Follow the player's own copies without retaining media bytes or changing

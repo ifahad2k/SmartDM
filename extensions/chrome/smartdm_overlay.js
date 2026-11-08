@@ -351,6 +351,16 @@
           refresh();
         }
       });
+
+      window.addEventListener('__smartdm_stream_changed__', () => {
+        if (typeof FormatRegistryEngine !== 'undefined') {
+          FormatRegistryEngine.mediaFormatCache = {};
+        }
+        document.querySelectorAll('.smartdm-player-host, .smartdm-thumb-host').forEach(h => {
+          const p = h.shadowRoot ? h.shadowRoot.querySelector('.popover.active') : null;
+          if (p && p._smartdm_refresh) p._smartdm_refresh();
+        });
+      });
     }
 
     if (runtime && runtime.onMessage) {

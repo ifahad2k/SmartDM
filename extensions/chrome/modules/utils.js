@@ -3,9 +3,13 @@
 
 class SmartDmUtils {
   static getCanonicalUrl(rawUrl) {
-    if (!rawUrl) return window.location.href;
+    if (!rawUrl) return (typeof window !== 'undefined' && window.location?.href) || '';
     try {
-      const u = new URL(rawUrl, window.location.origin);
+      if (typeof rawUrl === 'string' && rawUrl.startsWith('blob:') && typeof window !== 'undefined' && window.location?.href) {
+        rawUrl = window.location.href;
+      }
+      const origin = (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : 'https://www.bilibili.tv';
+      const u = new URL(rawUrl, origin);
       if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
         const v = u.searchParams.get('v');
         if (v) return 'https://www.youtube.com/watch?v=' + v;
@@ -26,7 +30,7 @@ class SmartDmUtils {
       }
       return u.href;
     } catch (e) {
-      return window.location.href;
+      return (typeof window !== 'undefined' && window.location?.href) || '';
     }
   }
 
@@ -265,6 +269,31 @@ class SmartDmUtils {
   static extractResolutionNumber(url, title = '') {
     if (!url && !title) return 0;
     const str = `${title || ''} ${url || ''}`.toLowerCase();
+
+    // Bilibili quality codes and stream IDs (e.g. 30080 -> 1080p, 30064 -> 720p, 30032 -> 480p, 30016 -> 360p)
+    if (/(?:bilibili|bilivideo|upos|akamaized|byteoversea|\bqn\b)/i.test(str) || /300(?:01|06|16|32|64|74|80)|301(?:12|16|20|25|26|27|44)/.test(str)) {
+      if (/30127\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?127\b/.test(str)) return 4320;
+      if (/(?:30120|30125|30126)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:120|125|126)\b/.test(str)) return 2160;
+      if (/(?:30116|30112|30080)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:80|112|116)\b/.test(str)) return 1080;
+      if (/(?:30064|30074)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:64|74)\b/.test(str)) return 720;
+      if (/30032\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?32\b/.test(str)) return 480;
+      if (/30016\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?16\b/.test(str)) return 360;
+      if (/30006\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?6\b/.test(str)) return 240;
+      if (/(?:30001|30144)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:1|144)\b/.test(str)) return 144;
+
+      const mStreamId = str.match(/(?:video|stream|[_\-\/])(?:300|301)?(127|126|125|120|116|112|80|74|64|32|16|6|1|144)(?:[_\-\.]|$)/);
+      if (mStreamId) {
+        const idNum = parseInt(mStreamId[1], 10);
+        if (idNum === 144 || idNum === 1) return 144;
+        if (idNum === 127) return 4320;
+        if (idNum >= 120) return 2160;
+        if (idNum >= 80) return 1080;
+        if (idNum >= 64) return 720;
+        if (idNum === 32) return 480;
+        if (idNum === 16) return 360;
+        if (idNum === 6) return 240;
+      }
+    }
 
     // 1. Explicit dimensions (e.g. 1920x1080)
     const dimMatch = str.match(/(?:^|[^0-9a-z])(\d{3,4})x(\d{3,4})(?=[^0-9a-z]|$)/i);

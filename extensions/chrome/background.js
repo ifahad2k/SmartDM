@@ -145,6 +145,31 @@ function extractResolutionNumber(url, title = '') {
   if (!url && !title) return 0;
   const str = `${title || ''} ${url || ''}`.toLowerCase();
 
+  // Bilibili quality codes and stream IDs (e.g. 30080 -> 1080p, 30064 -> 720p, 30032 -> 480p, 30016 -> 360p)
+  if (/(?:bilibili|bilivideo|upos|akamaized|byteoversea|\bqn\b)/i.test(str) || /300(?:01|06|16|32|64|74|80)|301(?:12|16|20|25|26|27|44)/.test(str)) {
+    if (/30127\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?127\b/.test(str)) return 4320;
+    if (/(?:30120|30125|30126)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:120|125|126)\b/.test(str)) return 2160;
+    if (/(?:30116|30112|30080)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:80|112|116)\b/.test(str)) return 1080;
+    if (/(?:30064|30074)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:64|74)\b/.test(str)) return 720;
+    if (/30032\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?32\b/.test(str)) return 480;
+    if (/30016\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?16\b/.test(str)) return 360;
+    if (/30006\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?6\b/.test(str)) return 240;
+    if (/(?:30001|30144)\b|(?:^|[?&_/\s\-:])(?:qn|quality)[:=]?(?:1|144)\b/.test(str)) return 144;
+
+    const mStreamId = str.match(/(?:video|stream|[_\-\/])(?:300|301)?(127|126|125|120|116|112|80|74|64|32|16|6|1|144)(?:[_\-\.]|$)/);
+    if (mStreamId) {
+      const idNum = parseInt(mStreamId[1], 10);
+      if (idNum === 144 || idNum === 1) return 144;
+      if (idNum === 127) return 4320;
+      if (idNum >= 120) return 2160;
+      if (idNum >= 80) return 1080;
+      if (idNum >= 64) return 720;
+      if (idNum === 32) return 480;
+      if (idNum === 16) return 360;
+      if (idNum === 6) return 240;
+    }
+  }
+
   // 1. Explicit dimensions (e.g. 1920x1080, 1920x800, 1280x720, 1280x534, 3840x2160, 2560x1440, 854x480, 640x360, 640x266)
   const dimMatch = str.match(/(?:^|[^0-9a-z])(\d{3,4})x(\d{3,4})(?=[^0-9a-z]|$)/i);
   if (dimMatch) {
@@ -1335,10 +1360,14 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
           } else if (isBiliMedia) {
             let biliH = resH || extractResolutionNumber(targetUrl);
             if (!biliH) {
-              if (targetUrl.includes('30080') || targetUrl.includes('1080')) biliH = 1080;
-              else if (targetUrl.includes('30064') || targetUrl.includes('720')) biliH = 720;
-              else if (targetUrl.includes('30032') || targetUrl.includes('480')) biliH = 480;
-              else if (targetUrl.includes('30016') || targetUrl.includes('360')) biliH = 360;
+              if (targetUrl.includes('30127') || /[?&_-](?:qn|quality)=?127\b/.test(targetUrl)) biliH = 4320;
+              else if (targetUrl.includes('30120') || targetUrl.includes('30125') || targetUrl.includes('30126') || targetUrl.includes('2160') || /[?&_-](?:qn|quality)=?(?:120|125|126)\b/.test(targetUrl)) biliH = 2160;
+              else if (targetUrl.includes('30116') || targetUrl.includes('30112') || targetUrl.includes('30080') || targetUrl.includes('1080') || /[?&_-](?:qn|quality)=?(?:80|112|116)\b/.test(targetUrl)) biliH = 1080;
+              else if (targetUrl.includes('30074') || targetUrl.includes('30064') || targetUrl.includes('720') || /[?&_-](?:qn|quality)=?(?:64|74)\b/.test(targetUrl)) biliH = 720;
+              else if (targetUrl.includes('30032') || targetUrl.includes('480') || /[?&_-](?:qn|quality)=?32\b/.test(targetUrl)) biliH = 480;
+              else if (targetUrl.includes('30016') || targetUrl.includes('360') || /[?&_-](?:qn|quality)=?16\b/.test(targetUrl)) biliH = 360;
+              else if (targetUrl.includes('30006') || targetUrl.includes('240') || /[?&_-](?:qn|quality)=?6\b/.test(targetUrl)) biliH = 240;
+              else if (targetUrl.includes('30001') || targetUrl.includes('30144') || targetUrl.includes('144') || /[?&_-](?:qn|quality)=?(?:1|144)\b/.test(targetUrl)) biliH = 144;
             }
             if (biliH > 0) resH = biliH;
             const isBiliAud = isFinalAudio || (contentType && contentType.includes('audio/')) || targetUrl.includes('/audio/') || targetUrl.includes('audio.m4s') || /302(16|32|80)\.m4s/i.test(targetUrl);
