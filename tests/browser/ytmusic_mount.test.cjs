@@ -505,6 +505,23 @@ for (const browser of ['chrome', 'firefox']) {
     assert.equal(queuedTracks[1].title, 'Levitating - Dua Lipa');
     assert.equal(queuedTracks[1].item.formatId, 'bestaudio/best');
     assert.equal(queuedTracks[1].item.url, 'https://music.youtube.com/watch?v=TUVcZfQe-Kw');
+
+    // E. Verify MediaWatcher.onBatchDownloadHandler receives structured ADD_MEDIA_BATCH payload
+    let receivedBatch = null;
+    MediaWatcher.onBatchDownloadHandler = (batch) => {
+      receivedBatch = batch;
+    };
+    contentListeners['.download-playlist-audio']({ preventDefault() {}, stopPropagation() {} });
+    assert.ok(receivedBatch, 'Batch handler must be invoked');
+    assert.equal(receivedBatch.type, 'ADD_MEDIA_BATCH');
+    assert.equal(receivedBatch.batchTitle, 'Global Top 50');
+    assert.equal(receivedBatch.playlistId, 'PL123');
+    assert.equal(receivedBatch.isAudio, true);
+    assert.equal(receivedBatch.items.length, 2);
+    assert.equal(receivedBatch.items[0].title, 'Starboy - The Weeknd');
+    assert.equal(receivedBatch.items[0].formatId, 'bestaudio/best');
+    assert.equal(receivedBatch.items[0].ext, 'mp3');
+    assert.equal(receivedBatch.items[0].url, 'https://music.youtube.com/watch?v=34Na4j8AVgA');
   });
 
   test(`${browser}: YouTube Music multi-artist extraction, editable playlist header, and queue exclusion`, () => {

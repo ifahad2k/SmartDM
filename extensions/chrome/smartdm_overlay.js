@@ -171,6 +171,56 @@
     }
   }
 
+  function dispatchBatchDownload(batchPayload, onResult = null) {
+    if (!batchPayload || !Array.isArray(batchPayload.items) || batchPayload.items.length === 0) {
+      if (typeof onResult === 'function') onResult({ success: false, status: 'error', message: 'No items in batch.' });
+      return;
+    }
+
+    const refToSend = (window.top !== window.self) ? window.location.href : (document.referrer || window.location.href);
+    const pageUrlToSend = window.location.href;
+    const origToSend = window.location.origin;
+
+    const message = {
+      type: 'ADD_MEDIA_BATCH',
+      batchTitle: batchPayload.batchTitle || batchPayload.playlistTitle || 'Batch Download',
+      playlistTitle: batchPayload.playlistTitle || null,
+      playlistId: batchPayload.playlistId || null,
+      isAudio: Boolean(batchPayload.isAudio),
+      referer: batchPayload.referer || refToSend,
+      pageUrl: batchPayload.pageUrl || pageUrlToSend,
+      origin: origToSend,
+      items: batchPayload.items.map(item => ({
+        url: item.url || item.directUrl,
+        directUrl: item.directUrl || item.url,
+        title: item.title,
+        fileName: item.fileName,
+        formatId: item.formatId || (batchPayload.isAudio ? 'bestaudio/best' : '1080p'),
+        ext: item.ext || (batchPayload.isAudio ? 'mp3' : 'mp4'),
+        referer: item.referer || refToSend,
+        pageUrl: item.pageUrl || pageUrlToSend
+      }))
+    };
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (typeof onResult === 'function') onResult(result);
+    };
+    const timeout = setTimeout(() => finish({ success: false, status: 'error' }), 20000);
+
+    try {
+      runtime.sendMessage(message, (response) => {
+        const sendError = runtime.lastError;
+        finish(sendError ? { success: false, status: 'error' } : (response || { success: false, status: 'error' }));
+      });
+    } catch (error) {
+      finish({ success: false, status: 'error' });
+    }
+  }
+
   function initGlobalClickInterceptor() {
     document.addEventListener('click', (e) => {
       if (e.button !== 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
@@ -329,7 +379,7 @@
     }
 
     if (window.top === window.self) initGlobalClickInterceptor();
-    MediaWatcher.init(dispatchDownload);
+    MediaWatcher.init(dispatchDownload, dispatchBatchDownload);
   }
 
   if (document.readyState === 'loading') {

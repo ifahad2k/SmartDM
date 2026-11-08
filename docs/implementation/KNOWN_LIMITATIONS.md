@@ -74,3 +74,10 @@ now includes two complete, correctly identified Chrome downloads with audio/vide
 decode verification. This supersedes the blanket unverified statement for those
 two cases only. Other sites, all qualities, Firefox/Linux runtime, controlled memory
 measurements and the intermediate Chrome renderer crash's cause remain unverified.
+
+2026-11-08 Testing desk: browser-local storage is profile/origin/path-specific;
+portable preservation requires JSON backup. IndexedDB failure leaves screenshots
+in memory with an explicit warning. Live Chrome attachment/export/import/reload
+was checked; clipboard/drop, restore confirmation, mobile and Firefox/Linux UI
+were not separately exercised. This tool does not verify downloads or change any
+open media/security/package gate. See [handoff](TESTING_DESK_HANDOFF.md).

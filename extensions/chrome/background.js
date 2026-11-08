@@ -1517,6 +1517,8 @@ async function appendCookiesAndSend(request, sendResponse) {
   let targetUrl = request.url;
   if (!targetUrl && request.urls && request.urls.length > 0) {
     targetUrl = request.urls[0];
+  } else if (!targetUrl && request.items && request.items.length > 0) {
+    targetUrl = request.items[0].url || request.items[0].directUrl;
   }
 
   // Look up authentic browser headers from network interceptor cache

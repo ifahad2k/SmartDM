@@ -13,6 +13,8 @@ class MediaWatcher {
   static pendingPlayers = new WeakMap();
   static sharedStyles = null;
   static spaScanTimers = [];
+  static onDownloadHandler = null;
+  static onBatchDownloadHandler = null;
 
   static styleMarkup(shadow) {
     // One parsed stylesheet per document, rather than a full CSS copy per card.
@@ -30,8 +32,9 @@ class MediaWatcher {
     return `<style>${OverlayUiRenderer.getStyles()}</style>`;
   }
 
-  static init(onDownloadHandler) {
+  static init(onDownloadHandler, onBatchDownloadHandler = null) {
     this.onDownloadHandler = onDownloadHandler;
+    this.onBatchDownloadHandler = onBatchDownloadHandler;
 
     // 1. Initialize IntersectionObserver for player viewports
     this.viewportObserver = new IntersectionObserver((entries) => {
@@ -516,7 +519,7 @@ class MediaWatcher {
               playlistBtn.addEventListener('click', (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
-                MediaWatcher.triggerYouTubeMusicPlaylistDownload(content, popover, this.onDownloadHandler);
+                MediaWatcher.triggerYouTubeMusicPlaylistDownload(content, popover, this.onDownloadHandler, this.onBatchDownloadHandler);
               });
               content.appendChild(playlistBtn);
             }
@@ -647,11 +650,11 @@ class MediaWatcher {
       }
       popover.classList.add('active');
 
-      MediaWatcher.triggerYouTubeMusicPlaylistDownload(content, popover, this.onDownloadHandler);
+      MediaWatcher.triggerYouTubeMusicPlaylistDownload(content, popover, this.onDownloadHandler, this.onBatchDownloadHandler);
     });
   }
 
-  static triggerYouTubeMusicPlaylistDownload(content, popover, onDownloadHandler = null) {
+  static triggerYouTubeMusicPlaylistDownload(content, popover, onDownloadHandler = null, onBatchDownloadHandler = null) {
     if (!content) return;
     const playlistMeta = (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractYouTubeMusicPlaylistMetadata) ?
       VisualMountDetector.extractYouTubeMusicPlaylistMetadata() : null;
@@ -709,39 +712,52 @@ class MediaWatcher {
       `;
 
       let queued = 0;
-      const handler = onDownloadHandler || MediaWatcher.onDownloadHandler;
+      const batchHandler = onBatchDownloadHandler || MediaWatcher.onBatchDownloadHandler;
+      const singleHandler = onDownloadHandler || MediaWatcher.onDownloadHandler;
       const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : (typeof chrome !== 'undefined' ? chrome.runtime : null);
 
+      const items = [];
       playlistMeta.tracks.forEach((track, index) => {
         const ext = isAudio ? 'mp3' : 'mp4';
         const formatId = isAudio ? 'bestaudio/best' : '1080p';
         const targetUrl = track.trackUrl || (track.videoId ? `https://music.youtube.com/watch?v=${track.videoId}` : null);
         if (!targetUrl) return;
 
-        queued++;
-        if (typeof handler === 'function') {
-          const fakeFormat = {
-            formatId: formatId,
-            ext: ext,
-            isAudioOnly: isAudio,
-            title: track.fullTitle,
-            url: targetUrl,
-            directUrl: targetUrl,
-            fileName: `${track.fullTitle}.${ext}`
-          };
-          handler([fakeFormat], fakeFormat, track.fullTitle);
-        } else if (runtime && runtime.sendMessage) {
-          runtime.sendMessage({
-            type: 'START_MEDIA_DOWNLOAD',
-            url: targetUrl,
-            formatId: formatId,
-            title: track.fullTitle,
-            fileName: `${track.fullTitle}.${ext}`,
-            referer: window.location.href,
-            pageUrl: window.location.href
-          });
-        }
+        items.push({
+          url: targetUrl,
+          directUrl: targetUrl,
+          title: track.fullTitle,
+          fileName: `${track.fullTitle}.${ext}`,
+          formatId: formatId,
+          ext: ext,
+          isAudioOnly: isAudio,
+          referer: window.location.href,
+          pageUrl: window.location.href
+        });
       });
+
+      queued = items.length;
+
+      const batchPayload = {
+        type: 'ADD_MEDIA_BATCH',
+        batchTitle: playlistMeta.title || 'Playlist',
+        playlistTitle: playlistMeta.title || 'Playlist',
+        playlistId: playlistMeta.playlistId || null,
+        isAudio: isAudio,
+        referer: window.location.href,
+        pageUrl: window.location.href,
+        items: items
+      };
+
+      if (typeof batchHandler === 'function') {
+        batchHandler(batchPayload);
+      } else if (typeof singleHandler === 'function') {
+        items.forEach(item => {
+          singleHandler([item], item, item.title);
+        });
+      } else if (runtime && runtime.sendMessage) {
+        runtime.sendMessage(batchPayload);
+      }
 
       const fbTimer = setTimeout(() => {
         content.innerHTML = `

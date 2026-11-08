@@ -40,10 +40,24 @@ public class BrowserDownloadRequest
     public List<MediaFormatDto>? Formats { get; set; }
 }
 
+public class BrowserBatchDownloadRequest
+{
+    public string BatchTitle { get; set; } = "Batch Download";
+    public string? PlaylistTitle { get; set; }
+    public string? PlaylistId { get; set; }
+    public bool IsAudio { get; set; }
+    public string? Referer { get; set; }
+    public string? PageUrl { get; set; }
+    public string? Cookies { get; set; }
+    public string? UserAgent { get; set; }
+    public List<BrowserDownloadRequest> Items { get; set; } = new();
+}
+
 public interface ILocalIpcService
 {
     Task StartAsync();
     void Stop();
     event Action<BrowserDownloadRequest>? DownloadRequestedFromBrowser;
+    event Action<BrowserBatchDownloadRequest>? BatchDownloadRequestedFromBrowser;
     event Action? WindowRestoreRequested;
 }

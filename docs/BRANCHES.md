@@ -76,3 +76,8 @@ both branch names continue to receive the identical publication tip.
 [handoff](implementation/STREAM_BINDING_HANDOFF.md), with 95 browser fixtures and
 two completed Chrome TikTok downloads. Both C# branch names remain synchronized
 publication targets; Java main is unchanged.
+
+2026-11-08: The owner-requested standalone Testing desk is maintained under
+`tools/testing-desk` on sdm2.0. It changes no product runtime or Java track. See
+[testing handoff](implementation/TESTING_DESK_HANDOFF.md); branch publication is
+not part of this tooling change.

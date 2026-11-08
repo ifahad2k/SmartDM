@@ -156,3 +156,7 @@ This synchronization closes no product/package gate; installer/release stays def
 implemented in both extensions; 95 browser fixtures and two real Chrome TikTok
 downloads pass, including full audio/video decode and selected-frame verification.
 See [handoff](STREAM_BINDING_HANDOFF.md). Full Package 4 exit gate remains NO.
+
+2026-11-08: Standalone owner-requested manual Testing desk implemented with 9 data/
+ZIP regressions and Chrome single/all export/import/persistence evidence.
+[Handoff](TESTING_DESK_HANDOFF.md). No package closure, installer or runtime change.

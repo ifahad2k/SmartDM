@@ -198,23 +198,25 @@
                                     </Panel>
                                 </Button>
 
-                                <!-- Tab: Scheduled Batch -->
-                                <Button Command="{Binding SelectQueueFilterCommand}" CommandParameter="Scheduled" Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="7">
+                                <!-- Tab: Download Queue -->
+                                <Button Command="{Binding SelectQueueFilterCommand}" CommandParameter="Queue" Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="0" CornerRadius="7">
                                     <Panel>
-                                        <Border IsVisible="{Binding IsScheduledQueueSelected}" Background="{DynamicResource AccentLight}" CornerRadius="7" Padding="10,8">
+                                        <Border IsVisible="{Binding IsQueueSelected}" Background="{DynamicResource AccentLight}" CornerRadius="7" Padding="10,8">
                                             <Grid ColumnDefinitions="Auto,*,Auto">
-                                                <Image Grid.Column="0" Source="/Assets/Icons/clock-gray.png" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="1" Text="Scheduled Batch" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                                <Image Grid.Column="0" Source="/Assets/Icons/inbox-blue.png" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="Download Queue" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
                                                 <Border Grid.Column="2" Background="{DynamicResource CardBackground}" CornerRadius="10" Padding="7,1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding ScheduledCount}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
+                                                    <TextBlock Text="{Binding QueueCount}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
                                                 </Border>
                                             </Grid>
                                         </Border>
-                                        <Border IsVisible="{Binding !IsScheduledQueueSelected}" Padding="10,8">
+                                        <Border IsVisible="{Binding !IsQueueSelected}" Padding="10,8">
                                             <Grid ColumnDefinitions="Auto,*,Auto">
-                                                <Image Grid.Column="0" Source="/Assets/Icons/clock-gray.png" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="1" Text="Scheduled Batch" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="2" Text="{Binding ScheduledCount}" FontSize="11" Foreground="{DynamicResource MutedText}" VerticalAlignment="Center" />
+                                                <Image Grid.Column="0" Source="/Assets/Icons/inbox-gray.png" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="Download Queue" FontSize="12" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                                <Border Grid.Column="2" Background="#1A3B82F6" CornerRadius="10" Padding="7,1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding QueueCount}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
+                                                </Border>
                                             </Grid>
                                         </Border>
                                     </Panel>
@@ -361,6 +363,17 @@
                                         <TextBlock Text="Active" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
                                         <Border Background="#1A16A34A" CornerRadius="4" Padding="4,1">
                                             <TextBlock Text="{Binding ActiveCount}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource SuccessColor}" />
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+                            </Button>
+                            <!-- Queue -->
+                            <Button Command="{Binding SelectChipCommand}" CommandParameter="Queue" Background="Transparent" BorderThickness="0" Padding="0">
+                                <Border Background="{DynamicResource SidebarBackground}" CornerRadius="6" Padding="10,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="5">
+                                        <TextBlock Text="Queue" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                                        <Border Background="#1A3B82F6" CornerRadius="4" Padding="4,1">
+                                            <TextBlock Text="{Binding QueueCount}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
                                         </Border>
                                     </StackPanel>
                                 </Border>
@@ -653,6 +666,22 @@
                                                         <TextBlock Text="39.4%" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" />
                                                         <ProgressBar Value="39.4" Minimum="0" Maximum="100" Width="110" Height="5" CornerRadius="2.5" Foreground="{DynamicResource PrimaryAccent}" Background="{DynamicResource SidebarBackground}" VerticalAlignment="Center" />
                                                     </StackPanel>
+
+                                                    <!-- Case 6: Queued File -->
+                                                    <StackPanel IsVisible="{Binding IsQueued}" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <Border Background="#1A3B82F6" CornerRadius="5" Padding="7,3" VerticalAlignment="Center">
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                                <Image Source="/Assets/Icons/inbox-blue.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                                                <TextBlock Text="{Binding QueuePosition, StringFormat='{}QUEUE #{0}'}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Button Command="{Binding PauseCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="6,5" VerticalAlignment="Center" ToolTip.Tip="Pause">
+                                                            <Image Source="/Assets/Icons/pause-gray.png" Width="10" Height="10" />
+                                                        </Button>
+                                                        <Button Command="{Binding DeleteCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="6,5" VerticalAlignment="Center" ToolTip.Tip="Remove from Queue">
+                                                            <Image Source="/Assets/Icons/close-gray.png" Width="10" Height="10" />
+                                                        </Button>
+                                                    </StackPanel>
                                                 </Grid>
                                             </Grid>
 
@@ -691,10 +720,11 @@
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,2,0,18">
                         <StackPanel Grid.Column="0" Spacing="4">
                             <TextBlock Text="{Binding QueueHeading}" FontSize="23" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
-                            <TextBlock Text="Your downloads, in one place" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
+                            <TextBlock Text="{Binding QueueSubline}" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                             <TextBlock Text="{Binding ActiveCount, StringFormat='{}{0} active'}" FontSize="12" Foreground="{DynamicResource PrimaryAccent}"/>
+                            <TextBlock Text="{Binding QueuedCount, StringFormat='{}{0} queued'}" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
                             <TextBlock Text="{Binding CompletedCount, StringFormat='{}{0} completed'}" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
                             <TextBlock Text="{Binding TotalSpeedFormatted}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
                         </StackPanel>
@@ -750,6 +780,7 @@
                                                 <TextBlock Grid.Column="4" Text="{Binding QueueEtaText}" FontSize="11" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
                                                 <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                                                     <Button IsVisible="{Binding IsActive}" Command="{Binding PauseCommand}" Content="Pause" FontSize="10" Padding="5,3"/>
+                                                    <Button IsVisible="{Binding IsQueued}" Command="{Binding PauseCommand}" Content="Pause" FontSize="10" Padding="5,3"/>
                                                     <Button IsVisible="{Binding IsPaused}" Command="{Binding ResumeCommand}" Content="Resume" FontSize="10" Padding="5,3"/>
                                                     <Button IsVisible="{Binding IsFailed}" Command="{Binding ResumeCommand}" Content="Retry" FontSize="10" Padding="5,3"/>
                                                     <Button IsVisible="{Binding IsCompletedFile}" Command="{Binding OpenFileCommand}" Content="Open" FontSize="10" Padding="5,3"/>
@@ -761,8 +792,8 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                             <StackPanel IsVisible="{Binding HasNoDownloads}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,70" Spacing="12">
-                                <TextBlock Text="No downloads here" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" HorizontalAlignment="Center"/>
-                                <TextBlock Text="Add a URL to start a download." FontSize="12" Foreground="{DynamicResource SecondaryText}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding EmptyStateTitle}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding EmptyStateSubtitle}" FontSize="12" Foreground="{DynamicResource SecondaryText}" HorizontalAlignment="Center"/>
                                 <Button Command="{Binding OpenAddDialogCommand}" Content="Add URL" HorizontalAlignment="Center" Background="{DynamicResource PrimaryAccent}" Foreground="White" Padding="14,7"/>
                             </StackPanel>
                         </Panel>

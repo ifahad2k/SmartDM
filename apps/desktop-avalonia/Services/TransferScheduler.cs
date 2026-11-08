@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace SmartDm.Desktop.Avalonia.Services;
 
-public sealed class TransferScheduler(int maximumDownloads = 4, int maximumPerHost = 2)
+public sealed class TransferScheduler(int maximumDownloads = 4, int maximumPerHost = 4)
 {
     private readonly SemaphoreSlim _global = new(maximumDownloads > 0 ? maximumDownloads : throw new ArgumentOutOfRangeException(nameof(maximumDownloads)));
     private readonly object _sync = new();

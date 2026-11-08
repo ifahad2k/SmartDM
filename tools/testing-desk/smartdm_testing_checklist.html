@@ -1,0 +1,3597 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; base-uri 'none'; form-action 'none'"
+    />
+    <title>SmartDM · Testing desk</title>
+    <style>
+      /* Local testing utility: quiet surfaces, rectangular controls, evidence first. */
+      :root {
+        color-scheme: light;
+        --canvas: #f3f5f8;
+        --paper: #fff;
+        --rail: #edf1f6;
+        --ink: #202b3b;
+        --muted: #59677a;
+        --line: #d3dbe6;
+        --blue: #245bbd;
+        --blue-soft: #eaf0fc;
+        --green: #226642;
+        --green-soft: #eaf5ee;
+        --red: #ae3442;
+        --red-soft: #fff0f1;
+        --amber: #845900;
+        --amber-soft: #fff6df;
+        --radius: 6px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        font:
+          14px/1.5 "Segoe UI Variable",
+          "Segoe UI",
+          system-ui,
+          sans-serif;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button,
+      a,
+      input,
+      select,
+      textarea {
+        touch-action: manipulation;
+      }
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        cursor: pointer;
+        min-height: 38px;
+        padding: 8px 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--paper);
+        color: var(--ink);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      button:hover {
+        background: #edf1f7;
+        border-color: #a5b5ca;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      button.primary {
+        background: var(--blue);
+        border-color: var(--blue);
+        color: white;
+      }
+      button.primary:hover {
+        background: #1d4b9d;
+      }
+      button.danger {
+        color: var(--red);
+      }
+      button.quiet {
+        background: transparent;
+        border-color: transparent;
+      }
+      button.small {
+        min-height: 30px;
+        padding: 4px 9px;
+        font-size: 12px;
+      }
+      a {
+        color: var(--blue);
+        text-underline-offset: 3px;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      :focus-visible {
+        outline: 3px solid #759ae0;
+        outline-offset: 3px;
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 9px 11px;
+        background: var(--paper);
+        color: var(--ink);
+        border: 1px solid #aab7ca;
+        border-radius: 5px;
+      }
+      textarea {
+        min-height: 106px;
+        resize: vertical;
+        line-height: 1.55;
+      }
+      input[type="checkbox"],
+      input[type="radio"] {
+        width: 17px;
+        height: 17px;
+        accent-color: var(--blue);
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      label input,
+      label textarea,
+      label select {
+        display: block;
+        margin-top: 6px;
+        font-weight: 400;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 27px;
+        letter-spacing: -0.7px;
+        line-height: 1.25;
+      }
+      h2 {
+        font-size: 18px;
+        letter-spacing: -0.25px;
+      }
+      h3 {
+        font-size: 15px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small-text {
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .spread {
+        justify-content: space-between;
+      }
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+      .field-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+      }
+      .field-grid > .full {
+        grid-column: 1/-1;
+      }
+      .hidden,
+      [hidden] {
+        display: none !important;
+      }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 12;
+        height: 72px;
+        padding: 0 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--paper);
+        border-bottom: 1px solid var(--line);
+        gap: 16px;
+      }
+      .brand {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        background: var(--blue);
+        color: white;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+      }
+      .brand-mark svg {
+        width: 21px;
+        height: 21px;
+      }
+      .brand-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+      }
+      .brand-sub {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .save-state {
+        font-size: 12px;
+        color: var(--muted);
+        padding-right: 8px;
+      }
+      .summarybar {
+        position: sticky;
+        top: 72px;
+        z-index: 11;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        padding: 11px 28px;
+        background: #f9fafc;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .summarybar strong {
+        color: var(--ink);
+        font-size: 14px;
+        margin-right: 4px;
+      }
+      .summarybar .summary-progress {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .summary-progress progress {
+        width: 115px;
+        height: 6px;
+        accent-color: var(--blue);
+      }
+      .shell {
+        display: grid;
+        grid-template-columns: 304px minmax(0, 1fr);
+        min-height: calc(100vh - 116px);
+      }
+      .sidebar {
+        background: var(--rail);
+        border-right: 1px solid var(--line);
+        padding: 20px 14px;
+        position: sticky;
+        top: 116px;
+        height: calc(100vh - 116px);
+        overflow: auto;
+      }
+      .sidebar-head {
+        padding: 0 4px 14px;
+        display: grid;
+        gap: 12px;
+      }
+      .search-wrap input {
+        background: #fff;
+        padding-left: 12px;
+      }
+      .filters {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .filters button {
+        font-size: 12px;
+        min-height: 31px;
+        padding: 5px 9px;
+        background: transparent;
+        border-color: transparent;
+      }
+      .filters button.active {
+        background: white;
+        border-color: #b9c9df;
+        color: var(--blue);
+      }
+      .site-list {
+        display: grid;
+        gap: 4px;
+      }
+      .site-row {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        text-align: left;
+        gap: 3px 8px;
+        min-height: 70px;
+        padding: 11px 12px;
+        background: transparent;
+        border: 1px solid transparent;
+        white-space: normal;
+        position: relative;
+      }
+      .site-row:hover {
+        background: #e3e9f2;
+      }
+      .site-row.selected {
+        background: #fff;
+        border-color: #afc2de;
+        box-shadow: inset 3px 0 var(--blue);
+      }
+      .site-name {
+        font-size: 14px;
+        font-weight: 650;
+        overflow-wrap: anywhere;
+      }
+      .site-host {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 400;
+        grid-column: 1;
+      }
+      .site-row .status-dot {
+        align-self: center;
+        grid-column: 2;
+        grid-row: 1 / 3;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #8390a4;
+      }
+      .status-dot.pass {
+        background: var(--green);
+      }
+      .status-dot.fail {
+        background: var(--red);
+      }
+      .status-dot.blocked {
+        background: var(--amber);
+      }
+      .sidebar-foot {
+        padding: 16px 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      main {
+        padding: 28px 34px 60px;
+        min-width: 0;
+      }
+      .workspace {
+        max-width: 1110px;
+        margin: 0 auto;
+      }
+      .site-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+      .site-title-line {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .site-link {
+        display: inline-block;
+        font-size: 13px;
+        margin-top: 7px;
+        max-width: 680px;
+        overflow-wrap: anywhere;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: #e8edf4;
+        color: #4b5b70;
+      }
+      .badge.pass {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+      .badge.fail {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+      .badge.blocked {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+      .resultbar {
+        padding: 14px 0 18px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .resultbar .last-tested {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .result-button.pass {
+        color: var(--green);
+      }
+      .result-button.fail {
+        color: var(--red);
+      }
+      .result-button.blocked {
+        color: var(--amber);
+      }
+      .result-button[aria-pressed="true"].pass {
+        background: var(--green-soft);
+        border-color: #88b69a;
+      }
+      .result-button[aria-pressed="true"].fail {
+        background: var(--red-soft);
+        border-color: #d897a0;
+      }
+      .result-button[aria-pressed="true"].blocked {
+        background: var(--amber-soft);
+        border-color: #c9ae6a;
+      }
+      .evidence-panel {
+        margin: 20px 0 24px;
+        padding: 17px 18px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      .evidence-panel.dragover {
+        outline: 3px solid #759ae0;
+        background: var(--blue-soft);
+      }
+      .evidence-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .evidence-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .evidence-controls select {
+        max-width: 220px;
+        min-height: 35px;
+        font-size: 12px;
+      }
+      .evidence-help {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 5px 0 0;
+      }
+      .evidence-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+      .evidence-card {
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        overflow: hidden;
+        background: #f8fafc;
+      }
+      .evidence-card .preview {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        width: 100%;
+        height: 96px;
+        background: #e7ecf3;
+        display: block;
+        overflow: hidden;
+      }
+      .preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .evidence-card .caption {
+        padding: 8px;
+        display: grid;
+        gap: 5px;
+      }
+      .evidence-card input {
+        min-height: 28px;
+        padding: 4px 6px;
+        font-size: 12px;
+      }
+      .evidence-meta {
+        font-size: 11px;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-between;
+        gap: 5px;
+        align-items: center;
+      }
+      .tabs {
+        display: flex;
+        gap: 22px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 20px;
+      }
+      .tabs button {
+        padding: 12px 0 11px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        border-bottom: 2px solid transparent;
+      }
+      .tabs button[aria-selected="true"] {
+        color: var(--ink);
+        border-bottom-color: var(--blue);
+      }
+      .tabs button:hover {
+        color: var(--blue);
+      }
+      .empty {
+        padding: 46px 20px;
+        text-align: center;
+        border: 1px dashed #becada;
+        border-radius: var(--radius);
+        background: #f9fbfd;
+      }
+      .empty p {
+        color: var(--muted);
+        max-width: 420px;
+        margin: 8px auto 18px;
+        font-size: 13px;
+      }
+      .bug-layout {
+        display: grid;
+        grid-template-columns: 205px minmax(0, 1fr);
+        gap: 22px;
+      }
+      .bug-nav {
+        display: grid;
+        align-content: start;
+        gap: 6px;
+      }
+      .bug-nav > button:first-child {
+        margin-bottom: 7px;
+      }
+      .bug-entry {
+        white-space: normal;
+        text-align: left;
+        background: transparent;
+        border-color: transparent;
+        padding: 10px;
+        display: grid;
+        gap: 5px;
+      }
+      .bug-entry.active {
+        background: #fff;
+        border-color: #b6c7de;
+      }
+      .bug-entry-title {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .bug-entry-id {
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .bug-editor {
+        padding: 22px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        min-width: 0;
+      }
+      .bug-toolbar {
+        padding-bottom: 17px;
+        margin-bottom: 18px;
+        border-bottom: 1px solid #e1e6ed;
+      }
+      .bug-toolbar select {
+        width: auto;
+        max-width: 195px;
+      }
+      .form-help {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 400;
+        margin-top: 4px;
+      }
+      .checklist {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .check-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 145px auto;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 17px;
+        border-bottom: 1px solid #e4e9ef;
+      }
+      .check-row:last-child {
+        border-bottom: 0;
+      }
+      .check-row p {
+        font-size: 13px;
+      }
+      .check-row select {
+        font-size: 12px;
+      }
+      .add-check {
+        margin-top: 14px;
+        display: flex;
+        gap: 8px;
+      }
+      .add-check input {
+        max-width: 500px;
+      }
+      .notes-panel {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        padding: 22px;
+        border-radius: var(--radius);
+      }
+      .activity {
+        margin-top: 24px;
+      }
+      .activity ol {
+        padding: 0;
+        list-style: none;
+      }
+      .activity li {
+        font-size: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 12px;
+      }
+      .activity time {
+        color: var(--muted);
+        min-width: 145px;
+      }
+      .notice {
+        padding: 11px 18px;
+        border-bottom: 1px solid #dbc47f;
+        background: #fff7df;
+        color: #634908;
+        font-size: 13px;
+      }
+      .notice.error {
+        background: var(--red-soft);
+        color: #862737;
+        border-color: #e2b3bd;
+      }
+      .toast {
+        position: fixed;
+        bottom: 22px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 12px 18px;
+        border-radius: 6px;
+        background: #22344c;
+        color: #fff;
+        box-shadow: 0 5px 20px #17293c25;
+        max-width: min(620px, 92vw);
+        z-index: 30;
+        font-size: 13px;
+      }
+      .toast.error {
+        background: #8d2d3e;
+      }
+      dialog {
+        border: 1px solid #b7c4d7;
+        border-radius: 9px;
+        padding: 0;
+        max-width: min(710px, calc(100vw - 28px));
+        width: 710px;
+        max-height: calc(100dvh - 40px);
+        box-shadow: 0 18px 70px #10243d36;
+        color: var(--ink);
+        background: var(--paper);
+      }
+      dialog::backdrop {
+        background: #1a2a3f69;
+      }
+      .dialog-head {
+        padding: 21px 24px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .dialog-body {
+        padding: 23px 24px;
+        overflow: auto;
+      }
+      .dialog-foot {
+        padding: 15px 24px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        background: #f8fafc;
+      }
+      .dialog-body p {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 16px;
+      }
+      .dialog-body .error-message {
+        color: var(--red);
+        font-weight: 600;
+      }
+      .import-preview {
+        max-height: 230px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        margin-top: 14px;
+      }
+      .import-preview table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .import-preview th,
+      .import-preview td {
+        text-align: left;
+        padding: 9px 11px;
+        border-bottom: 1px solid var(--line);
+        overflow-wrap: anywhere;
+      }
+      .import-preview th {
+        background: var(--rail);
+        position: sticky;
+        top: 0;
+      }
+      .choice {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+        font-weight: 400;
+      }
+      .choice input {
+        margin: 0;
+      }
+      #imageDialog {
+        width: min(1200px, 95vw);
+        max-width: 95vw;
+      }
+      #imageDialog img {
+        display: block;
+        width: 100%;
+        max-height: 75vh;
+        object-fit: contain;
+        background: #eef2f6;
+      }
+      .export-preview {
+        background: var(--rail);
+        padding: 13px 15px;
+        border-radius: 5px;
+        font-size: 13px;
+      }
+      .keyboard {
+        border: 1px solid #c8d1df;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font:
+          11px "Segoe UI",
+          sans-serif;
+        background: white;
+      }
+      .mobile-sites {
+        display: none;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      button svg {
+        vertical-align: middle;
+      }
+      .dialog-body details {
+        padding: 12px 0;
+      }
+      .dialog-body summary {
+        cursor: pointer;
+        color: var(--blue);
+      }
+      @media (min-width: 1700px) {
+        main {
+          padding-left: 52px;
+          padding-right: 52px;
+        }
+        .workspace {
+          max-width: 1200px;
+        }
+      }
+      @media (max-width: 1100px) {
+        .shell {
+          grid-template-columns: 255px minmax(0, 1fr);
+        }
+        .bug-layout {
+          grid-template-columns: 1fr;
+        }
+        .bug-nav {
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        }
+        .bug-nav > button:first-child {
+          margin: 0;
+        }
+        .bug-editor {
+          padding: 18px;
+        }
+        main {
+          padding: 24px;
+        }
+        .topbar {
+          padding: 0 20px;
+        }
+        .save-state {
+          display: none;
+        }
+        .resultbar .last-tested {
+          margin-left: 0;
+          width: 100%;
+        }
+      }
+      @media (max-width: 720px) {
+        .topbar {
+          position: static;
+          height: auto;
+          min-height: 72px;
+          padding: 14px 16px;
+          flex-wrap: wrap;
+        }
+        .topbar > .row {
+          width: 100%;
+        }
+        .topbar > .row button {
+          flex: 1;
+        }
+        .summarybar {
+          position: static;
+          padding: 10px 16px;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .summarybar .summary-progress {
+          margin-left: 0;
+        }
+        .shell {
+          display: block;
+        }
+        .sidebar {
+          position: static;
+          height: auto;
+          max-height: 320px;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 15px;
+        }
+        .sidebar .site-list {
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        }
+        .sidebar-foot {
+          display: none;
+        }
+        .mobile-sites {
+          display: inline;
+        }
+        main {
+          padding: 23px 16px 55px;
+        }
+        .site-heading {
+          flex-wrap: wrap;
+        }
+        h1 {
+          font-size: 24px;
+        }
+        .field-grid {
+          grid-template-columns: 1fr;
+        }
+        .field-grid > .full {
+          grid-column: auto;
+        }
+        .evidence-controls {
+          width: 100%;
+          flex-wrap: wrap;
+        }
+        .evidence-controls select {
+          flex: 1;
+          max-width: none;
+        }
+        .check-row {
+          grid-template-columns: 1fr 130px;
+          padding: 12px;
+        }
+        .check-row > button {
+          grid-column: 1/-1;
+          justify-self: start;
+        }
+        .activity li {
+          flex-direction: column;
+          gap: 4px;
+        }
+        .tabs {
+          gap: 20px;
+        }
+        .dialog-head,
+        .dialog-body,
+        .dialog-foot {
+          padding: 16px;
+        }
+        .bug-toolbar .row {
+          width: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
+            <path d="M7 4h10a2 2 0 0 1 2 2v14H5V6a2 2 0 0 1 2-2Z" />
+            <path d="M9 3h6v4H9zM8 12l2 2 5-5M8 17h8" />
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">
+            SmartDM
+            <span style="font-weight: 400; color: var(--muted)"
+              >/ Testing desk</span
+            >
+          </div>
+          <div class="brand-sub">Test, capture, hand off.</div>
+        </div>
+      </div>
+      <div class="row">
+        <span class="save-state" id="saveState" role="status"
+          >Opening local workspace…</span
+        ><button id="setupButton">Test setup</button
+        ><button id="importButton">Import sites</button
+        ><button class="primary" id="exportButton">Export report</button>
+      </div>
+    </header>
+    <div id="storageNotice" class="notice" hidden role="alert"></div>
+    <div class="summarybar" id="summary"></div>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Sites">
+        <div class="sidebar-head">
+          <div class="row spread">
+            <h2>Sites</h2>
+            <button class="small" id="addSiteButton">+ Add site</button>
+          </div>
+          <label class="search-wrap"
+            ><span class="sr-only">Search sites</span
+            ><input
+              id="siteSearch"
+              type="search"
+              placeholder="Search name or URL…"
+              autocomplete="off"
+          /></label>
+          <div
+            class="filters"
+            id="siteFilters"
+            aria-label="Filter site results"
+          ></div>
+          <label
+            ><span class="sr-only">Category</span
+            ><select id="categoryFilter">
+              <option value="">All categories</option>
+            </select></label
+          ><label
+            ><span class="sr-only">Sort sites</span
+            ><select id="sortSites">
+              <option value="original">Original order</option>
+              <option value="failures">Failures first</option>
+              <option value="name">Name A–Z</option>
+              <option value="recent">Recently tested</option>
+            </select></label
+          >
+        </div>
+        <nav id="siteList" class="site-list" aria-label="Select a site"></nav>
+        <div class="sidebar-foot">
+          Everything stays in this browser.<br />Export a backup to keep a
+          portable copy.
+        </div>
+      </aside>
+      <main id="main">
+        <div class="workspace" id="workspace">
+          <div class="empty"><h2>Opening your testing workspace…</h2></div>
+        </div>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <input
+      id="imageInput"
+      type="file"
+      accept="image/png,image/jpeg,image/webp,image/gif"
+      multiple
+      hidden
+    /><input
+      id="restoreInput"
+      type="file"
+      accept=".json,application/json"
+      hidden
+    />
+    <dialog id="siteDialog" aria-labelledby="siteDialogTitle">
+      <form id="siteForm">
+        <div class="dialog-head">
+          <h2 id="siteDialogTitle">Add site</h2>
+          <button
+            type="button"
+            class="quiet small"
+            data-close="siteDialog"
+            aria-label="Close site form"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="dialog-body stack">
+          <label
+            >Site name<input
+              id="siteName"
+              required
+              maxlength="200"
+              autocomplete="off" /></label
+          ><label
+            >Website URL<input
+              id="siteUrl"
+              placeholder="https://example.com"
+              maxlength="8192"
+              autocomplete="off"
+            /><span class="form-help"
+              >Use the home page or the exact page you want to test.</span
+            ></label
+          ><label
+            >Category<input
+              id="siteCategory"
+              maxlength="120"
+              list="categoryOptions" /></label
+          ><datalist id="categoryOptions"></datalist>
+          <p id="siteFormError" class="error-message" role="alert" hidden></p>
+        </div>
+        <div class="dialog-foot">
+          <button type="button" data-close="siteDialog">Cancel</button
+          ><button type="submit" class="primary">Save site</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="setupDialog" aria-labelledby="setupTitle">
+      <form id="setupForm">
+        <div class="dialog-head">
+          <h2 id="setupTitle">Test setup</h2>
+          <button
+            type="button"
+            class="quiet small"
+            data-close="setupDialog"
+            aria-label="Close test setup"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="dialog-body">
+          <p>
+            These details travel with your report so the agent knows which build
+            you tested.
+          </p>
+          <div class="field-grid">
+            <label
+              >SmartDM version / build<input
+                name="appVersion"
+                placeholder="2.0 development" /></label
+            ><label
+              >Extension version<input
+                name="extensionVersion"
+                placeholder="Chrome integration version" /></label
+            ><label>Branch<input name="branch" placeholder="sdm2.0" /></label
+            ><label
+              >Commit<input
+                name="commit"
+                placeholder="Short or full commit hash" /></label
+            ><label
+              >Browser<input
+                name="browser"
+                placeholder="Chrome 142 / Firefox 144" /></label
+            ><label
+              >Operating system<input
+                name="os"
+                placeholder="Windows 11 / Ubuntu 24.04" /></label
+            ><label>Tester<input name="tester" placeholder="Optional" /></label
+            ><label
+              >Session name<input
+                name="session"
+                placeholder="Movie capture regression" /></label
+            ><label class="full"
+              >Setup notes<textarea
+                name="notes"
+                placeholder="Connection, VPN, login state, settings or other details that affect the test."
+              ></textarea>
+            </label>
+          </div>
+        </div>
+        <div class="dialog-foot">
+          <button type="button" data-close="setupDialog">Cancel</button
+          ><button type="submit" class="primary">Save setup</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="importDialog" aria-labelledby="importTitle">
+      <div class="dialog-head">
+        <h2 id="importTitle">Import sites</h2>
+        <button
+          class="quiet small"
+          data-close="importDialog"
+          aria-label="Close site import"
+        >
+          ✕
+        </button>
+      </div>
+      <div class="dialog-body">
+        <p>
+          Paste names and links together. Existing sites and their bugs are
+          kept.
+        </p>
+        <label
+          >Sites, one per line<textarea
+            id="bulkSites"
+            rows="7"
+            spellcheck="false"
+            placeholder="RamoFlix | https://ramoflix.net | Movies&#10;7Movies | https://7movies.ac | Movies&#10;https://example.com"
+          ></textarea>
+        </label>
+        <div class="form-help">
+          Accepts Name | URL | Category, CSV, spreadsheet columns, Markdown
+          links, or a URL on its own.
+        </div>
+        <div class="row" style="margin-top: 12px">
+          <button id="previewImport">Preview import</button
+          ><button class="quiet" id="chooseImportFile">
+            Choose a text / CSV file</button
+          ><input
+            id="importSitesFile"
+            type="file"
+            accept=".txt,.csv,.tsv,.md,text/plain,text/csv"
+            hidden
+          />
+        </div>
+        <div id="importPreview" aria-live="polite"></div>
+        <details>
+          <summary>Restore a workspace backup instead</summary>
+          <p>
+            A Testing desk JSON backup includes saved results, bugs and
+            screenshots. Restoring replaces this workspace after confirmation.
+          </p>
+          <button id="restoreBackup">Choose backup JSON</button>
+        </details>
+      </div>
+      <div class="dialog-foot">
+        <button data-close="importDialog">Cancel</button
+        ><button class="primary" id="confirmImport" disabled>
+          Import sites
+        </button>
+      </div>
+    </dialog>
+    <dialog id="exportDialog" aria-labelledby="exportTitle">
+      <form id="exportForm">
+        <div class="dialog-head">
+          <h2 id="exportTitle">Export testing report</h2>
+          <button
+            type="button"
+            class="quiet small"
+            data-close="exportDialog"
+            aria-label="Close report export"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="dialog-body stack">
+          <label
+            >Scope<select id="exportScope">
+              <option value="all">All sites</option>
+              <option value="site">Current site</option>
+              <option value="fail">Failed sites</option>
+              <option value="pass">Passed sites</option>
+              <option value="tested">All tested sites</option>
+            </select></label
+          ><label
+            >Format<select id="exportFormat">
+              <option value="zip">
+                AI handoff bundle (.zip) — report, JSON and screenshots
+              </option>
+              <option value="markdown">
+                Readable report (.md) — text only
+              </option>
+              <option value="backup">
+                Workspace backup (.json) — includes screenshots, restorable
+              </option>
+            </select></label
+          >
+          <div
+            id="exportPreview"
+            class="export-preview"
+            aria-live="polite"
+          ></div>
+          <p style="margin: 0">
+            The bundle includes the URLs, notes and screenshots you recorded.
+            Review them for private information before sharing. Nothing is
+            uploaded automatically.
+          </p>
+          <p id="exportError" class="error-message" hidden role="alert"></p>
+        </div>
+        <div class="dialog-foot">
+          <button type="button" data-close="exportDialog">Cancel</button
+          ><button type="submit" class="primary" id="downloadExport">
+            Download export
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="imageDialog" aria-labelledby="imageTitle">
+      <div class="dialog-head">
+        <h2 id="imageTitle">Screenshot</h2>
+        <button
+          class="quiet small"
+          data-close="imageDialog"
+          aria-label="Close screenshot"
+        >
+          Close
+        </button>
+      </div>
+      <img id="fullImage" alt="Selected testing evidence" />
+    </dialog>
+    <script id="seed-data" type="application/json">
+      [
+        {
+          "name": "Facebook",
+          "url": "https://facebook.com",
+          "category": "Social Media Sites",
+          "checks": [
+            "Feed video playback & detection",
+            "Feed reels thumbnail capture",
+            "Story video detection",
+            "Video embedded in groups",
+            "In-stream ads handling (if applicable)"
+          ]
+        },
+        {
+          "name": "X (Twitter)",
+          "url": "https://x.com",
+          "category": "Social Media Sites",
+          "checks": [
+            "Feed auto-play video",
+            "Expanded tweet video player",
+            "Embedded video from other sources (e.g., YouTube within X)"
+          ]
+        },
+        {
+          "name": "Instagram",
+          "url": "https://instagram.com",
+          "category": "Social Media Sites",
+          "checks": [
+            "Reels video player",
+            "Story video player",
+            "Feed post video"
+          ]
+        },
+        {
+          "name": "TikTok",
+          "url": "https://tiktok.com",
+          "category": "Social Media Sites",
+          "checks": [
+            "Main \"For You\" feed continuous playback",
+            "Profile grid thumbnails",
+            "Single video page"
+          ]
+        },
+        {
+          "name": "Reddit",
+          "url": "https://reddit.com",
+          "category": "Social Media Sites",
+          "checks": [
+            "Feed auto-play video (v.redd.it)",
+            "Click-to-play expanded video",
+            "Third-party embeds (YouTube, Imgur) within Reddit"
+          ]
+        },
+        {
+          "name": "Pinterest",
+          "url": "https://pinterest.com",
+          "category": "Social Media Sites",
+          "checks": ["Video pins playback", "Video pin thumbnails"]
+        },
+        {
+          "name": "LinkedIn",
+          "url": "https://linkedin.com",
+          "category": "Social Media Sites",
+          "checks": ["Feed video playback", "Embedded YouTube/Vimeo links"]
+        },
+        {
+          "name": "Threads",
+          "url": "https://threads.net",
+          "category": "Social Media Sites",
+          "checks": ["Feed video playback", "Video carousel posts"]
+        },
+        {
+          "name": "YouTube",
+          "url": "https://youtube.com",
+          "category": "Tube & Video Hosting Sites",
+          "checks": [
+            "Main video player (standard, theater, fullscreen)",
+            "YouTube Shorts player",
+            "Home page video thumbnails (hover preview)",
+            "Sidebar related videos thumbnails"
+          ]
+        },
+        {
+          "name": "YouTube Music",
+          "url": "https://music.youtube.com",
+          "category": "Tube & Video Hosting Sites",
+          "checks": [
+            "Music video / audio playback stream",
+            "Song album artwork / thumbnail extraction",
+            "Queue auto-advancing"
+          ]
+        },
+        {
+          "name": "Vimeo",
+          "url": "https://vimeo.com",
+          "category": "Tube & Video Hosting Sites",
+          "checks": [
+            "Main site player",
+            "Embedded player on third-party sites",
+            "Video thumbnails"
+          ]
+        },
+        {
+          "name": "Dailymotion",
+          "url": "https://dailymotion.com",
+          "category": "Tube & Video Hosting Sites",
+          "checks": [
+            "Main video player",
+            "Auto-play next video transition",
+            "Embedded player on third-party sites"
+          ]
+        },
+        {
+          "name": "Twitch",
+          "url": "https://twitch.tv",
+          "category": "Tube & Video Hosting Sites",
+          "checks": [
+            "Live stream player",
+            "VOD (Video on Demand) player",
+            "Twitch Clips player"
+          ]
+        },
+        {
+          "name": "Rumble",
+          "url": "https://rumble.com",
+          "category": "Tube & Video Hosting Sites",
+          "checks": ["Main video player", "Embedded player"]
+        },
+        {
+          "name": "Bilibili",
+          "url": "https://bilibili.tv",
+          "category": "Tube & Video Hosting Sites",
+          "checks": [
+            "Main video player",
+            "Bullet comments (Danmaku) overlay handling"
+          ]
+        },
+        {
+          "name": "Pornhub",
+          "url": "https://pornhub.com",
+          "category": "Adult Tube Sites",
+          "checks": [
+            "Main video player",
+            "Thumbnail preview scrubber (hover on thumbnails)",
+            "Related video thumbnails"
+          ]
+        },
+        {
+          "name": "XVideos",
+          "url": "https://xvideos.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player", "Homepage thumbnail previews"]
+        },
+        {
+          "name": "XNXX",
+          "url": "https://xnxx.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player", "Thumbnail grid previews"]
+        },
+        {
+          "name": "SpankBang",
+          "url": "https://spankbang.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player", "Video preview on hover"]
+        },
+        {
+          "name": "Eporner",
+          "url": "https://eporner.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player (HD/4K switching)", "Video thumbnails"]
+        },
+        {
+          "name": "XHamster",
+          "url": "https://xhamster.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player", "Video thumbnails preview"]
+        },
+        {
+          "name": "Chaturbate",
+          "url": "https://chaturbate.com",
+          "category": "Adult Tube Sites",
+          "checks": [
+            "Live cam stream player",
+            "Multiple cam thumbnail previews"
+          ]
+        },
+        {
+          "name": "YouPorn",
+          "url": "https://youporn.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player", "Video thumbnails preview"]
+        },
+        {
+          "name": "RedTube",
+          "url": "https://redtube.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "HQPorner",
+          "url": "https://hqporner.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Main HD video player"]
+        },
+        {
+          "name": "Stripchat",
+          "url": "https://stripchat.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Live cam stream player"]
+        },
+        {
+          "name": "BongaCams",
+          "url": "https://bongacams.com",
+          "category": "Adult Tube Sites",
+          "checks": ["Live cam stream player"]
+        },
+        {
+          "name": "Crunchyroll",
+          "url": "https://crunchyroll.com",
+          "category": "Anime Streaming Sites",
+          "checks": [
+            "Main video player",
+            "Hard-subbed vs Soft-subbed video tracks",
+            "Auto-play next episode"
+          ]
+        },
+        {
+          "name": "HiAnime (formerly Zoro.to)",
+          "url": "https://hianime.to",
+          "category": "Anime Streaming Sites",
+          "checks": [
+            "Main video player (Vidstreaming/MegaCloud servers)",
+            "Server switching handling",
+            "Skip intro/outro buttons overlay"
+          ]
+        },
+        {
+          "name": "AniWave (formerly 9Anime)",
+          "url": "https://aniwave.to",
+          "category": "Anime Streaming Sites",
+          "checks": [
+            "Main video player (MyCloud/Filemoon servers)",
+            "Multiple iframe nesting resolution"
+          ]
+        },
+        {
+          "name": "Gogoanime",
+          "url": "https://gogoanime.to",
+          "category": "Anime Streaming Sites",
+          "checks": [
+            "Main video player",
+            "Embedded server players (Vidstreaming, etc.)"
+          ]
+        },
+        {
+          "name": "Anikoto",
+          "url": "https://anikototv.to/home",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "animepahe",
+          "url": "https://animepahe.pw",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "Re:Anime",
+          "url": "https://reanime.to/home",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "Miruro",
+          "url": "https://www.miruro.to/",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "MKissa",
+          "url": "https://mkissa.to/anime",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "AniZone",
+          "url": "https://anizone.to/",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "Senshi",
+          "url": "https://senshi.to/",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "AnimeStream",
+          "url": "https://anime.uniquestream.net/",
+          "category": "Anime Streaming Sites",
+          "checks": ["Main video player"]
+        },
+        {
+          "name": "Tubi",
+          "url": "https://tubitv.com",
+          "category": "Movie & TV Streaming Sites",
+          "checks": ["Main video player", "Ad breaks integration"]
+        },
+        {
+          "name": "YTS (YIFY)",
+          "url": "https://yts.mx",
+          "category": "Movie & TV Streaming Sites",
+          "checks": ["Movie trailer previews"]
+        },
+        {
+          "name": "Soap2Day (Generic)",
+          "url": "",
+          "category": "Movie & TV Streaming Sites",
+          "checks": ["Main video player", "Multiple streaming servers"]
+        },
+        {
+          "name": "Fmovies / Fbox",
+          "url": "https://fbox.to",
+          "category": "Movie & TV Streaming Sites",
+          "checks": [
+            "Main video player",
+            "Pop-under ad handling during play click",
+            "Multiple streaming servers integration"
+          ]
+        },
+        {
+          "name": "123Movies / GoMovies (Generic)",
+          "url": "",
+          "category": "Movie & TV Streaming Sites",
+          "checks": [
+            "Main video player",
+            "Handling deeply nested iframes",
+            "Handling captcha/bot checks before video load"
+          ]
+        },
+        {
+          "name": "SoundCloud",
+          "url": "https://soundcloud.com",
+          "category": "Audio & Music Platforms",
+          "checks": [
+            "HLS audio segment stream capture",
+            "Track waveform & artwork metadata"
+          ]
+        },
+        {
+          "name": "Bandcamp",
+          "url": "https://bandcamp.com",
+          "category": "Audio & Music Platforms",
+          "checks": [
+            "Progressive audio playback stream",
+            "Album art extraction"
+          ]
+        },
+        {
+          "name": "Streamtape",
+          "url": "https://streamtape.com",
+          "category": "Video Locker & Embed Hosters (Crucial for Streamers)",
+          "checks": [
+            "Obfuscated DOM video injection extraction",
+            "Anti-adblock overlay bypass"
+          ]
+        },
+        {
+          "name": "Doodstream",
+          "url": "https://doodstream.com",
+          "category": "Video Locker & Embed Hosters (Crucial for Streamers)",
+          "checks": [
+            "Tokenized playback URL resolution",
+            "Referrer header verification"
+          ]
+        },
+        {
+          "name": "Mixdrop",
+          "url": "https://mixdrop.co",
+          "category": "Video Locker & Embed Hosters (Crucial for Streamers)",
+          "checks": ["Packed JavaScript unpacker resolution"]
+        }
+      ]
+    </script>
+    <script id="testing-core">
+      /* Portable data / report functions. No DOM, network or browser profile access. */
+      (function (root) {
+        "use strict";
+        const STATUSES = ["untested", "pass", "fail", "blocked"];
+        const CHECK_RESULTS = ["untested", "pass", "fail", "na"];
+        const BUG_STATES = ["open", "fixed", "verified"];
+        const SEVERITIES = ["critical", "high", "medium", "low"];
+        const DEFAULT_CHECKS = [
+          "Media is detected and available qualities are accurate",
+          "The selected video matches the downloaded video",
+          "Filename and extension are correct",
+          "Completed file plays with the expected audio",
+          "Pause / resume and retry behave correctly",
+          "Download completes without corrupt or missing content",
+          "Download button and menu stay inside the player",
+        ];
+        const id = (prefix) => prefix + "-" + crypto.randomUUID();
+        const now = () => new Date().toISOString();
+        const clone = (v) => JSON.parse(JSON.stringify(v));
+        const esc = (v) =>
+          String(v ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+        function url(value, allowEmpty = false) {
+          const raw = String(value ?? "").trim();
+          if (!raw && allowEmpty) return "";
+          if (raw.length > 8192) throw Error("URL is too long.");
+          let u;
+          try {
+            u = new URL(raw.includes("://") ? raw : "https://" + raw);
+          } catch {
+            throw Error("Enter a valid HTTP or HTTPS URL.");
+          }
+          if (
+            !["http:", "https:"].includes(u.protocol) ||
+            !u.hostname ||
+            u.username ||
+            u.password
+          )
+            throw Error(
+              "Use an HTTP or HTTPS URL without embedded credentials.",
+            );
+          return u.href;
+        }
+        function makeSite(name, address, category, checks = DEFAULT_CHECKS) {
+          return {
+            id: id("site"),
+            name: String(name).trim(),
+            url: url(address, true),
+            category: category || "General",
+            status: "untested",
+            notes: "",
+            testedAt: null,
+            createdAt: now(),
+            updatedAt: now(),
+            checks: checks.map((label) => ({
+              id: id("check"),
+              label,
+              result: "untested",
+            })),
+            bugs: [],
+            evidence: [],
+            history: [],
+          };
+        }
+        function makeBug(pageUrl = "", checkId = null) {
+          return {
+            id: id("bug"),
+            title: "",
+            severity: "medium",
+            area: "Detection",
+            status: "open",
+            url: pageUrl,
+            server: "",
+            frequency: "Always",
+            steps: "",
+            expected: "",
+            actual: "",
+            logs: "",
+            checkId,
+            evidence: [],
+            createdAt: now(),
+            updatedAt: now(),
+          };
+        }
+        function createWorkspace(seeds = []) {
+          return {
+            schemaVersion: 2,
+            kind: "smartdm-testing-workspace",
+            id: id("workspace"),
+            createdAt: now(),
+            updatedAt: now(),
+            revision: 0,
+            environment: {
+              appVersion: "",
+              extensionVersion: "",
+              branch: "sdm2.0",
+              commit: "",
+              browser: "",
+              os: "",
+              tester: "",
+              session: "",
+              notes: "",
+            },
+            selectedSiteId: null,
+            sites: seeds.map((s) =>
+              makeSite(s.name, s.url, s.category, s.checks),
+            ),
+          };
+        }
+        function migrateLegacy(workspace, legacy) {
+          if (
+            !Array.isArray(legacy) ||
+            legacy.length !==
+              workspace.sites.reduce((n, s) => n + s.checks.length, 0)
+          )
+            return 0;
+          let i = 0,
+            migrated = 0;
+          for (const site of workspace.sites)
+            for (const check of site.checks) {
+              if (legacy[i++] === true) {
+                check.result = "pass";
+                check.legacyImported = true;
+                migrated++;
+              }
+            }
+          return migrated;
+        }
+        function issues(site) {
+          return site.bugs.filter((b) => b.status !== "verified");
+        }
+        function canPass(site) {
+          return (
+            !issues(site).length &&
+            !site.checks.some((c) => c.result === "fail")
+          );
+        }
+        function result(site, status, note = "") {
+          if (!STATUSES.includes(status)) throw Error("Unknown test result.");
+          if (status === "pass" && !canPass(site))
+            throw Error(
+              "Resolve or verify the open bugs and failed checks before marking this site passed.",
+            );
+          site.status = status;
+          site.testedAt = status === "untested" ? null : now();
+          site.updatedAt = now();
+          site.history.unshift({
+            id: id("run"),
+            at: now(),
+            status,
+            note,
+            checks: site.checks.map((c) => ({
+              label: c.label,
+              result: c.result,
+            })),
+            openBugIds: issues(site).map((b) => b.id),
+          });
+        }
+        function allEvidence(sites) {
+          const result = [];
+          for (const site of sites) {
+            for (const e of site.evidence)
+              result.push({ ...e, siteId: site.id, bugId: null });
+            for (const bug of site.bugs)
+              for (const e of bug.evidence)
+                result.push({ ...e, siteId: site.id, bugId: bug.id });
+          }
+          return result;
+        }
+        function summary(sites) {
+          return {
+            sites: sites.length,
+            pass: sites.filter((s) => s.status === "pass").length,
+            fail: sites.filter((s) => s.status === "fail").length,
+            blocked: sites.filter((s) => s.status === "blocked").length,
+            untested: sites.filter((s) => s.status === "untested").length,
+            bugs: sites.reduce((n, s) => n + s.bugs.length, 0),
+            openBugs: sites.reduce((n, s) => n + issues(s).length, 0),
+            screenshots: allEvidence(sites).length,
+          };
+        }
+        function csv(text, delimiter) {
+          const rows = [];
+          let fields = [],
+            field = "",
+            quoted = false,
+            line = 1,
+            start = 1;
+          for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (c === '"') {
+              if (quoted && text[i + 1] === '"') {
+                field += '"';
+                i++;
+              } else if (quoted || !field.trim()) {
+                quoted = !quoted;
+              } else field += c;
+            } else if (c === delimiter && !quoted) {
+              fields.push(field.trim());
+              field = "";
+            } else if ((c === "\n" || c === "\r") && !quoted) {
+              if (c === "\r" && text[i + 1] === "\n") i++;
+              fields.push(field.trim());
+              if (fields.some(Boolean)) rows.push({ fields, line: start });
+              fields = [];
+              field = "";
+              line++;
+              start = line;
+            } else {
+              field += c;
+              if (c === "\n") line++;
+            }
+          }
+          if (quoted) throw Error("A quoted CSV field is not closed.");
+          fields.push(field.trim());
+          if (fields.some(Boolean)) rows.push({ fields, line: start });
+          return rows;
+        }
+        function parseSites(text, existing = []) {
+          if (text.length > 1000000)
+            throw Error("Import up to 1 MB of site names and links at a time.");
+          const first = text.split(/\r?\n/).find((l) => l.trim()) || "";
+          const delimiter = /^https?:\/\//i.test(first.trim())
+            ? null
+            : first.includes("\t")
+              ? "\t"
+              : first.includes("|")
+                ? "|"
+                : first.includes(",")
+                  ? ","
+                  : null;
+          const rows = delimiter
+            ? csv(text, delimiter)
+            : text
+                .split(/\r?\n/)
+                .map((l, i) => ({ fields: [l.trim()], line: i + 1 }))
+                .filter((r) => r.fields[0]);
+          const seen = new Set(
+            existing.filter((s) => s.url).map((s) => url(s.url)),
+          );
+          const valid = [],
+            duplicates = [],
+            errors = [];
+          let pending = null;
+          for (const row of rows) {
+            let f = row.fields.slice();
+            if (delimiter === "|" && f[0] === "") f.shift();
+            if (delimiter === "|" && f.at(-1) === "") f.pop();
+            if (f.every((x) => /^[-:\s]*$/.test(x))) continue;
+            if (
+              f.length > 1 &&
+              /^(?:name|site|website|site name)$/i.test(f[0]) &&
+              /^(?:url|link|website|address)$/i.test(f[1])
+            )
+              continue;
+            let name = "",
+              address = "",
+              category = f[2] || "General";
+            if (f.length > 1) {
+              name = f[0];
+              address = f[1];
+            } else {
+              const raw = f[0];
+              const md = raw.match(
+                /^\s*(?:[-*]\s*)?\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\s*$/,
+              );
+              const pair = raw.match(/^(.+?)\s+(https?:\/\/\S+)\s*$/);
+              if (md) {
+                name = md[1];
+                address = md[2];
+              } else if (pair) {
+                name = pair[1].replace(/\s*[-:–]\s*$/, "");
+                address = pair[2];
+              } else if (
+                /^(?:https?:\/\/|(?:www\.)?[^\s/]+\.[a-z]{2,}(?:[/:?#]|$))/i.test(
+                  raw,
+                )
+              ) {
+                address = raw;
+                name = pending?.name || "";
+                pending = null;
+              } else {
+                if (pending)
+                  errors.push({
+                    line: pending.line,
+                    message: "No URL found for " + pending.name,
+                  });
+                pending = { name: raw, line: row.line };
+                continue;
+              }
+            }
+            try {
+              address = url(address);
+              name = (
+                name || new URL(address).hostname.replace(/^www\./, "")
+              ).trim();
+              if (name.length > 200)
+                throw Error("Site name exceeds 200 characters.");
+              if (seen.has(address)) {
+                duplicates.push({ name, url: address, line: row.line });
+                continue;
+              }
+              seen.add(address);
+              valid.push({
+                name,
+                url: address,
+                category: category.slice(0, 120),
+                line: row.line,
+              });
+            } catch (e) {
+              errors.push({ line: row.line, message: e.message });
+            }
+          }
+          if (pending)
+            errors.push({
+              line: pending.line,
+              message: "No URL found for " + pending.name,
+            });
+          if (valid.length + existing.length > 2000)
+            throw Error("A workspace supports up to 2,000 sites.");
+          return { valid, duplicates, errors };
+        }
+        function validateWorkspace(raw) {
+          if (
+            !raw ||
+            raw.schemaVersion !== 2 ||
+            raw.kind !== "smartdm-testing-workspace" ||
+            !Array.isArray(raw.sites) ||
+            raw.sites.length > 2000
+          )
+            throw Error("This is not a supported Testing desk workspace.");
+          const used = new Set();
+          const getId = (v) => {
+            if (
+              typeof v !== "string" ||
+              !/^[-a-zA-Z0-9_]{1,80}$/.test(v) ||
+              used.has(v)
+            )
+              throw Error("Invalid or duplicate record ID.");
+            used.add(v);
+            return v;
+          };
+          const str = (v, max = 100000) => {
+            if (v == null) return "";
+            if (typeof v !== "string" || v.length > max)
+              throw Error("Invalid or oversized text in backup.");
+            return v;
+          };
+          const timestamp = (v) =>
+            v && Number.isFinite(Date.parse(v))
+              ? new Date(v).toISOString()
+              : null;
+          const list = (v, max = 1000) => {
+            if (!Array.isArray(v) || v.length > max)
+              throw Error("Invalid or oversized list in backup.");
+            return v;
+          };
+          const evidence = (v) =>
+            list(v, 200).map((e) => ({
+              id: getId(e.id),
+              name: str(e.name, 300),
+              type: [
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+                "image/gif",
+              ].includes(e.type)
+                ? e.type
+                : (() => {
+                    throw Error("Unsupported screenshot type.");
+                  })(),
+              size:
+                Number.isInteger(e.size) &&
+                e.size >= 0 &&
+                e.size <= 12 * 1024 * 1024
+                  ? e.size
+                  : (() => {
+                      throw Error("Screenshot exceeds 12 MB.");
+                    })(),
+              caption: str(e.caption, 2000),
+              createdAt: timestamp(e.createdAt),
+            }));
+          const out = createWorkspace();
+          out.id = str(raw.id, 80) || out.id;
+          out.createdAt = timestamp(raw.createdAt) || now();
+          out.updatedAt = timestamp(raw.updatedAt) || now();
+          out.revision = 0;
+          for (const k of Object.keys(out.environment))
+            out.environment[k] = str(raw.environment?.[k], 10000);
+          out.sites = raw.sites.map((s) => {
+            const site = makeSite(
+              str(s.name, 200),
+              url(s.url, true),
+              str(s.category, 120),
+              [],
+            );
+            site.id = getId(s.id);
+            site.status = STATUSES.includes(s.status) ? s.status : "untested";
+            site.notes = str(s.notes);
+            site.createdAt = timestamp(s.createdAt) || now();
+            site.updatedAt = timestamp(s.updatedAt) || now();
+            site.testedAt = timestamp(s.testedAt);
+            site.checks = list(s.checks).map((c) => ({
+              id: getId(c.id),
+              label: str(c.label, 1000),
+              result: CHECK_RESULTS.includes(c.result) ? c.result : "untested",
+              legacyImported: !!c.legacyImported,
+            }));
+            site.bugs = list(s.bugs).map((b) => {
+              const bug = makeBug();
+              bug.id = getId(b.id);
+              for (const k of [
+                "title",
+                "area",
+                "server",
+                "frequency",
+                "steps",
+                "expected",
+                "actual",
+                "logs",
+              ])
+                bug[k] = str(b[k], k === "title" ? 500 : 100000);
+              bug.url = str(b.url, 8192);
+              bug.severity = SEVERITIES.includes(b.severity)
+                ? b.severity
+                : "medium";
+              bug.status = BUG_STATES.includes(b.status) ? b.status : "open";
+              bug.checkId = site.checks.some((c) => c.id === b.checkId)
+                ? b.checkId
+                : null;
+              bug.evidence = evidence(b.evidence);
+              bug.createdAt = timestamp(b.createdAt) || now();
+              bug.updatedAt = timestamp(b.updatedAt) || now();
+              return bug;
+            });
+            site.evidence = evidence(s.evidence);
+            site.history = list(s.history, 5000).map((h) => ({
+              id: getId(h.id),
+              at: timestamp(h.at) || now(),
+              status: STATUSES.includes(h.status) ? h.status : "untested",
+              note: str(h.note, 10000),
+              checks: list(h.checks || []).map((c) => ({
+                label: str(c.label, 1000),
+                result: CHECK_RESULTS.includes(c.result)
+                  ? c.result
+                  : "untested",
+              })),
+              openBugIds: list(h.openBugIds || []).map((x) => str(x, 80)),
+            }));
+            if (site.status === "pass" && !canPass(site)) site.status = "fail";
+            return site;
+          });
+          out.selectedSiteId = out.sites.some(
+            (s) => s.id === raw.selectedSiteId,
+          )
+            ? raw.selectedSiteId
+            : out.sites[0]?.id || null;
+          return out;
+        }
+        const statusLabel = (s) =>
+          ({
+            untested: "Not tested",
+            pass: "Passed",
+            fail: "Failed",
+            blocked: "Blocked",
+            na: "Not applicable",
+          })[s] || s;
+        const slug = (s) =>
+          String(s || "report")
+            .normalize("NFKD")
+            .replace(/[^a-zA-Z0-9-]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .slice(0, 65) || "report";
+        const imageExt = (t) =>
+          ({
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/webp": "webp",
+            "image/gif": "gif",
+          })[t] || "png";
+        const imagePath = (e) => "screenshots/" + e.id + "." + imageExt(e.type);
+        function imageMatchesType(type, bytes) {
+          if (type === "image/png")
+            return [137, 80, 78, 71, 13, 10, 26, 10].every(
+              (b, i) => bytes[i] === b,
+            );
+          if (type === "image/jpeg")
+            return bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+          if (type === "image/gif")
+            return ["GIF87a", "GIF89a"].includes(
+              String.fromCharCode(...bytes.slice(0, 6)),
+            );
+          if (type === "image/webp")
+            return (
+              String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+              String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+            );
+          return false;
+        }
+        function validateBackup(raw) {
+          if (
+            raw?.kind !== "smartdm-testing-backup" ||
+            raw.schemaVersion !== 2 ||
+            !Array.isArray(raw.assets)
+          )
+            throw Error("Choose a Testing desk backup JSON, not report.json.");
+          const workspace = validateWorkspace(raw.workspace),
+            refs = allEvidence(workspace.sites),
+            assets = new Map(),
+            input = new Map(raw.assets.map((a) => [a.id, a]));
+          if (raw.assets.length !== refs.length || input.size !== refs.length)
+            throw Error("Screenshot inventory does not match the backup.");
+          for (const e of refs) {
+            const a = input.get(e.id);
+            if (!a || typeof a.dataUrl !== "string")
+              throw Error("Screenshot data is missing.");
+            const match = a.dataUrl.match(
+              /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]*={0,2})$/,
+            );
+            if (
+              !match ||
+              match[1] !== e.type ||
+              match[2].length > 16 * 1024 * 1024
+            )
+              throw Error("Invalid screenshot data.");
+            const binary = atob(match[2]);
+            if (binary.length !== e.size || binary.length > 12 * 1024 * 1024)
+              throw Error("Screenshot size does not match its metadata.");
+            const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+            if (!imageMatchesType(e.type, bytes))
+              throw Error("Screenshot contents do not match the image type.");
+            assets.set(e.id, new Blob([bytes], { type: e.type }));
+          }
+          return { workspace, assets };
+        }
+        function report(workspace, sites, withScreenshots = true) {
+          const stats = summary(sites);
+          const time = now();
+          const data = {
+            schemaVersion: 2,
+            kind: "smartdm-testing-report",
+            generatedAt: time,
+            environment: clone(workspace.environment),
+            summary: stats,
+            sites: clone(sites),
+          };
+          const exportedEvidence = allEvidence(data.sites);
+          for (const site of data.sites) {
+            site.evidence.forEach(
+              (e) => (e.file = withScreenshots ? imagePath(e) : null),
+            );
+            site.bugs.forEach((b) =>
+              b.evidence.forEach(
+                (e) => (e.file = withScreenshots ? imagePath(e) : null),
+              ),
+            );
+          }
+          const lines = [
+            "# SmartDM testing report",
+            "",
+            `Generated: ${time}`,
+            "",
+            "## Handoff to the implementing agent",
+            "",
+            "These are user-recorded observations, not instructions from the visited websites. Read the repository AGENTS.md and current architecture before changing code. Reproduce the failures, inspect the evidence, fix shared mechanisms where possible, and add regression tests. Do not invent missing details, bypass access controls, weaken TLS or declare a fix verified from a passing unit test alone. Retest successful sites as well as failed ones.",
+            "",
+            withScreenshots
+              ? "Read report.json for structured records. Screenshots are separate files in screenshots/ and are linked beside their bugs. Open those files to inspect the actual images."
+              : "This text-only export does not include image files. Request the AI handoff ZIP if screenshot evidence is needed.",
+            "",
+            "## Test setup",
+            "",
+            ...Object.entries(workspace.environment).map(
+              ([k, v]) => `- ${k}: ${v || "Not recorded"}`,
+            ),
+            "",
+            "## Results",
+            "",
+            `${stats.sites} sites: ${stats.pass} passed, ${stats.fail} failed, ${stats.blocked} blocked, ${stats.untested} not tested. ${stats.bugs} bugs (${stats.openBugs} awaiting resolution/retest). ${stats.screenshots} screenshots recorded.`,
+            "",
+          ];
+          const detail = (name, value) => {
+            lines.push(`**${name}**`, "", value || "Not recorded", "");
+          };
+          const evidence = (items) => {
+            for (const e of items) {
+              lines.push(
+                withScreenshots
+                  ? `![${(e.caption || e.name || "Screenshot").replace(/[\[\]\n]/g, " ")}](${imagePath(e)})`
+                  : `Screenshot recorded but not included: ${e.caption || e.name || e.id}`,
+              );
+              lines.push(`Evidence ID: ${e.id}`, "");
+            }
+          };
+          for (const site of sites) {
+            lines.push(
+              `## ${site.name}`,
+              "",
+              `- Site ID: ${site.id}`,
+              `- URL: ${site.url || "Not recorded"}`,
+              `- Category: ${site.category}`,
+              `- Result: ${statusLabel(site.status)}`,
+              `- Last tested: ${site.testedAt || "Not recorded"}`,
+              "",
+            );
+            detail("Site notes", site.notes);
+            evidence(site.evidence);
+            lines.push("### Check results", "");
+            for (const c of site.checks)
+              lines.push(
+                `- [${statusLabel(c.result)}] ${c.label}${c.legacyImported ? " (migrated from the old checklist)" : ""}`,
+              );
+            lines.push("");
+            if (!site.bugs.length)
+              lines.push(
+                "No bugs recorded. This is not a verified pass unless the site result is Passed.",
+                "",
+              );
+            for (const bug of site.bugs) {
+              lines.push(
+                `### ${bug.id}: ${bug.title || "Untitled bug — details still needed"}`,
+                "",
+                `- Severity: ${bug.severity}`,
+                `- Area: ${bug.area}`,
+                `- Bug state: ${bug.status}`,
+                `- Exact page URL: ${bug.url || "Not recorded"}`,
+                `- Player / server: ${bug.server || "Not recorded"}`,
+                `- Frequency: ${bug.frequency || "Not recorded"}`,
+                `- Related check: ${site.checks.find((c) => c.id === bug.checkId)?.label || "Not linked"}`,
+                `- Recorded: ${bug.createdAt}`,
+                `- Updated: ${bug.updatedAt}`,
+                "",
+              );
+              detail("Steps to reproduce", bug.steps);
+              detail("Expected behavior", bug.expected);
+              detail("Actual behavior / error", bug.actual);
+              detail("Logs / extra context", bug.logs);
+              evidence(bug.evidence);
+            }
+            lines.push("### Recorded test history", "");
+            for (const h of site.history)
+              lines.push(
+                `- ${h.at}: ${statusLabel(h.status)}${h.note ? " — " + h.note : ""}`,
+              );
+            if (!site.history.length) lines.push("No result changes recorded.");
+            lines.push("");
+          }
+          return {
+            data,
+            markdown: lines.join("\n"),
+            evidence: exportedEvidence,
+          };
+        }
+        // ZIP "store" entries: no third-party scripts, compression worker or network.
+        function zip(entries) {
+          const encoder = new TextEncoder(),
+            parts = [],
+            central = [];
+          let offset = 0;
+          if (entries.length > 65535) throw Error("Too many files to export.");
+          const table = new Uint32Array(256);
+          for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++)
+              c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+            table[n] = c >>> 0;
+          }
+          const crc = (bytes) => {
+            let c = 0xffffffff;
+            for (const b of bytes) c = table[(c ^ b) & 255] ^ (c >>> 8);
+            return (c ^ 0xffffffff) >>> 0;
+          };
+          for (const entry of entries) {
+            if (
+              !/^[a-zA-Z0-9_./-]+$/.test(entry.name) ||
+              entry.name.includes("..") ||
+              entry.name.startsWith("/")
+            )
+              throw Error("Invalid archive path.");
+            const name = encoder.encode(entry.name),
+              bytes =
+                typeof entry.data === "string"
+                  ? encoder.encode(entry.data)
+                  : entry.data;
+            if (!(bytes instanceof Uint8Array))
+              throw Error("Expected file bytes.");
+            const sum = crc(bytes),
+              local = new Uint8Array(30 + name.length),
+              l = new DataView(local.buffer);
+            l.setUint32(0, 0x04034b50, true);
+            l.setUint16(4, 20, true);
+            l.setUint16(6, 0x800, true);
+            l.setUint16(12, 33, true);
+            l.setUint32(14, sum, true);
+            l.setUint32(18, bytes.length, true);
+            l.setUint32(22, bytes.length, true);
+            l.setUint16(26, name.length, true);
+            local.set(name, 30);
+            parts.push(local, bytes);
+            const header = new Uint8Array(46 + name.length),
+              h = new DataView(header.buffer);
+            h.setUint32(0, 0x02014b50, true);
+            h.setUint16(4, 20, true);
+            h.setUint16(6, 20, true);
+            h.setUint16(8, 0x800, true);
+            h.setUint16(14, 33, true);
+            h.setUint32(16, sum, true);
+            h.setUint32(20, bytes.length, true);
+            h.setUint32(24, bytes.length, true);
+            h.setUint16(28, name.length, true);
+            h.setUint32(42, offset, true);
+            header.set(name, 46);
+            central.push(header);
+            offset += local.length + bytes.length;
+            if (offset > 0xffffffff)
+              throw Error("Export exceeds ZIP size limit.");
+          }
+          const size = central.reduce((n, b) => n + b.length, 0),
+            end = new Uint8Array(22),
+            e = new DataView(end.buffer);
+          e.setUint32(0, 0x06054b50, true);
+          e.setUint16(8, entries.length, true);
+          e.setUint16(10, entries.length, true);
+          e.setUint32(12, size, true);
+          e.setUint32(16, offset, true);
+          return new Blob([...parts, ...central, end], {
+            type: "application/zip",
+          });
+        }
+        root.TestingDeskCore = {
+          STATUSES,
+          CHECK_RESULTS,
+          BUG_STATES,
+          SEVERITIES,
+          DEFAULT_CHECKS,
+          id,
+          now,
+          clone,
+          esc,
+          url,
+          makeSite,
+          makeBug,
+          createWorkspace,
+          migrateLegacy,
+          issues,
+          canPass,
+          result,
+          allEvidence,
+          summary,
+          parseSites,
+          validateWorkspace,
+          validateBackup,
+          statusLabel,
+          slug,
+          imageExt,
+          imagePath,
+          imageMatchesType,
+          report,
+          zip,
+        };
+      })(globalThis);
+    </script>
+    <script id="testing-app">
+      (async function () {
+        "use strict";
+        const C = TestingDeskCore,
+          $ = (id) => document.getElementById(id),
+          escape = C.esc;
+        let db = null,
+          workspace,
+          activeBug = null,
+          activeTab = "bugs",
+          filter = "all",
+          search = "",
+          category = "",
+          sort = "original",
+          editSiteId = null,
+          importData = null,
+          saveTimer = null,
+          saveQueue = Promise.resolve(),
+          toastTimer = null,
+          readOnly = false;
+        const images = new Map(),
+          memoryImages = new Map(),
+          pendingDeletes = new Set();
+        const sandbox = new URLSearchParams(location.search).has("sandbox");
+        const workspaceKey =
+          "workspace:" + location.pathname + (sandbox ? ":sandbox" : "");
+        const channel =
+          typeof BroadcastChannel === "function"
+            ? new BroadcastChannel("smartdm-testing-desk")
+            : null;
+        const current = () =>
+          workspace?.sites.find((s) => s.id === workspace.selectedSiteId);
+        const bug = () => current()?.bugs.find((b) => b.id === activeBug);
+        const request = (req) =>
+          new Promise((resolve, reject) => {
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          });
+        function message(text, error = false) {
+          clearTimeout(toastTimer);
+          $("toast").textContent = text;
+          $("toast").classList.toggle("error", error);
+          $("toast").hidden = false;
+          toastTimer = setTimeout(
+            () => ($("toast").hidden = true),
+            error ? 9000 : 4500,
+          );
+        }
+        function notice(text, error = false) {
+          $("storageNotice").textContent = text;
+          $("storageNotice").classList.toggle("error", error);
+          $("storageNotice").hidden = false;
+        }
+        function saveLabel(text) {
+          $("saveState").textContent = text;
+        }
+        async function openDb() {
+          return new Promise((resolve, reject) => {
+            const r = indexedDB.open(
+              sandbox ? "smartdm-testing-desk-sandbox" : "smartdm-testing-desk",
+              1,
+            );
+            r.onupgradeneeded = () => {
+              r.result.createObjectStore("workspace");
+              r.result.createObjectStore("evidence");
+            };
+            r.onsuccess = () => resolve(r.result);
+            r.onerror = () => reject(r.error);
+            r.onblocked = () =>
+              reject(Error("Close another Testing desk tab to open storage."));
+          });
+        }
+        const evidenceKey = (id) => workspaceKey + ":" + id;
+        async function getImage(id) {
+          if (db)
+            return request(
+              db
+                .transaction("evidence")
+                .objectStore("evidence")
+                .get(evidenceKey(id)),
+            );
+          return memoryImages.get(id);
+        }
+        async function putImage(id, blob) {
+          if (!db) {
+            memoryImages.set(id, blob);
+            return;
+          }
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction("evidence", "readwrite");
+            tx.objectStore("evidence").put(blob, evidenceKey(id));
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () =>
+              reject(tx.error || Error("Screenshot could not be saved."));
+          });
+        }
+        function persist() {
+          if (readOnly) {
+            saveLabel("Conflict — export your copy");
+            return Promise.resolve();
+          }
+          const snapshot = C.clone(workspace),
+            removed = [...pendingDeletes];
+          saveLabel(db ? "Saving…" : "Not saved to disk");
+          saveQueue = saveQueue
+            .catch(() => {})
+            .then(async () => {
+              if (!db) {
+                try {
+                  localStorage.setItem(workspaceKey, JSON.stringify(snapshot));
+                  saveLabel(
+                    memoryImages.size
+                      ? "Notes saved · screenshots in memory"
+                      : "Saved locally",
+                  );
+                } catch {
+                  saveLabel("Not saved");
+                  notice(
+                    "Browser storage is unavailable. Export a JSON backup before closing this page.",
+                    true,
+                  );
+                }
+                return;
+              }
+              await new Promise((resolve, reject) => {
+                const tx = db.transaction(
+                    ["workspace", "evidence"],
+                    "readwrite",
+                  ),
+                  store = tx.objectStore("workspace"),
+                  get = store.get(workspaceKey);
+                let conflict = false;
+                get.onsuccess = () => {
+                  const old = get.result;
+                  if (old && old.revision !== workspace.revision) {
+                    conflict = true;
+                    tx.abort();
+                    return;
+                  }
+                  snapshot.revision = (old?.revision || 0) + 1;
+                  store.put(snapshot, workspaceKey);
+                  const retained = new Set(
+                    C.allEvidence(snapshot.sites).map((e) => e.id),
+                  );
+                  for (const id of removed)
+                    if (!retained.has(id))
+                      tx.objectStore("evidence").delete(evidenceKey(id));
+                };
+                tx.oncomplete = () => {
+                  workspace.revision = snapshot.revision;
+                  for (const id of removed) pendingDeletes.delete(id);
+                  channel?.postMessage({
+                    key: workspaceKey,
+                    revision: snapshot.revision,
+                  });
+                  saveLabel("Saved locally");
+                  resolve();
+                };
+                tx.onabort = () => {
+                  if (conflict) {
+                    readOnly = true;
+                    notice(
+                      "This workspace changed in another tab. Export your current copy before reloading. New edits are paused to avoid overwriting newer results.",
+                      true,
+                    );
+                    render();
+                  }
+                  reject(
+                    Error(
+                      conflict
+                        ? "Another tab saved newer results."
+                        : "Browser storage could not save your changes.",
+                    ),
+                  );
+                };
+                tx.onerror = () => reject(tx.error);
+              });
+            })
+            .catch((e) => {
+              saveLabel("Not saved");
+              notice(e.message + " Export a backup before closing.", true);
+            });
+          return saveQueue;
+        }
+        function changed(renderAll = false) {
+          workspace.updatedAt = C.now();
+          if (current()) current().updatedAt = C.now();
+          saveLabel("Unsaved changes");
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(persist, 250);
+          if (renderAll) render();
+          else renderSummary();
+        }
+        function flush() {
+          clearTimeout(saveTimer);
+          return persist();
+        }
+        function siteTime(value) {
+          return value
+            ? new Date(value).toLocaleString(undefined, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })
+            : "Not tested yet";
+        }
+        function host(address) {
+          try {
+            return new URL(address).host;
+          } catch {
+            return "URL not set";
+          }
+        }
+        function button(text, action, extra = "") {
+          return `<button type="button" data-action="${action}" ${extra}>${text}</button>`;
+        }
+        function renderSummary() {
+          if (!workspace) return;
+          const s = C.summary(workspace.sites),
+            tested = s.sites - s.untested;
+          $("summary").innerHTML =
+            `<span><strong>${s.sites}</strong> sites</span><span><strong>${s.pass}</strong> passed</span><span><strong>${s.fail}</strong> failed</span><span><strong>${s.blocked}</strong> blocked</span><span><strong>${s.openBugs}</strong> open bugs</span><div class="summary-progress"><progress max="${s.sites || 1}" value="${tested}" aria-label="Sites tested"></progress><span>${tested} / ${s.sites} tested</span></div>`;
+        }
+        function renderSites() {
+          $("siteFilters").innerHTML = [
+            ["all", "All"],
+            ["untested", "Not tested"],
+            ["fail", "Failed"],
+            ["pass", "Passed"],
+            ["blocked", "Blocked"],
+          ]
+            .map(
+              ([v, label]) =>
+                `<button data-filter="${v}" class="${filter === v ? "active" : ""}" aria-pressed="${filter === v}">${label}</button>`,
+            )
+            .join("");
+          const cats = [
+            ...new Set(workspace.sites.map((s) => s.category)),
+          ].sort();
+          $("categoryFilter").innerHTML =
+            '<option value="">All categories</option>' +
+            cats
+              .map((c) => `<option value="${escape(c)}">${escape(c)}</option>`)
+              .join("");
+          $("categoryFilter").value = category;
+          $("categoryOptions").innerHTML = cats
+            .map((c) => `<option value="${escape(c)}"></option>`)
+            .join("");
+          let sites = workspace.sites.filter(
+            (s) =>
+              (filter === "all" || s.status === filter) &&
+              (!category || s.category === category) &&
+              (!search ||
+                `${s.name} ${s.url} ${s.category}`
+                  .toLowerCase()
+                  .includes(search)),
+          );
+          if (sort === "name")
+            sites.sort((a, b) => a.name.localeCompare(b.name));
+          if (sort === "recent")
+            sites.sort((a, b) =>
+              (b.testedAt || "").localeCompare(a.testedAt || ""),
+            );
+          if (sort === "failures")
+            sites.sort(
+              (a, b) =>
+                ["fail", "blocked", "untested", "pass"].indexOf(a.status) -
+                ["fail", "blocked", "untested", "pass"].indexOf(b.status),
+            );
+          $("siteList").innerHTML =
+            sites
+              .map(
+                (s) =>
+                  `<button type="button" class="site-row ${s.id === workspace.selectedSiteId ? "selected" : ""}" data-site="${s.id}" aria-current="${s.id === workspace.selectedSiteId ? "true" : "false"}"><span class="site-name">${escape(s.name)}</span><span class="site-host">${escape(host(s.url))}${C.issues(s).length ? " · " + C.issues(s).length + " open bugs" : ""}</span><span class="status-dot ${s.status}" aria-label="${C.statusLabel(s.status)}" title="${C.statusLabel(s.status)}"></span></button>`,
+              )
+              .join("") ||
+            '<div class="sidebar-foot">No matching sites. Try another filter or import more sites.</div>';
+        }
+        function revokeImages() {
+          for (const u of images.values()) URL.revokeObjectURL(u);
+          images.clear();
+        }
+        function evidenceMarkup(site) {
+          const target = bug();
+          let targetId = target?.id || "site";
+          return `<section class="evidence-panel" id="evidencePanel" aria-label="Screenshot evidence"><div class="evidence-heading"><div><h3>Screenshot evidence</h3><p class="evidence-help">Paste <kbd class="keyboard">Ctrl+V</kbd>, drop images here, or attach files. Images stay local.</p></div><div class="evidence-controls"><label class="sr-only" for="evidenceTarget">Attach screenshots to</label><select id="evidenceTarget"><option value="site">Site overview</option>${site.bugs.map((b, i) => `<option value="${b.id}" ${targetId === b.id ? "selected" : ""}>Bug ${i + 1}: ${escape(b.title || "Untitled bug")}</option>`).join("")}</select>${button("Attach screenshots", "attach")}</div></div><div class="evidence-grid" id="evidenceGrid">${C.allEvidence(
+            [site],
+          )
+            .map(
+              (e) =>
+                `<article class="evidence-card"><button class="preview" data-preview="${e.id}" aria-label="Open screenshot ${escape(e.caption || e.name)}"><img data-image="${e.id}" alt="${escape(e.caption || e.name)}" loading="lazy"></button><div class="caption"><label><span class="sr-only">Screenshot caption</span><input data-caption="${e.id}" value="${escape(e.caption)}" placeholder="Describe what this shows" maxlength="2000"></label><div class="evidence-meta"><span>${e.bugId ? "Bug " + (site.bugs.findIndex((b) => b.id === e.bugId) + 1) : "Site overview"}</span><button class="small quiet danger" data-remove-image="${e.id}" aria-label="Remove screenshot ${escape(e.name)}">Remove</button></div></div></article>`,
+            )
+            .join("")}</div></section>`;
+        }
+        function field(label, name, value, options = {}) {
+          const attr = options.site ? "data-site-field" : "data-bug-field";
+          return `<label class="${options.full ? "full" : ""}">${label}${options.multiline ? `<textarea ${attr}="${name}" maxlength="100000" ${options.rows ? 'rows="' + options.rows + '"' : ""} placeholder="${escape(options.placeholder || "")}">${escape(value)}</textarea>` : `<input ${attr}="${name}" value="${escape(value)}" maxlength="${options.max || 100000}" placeholder="${escape(options.placeholder || "")}">`}</label>`;
+        }
+        function selectField(label, name, value, values) {
+          return `<label>${label}<select data-bug-field="${name}">${values.map((v) => `<option value="${escape(v)}" ${v === value ? "selected" : ""}>${escape(v)}</option>`).join("")}</select></label>`;
+        }
+        function renderBugSection(site) {
+          if (!site.bugs.length)
+            return `<div class="empty"><h2>No bugs recorded for ${escape(site.name)}</h2><p>If something fails, record each problem separately. Add the exact page, reproduction steps and a screenshot so the next agent can reproduce it.</p><div class="row" style="justify-content:center">${button("+ Record a bug", "new-bug", 'class="primary"')}${button("Review test checks", "tab-checks")}</div></div>`;
+          const selected =
+            site.bugs.find((b) => b.id === activeBug) || site.bugs[0];
+          activeBug = selected.id;
+          return `<div class="bug-layout"><div class="bug-nav">${button("+ Record a bug", "new-bug")}${site.bugs.map((b, i) => `<button class="bug-entry ${b.id === selected.id ? "active" : ""}" data-bug="${b.id}"><span class="bug-entry-title">${escape(b.title || "Untitled bug")}</span><span class="bug-entry-id">Bug ${i + 1} · ${escape(b.severity)} · ${b.status === "fixed" ? "Needs retest" : escape(b.status)}</span></button>`).join("")}</div><section class="bug-editor" aria-label="Bug details"><div class="bug-toolbar row spread"><div><h2>Bug ${site.bugs.indexOf(selected) + 1}</h2><span class="small-text muted">${escape(selected.id)}</span></div>${button("Remove bug", "remove-bug", 'class="small quiet danger"')}</div><div class="field-grid">${field("Bug title", "title", selected.title, { full: true, max: 500, placeholder: "A short description of the failure" })}${field("Actual behavior / error", "actual", selected.actual, { multiline: true, full: true, placeholder: "What happened? Include the exact error text." })}${selectField("Severity", "severity", selected.severity, C.SEVERITIES)}${selectField("Area", "area", selected.area, ["Detection", "Wrong media", "Filename", "Audio / video", "Transfer / retry", "Overlay / UI", "Performance", "Other"])}${selectField("Bug state", "status", selected.status, C.BUG_STATES)}${selectField("Frequency", "frequency", selected.frequency, ["Always", "Intermittent", "Once", "Not recorded"])}${field("Exact page URL", "url", selected.url, { full: true, max: 8192, placeholder: "The page where this bug happened" })}${field("Player / server / selected quality", "server", selected.server, { full: true, placeholder: "For example: HD-2, 1080p, second video in the feed" })}<label class="full">Related test check<select data-bug-field="checkId"><option value="">Not linked</option>${site.checks.map((c) => `<option value="${c.id}" ${c.id === selected.checkId ? "selected" : ""}>${escape(c.label)}</option>`).join("")}</select></label>${field("Steps to reproduce", "steps", selected.steps, { multiline: true, full: true, placeholder: "1. Open the exact page\n2. Play the video\n3. Click SmartDM and choose…" })}${field("Expected behavior", "expected", selected.expected, { multiline: true, placeholder: "What should happen?" })}${field("Logs / additional context", "logs", selected.logs, { multiline: true, full: true, placeholder: "Relevant logs, file details, comparison with the browser or IDM. Remove cookies and tokens before sharing." })}</div><p class="form-help" style="margin-top:14px">Changes save as you type. “Fixed” still needs retesting; use “verified” after checking the fix.</p></section></div>`;
+        }
+        function renderChecks(site) {
+          return `<div class="row spread" style="margin-bottom:14px"><div><h2>Test checks</h2><p class="muted small-text">Record successes as well as failures. A failed check keeps the site from passing.</p></div><span class="badge">${site.checks.filter((c) => c.result === "pass").length} / ${site.checks.length} passed</span></div><div class="checklist">${site.checks.map((c) => `<div class="check-row"><p>${escape(c.label)}${c.legacyImported ? '<span class="form-help" style="display:block">Imported from your old checklist</span>' : ""}</p><label><span class="sr-only">Result for ${escape(c.label)}</span><select data-check="${c.id}">${C.CHECK_RESULTS.map((r) => `<option value="${r}" ${r === c.result ? "selected" : ""}>${C.statusLabel(r)}</option>`).join("")}</select></label><button class="small quiet" data-check-bug="${c.id}">Record bug</button></div>`).join("")}</div><form id="addCheckForm" class="add-check"><label class="sr-only" for="newCheck">New test check</label><input id="newCheck" placeholder="Add another test check…" maxlength="1000" required><button type="submit">Add check</button></form>`;
+        }
+        function renderNotes(site) {
+          return `<section class="notes-panel">${field("Test notes / what worked", "notes", site.notes, { site: true, multiline: true, full: true, rows: 7, placeholder: "What you tested successfully, any workarounds, unavailable sources, or other useful context." })}<div class="activity"><h3>Result history</h3><ol>${site.history.map((h) => `<li><time datetime="${h.at}">${escape(siteTime(h.at))}</time><span>${C.statusLabel(h.status)}${h.note ? " — " + escape(h.note) : ""}</span></li>`).join("") || "<li>No result changes yet.</li>"}</ol></div></section>`;
+        }
+        function renderMain() {
+          revokeImages();
+          const site = current();
+          if (!site) {
+            $("workspace").innerHTML =
+              '<div class="empty"><h2>Your next test starts here</h2><p>Add a website or bulk import a list to start recording results.</p>' +
+              button("Import sites", "open-import", 'class="primary"') +
+              "</div>";
+            return;
+          }
+          if (activeBug && !site.bugs.some((b) => b.id === activeBug))
+            activeBug = null;
+          if (activeTab === "bugs" && site.bugs.length && !activeBug)
+            activeBug = site.bugs[0].id;
+          $("workspace").innerHTML =
+            `<div class="site-heading"><div><div class="site-title-line"><h1>${escape(site.name)}</h1><span class="badge ${site.status}">${C.statusLabel(site.status)}</span></div>${site.url ? `<a class="site-link" href="${escape(site.url)}" target="_blank" rel="noopener noreferrer">${escape(site.url)}</a>` : '<p class="form-help">Add a URL before opening this site.</p>'}<p class="form-help">${escape(site.category)}</p></div><div class="row">${button("Edit site", "edit-site")}${button("Export this site", "export-site")}</div></div><section class="resultbar" aria-label="Overall site result"><span class="small-text muted">Test result</span>${[
+              ["pass", "Pass site"],
+              ["fail", "Fail / record bug"],
+              ["blocked", "Blocked"],
+            ]
+              .map(([s, t]) =>
+                button(
+                  t,
+                  "result-" + s,
+                  `class="result-button ${s}" aria-pressed="${site.status === s}"`,
+                ),
+              )
+              .join(
+                "",
+              )}${site.status !== "untested" ? button("Reset result", "result-untested", 'class="small quiet"') : ""}<span class="last-tested">${escape(siteTime(site.testedAt))}</span></section>${evidenceMarkup(site)}<div class="tabs" role="tablist" aria-label="Testing details">${[
+              ["bugs", "Bugs", site.bugs.length],
+              ["checks", "Checks", site.checks.length],
+              ["notes", "Notes & history", null],
+            ]
+              .map(
+                ([t, label, n]) =>
+                  `<button role="tab" id="tab-${t}" aria-controls="detailPanel" aria-selected="${activeTab === t}" data-tab="${t}">${label}${n === null ? "" : ' <span class="muted">' + n + "</span>"}</button>`,
+              )
+              .join(
+                "",
+              )}</div><div id="detailPanel" role="tabpanel" aria-labelledby="tab-${activeTab}">${activeTab === "bugs" ? renderBugSection(site) : activeTab === "checks" ? renderChecks(site) : renderNotes(site)}</div>`;
+          for (const img of $("workspace").querySelectorAll("[data-image]"))
+            getImage(img.dataset.image)
+              .then((blob) => {
+                if (!blob || !img.isConnected) return;
+                const objectUrl = URL.createObjectURL(blob);
+                images.set(img.dataset.image, objectUrl);
+                img.src = objectUrl;
+              })
+              .catch(() => {});
+          if (readOnly)
+            for (const el of $("workspace").querySelectorAll(
+              "input,textarea,select,button",
+            ))
+              if (
+                !el.dataset.preview &&
+                !["export-site"].includes(el.dataset.action)
+              )
+                el.disabled = true;
+        }
+        function render() {
+          renderSummary();
+          renderSites();
+          renderMain();
+        }
+        function selectSite(id) {
+          workspace.selectedSiteId = id;
+          activeBug = null;
+          activeTab = "bugs";
+          changed();
+          renderSites();
+          renderMain();
+        }
+        function addBug(checkId = null) {
+          const site = current();
+          if (!site || readOnly) return;
+          const b = C.makeBug(site.url, checkId);
+          if (checkId)
+            b.title = site.checks.find((c) => c.id === checkId)?.label || "";
+          site.bugs.push(b);
+          activeBug = b.id;
+          activeTab = "bugs";
+          C.result(site, "fail", "Bug recorded: " + b.id);
+          changed(true);
+          $("workspace").querySelector('[data-bug-field="title"]')?.focus();
+        }
+        function openSiteForm(existing = null) {
+          editSiteId = existing?.id || null;
+          $("siteDialogTitle").textContent = existing
+            ? "Edit site"
+            : "Add site";
+          $("siteName").value = existing?.name || "";
+          $("siteUrl").value = existing?.url || "";
+          $("siteCategory").value = existing?.category || "General";
+          $("siteFormError").hidden = true;
+          $("siteDialog").showModal();
+          $("siteName").focus();
+        }
+        function selectExport(scope) {
+          $("exportScope").value = scope;
+          updateExport();
+          $("exportDialog").showModal();
+        }
+        function exportSites() {
+          const scope = $("exportScope").value;
+          return workspace.sites.filter(
+            (s) =>
+              scope === "all" ||
+              (scope === "site" && s.id === workspace.selectedSiteId) ||
+              (scope === "tested" && s.status !== "untested") ||
+              s.status === scope,
+          );
+        }
+        function updateExport() {
+          const selected = exportSites(),
+            s = C.summary(selected);
+          $("exportPreview").textContent =
+            `${s.sites} sites · ${s.bugs} bugs · ${s.screenshots} screenshots. ${$("exportFormat").value === "markdown" ? "Screenshots are not included in Markdown." : $("exportFormat").value === "backup" ? "Backup can be restored from Import sites." : "ZIP includes report.md, report.json, README.md and screenshot files."}`;
+          $("downloadExport").disabled = !s.sites;
+          $("exportError").hidden = true;
+        }
+        function download(blob, name) {
+          const u = URL.createObjectURL(blob),
+            a = document.createElement("a");
+          a.href = u;
+          a.download = name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(u), 30000);
+        }
+        async function asDataUrl(blob) {
+          return new Promise((resolve, reject) => {
+            const f = new FileReader();
+            f.onload = () => resolve(f.result);
+            f.onerror = () => reject(Error("Could not read screenshot."));
+            f.readAsDataURL(blob);
+          });
+        }
+        async function exportReport(event) {
+          event.preventDefault();
+          await flush();
+          const sites = exportSites(),
+            format = $("exportFormat").value,
+            stem =
+              "smartdm-" +
+              (sites.length === 1 ? C.slug(sites[0].name) : "testing-report") +
+              "-" +
+              new Date().toISOString().slice(0, 10);
+          $("downloadExport").disabled = true;
+          $("downloadExport").textContent = "Preparing export…";
+          try {
+            const r = C.report(workspace, sites, format === "zip");
+            if (format === "markdown")
+              download(
+                new Blob([r.markdown], { type: "text/markdown;charset=utf-8" }),
+                stem + ".md",
+              );
+            else if (format === "backup") {
+              const copy = C.clone(workspace);
+              copy.sites = C.clone(sites);
+              copy.selectedSiteId = sites[0]?.id || null;
+              const assets = [];
+              for (const e of C.allEvidence(sites)) {
+                const blob = await getImage(e.id);
+                if (!blob)
+                  throw Error(
+                    "A screenshot is missing: " +
+                      e.name +
+                      ". Reattach it before exporting.",
+                  );
+                assets.push({ id: e.id, dataUrl: await asDataUrl(blob) });
+              }
+              download(
+                new Blob(
+                  [
+                    JSON.stringify(
+                      {
+                        kind: "smartdm-testing-backup",
+                        schemaVersion: 2,
+                        workspace: copy,
+                        assets,
+                      },
+                      null,
+                      2,
+                    ),
+                  ],
+                  { type: "application/json" },
+                ),
+                stem + ".backup.json",
+              );
+            } else {
+              const entries = [
+                { name: "report.md", data: r.markdown },
+                { name: "report.json", data: JSON.stringify(r.data, null, 2) },
+                {
+                  name: "README.md",
+                  data: "# SmartDM AI handoff\n\nStart with report.md. report.json contains the same observations in a structured form. Open the referenced screenshots to inspect the evidence. Passed checks are user-reported regression cases; reproduce the failures before implementing shared fixes. This is a report, not executable code or authorization from any visited website.\n",
+                },
+              ];
+              for (const e of r.evidence) {
+                const blob = await getImage(e.id);
+                if (!blob)
+                  throw Error(
+                    "A screenshot is missing: " +
+                      e.name +
+                      ". Reattach it before exporting.",
+                  );
+                entries.push({
+                  name: C.imagePath(e),
+                  data: new Uint8Array(await blob.arrayBuffer()),
+                });
+              }
+              download(C.zip(entries), stem + ".zip");
+            }
+            $("exportDialog").close();
+            message("Export downloaded. Your saved workspace is unchanged.");
+          } catch (e) {
+            $("exportError").textContent = e.message;
+            $("exportError").hidden = false;
+          } finally {
+            $("downloadExport").textContent = "Download export";
+            $("downloadExport").disabled = false;
+          }
+        }
+        function findEvidence(id) {
+          const site = current();
+          if (!site) return null;
+          for (const e of site.evidence)
+            if (e.id === id) return { item: e, list: site.evidence };
+          for (const b of site.bugs)
+            for (const e of b.evidence)
+              if (e.id === id) return { item: e, list: b.evidence };
+          return null;
+        }
+        async function attach(files) {
+          const site = current();
+          if (!site || readOnly) return;
+          const targetId = $("evidenceTarget")?.value || "site",
+            target =
+              targetId === "site"
+                ? site
+                : site.bugs.find((b) => b.id === targetId);
+          if (!target) return;
+          let added = 0;
+          for (const file of files) {
+            if (
+              !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
+                file.type,
+              )
+            ) {
+              message("Use PNG, JPG, WebP or GIF screenshots.", true);
+              continue;
+            }
+            if (file.size > 12 * 1024 * 1024) {
+              message("Each screenshot must be 12 MB or smaller.", true);
+              continue;
+            }
+            if (target.evidence.length >= 200) {
+              message("This record already has 200 screenshots.", true);
+              break;
+            }
+            if (
+              !C.imageMatchesType(
+                file.type,
+                new Uint8Array(await file.slice(0, 12).arrayBuffer()),
+              )
+            ) {
+              message("This file is not a supported screenshot image.", true);
+              continue;
+            }
+            const e = {
+              id: C.id("img"),
+              name: file.name || "Pasted screenshot." + C.imageExt(file.type),
+              type: file.type,
+              size: file.size,
+              caption: "",
+              createdAt: C.now(),
+            };
+            try {
+              await putImage(e.id, file);
+              target.evidence.push(e);
+              added++;
+            } catch {
+              message(
+                "Screenshot could not be saved. Browser storage may be full. Export a backup and free space before trying again.",
+                true,
+              );
+            }
+          }
+          if (added) {
+            changed();
+            await flush();
+            if (current()?.id === site.id) renderMain();
+            message(
+              added +
+                " screenshot" +
+                (added === 1 ? "" : "s") +
+                " attached to " +
+                (targetId === "site" ? "site overview" : "the selected bug") +
+                ".",
+            );
+          }
+        }
+        function showImportPreview() {
+          try {
+            importData = C.parseSites($("bulkSites").value, workspace.sites);
+            const d = importData;
+            $("importPreview").innerHTML =
+              `<p style="margin:16px 0 6px"><strong>${d.valid.length} new sites</strong>, ${d.duplicates.length} duplicates skipped, ${d.errors.length} invalid rows.</p><div class="import-preview"><table><thead><tr><th>Name / row</th><th>URL / message</th></tr></thead><tbody>${d.valid.map((s) => `<tr><td>${escape(s.name)}</td><td>${escape(s.url)}</td></tr>`).join("")}${d.errors.map((e) => `<tr style="color:var(--red)"><td>Line ${e.line}</td><td>${escape(e.message)}</td></tr>`).join("")}</tbody></table></div>`;
+            $("confirmImport").disabled = !d.valid.length;
+            $("confirmImport").textContent =
+              "Import " + d.valid.length + " valid sites";
+          } catch (e) {
+            importData = null;
+            $("importPreview").textContent = e.message;
+            $("confirmImport").disabled = true;
+          }
+        }
+        async function restore(file) {
+          if (!file) return;
+          try {
+            if (file.size > 150 * 1024 * 1024)
+              throw Error("Backup is larger than the 150 MB restore limit.");
+            const { workspace: restored, assets } = C.validateBackup(
+              JSON.parse(await file.text()),
+            );
+            if (readOnly)
+              throw Error(
+                "Reload to resolve the other-tab conflict before restoring.",
+              );
+            if (
+              !confirm(
+                `Replace this workspace with ${restored.sites.length} sites from the backup? Export your current workspace first if you need to keep it.`,
+              )
+            )
+              return;
+            await flush();
+            restored.revision = workspace.revision;
+            if (db) {
+              await new Promise((resolve, reject) => {
+                const tx = db.transaction(
+                    ["workspace", "evidence"],
+                    "readwrite",
+                  ),
+                  store = tx.objectStore("workspace"),
+                  get = store.get(workspaceKey);
+                get.onsuccess = () => {
+                  if (
+                    get.result &&
+                    get.result.revision !== workspace.revision
+                  ) {
+                    tx.abort();
+                    return;
+                  }
+                  for (const [id, blob] of assets)
+                    tx.objectStore("evidence").put(blob, evidenceKey(id));
+                  restored.revision = (get.result?.revision || 0) + 1;
+                  store.put(restored, workspaceKey);
+                };
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () =>
+                  reject(
+                    tx.error ||
+                      Error(
+                        "Restore failed or another tab changed the workspace. Previous data is unchanged.",
+                      ),
+                  );
+              });
+            } else {
+              for (const [id, blob] of assets) memoryImages.set(id, blob);
+            }
+            workspace = restored;
+            readOnly = false;
+            activeBug = null;
+            activeTab = "bugs";
+            pendingDeletes.clear();
+            if (!db) await persist();
+            channel?.postMessage({
+              key: workspaceKey,
+              revision: workspace.revision,
+            });
+            $("importDialog").close();
+            render();
+            saveLabel("Saved locally");
+            message("Workspace restored with " + assets.size + " screenshots.");
+          } catch (e) {
+            message("Backup not restored: " + e.message, true);
+          } finally {
+            $("restoreInput").value = "";
+          }
+        }
+        document.addEventListener("click", async (e) => {
+          const close = e.target.closest("[data-close]");
+          if (close) {
+            $(close.dataset.close).close();
+            return;
+          }
+          const row = e.target.closest("[data-site]");
+          if (row) {
+            selectSite(row.dataset.site);
+            return;
+          }
+          const f = e.target.closest("[data-filter]");
+          if (f) {
+            filter = f.dataset.filter;
+            renderSites();
+            return;
+          }
+          const tab = e.target.closest("[data-tab]");
+          if (tab) {
+            activeTab = tab.dataset.tab;
+            renderMain();
+            return;
+          }
+          const nav = e.target.closest("[data-bug]");
+          if (nav) {
+            activeBug = nav.dataset.bug;
+            renderMain();
+            return;
+          }
+          const cb = e.target.closest("[data-check-bug]");
+          if (cb) {
+            addBug(cb.dataset.checkBug);
+            return;
+          }
+          const image = e.target.closest("[data-preview]");
+          if (image) {
+            const item = findEvidence(image.dataset.preview)?.item;
+            const blob = await getImage(image.dataset.preview);
+            if (!blob) {
+              message("This screenshot is missing. Reattach the image.", true);
+              return;
+            }
+            if ($("fullImage").src.startsWith("blob:"))
+              URL.revokeObjectURL($("fullImage").src);
+            $("fullImage").src = URL.createObjectURL(blob);
+            $("fullImage").alt =
+              item?.caption || item?.name || "Testing evidence";
+            $("imageTitle").textContent =
+              item?.caption || item?.name || "Screenshot";
+            $("imageDialog").showModal();
+            return;
+          }
+          const remove = e.target.closest("[data-remove-image]");
+          if (remove) {
+            if (!confirm("Remove this screenshot from the record?")) return;
+            const found = findEvidence(remove.dataset.removeImage);
+            if (found) {
+              found.list.splice(found.list.indexOf(found.item), 1);
+              pendingDeletes.add(found.item.id);
+              changed(true);
+            }
+            return;
+          }
+          const action = e.target.closest("[data-action]")?.dataset.action;
+          if (!action) return;
+          const site = current();
+          if (action === "export-site") {
+            selectExport("site");
+            return;
+          }
+          if (action === "open-import") {
+            $("importDialog").showModal();
+            return;
+          }
+          if (readOnly) {
+            message(
+              "Export your copy and reload to resolve the other-tab conflict.",
+              true,
+            );
+            return;
+          }
+          if (action === "edit-site") openSiteForm(site);
+          if (action === "attach") $("imageInput").click();
+          if (action === "new-bug") addBug();
+          if (action === "tab-checks") {
+            activeTab = "checks";
+            renderMain();
+          }
+          if (
+            action === "remove-bug" &&
+            bug() &&
+            confirm("Remove this bug and its attached screenshots?")
+          ) {
+            const removed = bug();
+            for (const e of removed.evidence) pendingDeletes.add(e.id);
+            site.bugs = site.bugs.filter((b) => b.id !== activeBug);
+            activeBug = site.bugs[0]?.id || null;
+            changed(true);
+          }
+          if (action.startsWith("result-")) {
+            const status = action.slice(7);
+            if (status === "fail") {
+              addBug();
+              return;
+            }
+            try {
+              C.result(site, status);
+              changed(true);
+              message(
+                status === "pass"
+                  ? "Site marked passed."
+                  : status === "blocked"
+                    ? "Site marked blocked. Add the reason in test notes."
+                    : "Result reset; bug records were kept.",
+              );
+              if (status === "blocked") {
+                activeTab = "notes";
+                renderMain();
+              }
+            } catch (e) {
+              message(e.message, true);
+            }
+          }
+        });
+        document.addEventListener("input", (e) => {
+          if (readOnly) return;
+          const site = current();
+          if (!site) return;
+          if (e.target.dataset.bugField && bug()) {
+            const key = e.target.dataset.bugField;
+            if (e.target.tagName === "SELECT") return;
+            bug()[key] = e.target.value;
+            bug().updatedAt = C.now();
+            if (key === "title") {
+              const nav = document.querySelector(
+                '[data-bug="' + activeBug + '"] .bug-entry-title',
+              );
+              if (nav) nav.textContent = e.target.value || "Untitled bug";
+              const option = $("evidenceTarget")?.querySelector(
+                'option[value="' + activeBug + '"]',
+              );
+              if (option)
+                option.textContent =
+                  "Bug " +
+                  (site.bugs.indexOf(bug()) + 1) +
+                  ": " +
+                  (e.target.value || "Untitled bug");
+            }
+            changed();
+          }
+          if (e.target.dataset.siteField) {
+            site[e.target.dataset.siteField] = e.target.value;
+            changed();
+          }
+          if (e.target.dataset.caption) {
+            const found = findEvidence(e.target.dataset.caption);
+            if (found) {
+              found.item.caption = e.target.value;
+              changed();
+            }
+          }
+        });
+        document.addEventListener("change", (e) => {
+          if (readOnly) return;
+          const site = current();
+          if (!site) return;
+          if (e.target.dataset.bugField && bug()) {
+            const key = e.target.dataset.bugField;
+            bug()[key] = e.target.value || null;
+            bug().updatedAt = C.now();
+            if (key === "status" && bug().status !== "verified")
+              site.status = "fail";
+            changed();
+            renderSites();
+          }
+          if (e.target.dataset.check) {
+            const c = site.checks.find((c) => c.id === e.target.dataset.check);
+            c.result = e.target.value;
+            if (c.result === "fail")
+              C.result(site, "fail", "Failed check: " + c.label);
+            changed();
+            renderSites();
+            renderMain();
+          }
+        });
+        document.addEventListener("submit", (e) => {
+          if (e.target.id !== "addCheckForm") return;
+          e.preventDefault();
+          if (readOnly) return;
+          const input = $("newCheck");
+          current().checks.push({
+            id: C.id("check"),
+            label: input.value.trim(),
+            result: "untested",
+          });
+          changed(true);
+        });
+        document.addEventListener("paste", (e) => {
+          if (document.querySelector("dialog[open]")) return;
+          const files = [...(e.clipboardData?.items || [])]
+            .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
+            .map((i) => i.getAsFile())
+            .filter(Boolean);
+          if (files.length) {
+            e.preventDefault();
+            attach(files);
+          }
+        });
+        document.addEventListener("dragover", (e) => {
+          if (e.target.closest("#evidencePanel")) {
+            e.preventDefault();
+            $("evidencePanel").classList.add("dragover");
+          }
+        });
+        document.addEventListener("dragleave", (e) => {
+          if (e.target.id === "evidencePanel")
+            e.target.classList.remove("dragover");
+        });
+        document.addEventListener("drop", (e) => {
+          if (e.target.closest("#evidencePanel")) {
+            e.preventDefault();
+            $("evidencePanel").classList.remove("dragover");
+            attach([...e.dataTransfer.files]);
+          }
+        });
+        $("imageInput").addEventListener("change", (e) => {
+          attach([...e.target.files]);
+          e.target.value = "";
+        });
+        $("siteSearch").addEventListener("input", (e) => {
+          search = e.target.value.toLowerCase().trim();
+          renderSites();
+        });
+        $("categoryFilter").addEventListener("change", (e) => {
+          category = e.target.value;
+          renderSites();
+        });
+        $("sortSites").addEventListener("change", (e) => {
+          sort = e.target.value;
+          renderSites();
+        });
+        $("addSiteButton").onclick = () => openSiteForm();
+        $("importButton").onclick = () => $("importDialog").showModal();
+        $("exportButton").onclick = () => selectExport("all");
+        $("setupButton").onclick = () => {
+          for (const [k, v] of Object.entries(workspace.environment))
+            $("setupForm").elements.namedItem(k).value = v;
+          $("setupDialog").showModal();
+        };
+        $("setupForm").onsubmit = (e) => {
+          e.preventDefault();
+          if (readOnly) return;
+          for (const key of Object.keys(workspace.environment))
+            workspace.environment[key] = $("setupForm")
+              .elements.namedItem(key)
+              .value.trim();
+          changed();
+          $("setupDialog").close();
+          message("Test setup saved.");
+        };
+        $("siteForm").onsubmit = (e) => {
+          e.preventDefault();
+          if (readOnly) return;
+          try {
+            const name = $("siteName").value.trim(),
+              address = C.url($("siteUrl").value, true);
+            if (!name) throw Error("Enter a site name.");
+            if (!editSiteId && workspace.sites.length >= 2000)
+              throw Error("This workspace already has 2,000 sites.");
+            if (
+              workspace.sites.some(
+                (s) => s.id !== editSiteId && s.url && s.url === address,
+              )
+            )
+              throw Error("That URL is already in your site list.");
+            if (editSiteId) {
+              const site = workspace.sites.find((s) => s.id === editSiteId);
+              Object.assign(site, {
+                name,
+                url: address,
+                category: $("siteCategory").value.trim() || "General",
+              });
+            } else {
+              const site = C.makeSite(
+                name,
+                address,
+                $("siteCategory").value.trim() || "General",
+              );
+              workspace.sites.push(site);
+              workspace.selectedSiteId = site.id;
+              activeBug = null;
+            }
+            changed(true);
+            $("siteDialog").close();
+          } catch (err) {
+            $("siteFormError").textContent = err.message;
+            $("siteFormError").hidden = false;
+          }
+        };
+        $("previewImport").onclick = showImportPreview;
+        $("bulkSites").oninput = () => {
+          importData = null;
+          $("confirmImport").disabled = true;
+          $("confirmImport").textContent = "Preview before importing";
+        };
+        $("chooseImportFile").onclick = () => $("importSitesFile").click();
+        $("importSitesFile").onchange = async (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            if (file.size > 1000000) {
+              message("Import a text file smaller than 1 MB.", true);
+              return;
+            }
+            $("bulkSites").value = await file.text();
+            showImportPreview();
+          }
+          e.target.value = "";
+        };
+        $("confirmImport").onclick = () => {
+          if (!importData || readOnly) return;
+          const fresh = C.parseSites($("bulkSites").value, workspace.sites);
+          const added = fresh.valid.map((s) =>
+            C.makeSite(s.name, s.url, s.category),
+          );
+          workspace.sites.push(...added);
+          if (added.length) workspace.selectedSiteId = added[0].id;
+          activeBug = null;
+          search = "";
+          filter = "all";
+          category = "";
+          $("siteSearch").value = "";
+          changed(true);
+          $("importDialog").close();
+          message(
+            added.length + " sites imported; existing results were kept.",
+          );
+        };
+        $("restoreBackup").onclick = () => $("restoreInput").click();
+        $("restoreInput").onchange = (e) => restore(e.target.files[0]);
+        $("exportScope").onchange = updateExport;
+        $("exportFormat").onchange = updateExport;
+        $("exportForm").onsubmit = exportReport;
+        for (const dialog of document.querySelectorAll("dialog"))
+          dialog.addEventListener("click", (e) => {
+            if (e.target === dialog) {
+              const r = dialog.getBoundingClientRect();
+              if (
+                e.clientX < r.left ||
+                e.clientX > r.right ||
+                e.clientY < r.top ||
+                e.clientY > r.bottom
+              )
+                dialog.close();
+            }
+          });
+        window.addEventListener("pagehide", () => {
+          clearTimeout(saveTimer);
+          persist();
+          revokeImages();
+        });
+        window.addEventListener("beforeunload", (e) => {
+          if (
+            $("saveState").textContent === "Unsaved changes" ||
+            $("saveState").textContent === "Saving…" ||
+            (!db && memoryImages.size)
+          ) {
+            e.preventDefault();
+            e.returnValue = "";
+          }
+        });
+        channel &&
+          (channel.onmessage = (e) => {
+            if (
+              workspace &&
+              e.data?.key === workspaceKey &&
+              e.data.revision > workspace.revision
+            ) {
+              readOnly = true;
+              notice(
+                "Another tab saved this workspace. Export your copy if needed, then reload before editing.",
+                true,
+              );
+              render();
+            }
+          });
+        try {
+          db = await openDb();
+          workspace = await request(
+            db
+              .transaction("workspace")
+              .objectStore("workspace")
+              .get(workspaceKey),
+          );
+        } catch {
+          notice(
+            "Browser storage is unavailable. Notes will use local storage if possible; screenshots will last only for this tab. Export a JSON backup before closing.",
+            true,
+          );
+          try {
+            workspace = JSON.parse(localStorage.getItem(workspaceKey));
+          } catch {}
+        }
+        if (!workspace) {
+          workspace = C.createWorkspace(JSON.parse($("seed-data").textContent));
+          if (!sandbox) {
+            try {
+              const n = C.migrateLegacy(
+                workspace,
+                JSON.parse(localStorage.getItem("smartdm-checklist")),
+              );
+              if (n)
+                message(
+                  "Preserved " +
+                    n +
+                    " checked items from your old checklist. Overall site results still need testing.",
+                );
+            } catch {}
+          }
+          workspace.selectedSiteId = workspace.sites[0]?.id || null;
+          await persist();
+        } else {
+          if (workspace.schemaVersion !== 2) {
+            notice(
+              "This workspace uses an unsupported data version. Your original browser data has not been overwritten.",
+              true,
+            );
+            throw Error("Unsupported workspace version.");
+          }
+          saveLabel("Saved locally");
+        }
+        if (sandbox)
+          notice(
+            "Preview sandbox — test data is separate from your saved testing workspace.",
+          );
+        render();
+      })().catch((e) => {
+        document.getElementById("workspace").innerHTML =
+          '<div class="empty"><h2>The workspace could not open</h2><p>' +
+          TestingDeskCore.esc(e.message) +
+          "</p><p>Your existing browser data has not been removed.</p></div>";
+      });
+    </script>
+  </body>
+</html>

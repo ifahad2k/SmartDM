@@ -347,3 +347,14 @@ their selected videos. See [exact evidence/limits](STREAM_BINDING_HANDOFF.md).
   2. `format_engine.js`: In `selectedSocialFormats`, support Instagram feed playback where videos start muted by default (avoiding false rejection when `audioExpected` is set but no separate audio chunk is loaded), pair matching audio from detected tab media when present, and extract clean post caption/author titles.
   3. `background.js`: Classify `cdninstagram.com` as Meta media alongside Facebook, preserving stream requests from small-chunk filtering, extracting `efg` metadata, and exempting Instagram SPA path transitions from clearing detected tab media.
   4. `utils.js`: Include Instagram in `getMediaCacheKey` to isolate formats per player UID in feed scrolls.
+
+## 2026-11-08 standalone Testing desk
+
+`node --test tests/testing-desk/*.test.cjs`: **9 passed, 0 failed/skipped**.
+Independent Python ZIP/CRC/image checks pass. Chrome sandbox: saved bug text survives
+reload; multiple bugs and screenshot attachment work; bulk import adds two sites
+and skips one duplicate. Actual single-site ZIP: 1 site / 2 bugs / 1 image. Actual
+all-site ZIP: 51 sites, 1 passed, 1 failed, 49 untested, 2 bugs, 1 image; both CRC
+checks pass. These are tool fixtures, not SmartDM download results. See exact
+[handoff and limitations](TESTING_DESK_HANDOFF.md). No desktop/Java suites were
+rerun for this independent HTML utility.

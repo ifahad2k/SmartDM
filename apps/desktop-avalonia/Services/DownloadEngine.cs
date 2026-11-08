@@ -524,7 +524,7 @@ public class DownloadEngine : IDownloadEngine
     {
         try
         {
-            session.Download.StatusDetail = "Waiting for a transfer slot (4 total, 2 per host)...";
+            session.Download.StatusDetail = "Waiting for a transfer slot (4 total, 4 per host)...";
             DownloadProgressChanged?.Invoke(session.Download);
             using var slot = await _scheduler.EnterAsync(new Uri(session.Download.Url).IdnHost, session.Cts.Token);
             await PrepareAndRunSessionAsync(session);
@@ -624,10 +624,17 @@ public class DownloadEngine : IDownloadEngine
             Directory.CreateDirectory(destDir);
         }
 
-        if (YouTubeMediaResolver.IsYouTubeUrl(download.SourcePageUrl) && MediaRepresentation.IsExpired(download.Url, DateTimeOffset.UtcNow))
+        string? ytUrl = YouTubeMediaResolver.IsYouTubeUrl(download.Url)
+            ? download.Url
+            : (YouTubeMediaResolver.IsYouTubeUrl(download.SourcePageUrl) ? download.SourcePageUrl : null);
+
+        if (ytUrl != null && (YouTubeMediaResolver.IsYouTubeUrl(download.Url) || MediaRepresentation.IsExpired(download.Url, DateTimeOffset.UtcNow)))
         {
-            var refreshed = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(download.SourcePageUrl!, forceRefresh: true);
-            var representation = MediaRepresentation.SelectExact(refreshed.Formats, download.FormatId);
+            var refreshed = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(ytUrl, forceRefresh: true);
+            var representation = MediaRepresentation.SelectExact(refreshed.Formats, download.FormatId)
+                ?? (download.FormatId != null && download.FormatId.Contains("audio", StringComparison.OrdinalIgnoreCase)
+                    ? refreshed.Formats.FirstOrDefault(f => f.IsAudioOnly)
+                    : refreshed.Formats.FirstOrDefault());
             if (representation?.DirectUrl == null) throw new MediaRecoveryException("The selected media format is unavailable. Select a format again from the original page.");
             download.Url = representation.DirectUrl;
             download.AudioUrl = representation.AudioUrl;

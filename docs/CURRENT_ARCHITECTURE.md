@@ -152,3 +152,12 @@ Player/source identity and observed audio pairing remain required; no tab-wide
 latest-media guess was restored. Caps, invalidation behavior and actual two-clip
 Chrome download evidence are in [handoff](implementation/STREAM_BINDING_HANDOFF.md).
 This is shared browser implementation; desktop transport and schemas are unchanged.
+
+## 2026-11-08 local manual-testing workspace
+
+`tools/testing-desk/smartdm_testing_checklist.html` is a standalone offline HTML
+utility, separate from desktop composition and the website. It stores per-site
+results, multiple bugs and original screenshot Blobs in browser IndexedDB and
+exports Markdown/JSON/image ZIP handoffs. No SmartDM network endpoint is involved.
+See [implementation and evidence](implementation/TESTING_DESK_HANDOFF.md). This
+tooling addition changes no transfer/media/safety module and closes no product gate.

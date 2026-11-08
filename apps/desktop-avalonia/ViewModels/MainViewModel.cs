@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -25,11 +26,13 @@ public partial class MainViewModel : ViewModelBase
     private readonly ILocalIpcService _ipcService;
     private readonly ISettingsService _settingsService;
     private readonly IFileCatalogService _catalogService;
+    private readonly IQueueManager _queueManager;
     private readonly bool _isDemoMode;
 
     public int CurrentProcessId => Environment.ProcessId;
     public ISettingsService SettingsService => _settingsService;
     public IFileCatalogService CatalogService => _catalogService;
+    public IQueueManager QueueManager => _queueManager;
 
     [ObservableProperty]
     private string _searchQuery = string.Empty;
@@ -90,10 +93,18 @@ public partial class MainViewModel : ViewModelBase
     public string LayoutButtonText => ShowAdvancedLayout ? "Simple view" : "Advanced view";
     public string QueueHeading => CurrentQueueFilter switch
     {
-        "Active" => "Downloading",
+        "Active" => "Active Downloads",
         "Completed" => "Completed",
-        "Scheduled" => "Scheduled",
+        "Queue" or "Scheduled" => "Download Queue",
         _ => "All downloads"
+    };
+
+    public string QueueSubline => CurrentQueueFilter switch
+    {
+        "Active" => $"{ActiveCount} active transfer{(ActiveCount == 1 ? "" : "s")}",
+        "Completed" => $"{CompletedCount} completed file{(CompletedCount == 1 ? "" : "s")}",
+        "Queue" or "Scheduled" => $"{ActiveCount} downloading (max 4 concurrent) • {QueuedCount} waiting in queue",
+        _ => $"{AllCount} total download{(AllCount == 1 ? "" : "s")}"
     };
 
     partial void OnShowAdvancedLayoutChanged(bool value) => OnPropertyChanged(nameof(LayoutButtonText));
@@ -102,7 +113,7 @@ public partial class MainViewModel : ViewModelBase
     private void ToggleAdvancedLayout() => ShowAdvancedLayout = !ShowAdvancedLayout;
 
     [ObservableProperty]
-    private string _currentQueueFilter = "All"; // "All", "Active", "Completed", "Scheduled"
+    private string _currentQueueFilter = "All"; // "All", "Active", "Completed", "Queue", "Scheduled"
 
     [ObservableProperty]
     private string _currentCategoryFilter = "All";
@@ -139,6 +150,12 @@ public partial class MainViewModel : ViewModelBase
     private int _scheduledCount = 0;
 
     [ObservableProperty]
+    private int _queuedCount = 0;
+
+    [ObservableProperty]
+    private int _queueCount = 0;
+
+    [ObservableProperty]
     private DownloadModel? _selectedDownload;
 
     [ObservableProperty]
@@ -150,7 +167,8 @@ public partial class MainViewModel : ViewModelBase
     public bool IsAllQueueSelected => CurrentQueueFilter == "All";
     public bool IsActiveQueueSelected => CurrentQueueFilter == "Active";
     public bool IsCompletedQueueSelected => CurrentQueueFilter == "Completed";
-    public bool IsScheduledQueueSelected => CurrentQueueFilter == "Scheduled";
+    public bool IsQueueSelected => CurrentQueueFilter is "Queue" or "Scheduled";
+    public bool IsScheduledQueueSelected => CurrentQueueFilter is "Queue" or "Scheduled";
 
     private readonly List<DownloadModel> _allMasterDownloads = new();
 
@@ -179,6 +197,7 @@ public partial class MainViewModel : ViewModelBase
         ILocalIpcService? ipcService = null,
         ISettingsService? settingsService = null,
         IFileCatalogService? catalogService = null,
+        IQueueManager? queueManager = null,
         bool isDemoMode = false)
     {
         _isDemoMode = isDemoMode;
@@ -189,6 +208,7 @@ public partial class MainViewModel : ViewModelBase
         _ipcService = ipcService ?? new LocalIpcService();
         _settingsService = settingsService ?? new SettingsService();
         _catalogService = catalogService ?? new FileCatalogService();
+        _queueManager = queueManager ?? new QueueManager();
 
         // Only explicitly indexed downloads enter the catalog.
 
@@ -313,12 +333,30 @@ public partial class MainViewModel : ViewModelBase
             _engine.DownloadStatusChanged += OnEngineStatusChanged;
             _engine.DownloadCompleted += OnEngineCompleted;
 
-            // 3. Start local browser IPC daemon
+            // 3. Initialize QueueManager
+            _queueManager.Initialize(
+                _engine,
+                _repository,
+                _catalogService,
+                _allMasterDownloads,
+                WireDownloadCallbacks,
+                () => Dispatcher.UIThread.Post(() =>
+                {
+                    UpdateCounts();
+                    ApplyFilters();
+                    RefreshEngineMetrics();
+                }));
+
+            // 4. Start local browser IPC daemon
             _ipcService.DownloadRequestedFromBrowser += OnBrowserDownloadRequested;
+            _ipcService.BatchDownloadRequestedFromBrowser += OnBrowserBatchDownloadRequested;
             _ipcService.WindowRestoreRequested += OnWindowRestoreRequested;
             App.LogStartup("Starting _ipcService...");
             await _ipcService.StartAsync();
             App.LogStartup("_ipcService.StartAsync DONE");
+
+            // 5. Trigger Queue Processing for any pending queued items
+            _queueManager.TriggerQueueProcessing();
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -344,12 +382,19 @@ public partial class MainViewModel : ViewModelBase
         {
             try
             {
+                bool wasActive = d.Status == DownloadStatus.Active;
                 d.Status = DownloadStatus.Paused;
                 d.SpeedMbps = 0;
                 d.StatusDetail = "Paused by user";
+                await _repository.SaveDownloadAsync(d);
                 RefreshEngineMetrics();
                 UpdateCounts();
-                await _engine.PauseDownloadAsync(d.Id);
+                ApplyFilters();
+                if (wasActive)
+                {
+                    await _engine.PauseDownloadAsync(d.Id);
+                }
+                _queueManager.TriggerQueueProcessing();
             }
             catch (Exception ex)
             {
@@ -360,11 +405,22 @@ public partial class MainViewModel : ViewModelBase
         {
             try
             {
-                d.Status = DownloadStatus.Active;
-                d.StatusDetail = "Resuming download...";
+                if (d.QueuePosition <= 0)
+                {
+                    lock (_allMasterDownloads)
+                    {
+                        int maxPos = _allMasterDownloads.Where(x => x.QueuePosition > 0).Select(x => x.QueuePosition).DefaultIfEmpty(0).Max();
+                        d.QueuePosition = maxPos + 1;
+                    }
+                }
+                d.Status = DownloadStatus.Queued;
+                d.StatusDetail = "Queued • Waiting for transfer slot";
+                d.Subline = "Waiting in Queue";
+                await _repository.SaveDownloadAsync(d);
                 RefreshEngineMetrics();
                 UpdateCounts();
-                await _engine.ResumeDownloadAsync(d.Id, d);
+                ApplyFilters();
+                _queueManager.TriggerQueueProcessing();
             }
             catch (Exception ex)
             {
@@ -375,12 +431,19 @@ public partial class MainViewModel : ViewModelBase
         {
             try
             {
+                bool wasActive = d.Status == DownloadStatus.Active;
                 d.Status = DownloadStatus.Paused;
                 d.SpeedMbps = 0;
                 d.StatusDetail = "Cancelled";
+                await _repository.SaveDownloadAsync(d);
                 RefreshEngineMetrics();
                 UpdateCounts();
-                await _engine.CancelDownloadAsync(d.Id);
+                ApplyFilters();
+                if (wasActive)
+                {
+                    await _engine.CancelDownloadAsync(d.Id);
+                }
+                _queueManager.TriggerQueueProcessing();
             }
             catch (Exception ex)
             {
@@ -399,6 +462,9 @@ public partial class MainViewModel : ViewModelBase
     }
 
     private readonly ConcurrentDictionary<string, DateTime> _recentBrowserRequests = new();
+    private readonly List<BrowserDownloadRequest> _incomingRequestBuffer = new();
+    private readonly object _bufferLock = new();
+    private CancellationTokenSource? _bufferCts;
 
     private void OnBrowserDownloadRequested(BrowserDownloadRequest req)
     {
@@ -413,9 +479,63 @@ public partial class MainViewModel : ViewModelBase
             _recentBrowserRequests[req.Url] = now;
         }
 
-        Dispatcher.UIThread.Post(() =>
+        lock (_bufferLock)
         {
-            RequestOpenAddDialog?.Invoke(req.Url, req.FileName, req.FormatId, req.Formats, req.Title, req.Referer, req.UserAgent, req.Cookies, req.VideoUrl, req.AudioUrl);
+            _incomingRequestBuffer.Add(req);
+            _bufferCts?.Cancel();
+            _bufferCts = new CancellationTokenSource();
+            var token = _bufferCts.Token;
+
+            _ = Task.Delay(350, token).ContinueWith(t =>
+            {
+                if (t.IsCanceled) return;
+
+                List<BrowserDownloadRequest> batchToProcess;
+                lock (_bufferLock)
+                {
+                    batchToProcess = new List<BrowserDownloadRequest>(_incomingRequestBuffer);
+                    _incomingRequestBuffer.Clear();
+                }
+
+                if (batchToProcess.Count == 1)
+                {
+                    var single = batchToProcess[0];
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        RequestOpenAddDialog?.Invoke(single.Url, single.FileName, single.FormatId, single.Formats, single.Title, single.Referer, single.UserAgent, single.Cookies, single.VideoUrl, single.AudioUrl);
+                    });
+                }
+                else if (batchToProcess.Count > 1)
+                {
+                    var batchReq = new BrowserBatchDownloadRequest
+                    {
+                        BatchTitle = batchToProcess[0].Title ?? "Batch Download",
+                        Referer = batchToProcess[0].Referer,
+                        PageUrl = batchToProcess[0].PageUrl,
+                        Cookies = batchToProcess[0].Cookies,
+                        UserAgent = batchToProcess[0].UserAgent,
+                        IsAudio = batchToProcess.All(b => b.FormatId != null && b.FormatId.Contains("audio", StringComparison.OrdinalIgnoreCase)),
+                        Items = batchToProcess
+                    };
+
+                    Dispatcher.UIThread.Post(async () =>
+                    {
+                        App.RestoreCurrentMainWindow();
+                        CurrentQueueFilter = "Queue";
+                        await _queueManager.EnqueueBatchAsync(batchReq);
+                    });
+                }
+            }, TaskScheduler.Default);
+        }
+    }
+
+    private void OnBrowserBatchDownloadRequested(BrowserBatchDownloadRequest batch)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            App.RestoreCurrentMainWindow();
+            CurrentQueueFilter = "Queue";
+            await _queueManager.EnqueueBatchAsync(batch);
         });
     }
 
@@ -617,6 +737,7 @@ public partial class MainViewModel : ViewModelBase
         UpdateCounts();
         ApplyFilters();
         RefreshEngineMetrics();
+        _queueManager.TriggerQueueProcessing();
     }
 
     private static void OpenFileNative(string filePath)
@@ -839,6 +960,8 @@ public partial class MainViewModel : ViewModelBase
         ActiveCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Active && !d.IsStorage);
         CompletedCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Completed && !d.IsStorage);
         ScheduledCount = _allMasterDownloads.Count(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Failed) && !d.IsStorage);
+        QueuedCount = _allMasterDownloads.Count(d => d.Status == DownloadStatus.Queued && !d.IsStorage);
+        QueueCount = _allMasterDownloads.Count(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Active) && !d.IsStorage);
 
         foreach (var c in Categories)
         {
@@ -1035,6 +1158,7 @@ public partial class MainViewModel : ViewModelBase
         else
         {
             _ = _repository.SaveDownloadAsync(newDl);
+            _queueManager.TriggerQueueProcessing();
         }
 
         UpdateCounts();
@@ -1142,9 +1266,9 @@ public partial class MainViewModel : ViewModelBase
         {
             query = query.Where(d => d.Status == DownloadStatus.Completed && !d.IsStorage);
         }
-        else if (CurrentQueueFilter == "Scheduled")
+        else if (CurrentQueueFilter is "Queue" or "Scheduled")
         {
-            query = query.Where(d => (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Failed) && !d.IsStorage);
+            query = query.Where(d => (d.Status == DownloadStatus.Active || d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Paused) && !d.IsStorage);
         }
 
         if (CurrentCategoryFilter != "All")
@@ -1155,6 +1279,10 @@ public partial class MainViewModel : ViewModelBase
         if (CurrentChipFilter == "Active")
         {
             query = query.Where(d => d.Status == DownloadStatus.Active && !d.IsStorage);
+        }
+        else if (CurrentChipFilter == "Queue")
+        {
+            query = query.Where(d => (d.Status == DownloadStatus.Active || d.Status == DownloadStatus.Queued) && !d.IsStorage);
         }
         else if (CurrentChipFilter == "Completed")
         {
@@ -1171,6 +1299,16 @@ public partial class MainViewModel : ViewModelBase
         else if (CurrentChipFilter == "Blocked")
         {
             query = query.Where(d => d.Status == DownloadStatus.Quarantined);
+        }
+
+        if (CurrentQueueFilter is "Queue" or "Scheduled" || CurrentChipFilter == "Queue")
+        {
+            query = query.OrderBy(d => d.Status switch
+            {
+                DownloadStatus.Active => 0,
+                DownloadStatus.Queued => 1,
+                _ => 2
+            }).ThenBy(d => d.QueuePosition > 0 ? d.QueuePosition : int.MaxValue);
         }
 
         if (!string.IsNullOrWhiteSpace(SearchQuery))
@@ -1234,11 +1372,11 @@ public partial class MainViewModel : ViewModelBase
             EmptyStateSubtitle = "Finished downloads will appear here once all chunks are verified and reconstructed.";
             iconName = "completed-gray.png";
         }
-        else if (CurrentQueueFilter == "Scheduled")
+        else if (CurrentQueueFilter is "Queue" or "Scheduled")
         {
-            EmptyStateTitle = "No Scheduled Batches";
-            EmptyStateSubtitle = "Queue is currently empty. You can set time-based schedules when adding new tasks.";
-            iconName = "clock-gray.png";
+            EmptyStateTitle = "Download Queue Is Empty";
+            EmptyStateSubtitle = "Queued downloads and playlist tracks will appear here.";
+            iconName = "inbox-gray.png";
         }
         else if (CurrentCategoryFilter != "All")
         {
@@ -1434,24 +1572,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     public async Task PauseAllAsync()
     {
-        var activeDownloads = _allMasterDownloads
-            .Where(d => d.Status == DownloadStatus.Active && !d.IsStorage)
-            .ToList();
-
-        foreach (var dl in activeDownloads)
-        {
-            try
-            {
-                dl.Status = DownloadStatus.Paused;
-                dl.SpeedMbps = 0;
-                dl.StatusDetail = "Paused by user";
-                await _engine.PauseDownloadAsync(dl.Id);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[PauseAll] Error pausing {dl.Id}: {ex.Message}");
-            }
-        }
+        await _queueManager.PauseAllQueueAsync();
         UpdateCounts();
         ApplyFilters();
         RefreshEngineMetrics();
@@ -1460,23 +1581,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     public async Task ResumeAllAsync()
     {
-        var pausedDownloads = _allMasterDownloads
-            .Where(d => (d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Failed) && !d.IsStorage)
-            .ToList();
-
-        foreach (var dl in pausedDownloads)
-        {
-            try
-            {
-                dl.Status = DownloadStatus.Active;
-                dl.StatusDetail = "Resuming...";
-                await _engine.ResumeDownloadAsync(dl.Id, dl);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ResumeAll] Error resuming {dl.Id}: {ex.Message}");
-            }
-        }
+        await _queueManager.ResumeAllQueueAsync();
         UpdateCounts();
         ApplyFilters();
         RefreshEngineMetrics();

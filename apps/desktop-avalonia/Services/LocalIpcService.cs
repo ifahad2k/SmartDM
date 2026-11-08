@@ -19,6 +19,7 @@ public class LocalIpcService : ILocalIpcService
     private CancellationTokenSource? _cts;
 
     public event Action<BrowserDownloadRequest>? DownloadRequestedFromBrowser;
+    public event Action<BrowserBatchDownloadRequest>? BatchDownloadRequestedFromBrowser;
     public event Action? WindowRestoreRequested;
 
     public Task StartAsync()
@@ -341,6 +342,82 @@ public class LocalIpcService : ILocalIpcService
                     }
                     formats.Add(dto);
                 }
+            }
+
+            // Check for batch requests (e.g. YouTube Music playlist, multi-file grabber)
+            if (type.Equals("ADD_MEDIA_BATCH", StringComparison.OrdinalIgnoreCase) ||
+                type.Equals("ADD_BATCH", StringComparison.OrdinalIgnoreCase) ||
+                (root.TryGetProperty("items", out var bItemsElem) && bItemsElem.ValueKind == JsonValueKind.Array))
+            {
+                var batchReq = new BrowserBatchDownloadRequest
+                {
+                    BatchTitle = title ?? "Playlist Download",
+                    PlaylistTitle = root.TryGetProperty("playlistTitle", out var ptElem) ? ptElem.GetString() : title,
+                    PlaylistId = root.TryGetProperty("playlistId", out var pidElem) ? pidElem.GetString() : null,
+                    IsAudio = root.TryGetProperty("isAudio", out var iaElem) && iaElem.ValueKind == JsonValueKind.True,
+                    Referer = referer ?? pageUrl,
+                    PageUrl = pageUrl ?? referer,
+                    Cookies = cookies,
+                    UserAgent = userAgent
+                };
+
+                if (root.TryGetProperty("batchTitle", out var btElem) && !string.IsNullOrWhiteSpace(btElem.GetString()))
+                {
+                    batchReq.BatchTitle = btElem.GetString()!;
+                }
+
+                if (root.TryGetProperty("items", out var itemsArray) && itemsArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var itemElem in itemsArray.EnumerateArray())
+                    {
+                        string? itemUrl = itemElem.TryGetProperty("url", out var u) ? u.GetString() : null;
+                        if (string.IsNullOrEmpty(itemUrl)) continue;
+
+                        var itemReq = new BrowserDownloadRequest
+                        {
+                            Url = itemUrl,
+                            Title = itemElem.TryGetProperty("title", out var it) ? it.GetString() : null,
+                            FileName = itemElem.TryGetProperty("fileName", out var ifn) ? ifn.GetString() : null,
+                            FormatId = itemElem.TryGetProperty("formatId", out var ifmt) ? ifmt.GetString() : (batchReq.IsAudio ? "bestaudio/best" : "1080p"),
+                            Referer = itemElem.TryGetProperty("referer", out var ir) ? ir.GetString() : batchReq.Referer,
+                            PageUrl = itemElem.TryGetProperty("pageUrl", out var ipu) ? ipu.GetString() : batchReq.PageUrl,
+                            Cookies = cookies,
+                            UserAgent = userAgent
+                        };
+                        batchReq.Items.Add(itemReq);
+                    }
+                }
+                else if (root.TryGetProperty("urls", out var urlsArray) && urlsArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var uElem in urlsArray.EnumerateArray())
+                    {
+                        string? uStr = uElem.ValueKind == JsonValueKind.String ? uElem.GetString() : null;
+                        if (!string.IsNullOrEmpty(uStr))
+                        {
+                            batchReq.Items.Add(new BrowserDownloadRequest
+                            {
+                                Url = uStr,
+                                FormatId = batchReq.IsAudio ? "bestaudio/best" : "1080p",
+                                Referer = batchReq.Referer,
+                                PageUrl = batchReq.PageUrl,
+                                Cookies = cookies,
+                                UserAgent = userAgent
+                            });
+                        }
+                    }
+                }
+
+                if (batchReq.Items.Count > 0)
+                {
+                    BatchDownloadRequestedFromBrowser?.Invoke(batchReq);
+                }
+
+                byte[] okBatchBytes = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"version\":\"2.0\",\"queued\":" + batchReq.Items.Count + "}");
+                resp.ContentType = "application/json";
+                resp.StatusCode = 200;
+                resp.ContentLength64 = okBatchBytes.Length;
+                await resp.OutputStream.WriteAsync(okBatchBytes);
+                return;
             }
 
             if (!string.IsNullOrEmpty(url))

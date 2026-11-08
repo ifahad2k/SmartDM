@@ -129,3 +129,11 @@ capture counters are removed. Reload the extension and refresh pages after edits
 restarting C# alone cannot update content scripts. Preserve byte-range subview and
 overwrite isolation, bounded sample retention, MP4 initialization invalidation and
 separate audio handling. No package-wide or universal-site completeness is claimed.
+
+## 2026-11-08 tester evidence collection
+
+The owner now uses the standalone [Testing desk](../../tools/testing-desk/README.md).
+Read [TESTING_DESK_HANDOFF.md](TESTING_DESK_HANDOFF.md) for source location, schemas,
+verification and limits. Reports carry multiple bugs per site plus screenshots and
+passed checks. Inspect ZIP image files and recorded build context before fixing
+shared mechanisms. Sandbox QA data must not be confused with actual site verdicts.

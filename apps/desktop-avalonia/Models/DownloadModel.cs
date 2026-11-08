@@ -205,6 +205,10 @@ public partial class DownloadModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected = false;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusLabel))]
+    private int _queuePosition = 0;
+
     public bool IsActive => Status == DownloadStatus.Active && !IsStorage;
     public string StatusLabel => Status switch
     {
@@ -213,7 +217,7 @@ public partial class DownloadModel : ObservableObject
         DownloadStatus.Completed => "Completed",
         DownloadStatus.Failed => "Needs attention",
         DownloadStatus.Quarantined => "Quarantined",
-        DownloadStatus.Queued => "Queued",
+        DownloadStatus.Queued => QueuePosition > 0 ? $"Queued (#{QueuePosition})" : "Queued",
         _ => Status.ToString()
     };
     public string QueueSpeedText => IsActive ? $"{SpeedMbps:F1} MB/s" : "—";
