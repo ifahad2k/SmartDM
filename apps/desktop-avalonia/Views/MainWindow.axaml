@@ -329,10 +329,34 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="{Binding EngineSubline}" FontSize="11" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                        <Button Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10,5">
+                                        <Button Command="{Binding ResumeQueueCommand}" Background="{DynamicResource PrimaryAccent}" CornerRadius="6" Padding="9,5" ToolTip.Tip="Start or resume queued downloads">
+                                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                <Image Source="/Assets/Icons/play-white.png" Width="10" Height="10" VerticalAlignment="Center" />
+                                                <TextBlock Text="Resume" FontSize="11" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding PauseQueueCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="9,5" ToolTip.Tip="Pause all active and queued transfers">
+                                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                <Image Source="/Assets/Icons/pause-gray.png" Width="10" Height="10" VerticalAlignment="Center" />
+                                                <TextBlock Text="Pause" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding ClearQueueCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="9,5" ToolTip.Tip="Remove waiting items from the download queue">
+                                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                <Image Source="/Assets/Icons/close-gray.png" Width="10" Height="10" VerticalAlignment="Center" />
+                                                <TextBlock Text="Clear" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding OpenQueueFolderCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="9,5" ToolTip.Tip="Open downloads folder in File Explorer">
+                                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                <Image Source="/Assets/Icons/folder-gray.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                                <TextBlock Text="Folder" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding OpenBatchGrabberCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="9,5" ToolTip.Tip="Open Batch Grabber">
                                             <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                                                 <Image Source="/Assets/Icons/archive-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
-                                                <TextBlock Text="Batch Grabber" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                                <TextBlock Text="Batch" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding OpenAddDialogCommand}" Background="{DynamicResource PrimaryAccent}" CornerRadius="6" Padding="10,5">
@@ -716,8 +740,8 @@
                 </ScrollViewer>
                 </Grid>
                 <!-- Default queue view. The original card view remains available through Advanced view. -->
-                <Grid IsVisible="{Binding !ShowAdvancedLayout}" RowDefinitions="Auto,Auto,*">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,2,0,18">
+                <Grid IsVisible="{Binding !ShowAdvancedLayout}" RowDefinitions="Auto,Auto,Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,2,0,14">
                         <StackPanel Grid.Column="0" Spacing="4">
                             <TextBlock Text="{Binding QueueHeading}" FontSize="23" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
                             <TextBlock Text="{Binding QueueSubline}" FontSize="12" Foreground="{DynamicResource SecondaryText}"/>
@@ -729,7 +753,55 @@
                             <TextBlock Text="{Binding TotalSpeedFormatted}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}"/>
                         </StackPanel>
                     </Grid>
-                    <Border Grid.Row="1" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="4,4,0,0" Padding="15,10">
+
+                    <!-- Queue Toolbar: Pause / Resume / Clear / Open Folder / Batch / Add URL -->
+                    <Border Grid.Row="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                <Button Command="{Binding ResumeQueueCommand}" Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="6" Padding="12,6" ToolTip.Tip="Start or resume queued downloads">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Image Source="/Assets/Icons/play-white.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="Resume Queue" FontSize="11" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding PauseQueueCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="12,6" ToolTip.Tip="Pause all active and queued transfers">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Image Source="/Assets/Icons/pause-gray.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="Pause Queue" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding ClearQueueCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="12,6" ToolTip.Tip="Remove waiting items from the download queue">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Image Source="/Assets/Icons/close-gray.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="Clear Queue" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding OpenQueueFolderCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="12,6" ToolTip.Tip="Open downloads folder in File Explorer">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Image Source="/Assets/Icons/folder-gray.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="Open Folder" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                <Button Command="{Binding OpenBatchGrabberCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10,6" ToolTip.Tip="Open Batch Grabber">
+                                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                        <Image Source="/Assets/Icons/archive-gray.png" Width="12" Height="12" VerticalAlignment="Center" />
+                                        <TextBlock Text="Batch Grabber" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding OpenAddDialogCommand}" Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="6" Padding="12,6">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Image Source="/Assets/Icons/plus-white.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="Add URL" FontSize="11" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="2" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="4,4,0,0" Padding="15,10">
                         <Grid ColumnDefinitions="4*,1*,1.2*,1*,1*,Auto">
                             <TextBlock Grid.Column="0" Text="FILE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
                             <TextBlock Grid.Column="1" Text="SIZE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
@@ -738,7 +810,7 @@
                             <TextBlock Grid.Column="4" Text="TIME LEFT" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedText}"/>
                         </Grid>
                     </Border>
-                    <Grid Grid.Row="2">
+                    <Grid Grid.Row="3">
                         <Panel>
                             <ListBox ItemsSource="{Binding Downloads}" SelectedItem="{Binding SelectedDownload}" IsVisible="{Binding !HasNoDownloads}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                 <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>

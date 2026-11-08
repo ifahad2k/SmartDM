@@ -366,6 +366,15 @@ public class LocalIpcService : ILocalIpcService
                     batchReq.BatchTitle = btElem.GetString()!;
                 }
 
+                if (root.TryGetProperty("destinationFolder", out var dfElem) && !string.IsNullOrWhiteSpace(dfElem.GetString()))
+                {
+                    batchReq.DestinationFolder = dfElem.GetString()!;
+                }
+                else if (root.TryGetProperty("downloadFolder", out var dlfElem) && !string.IsNullOrWhiteSpace(dlfElem.GetString()))
+                {
+                    batchReq.DestinationFolder = dlfElem.GetString()!;
+                }
+
                 if (root.TryGetProperty("items", out var itemsArray) && itemsArray.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var itemElem in itemsArray.EnumerateArray())

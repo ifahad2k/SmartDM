@@ -447,6 +447,39 @@ public partial class App : Application
                 dialog.ShowTransientTopmost();
             };
 
+            BatchDownloadDialog? activeBatchDialog = null;
+            mainVm.RequestOpenBatchDialog += batchReq =>
+            {
+                if (activeBatchDialog != null)
+                {
+                    try { activeBatchDialog.Close(); } catch { }
+                    activeBatchDialog = null;
+                }
+
+                var batchVm = new BatchDownloadViewModel(
+                    batchReq,
+                    mainVm.SettingsService?.CurrentSettings);
+                var dialog = new BatchDownloadDialog
+                {
+                    DataContext = batchVm
+                };
+                activeBatchDialog = dialog;
+                dialog.Closed += (s, e) => { if (activeBatchDialog == dialog) activeBatchDialog = null; };
+
+                batchVm.BatchConfirmed += async (confirmedBatch, startPaused) =>
+                {
+                    mainVm.CurrentQueueFilter = "Queue";
+                    await mainVm.QueueManager.EnqueueBatchAsync(confirmedBatch, startPaused);
+                };
+
+                batchVm.RequestClose += () =>
+                {
+                    try { dialog.Close(); } catch { }
+                };
+
+                dialog.ShowTransientTopmost();
+            };
+
             mainVm.RequestOpenMonitor += dl =>
             {
                 var targetDl = dl ?? mainVm.Downloads.FirstOrDefault(d => d.IsActive) ?? mainVm.Downloads.FirstOrDefault();

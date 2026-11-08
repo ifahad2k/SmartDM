@@ -178,6 +178,7 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<double> SparklineHistory { get; } = new();
 
     public event Action<string?, string?, string?, List<MediaFormatDto>?, string?, string?, string?, string?, string?, string?>? RequestOpenAddDialog;
+    public event Action<BrowserBatchDownloadRequest>? RequestOpenBatchDialog;
     public event Action<DownloadModel?>? RequestOpenMonitor;
     public event Action<DownloadModel?>? RequestOpenInspector;
     public event Action<DownloadModel>? RequestOpenMoveRename;
@@ -521,8 +522,15 @@ public partial class MainViewModel : ViewModelBase
                     Dispatcher.UIThread.Post(async () =>
                     {
                         App.RestoreCurrentMainWindow();
-                        CurrentQueueFilter = "Queue";
-                        await _queueManager.EnqueueBatchAsync(batchReq);
+                        if (RequestOpenBatchDialog != null)
+                        {
+                            RequestOpenBatchDialog.Invoke(batchReq);
+                        }
+                        else
+                        {
+                            CurrentQueueFilter = "Queue";
+                            await _queueManager.EnqueueBatchAsync(batchReq);
+                        }
                     });
                 }
             }, TaskScheduler.Default);
@@ -534,8 +542,15 @@ public partial class MainViewModel : ViewModelBase
         Dispatcher.UIThread.Post(async () =>
         {
             App.RestoreCurrentMainWindow();
-            CurrentQueueFilter = "Queue";
-            await _queueManager.EnqueueBatchAsync(batch);
+            if (RequestOpenBatchDialog != null)
+            {
+                RequestOpenBatchDialog.Invoke(batch);
+            }
+            else
+            {
+                CurrentQueueFilter = "Queue";
+                await _queueManager.EnqueueBatchAsync(batch);
+            }
         });
     }
 
@@ -752,16 +767,50 @@ public partial class MainViewModel : ViewModelBase
     {
         try
         {
-            if (File.Exists(filePath) && OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows())
             {
-                Process.Start("explorer.exe", $"/select,\"{filePath}\"");
+                if (File.Exists(filePath))
+                {
+                    Process.Start("explorer.exe", $"/select,\"{filePath}\"");
+                }
+                else if (Directory.Exists(filePath))
+                {
+                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+                else
+                {
+                    string? dir = Path.GetDirectoryName(filePath);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    {
+                        Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
+                    }
+                }
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                if (File.Exists(filePath))
+                {
+                    Process.Start("open", $"-R \"{filePath}\"");
+                }
+                else if (Directory.Exists(filePath))
+                {
+                    Process.Start("open", $"\"{filePath}\"");
+                }
+                else
+                {
+                    string? dir = Path.GetDirectoryName(filePath);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    {
+                        Process.Start("open", $"\"{dir}\"");
+                    }
+                }
             }
             else
             {
-                string? dir = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                string target = Directory.Exists(filePath) ? filePath : (Path.GetDirectoryName(filePath) ?? filePath);
+                if (Directory.Exists(target))
                 {
-                    Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
+                    Process.Start("xdg-open", $"\"{target}\"");
                 }
             }
         }
@@ -1585,5 +1634,107 @@ public partial class MainViewModel : ViewModelBase
         UpdateCounts();
         ApplyFilters();
         RefreshEngineMetrics();
+    }
+
+    public IRelayCommand PauseQueueCommand => PauseAllCommand;
+    public IRelayCommand ResumeQueueCommand => ResumeAllCommand;
+
+    [RelayCommand]
+    public async Task ClearQueueAsync()
+    {
+        await _queueManager.ClearQueueAsync();
+        UpdateCounts();
+        ApplyFilters();
+        RefreshEngineMetrics();
+    }
+
+    [RelayCommand]
+    public void OpenQueueFolder()
+    {
+        if (SelectedDownload != null && !string.IsNullOrWhiteSpace(SelectedDownload.SavePath))
+        {
+            OpenFolderNative(SelectedDownload.SavePath);
+            return;
+        }
+
+        DownloadModel? representative;
+        lock (_allMasterDownloads)
+        {
+            representative = _allMasterDownloads.FirstOrDefault(d =>
+                (d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Active || d.Status == DownloadStatus.Completed) &&
+                !string.IsNullOrWhiteSpace(d.SavePath));
+        }
+
+        if (representative != null && !string.IsNullOrWhiteSpace(representative.SavePath))
+        {
+            string? dir = Path.GetDirectoryName(representative.SavePath);
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            {
+                OpenFolderNative(dir);
+                return;
+            }
+        }
+
+        string defaultDownloads = !string.IsNullOrWhiteSpace(_settingsService?.CurrentSettings?.DefaultDownloadDirectory) &&
+                                  Directory.Exists(_settingsService.CurrentSettings.DefaultDownloadDirectory)
+            ? _settingsService.CurrentSettings.DefaultDownloadDirectory
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+        OpenFolderNative(defaultDownloads);
+    }
+
+    [RelayCommand]
+    public async Task OpenBatchGrabberAsync()
+    {
+        var batch = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Batch Download",
+            IsAudio = false
+        };
+
+        if (global::Avalonia.Application.Current?.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop &&
+            desktop.MainWindow?.Clipboard != null)
+        {
+            try
+            {
+                string? text = await desktop.MainWindow.Clipboard.GetTextAsync();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    int idx = 1;
+                    foreach (var line in lines)
+                    {
+                        if (Uri.TryCreate(line, UriKind.Absolute, out _))
+                        {
+                            batch.Items.Add(new BrowserDownloadRequest
+                            {
+                                Url = line,
+                                Title = $"Item {idx++}"
+                            });
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        if (batch.Items.Count == 0)
+        {
+            batch.Items.Add(new BrowserDownloadRequest
+            {
+                Url = "https://",
+                Title = "Batch Task 1"
+            });
+        }
+
+        if (RequestOpenBatchDialog != null)
+        {
+            RequestOpenBatchDialog.Invoke(batch);
+        }
+        else
+        {
+            CurrentQueueFilter = "Queue";
+            await _queueManager.EnqueueBatchAsync(batch);
+        }
     }
 }

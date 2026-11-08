@@ -55,15 +55,58 @@ public class QueueManager : IQueueManager
         }
     }
 
-    public async Task EnqueueBatchAsync(BrowserBatchDownloadRequest batchRequest)
+    public async Task EnqueueBatchAsync(BrowserBatchDownloadRequest batchRequest, bool startPaused = false)
     {
         await Task.Yield();
         if (batchRequest.Items == null || batchRequest.Items.Count == 0 || _masterDownloads == null) return;
 
-        string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        string defaultDownloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        string targetDir;
+
+        if (!string.IsNullOrWhiteSpace(batchRequest.DestinationFolder))
+        {
+            targetDir = batchRequest.DestinationFolder.Trim();
+        }
+        else
+        {
+            string folderName = SanitizeFolderName(!string.IsNullOrWhiteSpace(batchRequest.PlaylistTitle) ? batchRequest.PlaylistTitle : batchRequest.BatchTitle);
+            if (!string.IsNullOrWhiteSpace(folderName) && !folderName.Equals("Playlist Download", StringComparison.OrdinalIgnoreCase) && !folderName.Equals("Batch Download", StringComparison.OrdinalIgnoreCase))
+            {
+                targetDir = Path.Combine(defaultDownloads, folderName);
+            }
+            else
+            {
+                targetDir = defaultDownloads;
+            }
+        }
+
+        // Validate and ensure targetDir
+        try
+        {
+            targetDir = Path.GetFullPath(targetDir);
+            if (!Directory.Exists(targetDir))
+            {
+                Directory.CreateDirectory(targetDir);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[QueueManager] Cannot create destination directory '{targetDir}': {ex.Message}. Falling back to default downloads.");
+            targetDir = defaultDownloads;
+            try
+            {
+                targetDir = Path.GetFullPath(targetDir);
+                if (!Directory.Exists(targetDir))
+                {
+                    Directory.CreateDirectory(targetDir);
+                }
+            }
+            catch { }
+        }
+
         if (!Directory.Exists(targetDir))
         {
-            try { Directory.CreateDirectory(targetDir); } catch { }
+            targetDir = defaultDownloads;
         }
 
         int startPos = 1;
@@ -92,29 +135,44 @@ public class QueueManager : IQueueManager
                 ? SanitizeFileName(item.FileName.Trim())
                 : $"{cleanTitle}{ext}";
 
-            if (!fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+            // If fileName ends with a mismatched media extension, replace it cleanly instead of chaining (e.g. .mp3.mp4)
+            string currentExt = Path.GetExtension(fileName);
+            if (string.Equals(currentExt, ".mp3", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentExt, ".mp4", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentExt, ".m4a", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentExt, ".webm", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentExt, ".mkv", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentExt, ".opus", StringComparison.OrdinalIgnoreCase))
+            {
+                fileName = Path.ChangeExtension(fileName, ext);
+            }
+            else if (!fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
             {
                 fileName += ext;
             }
 
             string fullSavePath = Path.Combine(targetDir, fileName);
 
-            // Avoid path collision with existing downloads or files
+            // Avoid path collision with existing downloads, on-disk files, or items in this same batch
+            Func<string, bool> isCollision = path =>
+                File.Exists(path) ||
+                _masterDownloads.Any(d => string.Equals(d.SavePath, path, StringComparison.OrdinalIgnoreCase)) ||
+                newModels.Any(d => string.Equals(d.SavePath, path, StringComparison.OrdinalIgnoreCase));
+
             lock (_masterDownloads)
             {
-                if (File.Exists(fullSavePath) || _masterDownloads.Any(d => string.Equals(d.SavePath, fullSavePath, StringComparison.OrdinalIgnoreCase)))
+                if (isCollision(fullSavePath))
                 {
                     if (_catalogService != null)
                     {
-                        fullSavePath = _catalogService.GenerateUniquePath(fullSavePath, path =>
-                            File.Exists(path) || _masterDownloads.Any(d => string.Equals(d.SavePath, path, StringComparison.OrdinalIgnoreCase)));
+                        fullSavePath = _catalogService.GenerateUniquePath(fullSavePath, isCollision);
                     }
                     else
                     {
                         string dir = Path.GetDirectoryName(fullSavePath) ?? targetDir;
                         string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
                         int count = 1;
-                        while (File.Exists(fullSavePath) || _masterDownloads.Any(d => string.Equals(d.SavePath, fullSavePath, StringComparison.OrdinalIgnoreCase)))
+                        while (isCollision(fullSavePath))
                         {
                             fullSavePath = Path.Combine(dir, $"{nameWithoutExt} ({count++}){ext}");
                         }
@@ -130,6 +188,10 @@ public class QueueManager : IQueueManager
                 domain = parsedUri.Host;
             }
 
+            DownloadStatus initialStatus = startPaused ? DownloadStatus.Paused : DownloadStatus.Queued;
+            string initialDetail = startPaused ? "Paused in Queue" : "Queued • Waiting for transfer slot";
+            string initialSubline = startPaused ? $"Paused in Queue • #{i + 1} of {total}" : $"Waiting in Queue • #{i + 1} of {total}";
+
             var dl = new DownloadModel
             {
                 Id = Guid.NewGuid().ToString("N"),
@@ -143,10 +205,10 @@ public class QueueManager : IQueueManager
                 IconBg = "#EAF2FF",
                 SavePath = fullSavePath,
                 FileExtension = ext,
-                Status = DownloadStatus.Queued,
+                Status = initialStatus,
                 ParallelThreads = 4,
-                StatusDetail = "Queued • Waiting for transfer slot",
-                Subline = $"Waiting in Queue • #{i + 1} of {total}",
+                StatusDetail = initialDetail,
+                Subline = initialSubline,
                 FooterDetail = "Target: " + fullSavePath,
                 FooterRight = "Allocated",
                 QueuePosition = startPos + i,
@@ -182,8 +244,11 @@ public class QueueManager : IQueueManager
 
         _onStateChangedAction?.Invoke();
 
-        // Trigger queue processing to start up to 4 concurrent downloads
-        TriggerQueueProcessing();
+        if (!startPaused)
+        {
+            // Trigger queue processing to start up to 4 concurrent downloads
+            TriggerQueueProcessing();
+        }
     }
 
     public async Task EnqueueAsync(DownloadModel download)
@@ -356,8 +421,18 @@ public class QueueManager : IQueueManager
                 .Where(d => (d.Status == DownloadStatus.Paused || d.Status == DownloadStatus.Failed) && !d.IsStorage)
                 .ToList();
 
+            int maxPos = _masterDownloads
+                .Where(d => d.QueuePosition > 0)
+                .Select(d => d.QueuePosition)
+                .DefaultIfEmpty(0)
+                .Max();
+
             foreach (var dl in toResume)
             {
+                if (dl.QueuePosition <= 0)
+                {
+                    dl.QueuePosition = ++maxPos;
+                }
                 dl.Status = DownloadStatus.Queued;
                 dl.StatusDetail = "Queued • Waiting for transfer slot";
                 dl.Subline = "Waiting in Queue";
@@ -377,7 +452,57 @@ public class QueueManager : IQueueManager
         TriggerQueueProcessing();
     }
 
-    private static string SanitizeFileName(string raw)
+    public async Task ClearQueueAsync()
+    {
+        await Task.Yield();
+        if (_masterDownloads == null) return;
+
+        List<DownloadModel> toRemove;
+        lock (_masterDownloads)
+        {
+            toRemove = _masterDownloads
+                .Where(d => (d.Status == DownloadStatus.Queued || (d.Status == DownloadStatus.Paused && d.QueuePosition > 0)) && !d.IsStorage)
+                .ToList();
+
+            foreach (var dl in toRemove)
+            {
+                _masterDownloads.Remove(dl);
+            }
+        }
+
+        if (_repository != null)
+        {
+            foreach (var dl in toRemove)
+            {
+                try { await _repository.DeleteDownloadAsync(dl.Id); }
+                catch (Exception ex) { Debug.WriteLine($"[QueueManager] Clear error: {ex.Message}"); }
+            }
+        }
+
+        _onStateChangedAction?.Invoke();
+    }
+
+    public static string SanitizeFolderName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        string clean = raw.Trim().Trim('\"', '\'');
+        clean = Uri.UnescapeDataString(clean);
+        clean = clean.Replace('\\', '/');
+        clean = Path.GetFileName(clean);
+        foreach (char c in Path.GetInvalidFileNameChars())
+        {
+            clean = clean.Replace(c, '_');
+        }
+        foreach (char c in Path.GetInvalidPathChars())
+        {
+            clean = clean.Replace(c, '_');
+        }
+        clean = clean.Trim('.', ' ');
+        clean = clean.Replace("\u202E", "").Replace("\u202D", "").Trim();
+        return clean;
+    }
+
+    public static string SanitizeFileName(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "track";
         string clean = raw.Trim().Trim('\"', '\'');

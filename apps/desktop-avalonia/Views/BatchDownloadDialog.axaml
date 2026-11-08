@@ -1,0 +1,144 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SmartDm.Desktop.Avalonia.ViewModels"
+        x:Class="SmartDm.Desktop.Avalonia.Views.BatchDownloadDialog"
+        x:DataType="vm:BatchDownloadViewModel"
+        Icon="/Assets/SDM_2.0_logo.png"
+        Title="SmartDM 2.0 • Batch Download Setup"
+        Width="840"
+        Height="660"
+        MinWidth="680"
+        MinHeight="500"
+        WindowStartupLocation="CenterScreen"
+        CanResize="True"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
+        Background="{DynamicResource ElevatedBackground}">
+
+    <Grid RowDefinitions="36,*,Auto">
+        <!-- Unified Native Titlebar (Extended Client Area) -->
+        <Border Grid.Row="0" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1" Padding="14,0" PointerPressed="OnTitleBarPointerPressed">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Image Source="/Assets/SDM_2.0_logo.png" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="SmartDM 2.0 • Batch &amp; Playlist Download Setup" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" FontFamily="Cascadia Code, Consolas, monospace" />
+                    <Border Background="{DynamicResource BorderColor}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                        <TextBlock Text="Batch Transfer Engine" FontSize="10" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                    </Border>
+                </StackPanel>
+                <Border Grid.Column="2" Width="140" />
+            </Grid>
+        </Border>
+
+        <!-- Dialog Body -->
+        <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="20,16,20,12">
+            <!-- Top Configuration Section -->
+            <Border Grid.Row="0" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="9" Padding="16" Margin="0,0,0,12">
+                <StackPanel Spacing="12">
+                    <!-- Batch / Playlist Title -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="PLAYLIST / BATCH NAME" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                        <TextBox Text="{Binding BatchTitle}" Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource PrimaryText}" BorderBrush="{DynamicResource BorderColor}" CornerRadius="7" Height="34" VerticalContentAlignment="Center" FontSize="12" FontFamily="Cascadia Code, Consolas, monospace" />
+                    </StackPanel>
+
+                    <!-- Save Destination Folder -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="DESTINATION FOLDER" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" Text="{Binding DestinationFolder}" Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource PrimaryText}" BorderBrush="{DynamicResource BorderColor}" CornerRadius="7" Height="34" VerticalContentAlignment="Center" FontSize="11.5" FontFamily="Cascadia Code, Consolas, monospace" Margin="0,0,8,0" />
+                            <Button Grid.Column="1" Command="{Binding BrowseDestinationCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,7" FontSize="12" Foreground="{DynamicResource PrimaryText}">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Image Source="/Assets/Icons/folder-gray.png" Width="13" Height="13" VerticalAlignment="Center" />
+                                    <TextBlock Text="Browse..." FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" Margin="2,2,2,0">
+                            <TextBlock Grid.Column="0" Text="{Binding TargetDriveDescription}" FontSize="10.5" Foreground="{DynamicResource MutedText}" />
+                            <TextBlock Grid.Column="1" Text="{Binding AvailableFreeSpaceFormatted}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource SuccessColor}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Format Selection (Audio MP3 vs Video MP4) -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="DOWNLOAD FORMAT" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" />
+                        <StackPanel Orientation="Horizontal" Spacing="24">
+                            <RadioButton Content="Audio (MP3) • Best Quality Audio Stream" IsChecked="{Binding IsAudio}" GroupName="BatchFormat" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" FontSize="12" />
+                            <RadioButton Content="Video (MP4) • 1080p / Best Quality Video Stream" IsChecked="{Binding IsVideo}" GroupName="BatchFormat" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" FontSize="12" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Bottom Items Selection Section -->
+            <Grid Grid.Row="1" RowDefinitions="Auto,*">
+                <!-- Items Header & Selection Bar -->
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,0,2,8">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="PLAYLIST TRACKS" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" FontFamily="Cascadia Code, Consolas, monospace" VerticalAlignment="Center" />
+                        <Border Background="{DynamicResource AccentLight}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SelectionSummary}" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryAccent}" />
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button Command="{Binding SelectAllCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10,5" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}">
+                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/check-green.png" Width="11" Height="11" VerticalAlignment="Center" />
+                                <TextBlock Text="Select All" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding DeselectAllCommand}" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10,5" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryText}">
+                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                <Image Source="/Assets/Icons/close-gray.png" Width="10" Height="10" VerticalAlignment="Center" />
+                                <TextBlock Text="Deselect All" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Scrollable Items List -->
+                <Border Grid.Row="1" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="8" Padding="6">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Items}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:BatchItemViewModel">
+                                    <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,4">
+                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding FormattedIndex}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource PrimaryAccent}" VerticalAlignment="Center" Margin="0,0,10,0" FontFamily="Cascadia Code, Consolas, monospace" />
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource PrimaryText}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Url}" FontSize="10" Foreground="{DynamicResource MutedText}" FontFamily="Cascadia Code, Consolas, monospace" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Border Grid.Column="3" Background="{DynamicResource ElevatedBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding FormatBadge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource SecondaryText}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Pinned Bottom Action Bar -->
+        <Border Grid.Row="2" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0" Padding="20,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Command="{Binding CancelCommand}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="16,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Cancel" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                    <Button Command="{Binding AddToQueueCommand}" IsEnabled="{Binding CanStart}" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="7" Padding="14,8" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryText}" Content="Add to Queue (Paused)" />
+                    <Button Command="{Binding StartBatchDownloadCommand}" IsEnabled="{Binding CanStart}" Background="{DynamicResource PrimaryAccent}" Foreground="White" CornerRadius="7" Padding="18,8" FontSize="12.5" FontWeight="Bold">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="/Assets/Icons/play-white.png" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="Start Batch Download" FontWeight="Bold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -15,10 +15,11 @@ public interface IQueueManager
         List<DownloadModel> masterDownloads,
         Action<DownloadModel> wireCallbacksAction,
         Action onStateChangedAction);
-    Task EnqueueBatchAsync(BrowserBatchDownloadRequest batchRequest);
+    Task EnqueueBatchAsync(BrowserBatchDownloadRequest batchRequest, bool startPaused = false);
     Task EnqueueAsync(DownloadModel download);
     Task ProcessQueueAsync();
     void TriggerQueueProcessing();
     Task PauseAllQueueAsync();
     Task ResumeAllQueueAsync();
+    Task ClearQueueAsync();
 }

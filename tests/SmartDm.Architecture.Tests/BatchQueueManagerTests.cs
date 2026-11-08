@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartDm.Desktop.Avalonia.Models;
 using SmartDm.Desktop.Avalonia.Services;
+using SmartDm.Desktop.Avalonia.ViewModels;
 using Xunit;
 
 namespace SmartDm.Architecture.Tests;
@@ -416,5 +418,417 @@ public sealed class BatchQueueManagerTests
 
         dl.Status = DownloadStatus.Paused;
         Assert.Equal("Paused", dl.StatusLabel);
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_CustomDestinationFolder_RespectsProvidedFolder()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        string customFolder = Path.Combine(Path.GetTempPath(), "SmartDmBatchTests", "CustomMusicFolder");
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Chill Beats",
+            DestinationFolder = customFolder,
+            IsAudio = true
+        };
+
+        for (int i = 1; i <= 5; i++)
+        {
+            batchReq.Items.Add(new BrowserDownloadRequest
+            {
+                Url = $"https://music.youtube.com/watch?v=track_{i}",
+                Title = $"Track {i}",
+                FormatId = "bestaudio/best"
+            });
+        }
+
+        await queueManager.EnqueueBatchAsync(batchReq);
+        await Task.Delay(50);
+
+        Assert.Equal(5, masterList.Count);
+        foreach (var dl in masterList)
+        {
+            Assert.NotNull(dl.SavePath);
+            Assert.StartsWith(customFolder, dl.SavePath, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_DefaultDestinationFolder_UsesDedicatedSubfolder()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Retro Synthwave",
+            PlaylistTitle = "Retro Synthwave",
+            IsAudio = true
+        };
+
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://music.youtube.com/watch?v=synth1",
+            Title = "Neon City",
+            FormatId = "bestaudio/best"
+        });
+
+        await queueManager.EnqueueBatchAsync(batchReq);
+        await Task.Delay(50);
+
+        Assert.Single(masterList);
+        var dl = masterList[0];
+        Assert.Contains("Retro Synthwave", dl.SavePath);
+    }
+
+    [Fact]
+    public async Task ClearQueueAsync_RemovesOnlyQueuedItems()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Batch 10",
+            IsAudio = true
+        };
+
+        for (int i = 1; i <= 10; i++)
+        {
+            batchReq.Items.Add(new BrowserDownloadRequest
+            {
+                Url = $"https://music.youtube.com/watch?v=track_{i}",
+                Title = $"Track {i}"
+            });
+        }
+
+        await queueManager.EnqueueBatchAsync(batchReq);
+        await Task.Delay(80);
+
+        // 4 active, 6 queued
+        Assert.Equal(4, masterList.Count(d => d.Status == DownloadStatus.Active));
+        Assert.Equal(6, masterList.Count(d => d.Status == DownloadStatus.Queued));
+
+        await queueManager.ClearQueueAsync();
+
+        // Queued items removed, active items remain running
+        Assert.Equal(4, masterList.Count);
+        Assert.All(masterList, d => Assert.Equal(DownloadStatus.Active, d.Status));
+    }
+
+    [Fact]
+    public void BatchDownloadViewModel_InitializesWithDefaults_AndTracksSelection()
+    {
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Top Hits 2026",
+            PlaylistTitle = "Top Hits 2026",
+            IsAudio = true
+        };
+
+        for (int i = 1; i <= 5; i++)
+        {
+            batchReq.Items.Add(new BrowserDownloadRequest
+            {
+                Url = $"https://music.youtube.com/watch?v=hit_{i}",
+                Title = $"Hit Song #{i}"
+            });
+        }
+
+        var vm = new BatchDownloadViewModel(batchReq);
+
+        Assert.Equal("Top Hits 2026", vm.BatchTitle);
+        Assert.Contains("Top Hits 2026", vm.DestinationFolder);
+        Assert.True(vm.IsAudio);
+        Assert.False(vm.IsVideo);
+        Assert.Equal(5, vm.TotalItemCount);
+        Assert.Equal(5, vm.SelectedItemCount);
+        Assert.True(vm.CanStart);
+        Assert.Equal("5 of 5 items selected", vm.SelectionSummary);
+
+        // Deselect all
+        vm.DeselectAllCommand.Execute(null);
+        Assert.Equal(0, vm.SelectedItemCount);
+        Assert.False(vm.CanStart);
+        Assert.Equal("0 of 5 items selected", vm.SelectionSummary);
+
+        // Select all
+        vm.SelectAllCommand.Execute(null);
+        Assert.Equal(5, vm.SelectedItemCount);
+        Assert.True(vm.CanStart);
+
+        // Toggle single item
+        vm.Items[0].IsSelected = false;
+        Assert.Equal(4, vm.SelectedItemCount);
+        Assert.Equal("4 of 5 items selected", vm.SelectionSummary);
+    }
+
+    [Fact]
+    public void BatchDownloadViewModel_FormatToggle_UpdatesExtensionsAndBadges()
+    {
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Music Videos",
+            IsAudio = true
+        };
+
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://youtube.com/watch?v=vid1",
+            Title = "Video Track 1",
+            FileName = "Video Track 1.mp3",
+            FormatId = "bestaudio/best"
+        });
+
+        var vm = new BatchDownloadViewModel(batchReq);
+        Assert.True(vm.IsAudio);
+        Assert.Equal("MP3", vm.Items[0].FormatBadge);
+
+        // Toggle to video
+        vm.IsVideo = true;
+        Assert.False(vm.IsAudio);
+        Assert.Equal("MP4", vm.Items[0].FormatBadge);
+        Assert.Equal("1080p", vm.Items[0].FormatId);
+        Assert.Equal("Video Track 1.mp4", vm.Items[0].FileName);
+    }
+
+    [Fact]
+    public void BatchDownloadViewModel_ConfirmBatch_FiltersDeselectedTracksAndAppliesFolder()
+    {
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Album Collection",
+            PlaylistTitle = "Album Collection",
+            IsAudio = true
+        };
+
+        for (int i = 1; i <= 3; i++)
+        {
+            batchReq.Items.Add(new BrowserDownloadRequest
+            {
+                Url = $"https://music.youtube.com/watch?v=track_{i}",
+                Title = $"Track #{i}"
+            });
+        }
+
+        var vm = new BatchDownloadViewModel(batchReq);
+        vm.DestinationFolder = @"C:\TestBatchMusic";
+        // Uncheck track 2
+        vm.Items[1].IsSelected = false;
+
+        BrowserBatchDownloadRequest? confirmedBatch = null;
+        bool confirmedPaused = false;
+        vm.BatchConfirmed += (req, paused) =>
+        {
+            confirmedBatch = req;
+            confirmedPaused = paused;
+        };
+
+        vm.StartBatchDownloadCommand.Execute(null);
+
+        Assert.NotNull(confirmedBatch);
+        Assert.False(confirmedPaused);
+        Assert.Equal(@"C:\TestBatchMusic", confirmedBatch.DestinationFolder);
+        Assert.Equal(2, confirmedBatch.Items.Count);
+        Assert.Equal("Track #1", confirmedBatch.Items[0].Title);
+        Assert.Equal("Track #3", confirmedBatch.Items[1].Title);
+    }
+
+    [Fact]
+    public async Task ClearQueueAsync_RemovesWaitingPausedQueueItems()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Paused Batch Test",
+            IsAudio = true
+        };
+
+        for (int i = 1; i <= 6; i++)
+        {
+            batchReq.Items.Add(new BrowserDownloadRequest
+            {
+                Url = $"https://music.youtube.com/watch?v=item_{i}",
+                Title = $"Item {i}"
+            });
+        }
+
+        // Enqueue with startPaused = true ("Add to Queue (Paused)")
+        await queueManager.EnqueueBatchAsync(batchReq, startPaused: true);
+        await Task.Delay(50);
+
+        Assert.Equal(6, masterList.Count);
+        Assert.All(masterList, d => Assert.Equal(DownloadStatus.Paused, d.Status));
+
+        await queueManager.ClearQueueAsync();
+
+        // All 6 waiting paused items must be cleared
+        Assert.Empty(masterList);
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_InvalidPath_FallsBackToDefaultDownloadsWithoutThrowing()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Bad Path Batch",
+            DestinationFolder = "C:\\Invalid:Folder*Path?<bad>|name",
+            IsAudio = true
+        };
+
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://music.youtube.com/watch?v=bad1",
+            Title = "Valid Track"
+        });
+
+        // Must not throw ArgumentException
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            await queueManager.EnqueueBatchAsync(batchReq);
+            await Task.Delay(50);
+        });
+
+        Assert.Null(exception);
+        Assert.Single(masterList);
+        Assert.False(masterList[0].SavePath.Contains('*'));
+        Assert.False(masterList[0].SavePath.Contains('?'));
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_DuplicateNamesInSameBatch_AssignsUniqueSavePaths()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Duplicate Names Test",
+            IsAudio = true
+        };
+
+        // Two items with the exact same title in the same batch
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://music.youtube.com/watch?v=track1",
+            Title = "Duplicate Song"
+        });
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://music.youtube.com/watch?v=track2",
+            Title = "Duplicate Song"
+        });
+
+        await queueManager.EnqueueBatchAsync(batchReq);
+        await Task.Delay(50);
+
+        Assert.Equal(2, masterList.Count);
+        Assert.NotEqual(masterList[0].SavePath, masterList[1].SavePath);
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_FormatMismatch_ReplacesExtensionWithoutChaining()
+    {
+        var engine = new TestDownloadEngine();
+        var repo = new InMemoryDatabaseRepository();
+        var masterList = new List<DownloadModel>();
+        var queueManager = new QueueManager { MaxConcurrentDownloads = 4 };
+        queueManager.Initialize(engine, repo, null!, masterList, dl => { }, () => { });
+
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Format Mismatch Test",
+            IsAudio = false // Video MP4 requested
+        };
+
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://youtube.com/watch?v=track1",
+            Title = "Song Title",
+            FileName = "Song Title.mp3" // Has .mp3 from original audio detection
+        });
+
+        await queueManager.EnqueueBatchAsync(batchReq);
+        await Task.Delay(50);
+
+        Assert.Single(masterList);
+        Assert.EndsWith(".mp4", masterList[0].SavePath);
+        Assert.DoesNotContain(".mp3.mp4", masterList[0].SavePath);
+        Assert.Equal("Song Title", masterList[0].Title);
+    }
+
+    [Fact]
+    public void BatchDownloadViewModel_EmptyFolder_DisablesStart()
+    {
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Validation Test",
+            IsAudio = true
+        };
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://music.youtube.com/watch?v=v1",
+            Title = "Track 1"
+        });
+
+        var vm = new BatchDownloadViewModel(batchReq);
+        Assert.True(vm.CanStart);
+
+        vm.DestinationFolder = "   ";
+        Assert.False(vm.CanStart);
+
+        vm.DestinationFolder = @"C:\ValidFolder";
+        Assert.True(vm.CanStart);
+    }
+
+    [Fact]
+    public void BatchDownloadViewModel_TitleChange_UpdatesDefaultDestinationFolder()
+    {
+        var batchReq = new BrowserBatchDownloadRequest
+        {
+            BatchTitle = "Initial Title",
+            PlaylistTitle = "Initial Title",
+            IsAudio = true
+        };
+        batchReq.Items.Add(new BrowserDownloadRequest
+        {
+            Url = "https://music.youtube.com/watch?v=v1",
+            Title = "Track 1"
+        });
+
+        var vm = new BatchDownloadViewModel(batchReq);
+        Assert.Contains("Initial Title", vm.DestinationFolder);
+
+        // Edit title
+        vm.BatchTitle = "New Playlist Name";
+        Assert.Contains("New Playlist Name", vm.DestinationFolder);
     }
 }

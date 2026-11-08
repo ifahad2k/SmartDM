@@ -46,6 +46,7 @@ public class BrowserBatchDownloadRequest
     public string? PlaylistTitle { get; set; }
     public string? PlaylistId { get; set; }
     public bool IsAudio { get; set; }
+    public string? DestinationFolder { get; set; }
     public string? Referer { get; set; }
     public string? PageUrl { get; set; }
     public string? Cookies { get; set; }
