@@ -234,7 +234,7 @@ public class HttpProbeService : IHttpProbeService
             // Fallback 2: For HTML/video site pages, attempt HTML title extraction
             if (string.IsNullOrWhiteSpace(extractedName) || IsGenericName(extractedName))
             {
-                if (result.MimeType.Contains("text/html") || uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("tiktok.com"))
+                if (result.MimeType.Contains("text/html") || uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("bilibili.tv") || uri.Host.Contains("tiktok.com"))
                 {
                     try
                     {
@@ -248,7 +248,7 @@ public class HttpProbeService : IHttpProbeService
                             if (!string.IsNullOrWhiteSpace(pageTitle))
                             {
                                 string ext = GetExtensionFromMimeType(result.MimeType);
-                                if (uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("tiktok.com"))
+                                if (uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("bilibili.tv") || uri.Host.Contains("tiktok.com"))
                                 {
                                     if (ext == ".bin" || ext == ".html") ext = ".mp4";
                                 }

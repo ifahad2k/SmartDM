@@ -50,6 +50,15 @@
   function inspectJsonResponseForManifests(text, requestUrl) {
     if (!text || typeof text !== 'string' || text.length > 500000) return;
     try {
+      if (text.includes('"playurl"') || text.includes('"video_resource"') || text.includes('"audio_resource"') || (text.includes('"dash"') && (text.includes('"video"') || text.includes('"baseUrl"')))) {
+        stashAndEmitManifest(requestUrl, text);
+        try {
+          window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
+            detail: { url: requestUrl, text, playerId: null, candidateUrl: requestUrl }
+          }));
+        } catch (_) {}
+        return;
+      }
       const unescapedText = text.replace(/\\\/+/g, '/');
       const m3u8Matches = unescapedText.match(/https?:\/\/[^"'\s\\]+?\.(?:m3u8|mpd)[^"'\s\\]*/gi);
       if (m3u8Matches && m3u8Matches.length > 0) {
@@ -94,6 +103,40 @@
       }
     } catch (_) {}
   }
+
+  try {
+    const isBiliPage = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+    if (isBiliPage) {
+      const checkAndEmitBiliPlayinfo = (obj) => {
+        try {
+          if (obj && typeof obj === 'object') {
+            const txt = JSON.stringify(obj);
+            if (txt.includes('"playurl"') || txt.includes('"video_resource"') || txt.includes('"dash"')) {
+              inspectJsonResponseForManifests(txt, window.location.href);
+            }
+          }
+        } catch (_) {}
+      };
+
+      if (window.__playinfo__) {
+        checkAndEmitBiliPlayinfo(window.__playinfo__);
+      }
+      let currentPlayinfo = window.__playinfo__;
+      Object.defineProperty(window, '__playinfo__', {
+        configurable: true,
+        enumerable: true,
+        get() { return currentPlayinfo; },
+        set(val) {
+          currentPlayinfo = val;
+          checkAndEmitBiliPlayinfo(val);
+        }
+      });
+      document.addEventListener('DOMContentLoaded', () => {
+        if (window.__playinfo__) checkAndEmitBiliPlayinfo(window.__playinfo__);
+      });
+    }
+  } catch (_) {}
 
   function stripByteRangeParams(url) {
     if (!url || typeof url !== 'string') return url;
@@ -196,9 +239,12 @@
     // Only media responses representing backing resources qualify; never JSON,
     // playlists or known isolated HLS/DASH fragment URLs.
     const isMeta = /(?:cdninstagram\.com|fbcdn\.net|facebook\.com|instagram\.com)/i.test(metadata.url || "");
-    if (!/^https?:\/\//i.test(metadata.url || '') || !/(?:video|audio)\/(?:mp4|webm)/i.test(metadata.type || '') ||
-        /\.(?:m4s|ts|aac)(?:[?#]|$)|\/(?:seg-|fragment-)/i.test(metadata.url) ||
-        ![200, 206].includes(metadata.status) || (!isMeta && !(metadata.length >= 65536 || metadata.range))) return;
+    const isBiliPage = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+    const isBili = isBiliPage || /(?:bilibili\.com|bilibili\.tv|bilivideo\.com|biliapi\.net|ibilibili\.com|akamaized\.net|byteoversea\.com)/i.test(metadata.url || "");
+    if (!/^https?:\/\//i.test(metadata.url || '') || !/(?:video|audio)\/(?:mp4|webm|m4s|iso\.segment)|octet-stream/i.test(metadata.type || '') ||
+        (!isBili && (/\.(?:m4s|ts|aac)(?:[?#]|$)|\/(?:seg-|fragment-)/i.test(metadata.url))) ||
+        ![200, 206].includes(metadata.status) || (!isMeta && !isBili && !(metadata.length >= 65536 || metadata.range))) return;
     const span = byteSpan(bytes);
     if (!span || span.end - span.start < SAMPLE_BYTES * 2) return;
     const now = Date.now();
@@ -270,7 +316,10 @@
     // Individual HLS/DASH fragments are not complete downloadable resources.
     // A ranged backing file is usable even when its URL has no extension.
     const isMeta = /(?:cdninstagram\.com|fbcdn\.net|facebook\.com|instagram\.com)/i.test(url || "");
-    const backingRange = (isMeta || (total > (buffer.byteLength || 0) && total > 1048576)) && /(?:video|audio)\/(?:mp4|webm)|octet-stream/i.test(contentType || "");
+    const isBiliPage = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+    const isBili = isBiliPage || /(?:bilibili\.com|bilibili\.tv|bilivideo\.com|biliapi\.net|ibilibili\.com|akamaized\.net|byteoversea\.com)/i.test(url || "");
+    const backingRange = (isMeta || isBili || (total > (buffer.byteLength || 0) && total > 1048576)) && /(?:video|audio)\/(?:mp4|webm|m4s|iso\.segment)|octet-stream/i.test(contentType || "");
     let completeMp4 = false;
     try {
       const view = new DataView(span.buffer, span.start, span.end - span.start);

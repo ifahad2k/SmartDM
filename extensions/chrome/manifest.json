@@ -11,11 +11,15 @@
     "webRequest",
     "cookies",
     "downloads",
-    "*://music.youtube.com/*"
+    "*://music.youtube.com/*",
+    "*://*.bilibili.com/*",
+    "*://*.bilibili.tv/*"
   ],
   "host_permissions": [
     "<all_urls>",
-    "*://music.youtube.com/*"
+    "*://music.youtube.com/*",
+    "*://*.bilibili.com/*",
+    "*://*.bilibili.tv/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -25,7 +29,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>", "*://music.youtube.com/*"],
+      "matches": ["<all_urls>", "*://music.youtube.com/*", "*://*.bilibili.com/*", "*://*.bilibili.tv/*"],
       "js": ["sniffer.js"],
       "world": "MAIN",
       "all_frames": true,
@@ -33,7 +37,7 @@
       "run_at": "document_start"
     },
     {
-      "matches": ["<all_urls>", "*://music.youtube.com/*"],
+      "matches": ["<all_urls>", "*://music.youtube.com/*", "*://*.bilibili.com/*", "*://*.bilibili.tv/*"],
       "js": [
         "modules/utils.js",
         "modules/visual_mount.js",
@@ -50,7 +54,7 @@
   "web_accessible_resources": [
     {
       "resources": ["sniffer.js"],
-      "matches": ["<all_urls>", "*://music.youtube.com/*"]
+      "matches": ["<all_urls>", "*://music.youtube.com/*", "*://*.bilibili.com/*", "*://*.bilibili.tv/*"]
     }
   ]
 }

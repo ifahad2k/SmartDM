@@ -277,6 +277,9 @@ class FormatRegistryEngine {
       const card = isFb ? (vEl ? (VisualMountDetector.findFacebookReelCard(vEl) || VisualMountDetector.findFacebookPostCard(vEl)) : null) : null;
       const pageTitle = isFb ? VisualMountDetector.extractFacebookMediaTitle(vEl, card) : (SmartDmUtils.extractWatchPageTitle() || 'video');
       parsed = this.parseFacebookDashManifest(text, url, pageTitle);
+    } else if (text.includes('"playurl"') || text.includes('"video_resource"') || text.includes('"audio_resource"') || (text.includes('"dash"') && (text.includes('"video"') || text.includes('"baseUrl"')))) {
+      const pageTitle = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractWatchPageTitle?.()) || (typeof document !== 'undefined' && document.title) || 'video';
+      parsed = this.parseBilibiliFormats(text, url, pageTitle);
     } else if ((text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-ENDLIST')) && url) {
       this.resolveM3u8VariantsInPage(url).then(variants => {
         let finalVariants = variants;
@@ -308,7 +311,8 @@ class FormatRegistryEngine {
             }
           });
           const vEl = SmartDmUtils.findActiveVideoElement();
-          const key = SmartDmUtils.getMediaCacheKey(window.location.href, vEl);
+          const canonicalUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.getCanonicalUrl) ? SmartDmUtils.getCanonicalUrl(window.location.href) : window.location.href;
+          const key = SmartDmUtils.getMediaCacheKey(canonicalUrl, vEl);
           const merged = this.mergeFormatLists(this.accumulatedFormatsByCacheKey.get(key) || [], finalVariants);
           this.rememberFormats(key, merged.slice());
 
@@ -335,7 +339,8 @@ class FormatRegistryEngine {
         }
       });
       const vEl = SmartDmUtils.findActiveVideoElement();
-      const key = SmartDmUtils.getMediaCacheKey(window.location.href, vEl);
+      const canonicalUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.getCanonicalUrl) ? SmartDmUtils.getCanonicalUrl(window.location.href) : window.location.href;
+      const key = SmartDmUtils.getMediaCacheKey(canonicalUrl, vEl);
       const merged = this.mergeFormatLists(this.accumulatedFormatsByCacheKey.get(key) || [], parsed);
       this.rememberFormats(key, merged.slice());
 
@@ -529,6 +534,224 @@ class FormatRegistryEngine {
       }
     }
     return result;
+  }
+
+  static extractInPageBilibiliManifest() {
+    if (typeof document === 'undefined') return null;
+    const isBili = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+    if (!isBili) return null;
+
+    try {
+      const el = document.getElementById('__playinfo__') || document.getElementById('__NEXT_DATA__');
+      if (el && el.textContent && (el.textContent.includes('"playurl"') || el.textContent.includes('"video_resource"') || el.textContent.includes('"dash"'))) {
+        return el.textContent;
+      }
+
+      const scripts = document.getElementsByTagName('script');
+      for (let i = 0; i < scripts.length; i++) {
+        const txt = scripts[i].textContent || '';
+        if (txt.includes('window.__playinfo__') || txt.includes('__playinfo__=')) {
+          const m = txt.match(/window\.__playinfo__\s*=\s*(\{[\s\S]*?\})(?:;|\n|$)/);
+          if (m && m[1]) return m[1];
+        }
+        if (txt.includes('window.__INITIAL_STATE__') && (txt.includes('"playurl"') || txt.includes('"video_resource"') || txt.includes('"dash"'))) {
+          const m = txt.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})(?:;|\n|$)/);
+          if (m && m[1]) return m[1];
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static parseBilibiliFormats(jsonText, baseUrl, pageTitle = 'video') {
+    const formats = [];
+    try {
+      if (!jsonText || typeof jsonText !== 'string') return [];
+      let data = null;
+      try {
+        data = typeof jsonText === 'object' ? jsonText : JSON.parse(jsonText);
+      } catch (_) {
+        return [];
+      }
+      if (!data) return [];
+
+      const root = data.data || data.result || data.props?.pageProps?.videoInfo || data.props?.pageProps || data;
+      const playurl = root.playurl || root.video_data || root;
+      const dash = playurl.dash || root.dash;
+      const videoItems = [];
+      let audioUrl = null;
+      let audioBw = 0;
+
+      let effectiveReferer = (typeof window !== 'undefined' && window.location?.href) ? window.location.href : (baseUrl || '');
+      if (effectiveReferer.includes('api.bilibili.tv')) effectiveReferer = 'https://www.bilibili.tv/';
+      else if (effectiveReferer.includes('api.bilibili.com')) effectiveReferer = 'https://www.bilibili.com/';
+
+      let effectiveOrigin = (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : '';
+      if (!effectiveOrigin || effectiveOrigin.includes('api.bilibili.tv')) effectiveOrigin = 'https://www.bilibili.tv';
+      else if (effectiveOrigin.includes('api.bilibili.com')) effectiveOrigin = 'https://www.bilibili.com';
+      if (!effectiveOrigin) {
+        try { effectiveOrigin = baseUrl ? new URL(baseUrl).origin : ''; } catch (_) {}
+      }
+
+      // 1. DASH format (separate video + audio streams)
+      if (dash) {
+        const vList = Array.isArray(dash.video) ? dash.video : [];
+        const aList = Array.isArray(dash.audio) ? dash.audio : [];
+
+        aList.forEach(a => {
+          const aUrl = a.baseUrl || a.base_url || a.url || (Array.isArray(a.backupUrl) && a.backupUrl[0]) || (Array.isArray(a.backup_url) && a.backup_url[0]);
+          const bw = a.bandwidth || a.id || 0;
+          if (aUrl && aUrl.startsWith('http')) {
+            if (!audioUrl || bw > audioBw) {
+              audioUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(aUrl) : aUrl;
+              audioBw = bw;
+            }
+          }
+        });
+
+        vList.forEach(v => {
+          const vUrl = v.baseUrl || v.base_url || v.url || (Array.isArray(v.backupUrl) && v.backupUrl[0]) || (Array.isArray(v.backup_url) && v.backup_url[0]);
+          if (!vUrl || !vUrl.startsWith('http')) return;
+          let h = v.height || 0;
+          const qId = v.id || 0;
+          if (!h && qId) {
+            if (qId >= 120) h = 2160;
+            else if (qId >= 116 || qId >= 80) h = 1080;
+            else if (qId >= 64) h = 720;
+            else if (qId >= 32) h = 480;
+            else if (qId >= 16) h = 360;
+          }
+          if (!h && v.width) {
+            h = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.normalizeVideoResolution) ? SmartDmUtils.normalizeVideoResolution(v.width, v.height || 0) : (v.height || 720);
+          }
+          if (!h) h = 720;
+          videoItems.push({
+            url: (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(vUrl) : vUrl,
+            height: h,
+            bandwidth: v.bandwidth || 0,
+            codecs: v.codecs || v.codecid || ''
+          });
+        });
+      }
+
+      // 2. Bilibili Global video_resource / audio_resource shape
+      const rawVList = Array.isArray(playurl.video_resource) ? playurl.video_resource : (Array.isArray(playurl.video) ? playurl.video : (Array.isArray(root.video_resource) ? root.video_resource : []));
+      if (videoItems.length === 0 && rawVList.length > 0) {
+        const rawAList = Array.isArray(playurl.audio_resource) ? playurl.audio_resource : (Array.isArray(playurl.audio) ? playurl.audio : (Array.isArray(root.audio_resource) ? root.audio_resource : []));
+        rawAList.forEach(a => {
+          const aRes = a.audio_resource || a;
+          const aUrl = aRes.url || (Array.isArray(aRes.backup_url) && aRes.backup_url[0]) || aRes.baseUrl || aRes.base_url;
+          const bw = aRes.bandwidth || 0;
+          if (aUrl && aUrl.startsWith('http')) {
+            if (!audioUrl || bw > audioBw) {
+              audioUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(aUrl) : aUrl;
+              audioBw = bw;
+            }
+          }
+        });
+
+        rawVList.forEach(v => {
+          const vRes = v.video_resource || v;
+          const vUrl = vRes.url || (Array.isArray(vRes.backup_url) && vRes.backup_url[0]) || vRes.baseUrl || vRes.base_url;
+          if (!vUrl || !vUrl.startsWith('http')) return;
+          let h = vRes.height || 0;
+          const q = vRes.quality || 0;
+          if (!h && q) {
+            if (q >= 120) h = 2160;
+            else if (q >= 80) h = 1080;
+            else if (q >= 64) h = 720;
+            else if (q >= 32) h = 480;
+            else if (q >= 16) h = 360;
+          }
+          if (!h && vRes.stream_info?.desc_words) {
+            h = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractResolutionNumber) ? SmartDmUtils.extractResolutionNumber(vRes.stream_info.desc_words) : 0;
+          }
+          if (!h && vRes.width) {
+            h = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.normalizeVideoResolution) ? SmartDmUtils.normalizeVideoResolution(vRes.width, vRes.height || 0) : (vRes.height || 720);
+          }
+          if (!h) h = 720;
+          videoItems.push({
+            url: (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(vUrl) : vUrl,
+            height: h,
+            bandwidth: vRes.bandwidth || 0,
+            codecs: vRes.codecs || ''
+          });
+        });
+      }
+
+      // 3. Progressive durl shape (FLV/MP4 single files)
+      const durl = root.durl || playurl.durl;
+      if (videoItems.length === 0 && Array.isArray(durl) && durl.length > 0) {
+        durl.forEach((d, idx) => {
+          const dUrl = d.url || (Array.isArray(d.backup_url) && d.backup_url[0]);
+          if (dUrl && dUrl.startsWith('http')) {
+            const h = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractResolutionNumber) ? SmartDmUtils.extractResolutionNumber(dUrl) : 720;
+            const resLabel = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.getResolutionLabel) ? SmartDmUtils.getResolutionLabel(h, 'MP4') : `${h}p (MP4)`;
+            const cleanUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(dUrl) : dUrl;
+            formats.push({
+              formatId: `bili_prog_${h}p_${idx}`,
+              resolution: resLabel,
+              ext: 'mp4',
+              fileSize: d.size || 0,
+              height: h,
+              isAudioOnly: false,
+              title: pageTitle,
+              url: cleanUrl,
+              directUrl: cleanUrl,
+              videoUrl: cleanUrl,
+              referer: effectiveReferer,
+              origin: effectiveOrigin
+            });
+          }
+        });
+      }
+
+      if (videoItems.length > 0) {
+        videoItems.sort((a, b) => (b.height - a.height) || (b.bandwidth - a.bandwidth));
+        const seenH = new Set();
+
+        videoItems.forEach(v => {
+          if (seenH.has(v.height)) return;
+          seenH.add(v.height);
+
+          const resLabel = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.getResolutionLabel) ? SmartDmUtils.getResolutionLabel(v.height, 'MP4') : `${v.height}p (MP4)`;
+          formats.push({
+            formatId: `bili_${v.height}p`,
+            resolution: resLabel,
+            ext: 'mp4',
+            height: v.height,
+            isAudioOnly: false,
+            title: pageTitle,
+            url: v.url,
+            directUrl: v.url,
+            videoUrl: v.url,
+            audioUrl: audioUrl || null,
+            audioStream: audioUrl ? { audioUrl, bandwidth: audioBw } : null,
+            referer: effectiveReferer,
+            origin: effectiveOrigin
+          });
+        });
+
+        if (audioUrl) {
+          formats.push({
+            formatId: 'bili_audio',
+            resolution: 'Audio (MP3 / High Quality)',
+            ext: 'mp3',
+            height: -1,
+            isAudioOnly: true,
+            title: pageTitle,
+            url: audioUrl,
+            directUrl: audioUrl,
+            videoUrl: null,
+            audioUrl: audioUrl,
+            referer: effectiveReferer,
+            origin: effectiveOrigin
+          });
+        }
+      }
+    } catch (_) {}
+    return formats;
   }
 
   static parseFacebookDashManifest(mpdText, baseUrl, pageTitle = 'facebook_video') {
@@ -1350,6 +1573,20 @@ class FormatRegistryEngine {
             });
           });
 
+          const isBili = typeof window !== 'undefined' && window.location?.hostname &&
+            (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+          if (isBili) {
+            const biliAudio = netMedia.find(m => m.isAudio || (m.contentType && m.contentType.includes('audio/')) || (m.url && /audio|302(16|32|80)/i.test(m.url)));
+            if (biliAudio) {
+              const cleanAudioUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(biliAudio.url) : biliAudio.url;
+              rawFormats.forEach(f => {
+                if (!f.isAudioOnly && !f.audioUrl) {
+                  f.audioUrl = cleanAudioUrl;
+                }
+              });
+            }
+          }
+
           const formats = [];
           const seenFmt = new Set();
           rawFormats.forEach(f => {
@@ -1545,7 +1782,21 @@ class FormatRegistryEngine {
     this.pruneCache();
     const isYouTube = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be') || (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')));
     const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
+    const isBili = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
     const cacheKey = SmartDmUtils.getMediaCacheKey(videoUrl, mediaEl);
+
+    if (isBili && (!this.accumulatedFormatsByCacheKey.has(cacheKey) || this.accumulatedFormatsByCacheKey.get(cacheKey).length === 0)) {
+      const inPageManifest = this.extractInPageBilibiliManifest();
+      if (inPageManifest) {
+        const pageTitle = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractWatchPageTitle?.()) || (typeof document !== 'undefined' && document.title) || 'video';
+        const parsed = this.parseBilibiliFormats(inPageManifest, videoUrl || window.location.href, pageTitle);
+        if (parsed && parsed.length > 0) {
+          const merged = this.mergeFormatLists(this.accumulatedFormatsByCacheKey.get(cacheKey) || [], parsed);
+          this.rememberFormats(cacheKey, merged.slice());
+        }
+      }
+    }
 
     // A slow resolver must not acquire another callback/DOM closure every poll.
     if (this.mediaFormatCache[cacheKey]?.status === 'pending') {
@@ -1630,6 +1881,17 @@ class FormatRegistryEngine {
     let instantDelivered = false;
 
     this.buildFallbackFormats(videoUrl, mediaEl, (instantRes) => {
+      const activeKey = SmartDmUtils.getMediaCacheKey(videoUrl, mediaEl);
+      const accumulated = this.accumulatedFormatsByCacheKey.get(activeKey);
+      if (accumulated && accumulated.length > 0) {
+        const pageTitle = (instantRes && instantRes.title && !SmartDmUtils.isGenericTitle(instantRes.title)) ? instantRes.title : (SmartDmUtils.extractWatchPageTitle() || 'video');
+        instantRes = {
+          success: true,
+          status: 'ok',
+          title: pageTitle,
+          formats: this.mergeFormatLists(accumulated, (instantRes && instantRes.formats) || [])
+        };
+      }
       if (instantRes && instantRes.formats && instantRes.formats.length > 0) {
         instantDelivered = true;
         const hasMore = !isFb && !!(isExternalWatchUrl || isYouTube);

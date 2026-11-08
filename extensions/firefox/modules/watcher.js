@@ -853,6 +853,29 @@ class MediaWatcher {
     const mediaElements = document.querySelectorAll('video:not([' + this.ATTR_PLAYER_ATTACHED + ']), audio:not([' + this.ATTR_PLAYER_ATTACHED + '])');
     mediaElements.forEach(el => this.attachPlayerBanner(el));
 
+    // Support Bilibili dedicated player containers
+    const isBili = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+    if (isBili) {
+      const biliContainers = document.querySelectorAll(
+        '.bstar-web-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+        '.bpx-player-container:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+        'div[class*="bstar-web-player"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+        'div[class*="bpx-player"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+        '#bilibili-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+        '#bofqi:not([' + this.ATTR_PLAYER_ATTACHED + '])'
+      );
+      biliContainers.forEach(container => {
+        const v = container.querySelector('video') || (container.shadowRoot ? container.shadowRoot.querySelector('video') : null);
+        if (v) {
+          if (!v.getAttribute(this.ATTR_PLAYER_ATTACHED)) {
+            this.attachPlayerBanner(v);
+          }
+          container.setAttribute(this.ATTR_PLAYER_ATTACHED, 'true');
+        }
+      });
+    }
+
     if (typeof window !== 'undefined' && window.top === window.self) {
       const iframes = document.querySelectorAll('iframe:not([' + this.ATTR_PLAYER_ATTACHED + '])');
       iframes.forEach(iframe => {
@@ -890,6 +913,19 @@ class MediaWatcher {
       }
     }
 
+    // Dedicated main video player detection for Bilibili
+    const isBilibili = typeof window !== 'undefined' && window.location?.hostname &&
+      (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
+    if (isBilibili) {
+      if (mediaEl.closest('[class*="video-card"], [class*="bstar-video-card"], [class*="bili-video-card"], [class*="recommend"], aside, [class*="related"], [class*="feed"], [class*="list-item"]')) {
+        return true;
+      }
+      if (mediaEl.closest('.bstar-web-player, .bpx-player-container, #bilibili-player, #bofqi, .bilibili-player, div[class*="bstar-web-player"], div[class*="bpx-player"], div[class*="player-container"], div[class*="player-wrap"], div[class*="video-wrap"], .bstar-player-wrap') ||
+          mediaEl.classList?.contains('bpx-player-video-wrap')) {
+        return false;
+      }
+    }
+
     // 1. Explicit thumbnail, preview, or carousel shelf container
     const thumbContainer = mediaEl.closest(
       '[class*="thumbnail" i], [class*="thumb" i], [id*="thumbnail" i], ' +
@@ -910,7 +946,7 @@ class MediaWatcher {
     // 2. Clickable link card (where clicking the video card navigates to video/reel URL)
     const parentAnchor = mediaEl.closest('a[href*="/reel/"], a[href*="/shorts/"], a[href*="/watch"], a[href*="/video/"], a[href*="/videos/"]');
     if (parentAnchor) {
-      const isDedicatedWatch = (window.location.pathname.includes('/watch') || window.location.pathname.includes('/videos/') || window.location.pathname.includes('/shorts/')) &&
+      const isDedicatedWatch = (window.location.pathname.includes('/watch') || window.location.pathname.includes('/videos/') || window.location.pathname.includes('/shorts/') || window.location.pathname.includes('/play/') || window.location.pathname.includes('/video/')) &&
                                !parentAnchor.href.includes('/reel/');
       if (!isDedicatedWatch) {
         return true;
@@ -1292,7 +1328,10 @@ class MediaWatcher {
       'ytmusic-responsive-list-item-renderer',
       'ytmusic-two-row-item-renderer',
       '.bili-video-card',
+      '.bstar-video-card',
+      'div[class*="bstar-video-card"]',
       'a[href*="/video/BV"]',
+      'a[href*="/play/"]',
       'a[href*="/view_video.php"]',
       'a[href*="/watch?v="]',
       'a[href*="/shorts/"]',

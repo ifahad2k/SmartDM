@@ -16,10 +16,12 @@ class SmartDmUtils {
           const shortId = u.pathname.split('/shorts/')[1].split('/')[0].split('?')[0];
           return 'https://www.youtube.com/shorts/' + shortId;
         }
-      } else if (u.hostname.includes('bilibili.com')) {
+      } else if (u.hostname.includes('bilibili.com') || u.hostname.includes('bilibili.tv')) {
         if (u.pathname.includes('/video/')) {
           const bvId = u.pathname.split('/video/')[1].split('/')[0].split('?')[0];
-          return 'https://www.bilibili.com/video/' + bvId;
+          return `${u.origin}/video/${bvId}`;
+        } else if (u.pathname.includes('/play/')) {
+          return `${u.origin}${u.pathname}`;
         }
       }
       return u.href;
@@ -98,14 +100,15 @@ class SmartDmUtils {
 
   static getMediaCacheKey(videoUrl, mediaEl) {
     const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || window.location.hostname.includes('instagram.com');
+    const canonical = (videoUrl && typeof this.getCanonicalUrl === 'function') ? this.getCanonicalUrl(videoUrl) : videoUrl;
     if (isFb && mediaEl) {
       if (!mediaEl._smartdm_uid) {
         mediaEl._smartdm_uid = 'vid_fb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
       }
-      return (videoUrl && !this.isGenericPageUrl(videoUrl)) ? `${videoUrl}_${mediaEl._smartdm_uid}` : mediaEl._smartdm_uid;
+      return (canonical && !this.isGenericPageUrl(canonical)) ? `${canonical}_${mediaEl._smartdm_uid}` : mediaEl._smartdm_uid;
     }
-    if (videoUrl && !this.isGenericPageUrl(videoUrl)) {
-      return videoUrl;
+    if (canonical && !this.isGenericPageUrl(canonical)) {
+      return canonical;
     }
     if (mediaEl) {
       if (!mediaEl._smartdm_uid) {
@@ -113,7 +116,7 @@ class SmartDmUtils {
       }
       return mediaEl._smartdm_uid;
     }
-    return (videoUrl && !this.isGenericPageUrl(videoUrl)) ? videoUrl : (window.location.origin + window.location.pathname);
+    return (canonical && !this.isGenericPageUrl(canonical)) ? canonical : (window.location.origin + window.location.pathname);
   }
 
   static formatSize(bytes) {
@@ -153,7 +156,9 @@ class SmartDmUtils {
     clean = clean.replace(/\s*::\s*.*$/, '').trim();
 
     // Strip site/brand suffixes separated by - or | or • or —
-    clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+    clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili(?:\s*TV|\s*Global)?|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+    clean = clean.replace(/\s*[\-\|\•\—_]\s*(?:哔哩哔哩|_?bilibili(?:\.tv)?).*$/i, '').trim();
+    clean = clean.replace(/_哔哩哔哩(?:_bilibili)?$/i, '').replace(/[_\-\|\•\—]\s*(?:哔哩哔哩|bilibili(?:\.tv)?)$/i, '').trim();
 
     // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>"
     clean = clean.replace(/\s+(?:online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
@@ -181,6 +186,7 @@ class SmartDmUtils {
       'instagram', 'instagram video', 'instagram reel', 'instagram reels', 'instagram_video', 'instagram_reel',
       'tiktok', 'x', 'home _ x', 'home / x', 'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
       'trending', 'watch later', 'video', 'media stream', 'download', 'downloads',
+      'bilibili', 'bilibili tv', 'bilibili global', '哔哩哔哩', '哔哩哔哩动画', 'bilibili 哔哩哔哩',
       'facebook', 'facebook_video', 'facebook_reel', 'facebook video', 'facebook reel', 'facebook reels',
       'notifications', 'notification', 'chats', 'messages', 'menu', 'shortcuts', 'your shortcuts',
       'contacts', 'explore', 'settings', 'search', 'news feed', 'newsfeed', 'stories',
@@ -396,6 +402,14 @@ class SmartDmUtils {
 
       // 3. In-page semantic headings / social captions
       const headingSelectors = [
+        'h1.media-info__title',
+        '.media-info__title',
+        'h1.bstar-meta__title',
+        '.bstar-meta__title',
+        'h1.video-title',
+        '.video-title',
+        '.video-info-detail-title',
+        '.bpx-player-top-title',
         '.theatre-info h1',
         '.theatre-info',
         '.anisc-detail .film-name',
@@ -415,6 +429,7 @@ class SmartDmUtils {
         '[id*="anime-title"]',
         '.inlineFree',
         'h1.title',
+        'h1',
         '[data-ad-preview]',
         '.userContent'
       ];
@@ -458,6 +473,33 @@ class SmartDmUtils {
           const meta = VisualMountDetector.extractYouTubeMusicTrackMetadata();
           if (meta && meta.fullTitle && !this.isGenericTitle(meta.fullTitle)) {
             return this.sanitizeCleanTitle(meta.fullTitle);
+          }
+        }
+      }
+      if (typeof window !== 'undefined' && (window.location?.hostname?.includes('bilibili.tv') || window.location?.hostname?.includes('bilibili.com'))) {
+        const biliSelectors = [
+          'h1.media-info__title',
+          '.media-info__title',
+          '[class*="media-info__title"]',
+          'h1.bstar-meta__title',
+          '.bstar-meta__title',
+          '[class*="bstar-meta__title"]',
+          'h1.video-title',
+          '.video-title',
+          '[class*="video-title"]',
+          '.video-info-detail-title',
+          '.bpx-player-top-title',
+          '[class*="bpx-player-top-title"]',
+          'h1'
+        ];
+        for (const sel of biliSelectors) {
+          const el = document.querySelector(sel);
+          if (el) {
+            const t = (el.getAttribute?.('title') || el.textContent || '').trim();
+            if (t && !this.isGenericTitle(t)) {
+              const clean = this.sanitizeCleanTitle(t);
+              if (clean && !this.isGenericTitle(clean)) return clean;
+            }
           }
         }
       }

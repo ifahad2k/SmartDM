@@ -241,6 +241,12 @@ class VisualMountDetector {
         }
       }
 
+      if (host.includes('bilibili.com') || host.includes('bilibili.tv')) {
+        if (!href.includes('/video/') && !href.includes('/play/')) {
+          return false;
+        }
+      }
+
       // Check for duration badge (strong signal of genuine video card)
       const hasDuration = !!cardContainer.querySelector?.(
         '[class*="duration" i], [class*="time-status" i], var.duration, span.duration, .badge-shape, ytd-thumbnail-overlay-time-status-renderer'
@@ -249,7 +255,8 @@ class VisualMountDetector {
       const isKnownThumbnailContainer = cardContainer.tagName === 'YTD-THUMBNAIL' ||
         cardContainer.classList?.contains?.('phimage') ||
         cardContainer.classList?.contains?.('thumbnailWrapper') ||
-        cardContainer.classList?.contains?.('bili-video-card');
+        cardContainer.classList?.contains?.('bili-video-card') ||
+        cardContainer.classList?.contains?.('bstar-video-card');
 
       const mediaList = Array.from(
         cardContainer.querySelectorAll ? cardContainer.querySelectorAll('img, video, canvas, [style*="background-image"]') : []

@@ -10,11 +10,15 @@
     "webRequest",
     "cookies",
     "downloads",
-    "*://music.youtube.com/*"
+    "*://music.youtube.com/*",
+    "*://*.bilibili.com/*",
+    "*://*.bilibili.tv/*"
   ],
   "host_permissions": [
     "<all_urls>",
-    "*://music.youtube.com/*"
+    "*://music.youtube.com/*",
+    "*://*.bilibili.com/*",
+    "*://*.bilibili.tv/*"
   ],
   "background": {
     "scripts": [
@@ -28,7 +32,9 @@
     {
       "matches": [
         "<all_urls>",
-        "*://music.youtube.com/*"
+        "*://music.youtube.com/*",
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.tv/*"
       ],
       "js": [
         "sniffer.js"
@@ -41,7 +47,9 @@
     {
       "matches": [
         "<all_urls>",
-        "*://music.youtube.com/*"
+        "*://music.youtube.com/*",
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.tv/*"
       ],
       "js": [
         "modules/utils.js",
@@ -63,7 +71,9 @@
       ],
       "matches": [
         "<all_urls>",
-        "*://music.youtube.com/*"
+        "*://music.youtube.com/*",
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.tv/*"
       ]
     }
   ],

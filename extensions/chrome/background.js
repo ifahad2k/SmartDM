@@ -809,7 +809,10 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       // Filter out tiny video tracking beacons, range probes, and init fragments (< 64KB)
       // Never drop Facebook media chunks since Facebook audio init fragments and DASH chunks can be < 64KB
       const isFbMedia = url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('fbsbx.com') || url.includes('facebook.net') || url.includes('cdninstagram.com') || url.includes('instagram.com');
-      if (!isFbMedia && contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
+      const tabUrlForCheck = (details.tabId && tabUrlMap.get(details.tabId)) || '';
+      const initiatorForCheck = details.initiator || details.originUrl || details.documentUrl || tabUrlForCheck || '';
+      const isBiliMedia = url.includes('bilivideo.com') || url.includes('bilibili.com') || url.includes('bilibili.tv') || url.includes('biliapi.net') || url.includes('ibilibili.com') || initiatorForCheck.includes('bilibili.com') || initiatorForCheck.includes('bilibili.tv') || ((url.includes('akamaized.net') || url.includes('byteoversea.com') || url.includes('upos')) && (initiatorForCheck.includes('bilibili') || tabUrlForCheck.includes('bilibili')));
+      if (!isFbMedia && !isBiliMedia && contentType.includes('video/') && contentLength > 0 && contentLength < 65536 && !contentRangeTotal) {
         return;
       }
 
@@ -819,7 +822,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
         if (url.includes('success') || url.includes('failure') || url.includes('no_input') || url.includes('open') || url.includes('sound')) return;
       }
 
-      const isSegmentChunk = !isGoogleVideo && !isM3u8OrMpd && !isFbMedia && !isManifestPath && (
+      const isSegmentChunk = !isGoogleVideo && !isM3u8OrMpd && !isFbMedia && !isBiliMedia && !isManifestPath && (
         /\.ts(\?|$)/i.test(url) ||
         /\.m4s(\?|$)/i.test(url) ||
         /\.f4m(\?|$)/i.test(url) ||
@@ -885,7 +888,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
       const isMediaExt = isManifestPath || url.includes('.mp4') || url.includes('.m3u8') || url.includes('.mpd') ||
                          url.includes('.webm') || url.includes('.mp3') || url.includes('.m4a') ||
                          url.includes('.flv') || url.includes('.mov') || url.includes('.m4v') ||
-                         url.includes('.avi') || url.includes('.mkv');
+                         url.includes('.avi') || url.includes('.mkv') || (isBiliMedia && url.includes('.m4s'));
 
       const isFbStream = isFbMedia && !url.includes('static.xx.fbcdn.net') && !url.includes('/rsrc.php/') && !url.includes('.wasm') && (
         contentType.includes('video/') ||
@@ -1329,6 +1332,20 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
               customTitle = 'Video Stream (MP4)';
               title = isInsta ? 'instagram_video.mp4' : 'facebook_video.mp4';
             }
+          } else if (isBiliMedia) {
+            let biliH = resH || extractResolutionNumber(targetUrl);
+            if (!biliH) {
+              if (targetUrl.includes('30080') || targetUrl.includes('1080')) biliH = 1080;
+              else if (targetUrl.includes('30064') || targetUrl.includes('720')) biliH = 720;
+              else if (targetUrl.includes('30032') || targetUrl.includes('480')) biliH = 480;
+              else if (targetUrl.includes('30016') || targetUrl.includes('360')) biliH = 360;
+            }
+            if (biliH > 0) resH = biliH;
+            const isBiliAud = isFinalAudio || (contentType && contentType.includes('audio/')) || targetUrl.includes('/audio/') || targetUrl.includes('audio.m4s') || /302(16|32|80)\.m4s/i.test(targetUrl);
+            if (isBiliAud) isFinalAudio = true;
+            badge = isBiliAud ? 'Audio Stream' : (resH > 0 ? `${resH}p` : 'Bilibili Video');
+            customTitle = isBiliAud ? 'Audio Stream (MP3 / High Quality)' : (resH > 0 ? getResolutionLabel(resH, 'MP4', false) : 'Bilibili Video');
+            title = (authoritativeTabTitle || (isBiliAud ? 'bilibili_audio' : 'bilibili_video')) + (isBiliAud ? '.mp3' : '.mp4');
           } else if (isGoogleVideo) {
             const itagMatch = targetUrl.match(/[?&]itag=(\d+)/);
             const itag = itagMatch ? itagMatch[1] : '';
@@ -1946,7 +1963,9 @@ function sanitizeCleanTitle(str) {
   clean = clean.replace(/\s*::\s*.*$/, '').trim();
 
   // Strip site/brand suffixes separated by - or | or • or —
-  clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+  clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili(?:\s*TV|\s*Global)?|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+  clean = clean.replace(/\s*[\-\|\•\—_]\s*(?:哔哩哔哩|_?bilibili(?:\.tv)?).*$/i, '').trim();
+  clean = clean.replace(/_哔哩哔哩(?:_bilibili)?$/i, '').replace(/[_\-\|\•\—]\s*(?:哔哩哔哩|bilibili(?:\.tv)?)$/i, '').trim();
 
   // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>"
   clean = clean.replace(/\s+(?:online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
@@ -1981,6 +2000,7 @@ function isGenericTitle(t) {
     'tiktok', 'x', 'home _ x', 'home / x',
     'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
     'trending', 'watch later', 'video', 'media stream', 'download', 'downloads',
+    'bilibili', 'bilibili tv', 'bilibili global', '哔哩哔哩',
     'facebook', 'facebook_video', 'facebook_reel', 'facebook video', 'facebook reel', 'facebook reels',
     'notifications', 'notification', 'chats', 'messages', 'menu', 'shortcuts', 'your shortcuts',
     'contacts', 'explore', 'settings', 'search', 'news feed', 'newsfeed', 'stories',
