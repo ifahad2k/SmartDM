@@ -12,4 +12,5 @@ public interface IHttpProbeService
     string SanitizeFileName(string rawFileName);
     string DetectCategory(string fileName, string mimeType);
     string? InferFileNameFromUrl(string url) => null;
+    string? InferFileNameFromUrl(string url, string? referer) => InferFileNameFromUrl(url);
 }

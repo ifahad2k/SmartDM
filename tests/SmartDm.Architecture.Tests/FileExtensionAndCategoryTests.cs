@@ -372,6 +372,174 @@ public class FileExtensionAndCategoryTests
         Assert.True((bool)method.Invoke(vm, new object[] { aiDl, "AI" })!);
     }
 
+    [Theory]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=xlsx", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.xlsx")]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=pdf", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.pdf")]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=csv", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.csv")]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=ods", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.ods")]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=tsv", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.tsv")]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?output=pdf", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.pdf")]
+    [InlineData("https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?exportFormat=xlsx", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.xlsx")]
+    [InlineData("https://doc-0c-9o-sheets.googleusercontent.com/export/itnre3ko9oljkbc7b6s85f2pm0/crb89js4flu73b?format=xlsx&id=1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU", "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.xlsx")]
+    [InlineData("https://doc-0c-9o-sheets.googleusercontent.com/export/itnre3ko9oljkbc7b6s85f2pm0/crb89js4flu73b?format=pdf", "crb89js4flu73b.pdf")]
+    public void ExtractFileNameFromUrl_GoogleSheetsAndDocs_InfersCorrectExtensionAndDocId(string url, string expectedFileName)
+    {
+        var uri = new Uri(url);
+        string? extracted = HttpProbeService.ExtractFileNameFromUrl(uri);
+        Assert.Equal(expectedFileName, extracted);
+    }
+
+    [Fact]
+    public async Task HttpProbeService_GoogleExportReturnsHtml_PreservesDocumentExtensionAndCategory()
+    {
+        var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "<!DOCTYPE html><html><head><title>1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU - Google Sheets</title></head><body>Google Preview</body></html>",
+                System.Text.Encoding.UTF8,
+                "text/html")
+        };
+
+        var handler = new TestMockHandler(mockResponse);
+        var httpClient = new HttpClient(handler);
+        var probeService = new HttpProbeService(httpClient);
+
+        string url = "https://doc-0c-9o-sheets.googleusercontent.com/export/itnre3ko9oljkbc7b6s85f2pm0/crb89js4flu73b?format=xlsx&id=1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU";
+        var res = await probeService.ProbeUrlAsync(url);
+
+        Assert.True(res.IsSuccess);
+        Assert.Equal("1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.xlsx", res.FileName);
+        Assert.False(res.FileName.EndsWith(".html"), "Probe filename must not end with .html for Google export!");
+        Assert.Equal("Documents", res.SuggestedCategory);
+        Assert.Equal("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", res.MimeType);
+    }
+
+    [Fact]
+    public async Task AddDownloadViewModel_AuthoritativeExcelOrPdf_NeverOverwrittenByHtmlProbe()
+    {
+        var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "<!DOCTYPE html><html><head><title>1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU</title></head><body>Unauthorized preview</body></html>",
+                System.Text.Encoding.UTF8,
+                "text/html")
+        };
+
+        var handler = new TestMockHandler(mockResponse);
+        var httpClient = new HttpClient(handler);
+        var probeService = new HttpProbeService(httpClient);
+
+        string url = "https://doc-0c-9o-sheets.googleusercontent.com/export/itnre3ko9oljkbc7b6s85f2pm0/crb89js4flu73b";
+        var vm = new AddDownloadViewModel(
+            probeService: probeService,
+            initialUrl: url,
+            initialFileName: "QuarterlyReport.xlsx"
+        );
+
+        await vm.ProbeUrlCommand.ExecuteAsync(null);
+
+        Assert.Equal("QuarterlyReport.xlsx", vm.FileName);
+        Assert.Equal("Documents", vm.Category);
+        Assert.NotEqual("Code", vm.Category);
+        Assert.False(vm.FileName.EndsWith(".html"));
+    }
+
+    [Fact]
+    public async Task AddDownloadViewModel_GoogleSheetsUrlWithoutInitialFileName_InfersXlsxAndDocumentsCategory()
+    {
+        var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "<!DOCTYPE html><html><head><title>1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU</title></head><body>Preview</body></html>",
+                System.Text.Encoding.UTF8,
+                "text/html")
+        };
+
+        var handler = new TestMockHandler(mockResponse);
+        var httpClient = new HttpClient(handler);
+        var probeService = new HttpProbeService(httpClient);
+
+        string url = "https://docs.google.com/spreadsheets/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=xlsx";
+        var vm = new AddDownloadViewModel(
+            probeService: probeService,
+            initialUrl: url
+        );
+
+        await vm.ProbeUrlCommand.ExecuteAsync(null);
+
+        Assert.Equal("1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.xlsx", vm.FileName);
+        Assert.Equal("Documents", vm.Category);
+        Assert.NotEqual("Code", vm.Category);
+    }
+
+    [Fact]
+    public async Task AddDownloadViewModel_GoogleSheetsMultiAccountPdfExport_SanitizesHtmlFileNameToPdf()
+    {
+        var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "<!DOCTYPE html><html><head><title>1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU</title></head><body>Preview</body></html>",
+                System.Text.Encoding.UTF8,
+                "text/html")
+        };
+
+        var handler = new TestMockHandler(mockResponse);
+        var httpClient = new HttpClient(handler);
+        var probeService = new HttpProbeService(httpClient);
+
+        string url = "https://docs.google.com/spreadsheets/u/1/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=pdf";
+        var vm = new AddDownloadViewModel(
+            probeService: probeService,
+            initialUrl: url,
+            initialFileName: "1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.html",
+            initialMime: "application/pdf"
+        );
+
+        // Constructor should immediately sanitize .html to .pdf
+        Assert.Equal("1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.pdf", vm.FileName);
+        Assert.Equal("Documents", vm.Category);
+
+        await vm.ProbeUrlCommand.ExecuteAsync(null);
+
+        // After probe returning text/html, it MUST NOT revert to .html or Code category!
+        Assert.Equal("1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.pdf", vm.FileName);
+        Assert.Equal("Documents", vm.Category);
+        Assert.NotEqual("Code", vm.Category);
+        Assert.False(vm.FileName.EndsWith(".html"));
+    }
+
+    [Fact]
+    public void HttpProbeService_ExtractFileNameFromUrl_GoogleDocsWordExport_InfersDocx()
+    {
+        var uri = new Uri("https://docs.google.com/document/u/0/d/1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU/export?format=docx");
+        string? extracted = HttpProbeService.ExtractFileNameFromUrl(uri);
+        Assert.Equal("1DilkUpXt1hIdnyLzn549OxH2Yr0WgBWMwb9bmwglykU.docx", extracted);
+    }
+
+    [Fact]
+    public async Task HttpProbeService_GoogleSheetsExportReturnsHtml_WithSheetTitle_InfersTitleAndPdf()
+    {
+        var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "<!DOCTYPE html><html><head><title>Q4 Budget Report - Google Sheets</title></head><body>Preview</body></html>",
+                System.Text.Encoding.UTF8,
+                "text/html")
+        };
+
+        var handler = new TestMockHandler(mockResponse);
+        var httpClient = new HttpClient(handler);
+        var probeService = new HttpProbeService(httpClient);
+
+        string url = "https://doc-0c-9o-sheets.googleusercontent.com/export/itnre3ko9oljkbc7b6s85f2pm0/crb89js4flu73b?format=pdf";
+        var res = await probeService.ProbeUrlAsync(url);
+
+        Assert.True(res.IsSuccess);
+        Assert.Equal("Q4 Budget Report.pdf", res.FileName);
+        Assert.Equal("Documents", res.SuggestedCategory);
+        Assert.Equal("application/pdf", res.MimeType);
+    }
+
     private sealed class TestMockHandler : HttpMessageHandler
     {
         private readonly HttpResponseMessage _response;

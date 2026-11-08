@@ -224,22 +224,25 @@ public class HttpProbeService : IHttpProbeService
             // Fallback 1: Extract from URL path basename or query parameters if Content-Disposition is absent or generic
             if (string.IsNullOrWhiteSpace(extractedName) || IsGenericName(extractedName))
             {
-                string? urlExtracted = ExtractFileNameFromUrl(uri);
+                string? urlExtracted = ExtractFileNameFromUrl(uri, effectiveRef);
                 if (!string.IsNullOrWhiteSpace(urlExtracted) && !IsGenericName(urlExtracted))
                 {
                     extractedName = urlExtracted;
                 }
             }
 
+            string? googleExportExt = InferGoogleExportExtension(uri, effectiveRef, result.MimeType);
+            bool isGoogleDocs = IsGoogleDocsOrSheetsUrl(uri);
+
             // Fallback 2: For HTML/video site pages, attempt HTML title extraction
-            if (string.IsNullOrWhiteSpace(extractedName) || IsGenericName(extractedName))
+            if (string.IsNullOrWhiteSpace(extractedName) || IsGenericName(extractedName) || (isGoogleDocs && result.MimeType.Contains("text/html")))
             {
                 if (result.MimeType.Contains("text/html") || uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("bilibili.tv") || uri.Host.Contains("tiktok.com"))
                 {
                     try
                     {
                         using var getTitleReq = HttpTransferRequest.Create(HttpMethod.Get, uri);
-                        getTitleReq.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                        ApplyHeaders(getTitleReq, effectiveRef);
                         using var htmlResp = await _httpClient.SendAsync(getTitleReq, HttpCompletionOption.ResponseContentRead, cancellationToken);
                         if (htmlResp.IsSuccessStatusCode)
                         {
@@ -248,7 +251,11 @@ public class HttpProbeService : IHttpProbeService
                             if (!string.IsNullOrWhiteSpace(pageTitle))
                             {
                                 string ext = GetExtensionFromMimeType(result.MimeType);
-                                if (uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("bilibili.tv") || uri.Host.Contains("tiktok.com"))
+                                if (isGoogleDocs && !string.IsNullOrEmpty(googleExportExt) && googleExportExt != ".html")
+                                {
+                                    ext = googleExportExt;
+                                }
+                                else if (uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be") || uri.Host.Contains("bilibili.com") || uri.Host.Contains("bilibili.tv") || uri.Host.Contains("tiktok.com"))
                                 {
                                     if (ext == ".bin" || ext == ".html") ext = ".mp4";
                                 }
@@ -267,8 +274,13 @@ public class HttpProbeService : IHttpProbeService
             // Fallback 3: Inferred name with extension from MIME type
             if (string.IsNullOrWhiteSpace(extractedName) || IsGenericName(extractedName))
             {
-                string ext = GetExtensionFromMimeType(result.MimeType);
-                extractedName = $"download_{DateTime.UtcNow:yyyyMMdd_HHmmss}{ext}";
+                string ext = isGoogleDocs && !string.IsNullOrEmpty(googleExportExt)
+                    ? googleExportExt
+                    : GetExtensionFromMimeType(result.MimeType);
+                string baseStem = isGoogleDocs
+                    ? (ExtractFileNameFromUrl(uri, effectiveRef) is { } f && !string.IsNullOrEmpty(Path.GetFileNameWithoutExtension(f)) && !IsGenericName(f) ? Path.GetFileNameWithoutExtension(f) : "spreadsheet")
+                    : $"download_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+                extractedName = $"{baseStem}{ext}";
             }
             else
             {
@@ -276,13 +288,45 @@ public class HttpProbeService : IHttpProbeService
                 string existingExt = Path.GetExtension(extractedName);
                 if (string.IsNullOrEmpty(existingExt))
                 {
-                    string ext = GetExtensionFromMimeType(result.MimeType);
+                    string ext = isGoogleDocs && !string.IsNullOrEmpty(googleExportExt)
+                        ? googleExportExt
+                        : GetExtensionFromMimeType(result.MimeType);
                     extractedName += ext;
+                }
+                else if (isGoogleDocs && !string.IsNullOrEmpty(googleExportExt) &&
+                         (existingExt.Equals(".html", StringComparison.OrdinalIgnoreCase) || existingExt.Equals(".htm", StringComparison.OrdinalIgnoreCase)) &&
+                         googleExportExt != ".html")
+                {
+                    // Never replace an intended Google Docs/Sheets export with .html!
+                    extractedName = Path.GetFileNameWithoutExtension(extractedName) + googleExportExt;
                 }
             }
 
             result.FileName = SanitizeFileName(extractedName);
-            result.SuggestedCategory = DetectCategory(result.FileName, result.MimeType);
+
+            // If this is a Google Docs/Sheets export and the probe returned text/html, do NOT treat it as Code!
+            if (isGoogleDocs && !string.IsNullOrEmpty(googleExportExt) && googleExportExt != ".html")
+            {
+                result.SuggestedCategory = "Documents";
+                if (result.MimeType.Contains("text/html"))
+                {
+                    result.MimeType = googleExportExt switch
+                    {
+                        ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        ".pdf" => "application/pdf",
+                        ".csv" => "text/csv",
+                        ".tsv" => "text/tab-separated-values",
+                        ".ods" => "application/vnd.oasis.opendocument.spreadsheet",
+                        ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        _ => result.MimeType
+                    };
+                }
+            }
+            else
+            {
+                result.SuggestedCategory = DetectCategory(result.FileName, result.MimeType);
+            }
         }
         catch (Exception ex)
         {
@@ -347,9 +391,205 @@ public class HttpProbeService : IHttpProbeService
         return string.IsNullOrWhiteSpace(extracted) ? null : extracted;
     }
 
-    public static string? ExtractFileNameFromUrl(Uri uri)
+    public static bool IsGoogleDocsOrSheetsUrl(Uri uri)
+    {
+        if (uri == null) return false;
+        string host = uri.Host.ToLowerInvariant();
+        string path = uri.AbsolutePath.ToLowerInvariant();
+        return host.Contains("googleusercontent.com") ||
+               host.Contains("docs.google.com") ||
+               host.Contains("drive.google.com") ||
+               path.Contains("/spreadsheets/") ||
+               path.Contains("/document/") ||
+               path.Contains("/presentation/") ||
+               (path.Contains("/export") && (host.Contains("google.com") || host.Contains("googleusercontent.com")));
+    }
+
+    public static string? InferGoogleExportExtension(Uri uri, string? referer = null, string? mimeType = null)
     {
         if (uri == null) return null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(mimeType))
+            {
+                string m = mimeType.Split(';')[0].Trim().ToLowerInvariant();
+                if (m == "application/pdf") return ".pdf";
+                if (m.Contains("spreadsheetml") || m == "application/vnd.ms-excel") return ".xlsx";
+                if (m == "text/csv") return ".csv";
+                if (m == "text/tab-separated-values") return ".tsv";
+                if (m.Contains("opendocument.spreadsheet")) return ".ods";
+                if (m.Contains("wordprocessingml") || m == "application/msword") return ".docx";
+                if (m.Contains("opendocument.text")) return ".odt";
+                if (m.Contains("presentationml") || m == "application/vnd.ms-powerpoint") return ".pptx";
+                if (m.Contains("opendocument.presentation")) return ".odp";
+                if (m == "application/zip" || m == "application/x-zip-compressed") return ".zip";
+            }
+
+            if (!string.IsNullOrWhiteSpace(uri.Query))
+            {
+                var queryParams = HttpUtility.ParseQueryString(uri.Query);
+                string? format = queryParams["format"] ?? queryParams["exportFormat"] ?? queryParams["output"];
+                if (!string.IsNullOrWhiteSpace(format))
+                {
+                    string fmt = format.Trim().ToLowerInvariant().TrimStart('.');
+                    return fmt switch
+                    {
+                        "xlsx" => ".xlsx",
+                        "pdf" => ".pdf",
+                        "csv" => ".csv",
+                        "tsv" => ".tsv",
+                        "ods" => ".ods",
+                        "docx" => ".docx",
+                        "doc" => ".doc",
+                        "pptx" => ".pptx",
+                        "ppt" => ".ppt",
+                        "txt" => ".txt",
+                        "rtf" => ".rtf",
+                        "odt" => ".odt",
+                        "odp" => ".odp",
+                        "zip" => ".zip",
+                        "epub" => ".epub",
+                        "html" or "htm" or "zip-html" => ".html",
+                        _ => $".{fmt}"
+                    };
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var refUri) && !string.IsNullOrWhiteSpace(refUri.Query))
+            {
+                var refParams = HttpUtility.ParseQueryString(refUri.Query);
+                string? refFormat = refParams["format"] ?? refParams["exportFormat"] ?? refParams["output"];
+                if (!string.IsNullOrWhiteSpace(refFormat))
+                {
+                    string fmt = refFormat.Trim().ToLowerInvariant().TrimStart('.');
+                    return fmt switch
+                    {
+                        "xlsx" => ".xlsx",
+                        "pdf" => ".pdf",
+                        "csv" => ".csv",
+                        "tsv" => ".tsv",
+                        "ods" => ".ods",
+                        "docx" => ".docx",
+                        "doc" => ".doc",
+                        "pptx" => ".pptx",
+                        "ppt" => ".ppt",
+                        "txt" => ".txt",
+                        "rtf" => ".rtf",
+                        "odt" => ".odt",
+                        "odp" => ".odp",
+                        "zip" => ".zip",
+                        "epub" => ".epub",
+                        "html" or "htm" or "zip-html" => ".html",
+                        _ => $".{fmt}"
+                    };
+                }
+            }
+
+            string path = uri.AbsolutePath.ToLowerInvariant();
+            if (path.EndsWith("/pdf") || path.Contains("/export/pdf")) return ".pdf";
+            if (path.EndsWith("/xlsx") || path.Contains("/export/xlsx")) return ".xlsx";
+            if (path.EndsWith("/csv") || path.Contains("/export/csv")) return ".csv";
+            if (path.EndsWith("/tsv") || path.Contains("/export/tsv")) return ".tsv";
+            if (path.EndsWith("/docx") || path.Contains("/export/docx")) return ".docx";
+            if (path.EndsWith("/ods") || path.Contains("/export/ods")) return ".ods";
+            if (path.EndsWith("/pptx") || path.Contains("/export/pptx")) return ".pptx";
+
+            string host = uri.Host.ToLowerInvariant();
+            string refStr = referer?.ToLowerInvariant() ?? string.Empty;
+
+            if (host.Contains("sheets") || path.Contains("/spreadsheets/") || refStr.Contains("/spreadsheets/"))
+            {
+                return ".xlsx";
+            }
+            if (host.Contains("docs.googleusercontent.com") || (host.Contains("docs.google.com") && path.Contains("/document/")) || refStr.Contains("/document/"))
+            {
+                return ".docx";
+            }
+            if (host.Contains("presentation") || path.Contains("/presentation/") || refStr.Contains("/presentation/") || path.Contains("slides"))
+            {
+                return ".pptx";
+            }
+            if (host.Contains("googleusercontent.com") && path.Contains("/export"))
+            {
+                return ".xlsx";
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public static string? ExtractFileNameFromUrl(Uri uri, string? referer = null)
+    {
+        if (uri == null) return null;
+
+        // Check Google Docs/Sheets export endpoints first
+        if (IsGoogleDocsOrSheetsUrl(uri))
+        {
+            string? googleExt = InferGoogleExportExtension(uri, referer);
+            if (!string.IsNullOrEmpty(googleExt))
+            {
+                string? docId = null;
+                var match = Regex.Match(uri.AbsolutePath, @"/(?:spreadsheets|document|presentation|file)(?:/u/\d+)?/d/([a-zA-Z0-9_-]+)", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    docId = match.Groups[1].Value;
+                }
+                else
+                {
+                    var matchGeneral = Regex.Match(uri.AbsolutePath, @"/d/([a-zA-Z0-9_-]{20,})", RegexOptions.IgnoreCase);
+                    if (matchGeneral.Success)
+                    {
+                        docId = matchGeneral.Groups[1].Value;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(docId) && !string.IsNullOrWhiteSpace(uri.Query))
+                {
+                    try
+                    {
+                        var qp = HttpUtility.ParseQueryString(uri.Query);
+                        docId = qp["id"] ?? qp["docId"];
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrWhiteSpace(docId) && !string.IsNullOrWhiteSpace(referer))
+                {
+                    var refMatch = Regex.Match(referer, @"/d/([a-zA-Z0-9_-]{20,})", RegexOptions.IgnoreCase);
+                    if (refMatch.Success)
+                    {
+                        docId = refMatch.Groups[1].Value;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(docId))
+                {
+                    string pBase = Path.GetFileName(uri.AbsolutePath);
+                    if (!string.IsNullOrWhiteSpace(pBase))
+                    {
+                        if (Path.HasExtension(pBase) && !pBase.EndsWith(".html", StringComparison.OrdinalIgnoreCase) && !pBase.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return pBase;
+                        }
+                        docId = pBase;
+                    }
+                    else if (uri.Host.Contains("sheets", StringComparison.OrdinalIgnoreCase) || uri.AbsolutePath.Contains("spreadsheets", StringComparison.OrdinalIgnoreCase))
+                    {
+                        docId = "spreadsheet";
+                    }
+                    else if (uri.Host.Contains("presentation", StringComparison.OrdinalIgnoreCase) || uri.AbsolutePath.Contains("presentation", StringComparison.OrdinalIgnoreCase) || uri.AbsolutePath.Contains("slides", StringComparison.OrdinalIgnoreCase))
+                    {
+                        docId = "presentation";
+                    }
+                    else
+                    {
+                        docId = "document";
+                    }
+                }
+
+                return $"{docId}{googleExt}";
+            }
+        }
 
         bool isTorrentContext = uri.Host.Contains("torrent", StringComparison.OrdinalIgnoreCase) ||
                                 uri.AbsolutePath.Contains("torrent", StringComparison.OrdinalIgnoreCase) ||
@@ -410,14 +650,14 @@ public class HttpProbeService : IHttpProbeService
         return null;
     }
 
-    public string? InferFileNameFromUrl(string url)
+    public string? InferFileNameFromUrl(string url, string? referer = null)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
         {
             return null;
         }
 
-        string? candidate = ExtractFileNameFromUrl(uri);
+        string? candidate = ExtractFileNameFromUrl(uri, referer);
         if (!string.IsNullOrWhiteSpace(candidate))
         {
             return SanitizeFileName(candidate);
@@ -635,7 +875,7 @@ public class HttpProbeService : IHttpProbeService
     private static string CleanWebTitle(string raw)
     {
         string clean = WebUtility.HtmlDecode(raw).Trim();
-        clean = Regex.Replace(clean, @"\s*[\-\|\:·]\s*(YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook).*$", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"\s*[\-\|\:·–—]\s*(YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook|Google\s+(?:Sheets|Docs|Slides|Drive|Forms|Spreadsheets|Documents|Presentations)).*$", "", RegexOptions.IgnoreCase).Trim();
         clean = Regex.Replace(clean, @"[\\/:*?""<>|]", "_");
         clean = Regex.Replace(clean, @"\s+", " ").Trim();
         return clean;

@@ -37,6 +37,7 @@ public class BrowserDownloadRequest
     public string? PageUrl { get; set; }
     public string? Cookies { get; set; }
     public string? UserAgent { get; set; }
+    public string? Mime { get; set; }
     public List<MediaFormatDto>? Formats { get; set; }
 }
 

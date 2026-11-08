@@ -371,7 +371,7 @@ public partial class App : Application
             };
 
             AddDownloadDialog? activeAddDialog = null;
-            mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies, videoUrl, audioUrl) =>
+            mainVm.RequestOpenAddDialog += (initialUrl, initialFileName, formatId, formats, initialTitle, referer, userAgent, cookies, videoUrl, audioUrl, mime) =>
             {
                 if (activeAddDialog != null)
                 {
@@ -394,7 +394,8 @@ public partial class App : Application
                     mainVm.IsPathInUse,
                     videoUrl,
                     audioUrl,
-                    mainVm?.SettingsService?.CurrentSettings);
+                    mainVm?.SettingsService?.CurrentSettings,
+                    initialMime: mime);
                 var dialog = new AddDownloadDialog
                 {
                     DataContext = addVm

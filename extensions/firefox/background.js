@@ -1622,6 +1622,32 @@ async function appendCookiesAndSend(request, sendResponse) {
       } catch (e) {}
     }
 
+    const hasGoogle = candidateUrls.some(u => {
+      try {
+        const h = new URL(u).hostname.toLowerCase();
+        return h.includes('googleusercontent.com') || h.includes('docs.google.com') || h.includes('drive.google.com') || h.includes('google.com');
+      } catch (e) { return false; }
+    });
+
+    if (hasGoogle) {
+      domainSet.add('google.com');
+      domainSet.add('.google.com');
+      domainSet.add('docs.google.com');
+      domainSet.add('.docs.google.com');
+      domainSet.add('drive.google.com');
+      domainSet.add('.drive.google.com');
+      domainSet.add('googleusercontent.com');
+      domainSet.add('.googleusercontent.com');
+      urlSet.add('https://docs.google.com/');
+      urlSet.add('https://drive.google.com/');
+      urlSet.add('https://www.google.com/');
+      urlSet.add('https://google.com/');
+      urlSet.add('https://googleusercontent.com/');
+      urlSet.add('https://accounts.google.com/');
+      urlSet.add('https://accounts.google.com/');
+      urlSet.add('https://accounts.google.com/');
+    }
+
     if (chrome.cookies) {
       const allCookiesMap = new Map();
 
@@ -2756,40 +2782,183 @@ function sendToSmartDM(url, referer, fileName = null) {
 }
 
 const bypassedDownloads = new Set();
+const interceptedDownloadIds = new Set();
 
-if (chrome.downloads && chrome.downloads.onCreated) {
-  chrome.downloads.onCreated.addListener((downloadItem) => {
-    if (downloadItem.state !== 'in_progress') return;
-    if (downloadItem.byExtensionId || bypassedDownloads.has(downloadItem.url)) {
-      return;
-    }
-    
-    if (downloadItem.url.startsWith('blob:') || downloadItem.url.startsWith('data:')) {
-      return;
-    }
+async function handleInterceptedDownload(downloadItem, suggest) {
+  if (!downloadItem) {
+    if (typeof suggest === 'function') suggest();
+    return;
+  }
+  if (downloadItem.state && downloadItem.state !== 'in_progress') {
+    if (typeof suggest === 'function') suggest();
+    return;
+  }
+  if (downloadItem.byExtensionId || bypassedDownloads.has(downloadItem.url)) {
+    if (typeof suggest === 'function') suggest();
+    return;
+  }
+  
+  if (downloadItem.url.startsWith('blob:') || downloadItem.url.startsWith('data:')) {
+    if (typeof suggest === 'function') suggest();
+    return;
+  }
 
-    // Cancel and erase browser download IMMEDIATELY to prevent browser history/UI pollution
-    chrome.downloads.cancel(downloadItem.id, () => {
-      if (chrome.downloads.erase) {
-        chrome.downloads.erase({ id: downloadItem.id }, () => {});
-      }
-    });
+  if (interceptedDownloadIds.has(downloadItem.id)) {
+    if (typeof suggest === 'function') suggest();
+    return;
+  }
+  interceptedDownloadIds.add(downloadItem.id);
+  const timer = setTimeout(() => interceptedDownloadIds.delete(downloadItem.id), 30000);
+  if (timer && typeof timer.unref === 'function') timer.unref();
+
+  // Cancel and erase browser download IMMEDIATELY to prevent browser history/UI pollution
+  chrome.downloads.cancel(downloadItem.id, () => {
     if (chrome.downloads.erase) {
       chrome.downloads.erase({ id: downloadItem.id }, () => {});
     }
+  });
+  if (chrome.downloads.erase) {
+    chrome.downloads.erase({ id: downloadItem.id }, () => {});
+  }
+  if (typeof suggest === 'function') {
+    try { suggest(); } catch (e) {}
+  }
 
-    let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
-    if (basename) {
-      const lower = basename.toLowerCase();
-      if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
-          lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
-          lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
-        basename = null;
+  let basename = downloadItem.filename ? downloadItem.filename.split(/[\\/]/).pop() : '';
+  if (basename) {
+    const lower = basename.toLowerCase();
+    if (lower === 'video.mp4' || lower === 'download.php' || lower === 'download.asp' ||
+        lower === 'download.aspx' || lower === 'file.php' || lower === 'index.php' ||
+        lower.startsWith('unconfirmed') || lower.endsWith('.crdownload') || lower.endsWith('.tmp')) {
+      basename = null;
+    }
+  }
+
+  const dlUrl = downloadItem.finalUrl || downloadItem.url || '';
+  const initUrl = downloadItem.url || '';
+  const refUrl = downloadItem.referrer || '';
+
+  let activeTabTitle = null;
+  let activeTabUrl = null;
+  try {
+    if (chrome.tabs && chrome.tabs.query) {
+      const activeTabs = await new Promise(resolve => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+          if (tabs && tabs.length > 0) resolve(tabs);
+          else {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs2) => resolve(tabs2 || []));
+          }
+        });
+      });
+      if (activeTabs && activeTabs.length > 0) {
+        activeTabTitle = activeTabs[0].title || null;
+        activeTabUrl = activeTabs[0].url || null;
       }
     }
-    if (!basename) {
+  } catch (e) {}
+
+  const candidateUrls = [dlUrl, initUrl, refUrl, activeTabUrl].filter(Boolean);
+
+  let isGoogleDocs = candidateUrls.some(u => {
+    try {
+      const parsed = new URL(u);
+      const h = parsed.hostname.toLowerCase();
+      const p = parsed.pathname.toLowerCase();
+      return h.includes('googleusercontent.com') || h.includes('docs.google.com') || h.includes('drive.google.com') || p.includes('/export') || p.includes('/spreadsheets/') || p.includes('/document/') || p.includes('/presentation/');
+    } catch (e) { return false; }
+  });
+
+  let googleExt = null;
+  if (downloadItem.mime) {
+    const m = downloadItem.mime.toLowerCase();
+    if (m === 'application/pdf') googleExt = '.pdf';
+    else if (m.includes('spreadsheet') || m.includes('excel')) googleExt = '.xlsx';
+    else if (m.includes('wordprocessingml') || m.includes('msword')) googleExt = '.docx';
+    else if (m.includes('presentation') || m.includes('powerpoint')) googleExt = '.pptx';
+    else if (m.includes('csv')) googleExt = '.csv';
+    else if (m.includes('tab-separated')) googleExt = '.tsv';
+    else if (m.includes('opendocument.spreadsheet')) googleExt = '.ods';
+    else if (m.includes('opendocument.text')) googleExt = '.odt';
+  }
+
+  if (!googleExt) {
+    for (const u of candidateUrls) {
       try {
-        const parsedUrl = new URL(downloadItem.finalUrl || downloadItem.url);
+        const pu = new URL(u);
+        const fmt = (pu.searchParams.get('format') ||
+                     pu.searchParams.get('exportFormat') ||
+                     pu.searchParams.get('output') || '').toLowerCase().trim();
+        if (fmt) {
+          googleExt = fmt.startsWith('.') ? fmt : ('.' + fmt);
+          break;
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (!googleExt) {
+    for (const u of candidateUrls) {
+      try {
+        const pu = new URL(u);
+        const p = pu.pathname.toLowerCase();
+        if (p.endsWith('/pdf') || p.includes('/export/pdf')) { googleExt = '.pdf'; break; }
+        if (p.endsWith('/xlsx') || p.includes('/export/xlsx')) { googleExt = '.xlsx'; break; }
+        if (p.endsWith('/csv') || p.includes('/export/csv')) { googleExt = '.csv'; break; }
+        if (p.endsWith('/tsv') || p.includes('/export/tsv')) { googleExt = '.tsv'; break; }
+        if (p.endsWith('/docx') || p.includes('/export/docx')) { googleExt = '.docx'; break; }
+        if (p.endsWith('/ods') || p.includes('/export/ods')) { googleExt = '.ods'; break; }
+        if (p.endsWith('/pptx') || p.includes('/export/pptx')) { googleExt = '.pptx'; break; }
+      } catch (e) {}
+    }
+  }
+
+  if (!googleExt && isGoogleDocs) {
+    for (const u of candidateUrls) {
+      try {
+        const pu = new URL(u);
+        const h = pu.hostname.toLowerCase();
+        const p = pu.pathname.toLowerCase();
+        if (h.includes('sheets') || p.includes('spreadsheets')) { googleExt = '.xlsx'; break; }
+        if (h.includes('docs.googleusercontent.com') || (h.includes('docs.google.com') && p.includes('document'))) { googleExt = '.docx'; break; }
+        if (h.includes('presentation') || p.includes('presentation') || p.includes('slides')) { googleExt = '.pptx'; break; }
+      } catch (e) {}
+    }
+    if (!googleExt) googleExt = '.xlsx';
+  }
+
+  let googleDocId = null;
+  for (const u of candidateUrls) {
+    const m = u.match(/(?:spreadsheets|document|presentation|file)(?:\/u\/\d+)?\/d\/([a-zA-Z0-9_-]+)/i) ||
+              u.match(/\/d\/([a-zA-Z0-9_-]{20,})/i);
+    if (m) {
+      googleDocId = m[1];
+      break;
+    }
+    try {
+      const pu = new URL(u);
+      const id = pu.searchParams.get('id') || pu.searchParams.get('docId');
+      if (id) {
+        googleDocId = id;
+        break;
+      }
+    } catch (e) {}
+  }
+
+  let docTitle = null;
+  if (activeTabTitle) {
+    let clean = activeTabTitle
+      .replace(/\s*[\-\|–—·]\s*(?:Google\s+)?(?:Sheets|Docs|Slides|Drive|Forms|Spreadsheets|Documents|Presentations).*$/i, '')
+      .trim();
+    if (clean && clean !== 'Google Sheets' && clean !== 'Google Docs' && clean !== 'Google Drive') {
+      docTitle = clean;
+    }
+  }
+
+  if (!basename) {
+    for (const u of [dlUrl, initUrl]) {
+      if (!u) continue;
+      try {
+        const parsedUrl = new URL(u);
         for (const qKey of ['filename', 'file', 'name', 'fn', 'path', 'attachment']) {
           const qVal = parsedUrl.searchParams.get(qKey);
           if (qVal && qVal.includes('.')) {
@@ -2803,42 +2972,89 @@ if (chrome.downloads && chrome.downloads.onCreated) {
             basename = pathBase;
           }
         }
+        if (basename) break;
       } catch (e) {}
     }
-    if (!basename || basename.endsWith('.php') || basename.endsWith('.asp')) {
-      const dlUrl = downloadItem.finalUrl || downloadItem.url || '';
-      const idMatch = dlUrl.match(/(?:id|torrent|tid)=([0-9a-zA-Z_-]+)/i);
-      if (idMatch) {
-        basename = 'torrent_' + idMatch[1] + '.torrent';
-      } else if (dlUrl.toLowerCase().includes('torrent')) {
-        basename = 'download.torrent';
+  }
+
+  if (isGoogleDocs && googleExt && googleExt !== '.html') {
+    if (basename) {
+      if (basename.endsWith('.html') || basename.endsWith('.htm')) {
+        basename = basename.replace(/\.html?$/i, '');
+      }
+      const lower = basename.toLowerCase();
+      if (lower === 'spreadsheet' || lower === 'document' || lower === 'presentation' || lower === 'export') {
+        basename = null;
       }
     }
 
-    const message = {
-      type: 'ADD_DOWNLOAD',
-      url: downloadItem.finalUrl || downloadItem.url,
-      fileName: basename || null,
-      referer: downloadItem.referrer || null,
-      userAgent: navigator.userAgent
-    };
-
-    appendCookiesAndSend(message, (response) => {
-      if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
-        console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
-        bypassedDownloads.add(downloadItem.url);
-        
-        let dlOptions = {
-          url: downloadItem.url,
-          saveAs: true
-        };
-        if (basename && basename.length > 0) {
-            dlOptions.filename = basename;
-        }
-        chrome.downloads.download(dlOptions);
-        
-        setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+    if (!basename) {
+      if (docTitle) {
+        basename = `${docTitle}${googleExt}`;
+      } else if (googleDocId) {
+        basename = `${googleDocId}${googleExt}`;
+      } else {
+        basename = `document${googleExt}`;
       }
-    });
+    } else if (!basename.toLowerCase().endsWith(googleExt)) {
+      basename = `${basename}${googleExt}`;
+    }
+  }
+
+  if (!basename || basename.endsWith('.php') || basename.endsWith('.asp')) {
+    const idMatch = dlUrl.match(/(?:id|torrent|tid)=([0-9a-zA-Z_-]+)/i);
+    if (idMatch) {
+      basename = 'torrent_' + idMatch[1] + '.torrent';
+    } else if (dlUrl.toLowerCase().includes('torrent')) {
+      basename = 'download.torrent';
+    }
+  }
+
+  let effectiveReferer = downloadItem.referrer || null;
+  if (!effectiveReferer && activeTabUrl) {
+    if (isGoogleDocs || activeTabUrl.includes('google.com')) {
+      effectiveReferer = activeTabUrl;
+    }
+  }
+
+  const message = {
+    type: 'ADD_DOWNLOAD',
+    url: downloadItem.finalUrl || downloadItem.url,
+    fileName: basename || null,
+    title: docTitle || basename || null,
+    referer: effectiveReferer || null,
+    mime: downloadItem.mime || null,
+    userAgent: navigator.userAgent
+  };
+
+  appendCookiesAndSend(message, (response) => {
+    if (chrome.runtime.lastError || !response || (response.status !== 'ok' && !response.success)) {
+      console.error("SmartDM unavailable, resuming standard download...", chrome.runtime.lastError);
+      bypassedDownloads.add(downloadItem.url);
+      
+      let dlOptions = {
+        url: downloadItem.url,
+        saveAs: true
+      };
+      if (basename && basename.length > 0) {
+          dlOptions.filename = basename;
+      }
+      chrome.downloads.download(dlOptions);
+      
+      const bTimer = setTimeout(() => bypassedDownloads.delete(downloadItem.url), 15000);
+      if (bTimer && typeof bTimer.unref === 'function') bTimer.unref();
+    }
   });
+}
+
+if (chrome.downloads) {
+  if (chrome.downloads.onDeterminingFilename) {
+    chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+      handleInterceptedDownload(downloadItem, suggest);
+    });
+  } else if (chrome.downloads.onCreated) {
+    chrome.downloads.onCreated.addListener((downloadItem) => {
+      handleInterceptedDownload(downloadItem, null);
+    });
+  }
 }

@@ -237,8 +237,9 @@
                                       /(?:torrentbd\.net|1337x|nyaa\.si|yts\.mx|webtorrent)\/(?:download|torrents)/i.test(urlLower);
               const downloadAttrVal = el.getAttribute ? el.getAttribute('download') : null;
               const isDownloadAttr = el.hasAttribute && el.hasAttribute('download');
+              const isGoogleExport = /(?:docs\.google\.com|googleusercontent\.com).*\/export(?:\?|\/|$)/i.test(urlLower);
               
-              if ((isFileExt || isTorrentScript || isDownloadAttr) && urlLower.startsWith('http')) {
+              if ((isFileExt || isTorrentScript || isDownloadAttr || isGoogleExport) && urlLower.startsWith('http')) {
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -259,6 +260,41 @@
                   } catch(err) {}
                 }
 
+                if (isGoogleExport) {
+                  let googleExt = null;
+                  try {
+                    const pu = new URL(hrefStr);
+                    const fmt = (pu.searchParams.get('format') ||
+                                 pu.searchParams.get('exportFormat') ||
+                                 pu.searchParams.get('output') || '').toLowerCase().trim();
+                    if (fmt) {
+                      googleExt = fmt.startsWith('.') ? fmt : ('.' + fmt);
+                    } else if (pu.pathname.endsWith('/pdf') || pu.pathname.includes('/export/pdf')) {
+                      googleExt = '.pdf';
+                    } else if (pu.pathname.endsWith('/xlsx') || pu.pathname.includes('/export/xlsx') || pu.hostname.includes('sheets')) {
+                      googleExt = '.xlsx';
+                    }
+                  } catch (err) {}
+
+                  if (googleExt && googleExt !== '.html') {
+                    if (basename && (basename.endsWith('.html') || basename.endsWith('.htm'))) {
+                      basename = basename.replace(/\.html?$/i, '');
+                    }
+                    if (!basename || basename === 'export') {
+                      let titleClean = (document.title || '')
+                        .replace(/\s*[\-\|–—·]\s*(?:Google\s+)?(?:Sheets|Docs|Slides|Drive|Forms|Spreadsheets|Documents|Presentations).*$/i, '')
+                        .trim();
+                      if (titleClean && titleClean !== 'Google Sheets' && titleClean !== 'Google Docs') {
+                        basename = `${titleClean}${googleExt}`;
+                      } else {
+                        basename = `spreadsheet${googleExt}`;
+                      }
+                    } else if (!basename.toLowerCase().endsWith(googleExt)) {
+                      basename = `${basename}${googleExt}`;
+                    }
+                  }
+                }
+
                 if (!basename || basename.endsWith('.php') || basename.endsWith('.asp')) {
                   const idMatch = hrefStr.match(/(?:id|torrent|tid)=([0-9a-zA-Z_-]+)/i);
                   if (idMatch) {
@@ -267,7 +303,6 @@
                     basename = 'download.torrent';
                   }
                 }
-                
                 runtime.sendMessage({
                   type: 'ADD_DOWNLOAD',
                   url: hrefStr,

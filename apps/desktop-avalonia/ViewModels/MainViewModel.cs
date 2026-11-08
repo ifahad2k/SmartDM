@@ -177,7 +177,7 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<ThreadMetric> ActiveThreads { get; } = new();
     public ObservableCollection<double> SparklineHistory { get; } = new();
 
-    public event Action<string?, string?, string?, List<MediaFormatDto>?, string?, string?, string?, string?, string?, string?>? RequestOpenAddDialog;
+    public event Action<string?, string?, string?, List<MediaFormatDto>?, string?, string?, string?, string?, string?, string?, string?>? RequestOpenAddDialog;
     public event Action<BrowserBatchDownloadRequest>? RequestOpenBatchDialog;
     public event Action<DownloadModel?>? RequestOpenMonitor;
     public event Action<DownloadModel?>? RequestOpenInspector;
@@ -503,7 +503,7 @@ public partial class MainViewModel : ViewModelBase
                     var single = batchToProcess[0];
                     Dispatcher.UIThread.Post(() =>
                     {
-                        RequestOpenAddDialog?.Invoke(single.Url, single.FileName, single.FormatId, single.Formats, single.Title, single.Referer, single.UserAgent, single.Cookies, single.VideoUrl, single.AudioUrl);
+                        RequestOpenAddDialog?.Invoke(single.Url, single.FileName, single.FormatId, single.Formats, single.Title, single.Referer, single.UserAgent, single.Cookies, single.VideoUrl, single.AudioUrl, single.Mime);
                     });
                 }
                 else if (batchToProcess.Count > 1)
@@ -1445,7 +1445,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null, null, null, null, null, null, null, null, null);
+    public void OpenAddDialog(string? initialUrl = null) => RequestOpenAddDialog?.Invoke(initialUrl, null, null, null, null, null, null, null, null, null, null);
 
     [RelayCommand]
     public void OpenMonitor(DownloadModel? dl) => RequestOpenMonitor?.Invoke(dl);

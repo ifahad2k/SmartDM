@@ -90,11 +90,25 @@ public partial class AddDownloadViewModel : ViewModelBase
     private string _selectedFormatId = string.Empty;
 
     private string? _authoritativeTitle;
+    private readonly string? _initialFileName;
+
+    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".xlsx", ".xls", ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".csv", ".tsv", ".ods", ".odt", ".odp", ".rtf", ".txt"
+    };
+
+    public static bool IsAuthoritativeDocumentFileName(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return false;
+        string ext = Path.GetExtension(fileName.Trim());
+        return DocumentExtensions.Contains(ext);
+    }
     private string? _initialReferer;
     private string? _initialUserAgent;
     private string? _initialCookies;
     private string? _initialVideoUrl;
     private string? _initialAudioUrl;
+    private readonly string? _initialMime;
     private readonly AppSettingsModel _settings;
 
     public static bool IsGenericOrInvalidFileName(string? name)
@@ -258,7 +272,8 @@ public partial class AddDownloadViewModel : ViewModelBase
         Func<string, bool>? isPathInUse = null,
         string? initialVideoUrl = null,
         string? initialAudioUrl = null,
-        AppSettingsModel? settings = null)
+        AppSettingsModel? settings = null,
+        string? initialMime = null)
     {
         settings ??= new AppSettingsModel();
         _settings = settings;
@@ -272,6 +287,8 @@ public partial class AddDownloadViewModel : ViewModelBase
         _initialCookies = initialCookies;
         _initialVideoUrl = initialVideoUrl;
         _initialAudioUrl = initialAudioUrl;
+        _initialFileName = initialFileName;
+        _initialMime = initialMime;
 
         string downloadsDir = settings.DefaultDownloadDirectory;
         SavePath = downloadsDir;
@@ -293,11 +310,42 @@ public partial class AddDownloadViewModel : ViewModelBase
         bool hasRealFormats = initialFormats != null && initialFormats.Count > 0 &&
             initialFormats.Any(f => Uri.TryCreate(f.DirectUrl, UriKind.Absolute, out var address) && address.Scheme is "http" or "https");
 
-        string? inferredUrlName = !string.IsNullOrWhiteSpace(initialUrl) ? _probeService.InferFileNameFromUrl(initialUrl) : null;
+        Uri.TryCreate(initialUrl, UriKind.Absolute, out var parsedInitUri);
+        bool isGoogleExport = parsedInitUri != null && HttpProbeService.IsGoogleDocsOrSheetsUrl(parsedInitUri);
+        string? googleExt = parsedInitUri != null ? HttpProbeService.InferGoogleExportExtension(parsedInitUri, initialReferer, initialMime) : null;
+
+        string? inferredUrlName = !string.IsNullOrWhiteSpace(initialUrl) ? _probeService.InferFileNameFromUrl(initialUrl, initialReferer) : null;
 
         if (!IsGenericOrInvalidFileName(initialFileName))
         {
             FileName = _probeService.SanitizeFileName(initialFileName!.Trim());
+            if (isGoogleExport && !string.IsNullOrEmpty(googleExt) && googleExt != ".html")
+            {
+                if (FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || FileName.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+                {
+                    FileName = Path.GetFileNameWithoutExtension(FileName) + googleExt;
+                }
+                else if (!Path.HasExtension(FileName))
+                {
+                    FileName += googleExt;
+                }
+            }
+        }
+        else if (isGoogleExport && !string.IsNullOrEmpty(googleExt) && googleExt != ".html")
+        {
+            if (!string.IsNullOrWhiteSpace(_authoritativeTitle) && !IsGenericOrInvalidFileName(_authoritativeTitle))
+            {
+                string safeTitle = string.Join("_", _authoritativeTitle.Split(Path.GetInvalidFileNameChars())).Trim();
+                FileName = $"{safeTitle}{googleExt}";
+            }
+            else if (!string.IsNullOrWhiteSpace(inferredUrlName) && !IsGenericOrInvalidFileName(inferredUrlName))
+            {
+                FileName = inferredUrlName;
+            }
+            else
+            {
+                FileName = HttpProbeService.ExtractFileNameFromUrl(parsedInitUri!, initialReferer) ?? $"spreadsheet{googleExt}";
+            }
         }
         else if (!string.IsNullOrWhiteSpace(inferredUrlName) && !IsGenericOrInvalidFileName(inferredUrlName))
         {
@@ -328,7 +376,14 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(FileName))
         {
-            Category = _probeService.DetectCategory(FileName, string.Empty);
+            if (isGoogleExport && !string.IsNullOrEmpty(googleExt) && googleExt != ".html")
+            {
+                Category = "Documents";
+            }
+            else
+            {
+                Category = _probeService.DetectCategory(FileName, initialMime ?? string.Empty);
+            }
             SavePath = Path.Combine(downloadsDir, FileName);
             UpdateDriveSpace(SavePath);
         }
@@ -674,6 +729,15 @@ public partial class AddDownloadViewModel : ViewModelBase
             if (res.IsSuccess)
             {
                 IsProbeSuccessful = true;
+                Uri.TryCreate(requestedUrl, UriKind.Absolute, out var parsedReqUri);
+                bool isGoogle = parsedReqUri != null && HttpProbeService.IsGoogleDocsOrSheetsUrl(parsedReqUri);
+                string? googleExt = parsedReqUri != null ? HttpProbeService.InferGoogleExportExtension(parsedReqUri, _initialReferer, _initialMime ?? res.MimeType) : null;
+
+                bool hasAuthoritativeDoc = IsAuthoritativeDocumentFileName(_initialFileName) || IsAuthoritativeDocumentFileName(FileName) || (isGoogle && !string.IsNullOrEmpty(googleExt) && googleExt != ".html");
+                bool probeIsHtml = (res.FileName?.EndsWith(".html", StringComparison.OrdinalIgnoreCase) == true) ||
+                                   (res.FileName?.EndsWith(".htm", StringComparison.OrdinalIgnoreCase) == true) ||
+                                   res.MimeType.Contains("text/html", StringComparison.OrdinalIgnoreCase);
+
                 bool shouldReplaceFileName = string.IsNullOrWhiteSpace(FileName) ||
                     FileName.Equals("video.mp4", StringComparison.OrdinalIgnoreCase) ||
                     FileName.Equals("video.mp3", StringComparison.OrdinalIgnoreCase) ||
@@ -684,16 +748,45 @@ public partial class AddDownloadViewModel : ViewModelBase
                     IsGenericOrInvalidFileName(FileName) ||
                     FileName.StartsWith("torrent_", StringComparison.OrdinalIgnoreCase) ||
                     FileName.StartsWith("download.", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(FileName, _probeService.InferFileNameFromUrl(requestedUrl), StringComparison.OrdinalIgnoreCase);
+                    string.Equals(FileName, _probeService.InferFileNameFromUrl(requestedUrl, _initialReferer), StringComparison.OrdinalIgnoreCase);
+
+                if (hasAuthoritativeDoc && probeIsHtml)
+                {
+                    shouldReplaceFileName = false;
+                }
 
                 if (shouldReplaceFileName && !string.IsNullOrWhiteSpace(res.FileName))
                 {
-                    FileName = res.FileName;
+                    if (!(hasAuthoritativeDoc && (res.FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || res.FileName.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))))
+                    {
+                        FileName = res.FileName;
+                    }
                 }
+
+                if (isGoogle && !string.IsNullOrEmpty(googleExt) && googleExt != ".html")
+                {
+                    if (FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || FileName.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        FileName = Path.GetFileNameWithoutExtension(FileName) + googleExt;
+                    }
+                    else if (!Path.HasExtension(FileName))
+                    {
+                        FileName += googleExt;
+                    }
+                }
+
                 _probedTotalBytes = res.TotalBytes;
                 _probedAcceptsRanges = res.AcceptsRanges;
                 _lastProbe = res;
-                Category = !string.IsNullOrWhiteSpace(FileName) ? _probeService.DetectCategory(FileName, res.MimeType) : res.SuggestedCategory;
+
+                if (hasAuthoritativeDoc || IsAuthoritativeDocumentFileName(FileName) || (isGoogle && !string.IsNullOrEmpty(googleExt) && googleExt != ".html"))
+                {
+                    Category = "Documents";
+                }
+                else
+                {
+                    Category = !string.IsNullOrWhiteSpace(FileName) ? _probeService.DetectCategory(FileName, res.MimeType) : res.SuggestedCategory;
+                }
 
                 string rangeStr = res.AcceptsRanges ? "Range Requests Supported" : "Single Stream Only";
                 ProbeStatus = $"• {res.StatusCode} OK • {res.HttpVersion} • {res.FormattedSize} • {rangeStr} • {res.LatencyMs}ms ping";
@@ -721,17 +814,43 @@ public partial class AddDownloadViewModel : ViewModelBase
             {
                 IsProbeSuccessful = false;
                 ProbeStatus = $"• Probe Error: {res.ErrorMessage}";
-                if (string.IsNullOrWhiteSpace(FileName) || IsGenericOrInvalidFileName(FileName))
+                Uri.TryCreate(requestedUrl, UriKind.Absolute, out var parsedReqUri);
+                bool isGoogle = parsedReqUri != null && HttpProbeService.IsGoogleDocsOrSheetsUrl(parsedReqUri);
+                string? googleExt = parsedReqUri != null ? HttpProbeService.InferGoogleExportExtension(parsedReqUri, _initialReferer, _initialMime) : null;
+                bool hasAuthoritativeDoc = IsAuthoritativeDocumentFileName(_initialFileName) || IsAuthoritativeDocumentFileName(FileName) || (isGoogle && !string.IsNullOrEmpty(googleExt) && googleExt != ".html");
+
+                if ((string.IsNullOrWhiteSpace(FileName) || IsGenericOrInvalidFileName(FileName)) && !hasAuthoritativeDoc)
                 {
-                    string? fallback = _probeService.InferFileNameFromUrl(requestedUrl);
+                    string? fallback = _probeService.InferFileNameFromUrl(requestedUrl, _initialReferer);
                     if (!string.IsNullOrWhiteSpace(fallback))
                     {
                         FileName = fallback;
                     }
                 }
-                if (!string.IsNullOrWhiteSpace(FileName))
+
+                if (isGoogle && !string.IsNullOrEmpty(googleExt) && googleExt != ".html")
+                {
+                    if (FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || FileName.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        FileName = Path.GetFileNameWithoutExtension(FileName) + googleExt;
+                    }
+                    else if (!Path.HasExtension(FileName))
+                    {
+                        FileName += googleExt;
+                    }
+                    Category = "Documents";
+                }
+                else if (hasAuthoritativeDoc || IsAuthoritativeDocumentFileName(FileName))
+                {
+                    Category = "Documents";
+                }
+                else if (!string.IsNullOrWhiteSpace(FileName))
                 {
                     Category = _probeService.DetectCategory(FileName, string.Empty);
+                }
+
+                if (!string.IsNullOrWhiteSpace(FileName))
+                {
                     string defaultDir = !string.IsNullOrWhiteSpace(_settings.DefaultDownloadDirectory)
                         ? _settings.DefaultDownloadDirectory
                         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
