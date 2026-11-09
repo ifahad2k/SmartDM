@@ -136,7 +136,7 @@ for (const browser of ['chrome', 'firefox']) {
   test(`${browser}: pending format lookup coalesces 100 polls and delivers the selected result`, () => {
     const url = 'https://www.youtube.com/watch?v=abcdefghijk';
     let requests = 0, reply;
-    const c = vm.createContext({
+    const c = vm.createContext({URL,
       window: {location: {hostname: 'www.youtube.com', href: url, pathname: '/watch'}}, document: {},
       SmartDmUtils: {getMediaCacheKey: () => url},
       chrome: {runtime: {sendMessage(_, cb) { requests++; reply = cb; }}},
@@ -183,7 +183,7 @@ for (const browser of ['chrome', 'firefox']) {
 
   test(`${browser}: late lookup reply cannot complete a replacement player's lookup`, () => {
     const url = 'https://www.youtube.com/watch?v=abcdefghijk', replies = [];
-    const c = vm.createContext({
+    const c = vm.createContext({URL,
       window: {location: {hostname: 'www.youtube.com', href: url, pathname: '/watch'}}, document: {},
       SmartDmUtils: {getMediaCacheKey: () => url},
       chrome: {runtime: {sendMessage(_, cb) {replies.push(cb);}}}, setTimeout: () => 1, clearTimeout() {}

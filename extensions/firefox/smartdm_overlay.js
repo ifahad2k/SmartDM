@@ -21,6 +21,33 @@
       }
     } catch(e) {}
   }
+  async function tryDirectHttpFallback(payload) {
+    const endpoints = [
+      'http://127.0.0.1:9191/api/download',
+      'http://127.0.0.1:18420/api/download',
+      'http://127.0.0.1:18420/api/browser',
+      'http://127.0.0.1:9191/api/browser',
+      'http://127.0.0.1:18421/api/download',
+      'http://127.0.0.1:18421/api/browser'
+    ];
+    for (const ep of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const resp = await fetch(ep, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (resp.ok) {
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
 
   function dispatchDownload(currentFmtList, targetItem, finalBaseTitle, onResult = null) {
     const effectiveFormats = (currentFmtList && currentFmtList.length > 0) ? currentFmtList : [targetItem];
@@ -76,10 +103,10 @@
 
     let thumbUrl = null;
     try {
-      const ogImg = document.querySelector('meta[property="og:image"]');
+      const ogImg = document.querySelector?.('meta[property="og:image"]');
       if (ogImg && ogImg.content) thumbUrl = ogImg.content;
       if (!thumbUrl) {
-        const linkImg = document.querySelector('link[rel="image_src"]');
+        const linkImg = document.querySelector?.('link[rel="image_src"]');
         if (linkImg && linkImg.href) thumbUrl = linkImg.href;
       }
       const pageUrl = window.location.href;
@@ -131,15 +158,18 @@
     const isMediaUrl = (u) => typeof u === 'string' && (/\.(?:mp4|webm|m3u8|mpd|m4s|ts)(?:[?#]|$)/i.test(u) || /(?:fbcdn\.net|cdninstagram\.com)/i.test(u));
     let refToSend = targetItem.referer;
     if (!refToSend || isMediaUrl(refToSend)) {
-      refToSend = (window.top !== window.self) ? window.location.href : (document.referrer || window.location.href);
+      refToSend = (window.top !== window.self) ? (document.referrer || window.location.href) : window.location.href;
     }
     if (isMediaUrl(refToSend)) refToSend = window.location.href;
 
-    let pageUrlToSend = targetItem.referer;
-    if (!pageUrlToSend || isMediaUrl(pageUrlToSend)) {
+    let pageUrlToSend = (window.top !== window.self) ? (document.referrer || window.location.href) : window.location.href;
+    if (isMediaUrl(pageUrlToSend)) {
       pageUrlToSend = window.location.href;
     }
-    const origToSend = targetItem.origin || window.location.origin;
+    let origToSend = targetItem.origin || window.location.origin;
+    if (!origToSend && refToSend) {
+      try { origToSend = new URL(refToSend).origin; } catch(_) {}
+    }
 
     let settled = false;
     const finish = (result) => {
@@ -149,8 +179,8 @@
       if (typeof onResult === 'function') onResult(result);
     };
     const timeout = setTimeout(() => finish({ success: false, status: 'error' }), 20000);
-    try {
-      runtime.sendMessage({
+
+    const downloadPayload = {
       type: 'START_MEDIA_DOWNLOAD',
       url: directDownloadUrl,
       videoUrl: (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(targetItem.videoUrl) : targetItem.videoUrl,
@@ -162,12 +192,29 @@
       origin: origToSend,
       pageUrl: pageUrlToSend,
       formats: formatsList
-      }, (response) => {
+    };
+
+    try {
+      runtime.sendMessage(downloadPayload, async (response) => {
         const sendError = runtime.lastError;
+        if (sendError || !response || response.status === 'error' || response.success === false) {
+          const fallbackOk = await tryDirectHttpFallback(downloadPayload);
+          if (fallbackOk) {
+            finish({ success: true, status: 'ok' });
+            return;
+          }
+        }
         finish(sendError ? { success: false, status: 'error' } : (response || { success: false, status: 'error' }));
       });
     } catch (error) {
-      finish({ success: false, status: 'error' });
+      (async () => {
+        const fallbackOk = await tryDirectHttpFallback(downloadPayload);
+        if (fallbackOk) {
+          finish({ success: true, status: 'ok' });
+        } else {
+          finish({ success: false, status: 'error' });
+        }
+      })();
     }
   }
 
@@ -177,7 +224,7 @@
       return;
     }
 
-    const refToSend = (window.top !== window.self) ? window.location.href : (document.referrer || window.location.href);
+    const refToSend = (window.top !== window.self) ? (document.referrer || window.location.href) : window.location.href;
     const pageUrlToSend = window.location.href;
     const origToSend = window.location.origin;
 
@@ -212,12 +259,26 @@
     const timeout = setTimeout(() => finish({ success: false, status: 'error' }), 20000);
 
     try {
-      runtime.sendMessage(message, (response) => {
+      runtime.sendMessage(message, async (response) => {
         const sendError = runtime.lastError;
+        if (sendError || !response || response.status === 'error' || response.success === false) {
+          const fallbackOk = await tryDirectHttpFallback(message);
+          if (fallbackOk) {
+            finish({ success: true, status: 'ok' });
+            return;
+          }
+        }
         finish(sendError ? { success: false, status: 'error' } : (response || { success: false, status: 'error' }));
       });
     } catch (error) {
-      finish({ success: false, status: 'error' });
+      (async () => {
+        const fallbackOk = await tryDirectHttpFallback(message);
+        if (fallbackOk) {
+          finish({ success: true, status: 'ok' });
+        } else {
+          finish({ success: false, status: 'error' });
+        }
+      })();
     }
   }
 
@@ -350,12 +411,14 @@
     if (isTinyOrAdFrame()) return;
 
     injectInPageManifestSniffer();
-    FormatRegistryEngine.drainStashedManifests(() => {
-      document.querySelectorAll('.smartdm-player-host, .smartdm-thumb-host').forEach(h => {
-        const p = h.shadowRoot ? h.shadowRoot.querySelector('.popover.active') : null;
-        if (p && p._smartdm_refresh) p._smartdm_refresh();
+    if (typeof FormatRegistryEngine.drainStashedManifests === 'function') {
+      FormatRegistryEngine.drainStashedManifests(() => {
+        if (typeof document.querySelectorAll === 'function') document.querySelectorAll('.smartdm-player-host, .smartdm-thumb-host').forEach(h => {
+          const p = h.shadowRoot ? h.shadowRoot.querySelector('.popover.active') : null;
+          if (p && p._smartdm_refresh) p._smartdm_refresh();
+        });
       });
-    });
+    }
 
     if (typeof window.addEventListener === 'function') {
       window.addEventListener('__smartdm_manifest_captured__', (e) => {
@@ -369,7 +432,7 @@
         // Do not copy/reprobe them through the generic network discovery path.
         if (e.detail?.playerId) {
           try {
-            const stashEl = document.querySelector ? document.querySelector(`smartdm-manifest-stash[data-smartdm-url="${CSS.escape(e.detail.url)}"]`) : null;
+            const stashEl = document.querySelector ? document.querySelector?.(`smartdm-manifest-stash[data-smartdm-url="${CSS.escape(e.detail.url)}"]`) : null;
             if (stashEl && stashEl.textContent && typeof FormatRegistryEngine !== 'undefined' && FormatRegistryEngine.processCapturedManifest) {
               FormatRegistryEngine.processCapturedManifest(e.detail.url, stashEl.textContent, refresh, Number(stashEl.getAttribute('data-smartdm-height')) || 0);
             }
@@ -381,15 +444,42 @@
         } else if (e.detail?.candidateUrl && runtime && runtime.sendMessage) {
           runtime.sendMessage({
             type: 'RESOLVE_M3U8_VARIANTS',
-            url: e.detail.candidateUrl
+            url: e.detail.candidateUrl,
+            referer: e.detail.referer || ((window.top !== window.self) ? window.location.href : (document.referrer || window.location.href)),
+            origin: e.detail.origin || window.location.origin
           }, () => { if (runtime.lastError) {} });
           refresh();
         }
       });
 
+      window.addEventListener('__smartdm_youtube_response__', (e) => {
+        try {
+          if (e.detail?.playerResponse && typeof FormatRegistryEngine !== 'undefined') {
+            const vid = e.detail.videoId;
+            const parsed = FormatRegistryEngine.parseYouTubePlayerResponse?.(e.detail.playerResponse, vid);
+            if (parsed && Array.isArray(parsed.formats) && parsed.formats.length > 0) {
+              const key = FormatRegistryEngine.youTubeCacheKey?.(`https://www.youtube.com/watch?v=${vid}`);
+              if (key) {
+                FormatRegistryEngine.mediaFormatCache[key] = {
+                  youtube: true,
+                  status: 'done',
+                  data: parsed,
+                  expiresAt: Date.now() + 120000,
+                  callbacks: []
+                };
+              }
+            }
+          }
+        } catch (_) {}
+      });
+
       window.addEventListener('__smartdm_stream_changed__', () => {
         if (typeof FormatRegistryEngine !== 'undefined') {
-          FormatRegistryEngine.mediaFormatCache = {};
+          const preservedYt = {};
+          for (const [k, v] of Object.entries(FormatRegistryEngine.mediaFormatCache || {})) {
+            if (v?.youtube) preservedYt[k] = v;
+          }
+          FormatRegistryEngine.mediaFormatCache = preservedYt;
         }
         document.querySelectorAll('.smartdm-player-host, .smartdm-thumb-host').forEach(h => {
           const p = h.shadowRoot ? h.shadowRoot.querySelector('.popover.active') : null;
@@ -401,8 +491,14 @@
     if (runtime && runtime.onMessage) {
       runtime.onMessage.addListener((msg) => {
         if (msg && msg.type === 'SMARTDM_MEDIA_DETECTED') {
-          FormatRegistryEngine.mediaFormatCache = {};
-          const activeP = document.querySelector('.smartdm-player-host, .smartdm-thumb-host')?.shadowRoot?.querySelector('.popover.active');
+          if (typeof FormatRegistryEngine !== 'undefined') {
+            const preservedYt = {};
+            for (const [k, v] of Object.entries(FormatRegistryEngine.mediaFormatCache || {})) {
+              if (v?.youtube) preservedYt[k] = v;
+            }
+            FormatRegistryEngine.mediaFormatCache = preservedYt;
+          }
+          const activeP = (typeof document.querySelector === 'function') ? document.querySelector?.('.smartdm-player-host, .smartdm-thumb-host')?.shadowRoot?.querySelector('.popover.active') : null;
           if (activeP && activeP._smartdm_refresh) activeP._smartdm_refresh();
         } else if (msg && msg.type === 'PROBE_M3U8_MANIFEST' && msg.url) {
           (async () => {
@@ -423,8 +519,30 @@
       });
     }
 
-    if (window.top === window.self) initGlobalClickInterceptor();
-    MediaWatcher.init(dispatchDownload, dispatchBatchDownload);
+    function broadcastPageTitleToBackground() {
+      try {
+        if (window.top === window.self && typeof SmartDmUtils !== 'undefined') {
+          const extractedTitle = SmartDmUtils.extractWatchPageTitle();
+          if (extractedTitle && !SmartDmUtils.isGenericTitle(extractedTitle)) {
+            runtime.sendMessage({
+              type: 'UPDATE_TAB_TITLE',
+              title: extractedTitle,
+              url: window.location.href
+            }, () => { if (runtime.lastError) {} });
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (window.top === window.self) {
+      initGlobalClickInterceptor();
+      broadcastPageTitleToBackground();
+      window.addEventListener('popstate', broadcastPageTitleToBackground, { passive: true });
+      window.addEventListener('hashchange', broadcastPageTitleToBackground, { passive: true });
+    }
+    if (typeof MediaWatcher !== 'undefined' && typeof MediaWatcher.init === 'function') {
+      MediaWatcher.init(dispatchDownload, dispatchBatchDownload);
+    }
   }
 
   if (document.readyState === 'loading') {

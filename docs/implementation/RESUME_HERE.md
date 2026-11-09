@@ -137,3 +137,28 @@ Read [TESTING_DESK_HANDOFF.md](TESTING_DESK_HANDOFF.md) for source location, sch
 verification and limits. Reports carry multiple bugs per site plus screenshots and
 passed checks. Inspect ZIP image files and recorded build context before fixing
 shared mechanisms. Sandbox QA data must not be confused with actual site verdicts.
+
+2026-11-08: [Thumbnail style repair](THUMBNAIL_STYLE_HANDOFF.md) fixes the unstyled
+thumbnail button in both extensions; 203 browser tests pass. Reload the extension
+and refresh affected pages for activation. No screen capture was used this turn.
+
+2026-11-08: [YouTube menu prefetch](YOUTUBE_MENU_PREFETCH_HANDOFF.md) moves full-list
+resolution ahead of clicks for visible cards/players. Preserve ID isolation,
+single-flight requests, expiry, queue/cache bounds and observer cleanup. Ready
+menus must not display a pending indicator. Source tests cover the mounted menu
+and audio handoff; live YouTube timing remains unverified. Reload the extension
+and refresh YouTube; a cold lookup can still wait for the network. No installer,
+branch publication or product-wide package closure was performed.
+
+Same-day regression correction: the above initial fixture-only report is
+superseded by [live regression evidence](YOUTUBE_MENU_REGRESSION_HANDOFF.md).
+Keep the 30-second discovery deadline above the background's 15-second desktop
+attempt, preserve selected-player fallback when full resolution fails, and do
+not blame an unavailable app without evidence. Three real Chrome menu checks
+passed; the matching Casetoo video's 1080p60/audio URLs returned 206 to bounded
+range requests. Loaded YouTube content scripts still require reload/refresh.
+
+2026-11-08: [Linked-thumbnail repair](LINKED_THUMBNAIL_HANDOFF.md) adds explicit
+thumbnail intent and selected-page-first discovery. 245 browser tests pass; live
+menu verification remains pending after the computer-use URL restriction.
+Do not work around that restriction or claim a completed live download.

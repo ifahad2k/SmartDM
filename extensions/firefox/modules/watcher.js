@@ -15,6 +15,74 @@ class MediaWatcher {
   static spaScanTimers = [];
   static onDownloadHandler = null;
   static onBatchDownloadHandler = null;
+  static youtubePrefetchTargets = new WeakMap();
+  static youtubePrefetchQueue = new Map();
+  static youtubePrefetchActive = 0;
+  static youtubePrefetchTimer = null;
+
+  static queueYouTubePrefetch(target, priority = false) {
+    const item = this.youtubePrefetchTargets.get(target);
+    if (!item || target.isConnected === false || document.visibilityState === 'hidden') return;
+    const url = item.getUrl();
+    if (!FormatRegistryEngine.youTubeCacheKey(url) || FormatRegistryEngine.getInstantYouTubeFormats(url).length) return;
+    this.youtubePrefetchQueue.delete(target);
+    if (priority) this.youtubePrefetchQueue = new Map([[target, item], ...this.youtubePrefetchQueue]);
+    else this.youtubePrefetchQueue.set(target, item);
+    // Infinite shelves must not retain an unbounded queue of DOM closures.
+    while (this.youtubePrefetchQueue.size > 8) {
+      const last = Array.from(this.youtubePrefetchQueue.keys()).pop();
+      this.youtubePrefetchQueue.delete(last);
+    }
+    if (!this.youtubePrefetchTimer) this.youtubePrefetchTimer = setTimeout(() => {
+      this.youtubePrefetchTimer = null;
+      this.drainYouTubePrefetch();
+    }, 150);
+  }
+
+  static drainYouTubePrefetch() {
+    if (document.visibilityState === 'hidden') { this.youtubePrefetchQueue.clear(); return; }
+    while (this.youtubePrefetchActive < 2 && this.youtubePrefetchQueue.size) {
+      const [target, item] = this.youtubePrefetchQueue.entries().next().value;
+      this.youtubePrefetchQueue.delete(target);
+      if (target.isConnected === false || this.youtubePrefetchTargets.get(target) !== item || !item.visible) continue;
+      // SPA players can change video while queued; read their URL at dispatch.
+      const url = item.getUrl();
+      if (!FormatRegistryEngine.youTubeCacheKey(url)) continue;
+      this.youtubePrefetchActive++;
+      FormatRegistryEngine.fetchYouTubeFormats(url, () => {
+        this.youtubePrefetchActive--;
+        this.drainYouTubePrefetch();
+      });
+    }
+  }
+
+  static observeYouTubeFormats(target, getUrl) {
+    if (typeof FormatRegistryEngine === 'undefined' || !FormatRegistryEngine.youTubeCacheKey?.(getUrl())) return () => {};
+    const item = {getUrl, visible: false};
+    this.youtubePrefetchTargets.set(target, item);
+    const intent = () => { item.visible = true; this.queueYouTubePrefetch(target, true); };
+    target.addEventListener?.('pointerenter', intent, {passive: true});
+    target.addEventListener?.('focusin', intent, {passive: true});
+    if (typeof IntersectionObserver !== 'undefined') {
+      if (!this.youtubePrefetchObserver) this.youtubePrefetchObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          const state = this.youtubePrefetchTargets.get(entry.target);
+          if (!state) continue;
+          state.visible = entry.isIntersecting && (entry.intersectionRatio ?? 1) >= 0.25;
+          if (state.visible) this.queueYouTubePrefetch(entry.target);
+          else this.youtubePrefetchQueue.delete(entry.target);
+        }
+      }, {threshold: 0.25});
+      this.youtubePrefetchObserver.observe(target);
+    }
+    return () => {
+      this.youtubePrefetchObserver?.unobserve(target);
+      this.youtubePrefetchTargets.delete(target);
+      this.youtubePrefetchQueue.delete(target);
+      target.removeEventListener?.('pointerenter', intent);
+      target.removeEventListener?.('focusin', intent);
+    };
+  }
 
   static styleMarkup(shadow) {
     // One parsed stylesheet per document, rather than a full CSS copy per card.
@@ -164,8 +232,8 @@ class MediaWatcher {
               }
               // Only trigger a scan if the added subtree actually contains media elements or video card links
               const tag = (node.tagName || '').toUpperCase();
-              if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'IFRAME' || tag.startsWith('YTMUSIC-') ||
-                  (node.querySelector && node.querySelector('video, audio, iframe, ytd-thumbnail, yt-lockup-view-model, ytmusic-player-bar, ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-list-item-renderer, .action-buttons, #top-level-buttons-computed, #top-level-buttons, .middle-controls, .middle-controls-buttons, a[href*="/watch"], a[href*="/reel/"], a[href*="/shorts/"]'))) {
+              if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'IFRAME' || tag.startsWith('YTMUSIC-') || tag.startsWith('YTD-') || tag.startsWith('YT-') ||
+                  (node.querySelector && node.querySelector('video, audio, iframe, ytd-thumbnail, yt-thumbnail-view-model, yt-lockup-view-model, ytmusic-player-bar, ytmusic-header-renderer, ytmusic-responsive-header-renderer, ytmusic-detail-header-renderer, ytmusic-editable-playlist-detail-header-renderer, ytmusic-responsive-list-item-renderer, .action-buttons, #top-level-buttons-computed, #top-level-buttons, .middle-controls, .middle-controls-buttons, a[href*="/watch"], a[href*="/reel/"], a[href*="/shorts/"], a[href*="/live/"]'))) {
                 hasAddedElements = true;
                 break;
               }
@@ -248,6 +316,7 @@ class MediaWatcher {
     for (const [mount, host] of this.thumbnailHosts.entries()) {
       if (!mount.isConnected) {
         if (host._smartdm_stop_poll) host._smartdm_stop_poll();
+        host._smartdm_prefetch_cleanup?.();
         host.remove();
         this.thumbnailHosts.delete(mount);
       }
@@ -817,13 +886,17 @@ class MediaWatcher {
     }
 
     // Direct player host patterns or streaming embed indicators
-    const playerKeywords = /stream|embed|player|video|movie|watch|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|cloud|tape|filemoon|dood|mixdrop|voe|streamtape|rabbitstream|megacloud|streamwish|mp4upload|upstream|play/i;
+    const playerKeywords = /stream|embed|player|video|movie|watch|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|cloud|tape|filemoon|dood|mixdrop|voe|streamtape|rabbitstream|megacloud|streamwish|mp4upload|upstream|play|kwik|megap|sunwave|owocdn|shiora|vplayer|nexus|anizone|miruro|animesuge|animepahe|wmovies|111movies|jabroni|goldenkite|stellar/i;
     if (playerKeywords.test(src) || playerKeywords.test(id) || playerKeywords.test(cls) || playerKeywords.test(title)) {
       return true;
     }
 
+    if (el.matches?.('#player, #vplayer, .player-container, #player-container, iframe[src*="kwik"], iframe[src*="megap"], iframe[src*="sunwave"], iframe[src*="shiora"], iframe[src*="owocdn"], iframe[src*="anizone"], iframe[src*="vplayer"], iframe[src*="nexus"], iframe[src*="jabroni"], iframe[src*="goldenkite"], iframe[src*="111movies"], iframe[src*="wmovies"]')) {
+      return true;
+    }
+
     // Check parent container for player id/class (e.g. #player, .player-wrapper)
-    const container = el.closest ? el.closest('#player, #player-wrapper, #player-holder, #iframe-player, .player, .player-container, .embed-responsive, [class*="player" i]') : null;
+    const container = el.closest ? el.closest('#player, #vplayer, #player-wrapper, #player-holder, #iframe-player, .player, .player-container, .embed-responsive, [class*="player" i]') : null;
     if (container) return true;
 
     // Check iframe allow attribute (e.g. allow="autoplay; fullscreen; encrypted-media")
@@ -852,6 +925,68 @@ class MediaWatcher {
     }
     const mediaElements = document.querySelectorAll('video:not([' + this.ATTR_PLAYER_ATTACHED + ']), audio:not([' + this.ATTR_PLAYER_ATTACHED + '])');
     mediaElements.forEach(el => this.attachPlayerBanner(el));
+
+    // Recursively scan open shadow roots for video/audio and player iframes
+    const findShadowMediaAndIframes = (root) => {
+      if (!root || !root.querySelectorAll) return;
+      const all = root.querySelectorAll('*');
+      for (const el of all) {
+        if (el.shadowRoot) {
+          const videos = el.shadowRoot.querySelectorAll('video:not([' + this.ATTR_PLAYER_ATTACHED + ']), audio:not([' + this.ATTR_PLAYER_ATTACHED + '])');
+          videos.forEach(v => this.attachPlayerBanner(v));
+          const ifrs = el.shadowRoot.querySelectorAll('iframe:not([' + this.ATTR_PLAYER_ATTACHED + '])');
+          ifrs.forEach(ifr => {
+            if (this.isPlayerIframe(ifr)) this.attachPlayerBanner(ifr);
+          });
+          findShadowMediaAndIframes(el.shadowRoot);
+        }
+      }
+    };
+    try { findShadowMediaAndIframes(document); } catch (_) {}
+
+    // Support anime dedicated player containers and iframe embeds
+    const animeContainers = document.querySelectorAll(
+      '#player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#vplayer:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.player-container:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#player-container:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.player-wrapper:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#player-wrapper:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#embed-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#anime-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.anime-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#video-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.video-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#play-wrapper:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#play-area:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.play-area:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#player-holder:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.watch-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#watch-player:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#watch-holder:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.watch-holder:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.player-box:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#player-box:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '.play-box:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      '#play-box:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="kwik"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="megap"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="sunwave"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="shiora"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="owocdn"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="anizone"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="vplayer"]:not([' + this.ATTR_PLAYER_ATTACHED + ']), ' +
+      'iframe[src*="nexus"]:not([' + this.ATTR_PLAYER_ATTACHED + '])'
+    );
+    animeContainers.forEach(container => {
+      const v = container.querySelector('video') || (container.shadowRoot ? container.shadowRoot.querySelector('video') : null);
+      const ifr = container.tagName === 'IFRAME' ? container : container.querySelector('iframe');
+      const target = v || ifr || container;
+      if (target && !target.getAttribute(this.ATTR_PLAYER_ATTACHED)) {
+        this.attachPlayerBanner(target);
+        container.setAttribute(this.ATTR_PLAYER_ATTACHED, 'true');
+      }
+    });
 
     // Support Bilibili dedicated player containers
     const isBili = typeof window !== 'undefined' && window.location?.hostname &&
@@ -1077,8 +1212,10 @@ class MediaWatcher {
       const curH = mediaEl ? (mediaEl.videoHeight || 0) : 0;
       if (curH > 0 && curH !== lastKnownHeight) {
         lastKnownHeight = curH;
-        delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getMediaCacheKey(window.location.href, mediaEl)];
-        delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getCanonicalUrl(window.location.href)];
+        if (!FormatRegistryEngine.youTubeCacheKey?.(window.location.href)) {
+          delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getMediaCacheKey(window.location.href, mediaEl)];
+          delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getCanonicalUrl(window.location.href)];
+        }
         if (popover.classList.contains('active') && popover._smartdm_refresh) {
           popover._smartdm_refresh();
         }
@@ -1093,12 +1230,17 @@ class MediaWatcher {
     };
 
     const onEmptied = () => {
-      delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getMediaCacheKey(window.location.href, mediaEl)];
+      if (!FormatRegistryEngine.youTubeCacheKey?.(window.location.href)) {
+        delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getMediaCacheKey(window.location.href, mediaEl)];
+      }
       mediaEl._smartdm_uid = 'vid_fb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
       mediaEl._smartdm_active_time = Date.now();
       for (const attr of ['data-smartdm-bound-src', 'data-smartdm-video-url', 'data-smartdm-audio-url', 'data-smartdm-separate-audio']) mediaEl.removeAttribute?.(attr);
     };
-    const onLoadStart = () => { mediaEl._smartdm_active_time = Date.now(); };
+    const onLoadStart = () => {
+      mediaEl._smartdm_active_time = Date.now();
+      this.queueYouTubePrefetch(mediaEl, true);
+    };
     const mediaListeners = [
       ['play', trackActivePlayback], ['playing', trackActivePlayback], ['timeupdate', trackActivePlayback],
       ['emptied', onEmptied], ['loadstart', onLoadStart], ['resize', onVideoDimensionChange],
@@ -1177,7 +1319,7 @@ class MediaWatcher {
       let currentFormats = [];
       if (initialFormats && initialFormats.some(f => !f.isAudioOnly)) {
         currentFormats = [...initialFormats];
-        OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, !isFb, this.onDownloadHandler);
+        OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, !isFb && !isYouTube, this.onDownloadHandler);
       } else {
         content.innerHTML = `
           <div class="spinner-container">
@@ -1246,14 +1388,18 @@ class MediaWatcher {
 
     document.body.appendChild(host);
 
+    const cleanupPrefetch = this.observeYouTubeFormats(mediaEl, () => window.location.href);
     const playerItem = {
       host: host,
       syncPos: syncPos,
       isVisible: true,
       cleanup: () => {
         stopPolling();
+        cleanupPrefetch();
         mediaListeners.forEach(([event, listener]) => mediaEl.removeEventListener(event, listener));
-        delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getMediaCacheKey(window.location.href, mediaEl)];
+        if (!FormatRegistryEngine.youTubeCacheKey?.(window.location.href)) {
+          delete FormatRegistryEngine.mediaFormatCache[SmartDmUtils.getMediaCacheKey(window.location.href, mediaEl)];
+        }
         if (document.removeEventListener) {
           document.removeEventListener('fullscreenchange', onFullscreen);
           document.removeEventListener('webkitfullscreenchange', onFullscreen);
@@ -1321,9 +1467,17 @@ class MediaWatcher {
     }
     const selectors = [
       'ytd-thumbnail',
+      'yt-thumbnail-view-model',
       'ytd-compact-video-renderer',
       'ytd-rich-item-renderer',
       'ytd-video-renderer',
+      'ytd-grid-video-renderer',
+      'ytd-reel-item-renderer',
+      'ytd-rich-grid-media',
+      'ytd-rich-item-renderer[is-shorts]',
+      'ytd-video-card-renderer',
+      'ytd-playlist-video-renderer',
+      'ytd-playlist-panel-video-renderer',
       'yt-lockup-view-model',
       'ytmusic-responsive-list-item-renderer',
       'ytmusic-two-row-item-renderer',
@@ -1335,6 +1489,8 @@ class MediaWatcher {
       'a[href*="/view_video.php"]',
       'a[href*="/watch?v="]',
       'a[href*="/shorts/"]',
+      'a[href*="/live/"]',
+      'a[href*="youtu.be/"]',
       '.phimage',
       '.thumbnailWrapper',
       '.pcVideoListItem',
@@ -1352,10 +1508,12 @@ class MediaWatcher {
       if (isPill(el)) return;
       if (isAnime(el)) return;
 
-      const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
+      const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
 
-      if (cardContainer.getAttribute(this.ATTR_THUMB_ATTACHED)) return;
-      if (cardContainer.closest('[' + this.ATTR_THUMB_ATTACHED + ']')) return;
+      const existingHost = cardContainer.querySelector?.('.smartdm-thumb-host');
+      if (existingHost && existingHost.isConnected) return;
+      const enclosingCard = cardContainer.parentElement?.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .bili-video-card');
+      if (enclosingCard && enclosingCard.querySelector?.('.smartdm-thumb-host')?.isConnected) return;
 
       if (isAction(cardContainer)) return;
       if (isPill(cardContainer)) return;
@@ -1365,13 +1523,18 @@ class MediaWatcher {
 
       let videoUrl = null;
       const link = cardContainer.querySelector(
-        'a[href*="/watch?v="], a[href*="/shorts/"], a[href*="/video/BV"], a[href*="/view_video.php"], ' +
+        'a#thumbnail[href], a#video-title[href], a#video-title-link[href], a[id*="thumbnail"][href], a[class*="thumbnail"][href], ' +
+        'a.yt-simple-endpoint[href*="watch?v="], a.yt-simple-endpoint[href*="/shorts/"], a.yt-simple-endpoint[href*="/live/"], ' +
+        'a[href*="watch?v="], a[href*="/shorts/"], a[href*="/live/"], a[href*="youtu.be/"], a[href*="/video/BV"], a[href*="/view_video.php"], ' +
         'a[href*="/watch/"], a[href*="/video/"], a[href*="/videos/"], a[href*="/v/"]'
       ) || (cardContainer.tagName === 'A' ? cardContainer : null);
       if (link && link.href) {
         videoUrl = link.href;
       } else if (cardContainer.tagName === 'A' && cardContainer.href) {
         videoUrl = cardContainer.href;
+      }
+      if (videoUrl && typeof videoUrl === 'string' && !videoUrl.startsWith('http')) {
+        try { videoUrl = new URL(videoUrl, window.location.href).href; } catch(_) {}
       }
 
       if (!videoUrl) return;
@@ -1386,7 +1549,7 @@ class MediaWatcher {
       if (isPill(targetMount, videoUrl)) return;
       if (isAnime(targetMount, videoUrl)) return;
 
-      if (targetMount.getAttribute(this.ATTR_THUMB_ATTACHED) && targetMount.querySelector('.smartdm-thumb-host')) return;
+      if (targetMount.querySelector?.('.smartdm-thumb-host')?.isConnected) return;
 
       cardContainer.setAttribute(this.ATTR_THUMB_ATTACHED, 'true');
       targetMount.setAttribute(this.ATTR_THUMB_ATTACHED, 'true');
@@ -1401,7 +1564,12 @@ class MediaWatcher {
   }
 
   static attachThumbnailBadge(containerEl, videoUrl, cardTitle = null) {
-    if (!containerEl || this.thumbnailHosts.has(containerEl)) return;
+    if (!containerEl) return;
+    const existing = this.thumbnailHosts.get(containerEl);
+    if (existing && existing.isConnected) return;
+    if (existing && !existing.isConnected) {
+      this.thumbnailHosts.delete(containerEl);
+    }
     if (typeof VisualMountDetector !== 'undefined') {
       if (VisualMountDetector.isActionElement && VisualMountDetector.isActionElement(containerEl)) return;
       if (VisualMountDetector.isCategoryOrTagPill && VisualMountDetector.isCategoryOrTagPill(containerEl, videoUrl)) return;
@@ -1414,6 +1582,8 @@ class MediaWatcher {
 
     const host = document.createElement('div');
     host.className = 'smartdm-thumb-host';
+
+    const isShorts = videoUrl && (videoUrl.includes('/shorts/') || (containerEl.closest && containerEl.closest('ytd-reel-item-renderer, [is-shorts]')));
 
     if (isFbReel) {
       // Facebook Reel cards are links inside clipped, transformed carousels.
@@ -1451,18 +1621,25 @@ class MediaWatcher {
       host.style.position = 'absolute';
       host.style.top = '6px';
       host.style.right = '6px';
-      host.style.zIndex = '99999';
+      host.style.zIndex = isShorts ? '2147483647' : '99999';
       host.style.pointerEvents = 'auto';
     }
 
-    host.addEventListener('click', (e) => {
+    const stopPropagationAndDefault = (e) => {
+      if (e.preventDefault) e.preventDefault();
       e.stopPropagation();
-    });
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    };
+    // Trap events bubbling out of host to prevent surrounding anchor tags or Polymer handlers from triggering navigation
+    host.addEventListener('pointerdown', stopPropagationAndDefault);
+    host.addEventListener('mousedown', stopPropagationAndDefault);
+    host.addEventListener('mouseup', stopPropagationAndDefault);
+    host.addEventListener('click', stopPropagationAndDefault);
 
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
       ${this.styleMarkup(shadow)}
-      <button class="thumb-btn">
+      <button type="button" class="banner-btn thumb-btn" title="Download this video with SmartDM">
         <span class="download-icon"></span>
         <span>SmartDM</span>
       </button>
@@ -1484,9 +1661,17 @@ class MediaWatcher {
       popover.classList.remove('active');
     };
 
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
+    const stopButtonAction = (e) => {
+      if (e.preventDefault) e.preventDefault();
       e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    };
+    btn.addEventListener('pointerdown', stopButtonAction);
+    btn.addEventListener('mousedown', stopButtonAction);
+    btn.addEventListener('mouseup', stopButtonAction);
+
+    const onBtnClick = (e) => {
+      stopButtonAction(e);
 
       const isActive = popover.classList.contains('active');
       if (isActive) {
@@ -1567,7 +1752,7 @@ class MediaWatcher {
 
       if (instantFormats && instantFormats.length > 0) {
         currentFormats = [...instantFormats];
-        OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, true, this.onDownloadHandler);
+        OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, pageTitle, false, this.onDownloadHandler);
       } else {
         content.innerHTML = `
           <div class="spinner-container">
@@ -1577,7 +1762,7 @@ class MediaWatcher {
         `;
       }
 
-      FormatRegistryEngine.fetchMediaFormats(videoUrl, null, (res, hasMorePending) => {
+      FormatRegistryEngine.fetchMediaFormats(videoUrl, isYouTube ? containerEl.querySelector?.('video') || null : null, (res, hasMorePending) => {
         try {
           if (this.thumbnailHosts.get(containerEl) !== host || !popover.classList.contains('active')) return;
           if (content._smartdm_downloading) return;
@@ -1585,6 +1770,8 @@ class MediaWatcher {
           if (res && res.formats && res.formats.length > 0) {
             currentFormats = FormatRegistryEngine.isSocialFeed?.() ? res.formats.slice() : FormatRegistryEngine.mergeFormatLists(currentFormats, res.formats);
             OverlayUiRenderer.renderFormatDropdown(content, currentFormats, videoUrl, popover, resolvedTitle, hasMorePending, this.onDownloadHandler);
+          } else if (hasMorePending === false && currentFormats.length > 0) {
+            content.querySelector('.smartdm-pending-notice')?.remove();
           } else if (currentFormats.length === 0) {
             content.innerHTML = '<div class="status-text" style="color:#f87171;">' +
               ((res && res.message) ? res.message : 'No media formats detected.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>') +
@@ -1595,8 +1782,9 @@ class MediaWatcher {
             content.innerHTML = '<div class="status-text" style="color:#f87171;">Error rendering formats.</div>';
           }
         }
-      });
-    });
+      }, false, {fromThumbnail: true});
+    };
+    btn.addEventListener('click', onBtnClick);
 
     if (isFbReel) {
       document.body.appendChild(host);
@@ -1606,5 +1794,6 @@ class MediaWatcher {
       containerEl.appendChild(host);
       this.thumbnailHosts.set(containerEl, host);
     }
+    host._smartdm_prefetch_cleanup = this.observeYouTubeFormats(containerEl, () => videoUrl);
   }
 }

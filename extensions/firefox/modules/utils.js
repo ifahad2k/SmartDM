@@ -146,11 +146,16 @@ class SmartDmUtils {
     if (!str || typeof str !== 'string') return '';
     let clean = str.replace(/^\(\d+\)\s*/, '').trim();
 
-    // Strip leading action verbs: Watch, Streaming, Play, Download, Free
-    clean = clean.replace(/^(?:watch|streaming|play|download|free)\s+/i, '').trim();
+    // Strip trailing video/audio extension if present
+    clean = clean.replace(/\.(?:mp4|mkv|webm|avi|mov|ts|m4v|mp3|m4a|aac|wav|flac)$/i, '').trim();
 
-    // Strip leading site brands (e.g. "67movies - ", "123movies | ")
-    clean = clean.replace(/^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies)\s*[\-\|\•\—:\s]\s*/i, '').trim();
+    // Strip leading action verbs: Watch, Streaming, Stream, Play, Download
+    clean = clean.replace(/^(?:watch|streaming|stream|play|download)\s+/i, '').trim();
+    // Only strip leading "Free" if followed by SEO verbs/words, preserving legitimate titles like "Free Guy"
+    clean = clean.replace(/^free\s+(?:watch|streaming|stream|download|movie|movies|hd|online|full)\s+/i, '').trim();
+
+    // Strip leading site brands (e.g. "67movies - ", "123movies | ", "ramoflix", "hydrahd", "goojara", "wmovies")
+    clean = clean.replace(/^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies|ramoflix(?:\.[a-z]+)?|hydrahd(?:\.[a-z]+)?|goojara(?:\.[a-z]+)?|wmovies(?:\.[a-z]+)?|miruro(?:\.[a-z]+)?|anime(?:\.|\s*)nexus|animesuge(?:\.[a-z]+)?|anizone(?:\.[a-z]+)?)\s*[\-\|\•\—:\s]\s*/i, '').trim();
 
     // Strip resolution brackets like [1080p], [720p], (1080p), [1080p HD], [Full HD]
     clean = clean.replace(/\[\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\]/gi, '').trim();
@@ -160,14 +165,14 @@ class SmartDmUtils {
     clean = clean.replace(/\s*::\s*.*$/, '').trim();
 
     // Strip site/brand suffixes separated by - or | or • or —
-    clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili(?:\s*TV|\s*Global)?|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
+    clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|Unlimited\s+Movies.*|Online\s+Free.*|RamoFlix.*|HydraHD.*|Goojara.*|WMovies.*|111Movies.*|Free\s+Online.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe(?:\.pw|\.org)?|Miruro(?:\.to|\.online)?|Anime(?:\.|\s*)Nexus|AnimeSuge(?:\.tv|\.to)?|AniZone(?:\.to)?|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili(?:\s*TV|\s*Global)?|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
     clean = clean.replace(/\s*[\-\|\•\—_]\s*(?:哔哩哔哩|_?bilibili(?:\.tv)?).*$/i, '').trim();
     clean = clean.replace(/_哔哩哔哩(?:_bilibili)?$/i, '').replace(/[_\-\|\•\—]\s*(?:哔哩哔哩|bilibili(?:\.tv)?)$/i, '').trim();
 
-    // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>"
-    clean = clean.replace(/\s+(?:online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
+    // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>" and trailing SEO junk
+    clean = clean.replace(/\s+(?:online\s+free\s+watch\s+full\s+(?:now\s+)?hd|online\s+free\s+watch\s+full|watch\s+full\s+now\s+hd|unlimited\s+movies\s*(?:&|and)\s*tv\s*shows\s*online|watch\s+full\s+movie\s+hd|watch\s+free\s+online\s+hd|online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
     clean = clean.replace(/\s+(?:at|on)\s+[a-z0-9.-]+\.[a-z]{2,}\b.*$/i, '').trim();
-    clean = clean.replace(/\s+(?:on|at)\s+(?:67movies|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed)\b.*$/i, '').trim();
+    clean = clean.replace(/\s+(?:on|at)\s+(?:67movies|ramoflix|hydrahd|goojara|wmovies|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|miruro|animesuge|animepahe|anizone|nexus)\b.*$/i, '').trim();
 
     // Strip trailing " - Watch", " - Free", " - Online" etc if left behind
     clean = clean.replace(/\s*[\-\|\•\—]\s*(?:watch|free|online|stream|download)$/i, '').trim();
@@ -198,7 +203,9 @@ class SmartDmUtils {
       'reels', 'reel', 'player', 'embed', 'kwik', 'megaplay', 'streamwish', 'vidcloud', 'upcloud',
       'mp4upload', 'filemoon', 'doodstream', 'streamtape', 'mixdrop', 'luluvdo', 'voe',
       'vidqueen', 'vidsrc', '2embed', 'autoembed', 'superembed', 'streamembed', 'rabbitstream', 'megacloud',
-      'watch', 'play', 'index', 'untitled', 'html5 player', 'video player', 'just now', 'now'
+      'watch', 'play', 'index', 'untitled', 'html5 player', 'video player', 'just now', 'now',
+      'strm', 'master', 'playlist', 'manifest', 'chunklist', 'media', 'main', 'track', 'segment', 'segment-0',
+      'video-0', 'stream-0', 'stream-1', 'init', 'audio', 'audio-0'
     ]);
     if (genericExact.has(clean)) return true;
     if (/^(?:\d{3,4}p|[248]k)\s*(?:(?:full|ultra|quad)\s*)?(?:hd|sd|uhd)?\s*(?:\((?:mp4|webm|mkv)\))?$/.test(clean) ||
@@ -230,7 +237,7 @@ class SmartDmUtils {
       }
     }
 
-    if (/^(?:player|embed|iframe|video)[\s_-]*\d*$/i.test(clean)) return true;
+    if (/^(?:strm|stream|video|master|playlist|manifest|index|chunklist|seg|fragment|chunk|track|audio|play|player|embed|iframe)[_\-\d]*$/i.test(clean)) return true;
 
     return this.isOpaqueTokenOrHash(clean);
   }
@@ -399,17 +406,221 @@ class SmartDmUtils {
     }
   }
 
+  static extractAnimeTitle(doc = (typeof document !== 'undefined' ? document : null), loc = (typeof window !== 'undefined' ? window.location : null)) {
+    if (!doc && !loc) return null;
+    try {
+      const hostname = (loc?.hostname || '').toLowerCase();
+      const pathname = (loc?.pathname || '').toLowerCase();
+      const search = loc?.search || '';
+      const isAnimeDomain = /(?:anime|aniwave|9anime|hianime|zoro|gogoanime|animesaturn|animixplay|kissanime|kickassanime|allanime|aniwatch|kaido|miruro|anizone|animepahe|animesuge|nexus)/i.test(hostname);
+      const isWatchPath = /(?:\/watch\/|\/anime\/|\/play\/|\/episode\/|\/stream\/)/i.test(pathname);
+
+      if (!isAnimeDomain && !isWatchPath) {
+        const hasAnimeEl = doc?.querySelector?.('[class*="anime-title"], [class*="film-name"], .theatre-info, [class*="episode-title"], #episodes, .episodes-list');
+        if (!hasAnimeEl) return null;
+      }
+
+      // 1. Extract Anime Series Main Title
+      let seriesTitle = '';
+      const seriesSelectors = [
+        '.anisc-detail .film-name',
+        'h1.film-name',
+        'h2.film-name',
+        '.film-name a',
+        '.film-name',
+        'h1.anime-title',
+        '.anime-title',
+        '[class*="anime-title"]',
+        '[class*="anime_title"]',
+        '[id*="anime-title"]',
+        '.theatre-info h1 a',
+        '.theatre-info h1',
+        '.theatre-info',
+        'h1.heading-name',
+        '.detail-title',
+        'h1.title',
+        'h1'
+      ];
+
+      for (const sel of seriesSelectors) {
+        const el = doc?.querySelector?.(sel);
+        if (el) {
+          const t = (el.getAttribute?.('title') || el.textContent || '').trim();
+          if (t && t.length >= 2) {
+            const cleaned = this.sanitizeCleanTitle(t);
+            if (cleaned && !this.isGenericTitle(cleaned)) {
+              seriesTitle = cleaned;
+              break;
+            }
+          }
+        }
+      }
+
+      // Meta tags fallback for series title
+      if (!seriesTitle) {
+        const ogTitle = doc?.querySelector?.('meta[property="og:title"], meta[name="twitter:title"]');
+        if (ogTitle && ogTitle.content) {
+          const cleaned = this.sanitizeCleanTitle(ogTitle.content);
+          if (cleaned && !this.isGenericTitle(cleaned)) {
+            seriesTitle = cleaned;
+          }
+        }
+      }
+
+      // URL slug fallback for series title (e.g. /watch/xyz/kuroneko-to-majo-no-kyoushitsu or /anime/kuroneko-to-majo-no-kyoushitsu)
+      if (!seriesTitle && pathname) {
+        const slugMatch = pathname.match(/(?:\/watch\/[^/]+\/|\/anime\/|\/play\/|\/series\/)([a-zA-Z0-9_\-]+)/i) ||
+                          pathname.match(/\/([a-zA-Z0-9_\-]+)\/(?:ep-\d+|\d+)(?:[/?#]|$)/i);
+        if (slugMatch && slugMatch[1] && slugMatch[1].length >= 3 && !/^(?:watch|anime|play|video|stream)$/i.test(slugMatch[1])) {
+          const words = slugMatch[1].replace(/[-_]+/g, ' ').trim();
+          if (words && !this.isGenericTitle(words)) {
+            seriesTitle = words.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          }
+        }
+      }
+
+      // 2. Extract Episode Title / Number
+      let epNumber = '';
+      let epSubTitle = '';
+
+      // Check query param e.g. ?ep=24
+      const urlParams = loc ? new URLSearchParams(search) : null;
+      const qEp = urlParams ? (urlParams.get('ep') || urlParams.get('episode')) : null;
+      if (qEp && /^\d+$/.test(qEp)) {
+        epNumber = qEp;
+      }
+
+      // Check path e.g. /ep-1 or /episode-1 or /1
+      if (!epNumber && pathname) {
+        const pEpMatch = pathname.match(/(?:ep|episode)-(\d+)/i) || pathname.match(/\/(\d+)(?:\/?$|\?)/);
+        if (pEpMatch) {
+          epNumber = pEpMatch[1];
+        }
+      }
+
+      // Check active episode element in page DOM
+      const epSelectors = [
+        '.ep-item.active',
+        '.episode-item.active',
+        '[class*="episode"][class*="active"]',
+        '[class*="ep"][class*="active"]',
+        '.theatre-info h2',
+        '[class*="episode-title"]',
+        '[class*="ep-title"]',
+        '[id*="episode-title"]',
+        '[id*="ep-title"]',
+        '#episodeMenu',
+        'button[id*="episode"].active'
+      ];
+
+      for (const sel of epSelectors) {
+        const el = doc?.querySelector?.(sel);
+        if (el) {
+          const rawText = (el.getAttribute?.('title') || el.textContent || '').trim();
+          if (rawText && rawText.length >= 1) {
+            const numNameMatch = rawText.match(/^(?:ep(?:isode)?\.?\s*)?(\d+)\s*[\.:\-–—]\s*(.+)$/i);
+            if (numNameMatch) {
+              if (!epNumber) epNumber = numNameMatch[1];
+              epSubTitle = numNameMatch[2].trim();
+              break;
+            }
+            const justNumMatch = rawText.match(/^(?:ep(?:isode)?\.?\s*)?(\d+)$/i);
+            if (justNumMatch) {
+              if (!epNumber) epNumber = justNumMatch[1];
+              break;
+            }
+            if (!epSubTitle && !/^(?:sub|dub|hd)$/i.test(rawText)) {
+              epSubTitle = rawText;
+            }
+          }
+        }
+      }
+
+      if (epSubTitle) {
+        epSubTitle = this.sanitizeCleanTitle(epSubTitle);
+        if (this.isGenericTitle(epSubTitle) || /^(?:ep|episode)\s*\d+$/i.test(epSubTitle)) {
+          epSubTitle = '';
+        }
+      }
+
+      if (!seriesTitle) return null;
+
+      if (/\b(?:ep|episode)\s*\d+\b/i.test(seriesTitle)) {
+        if (epSubTitle && !seriesTitle.toLowerCase().includes(epSubTitle.toLowerCase())) {
+          return `${seriesTitle} - ${epSubTitle}`;
+        }
+        return seriesTitle;
+      }
+
+      let epFormatted = '';
+      if (epNumber) {
+        epFormatted = `EP ${epNumber}`;
+      }
+
+      if (epFormatted && epSubTitle) {
+        return `${seriesTitle} - ${epFormatted} - ${epSubTitle}`;
+      } else if (epFormatted) {
+        return `${seriesTitle} - ${epFormatted}`;
+      } else if (epSubTitle) {
+        return `${seriesTitle} - ${epSubTitle}`;
+      }
+
+      return seriesTitle;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static extractSemanticPageTitle() {
     try {
+      // 0. Dedicated Anime Title & Episode Extraction
+      const animeTitle = this.extractAnimeTitle();
+      if (animeTitle && !this.isGenericTitle(animeTitle)) {
+        return animeTitle;
+      }
+
+      const tryAppendYear = (cleanTitle) => {
+        if (!cleanTitle || /\b(?:19|20)\d{2}\b/.test(cleanTitle)) return cleanTitle;
+        try {
+          if (typeof document !== 'undefined') {
+            const yearEl = document.querySelector('.year, .release-year, [class*="year"], .meta-year, .film-year, [itemprop="dateCreated"], [itemprop="copyrightYear"], a[href*="/year/"], a[href*="/release/"], .jt-info, .movie-info, .meta span, .film-info, span.date, span.year');
+            if (yearEl) {
+              const yMatch = (yearEl.textContent || '').match(/\b(19\d\d|20\d\d)\b/);
+              if (yMatch) return `${cleanTitle} (${yMatch[1]})`;
+            }
+          }
+          if (typeof window !== 'undefined' && window.location && window.location.pathname) {
+            const urlMatch = window.location.pathname.match(/\b(19\d\d|20\d\d)\b/);
+            if (urlMatch) return `${cleanTitle} (${urlMatch[1]})`;
+          }
+        } catch (_) {}
+        return cleanTitle;
+      };
+
       // 1. JSON-LD Structured Data
-      const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+      const jsonLdScripts = typeof document !== 'undefined' ? document.querySelectorAll('script[type="application/ld+json"]') : [];
       for (const s of jsonLdScripts) {
         try {
           const data = JSON.parse(s.textContent);
-          const item = Array.isArray(data) ? data.find(d => d['@type'] === 'VideoObject') : data;
-          if (item && item.name && typeof item.name === 'string') {
-            const clean = this.sanitizeCleanTitle(item.name);
-            if (!this.isGenericTitle(clean)) return clean;
+          const items = Array.isArray(data) ? data : [data];
+          for (const item of items) {
+            if (item && (item['@type'] === 'VideoObject' || item['@type'] === 'Movie' || item['@type'] === 'TVEpisode' || item['@type'] === 'TVSeries')) {
+              let name = item.name;
+              if (name && typeof name === 'string') {
+                const year = item.datePublished || item.dateCreated || item.releaseYear;
+                let yearStr = '';
+                if (year) {
+                  const yMatch = String(year).match(/\b(19\d\d|20\d\d)\b/);
+                  if (yMatch) yearStr = ` (${yMatch[1]})`;
+                }
+                let clean = this.sanitizeCleanTitle(name);
+                if (yearStr && !clean.includes('(') && !clean.includes(yearStr.trim())) {
+                  clean += yearStr;
+                }
+                clean = tryAppendYear(clean);
+                if (!this.isGenericTitle(clean)) return clean;
+              }
+            }
           }
         } catch (e) {}
       }
@@ -422,9 +633,9 @@ class SmartDmUtils {
         'meta[name="title"]'
       ];
       for (const sel of metaTags) {
-        const el = document.querySelector(sel);
+        const el = typeof document !== 'undefined' ? document.querySelector(sel) : null;
         if (el && el.content) {
-          const clean = this.sanitizeCleanTitle(el.content);
+          const clean = tryAppendYear(this.sanitizeCleanTitle(el.content));
           if (!this.isGenericTitle(clean)) return clean;
         }
       }
@@ -463,11 +674,11 @@ class SmartDmUtils {
         '.userContent'
       ];
       for (const sel of headingSelectors) {
-        const el = document.querySelector(sel);
+        const el = typeof document !== 'undefined' ? document.querySelector(sel) : null;
         if (el) {
           const t = (el.textContent || '').trim();
           if (t && t.length >= 3) {
-            const clean = this.sanitizeCleanTitle(t);
+            let clean = tryAppendYear(this.sanitizeCleanTitle(t));
             if (!this.isGenericTitle(clean)) {
               return clean.length > 90 ? clean.substring(0, 90).trim() : clean;
             }
@@ -476,11 +687,11 @@ class SmartDmUtils {
       }
 
       // 4. Cleaned document.title / parent tab title
-      if (window.top !== window.self && window._smartdm_cached_tab_title && !this.isGenericTitle(window._smartdm_cached_tab_title)) {
-        return window._smartdm_cached_tab_title;
+      if (typeof window !== 'undefined' && window.top !== window.self && window._smartdm_cached_tab_title && !this.isGenericTitle(window._smartdm_cached_tab_title)) {
+        return tryAppendYear(window._smartdm_cached_tab_title);
       }
-      let rawTitle = document.title || '';
-      if (window.top !== window.self) {
+      let rawTitle = typeof document !== 'undefined' ? (document.title || '') : '';
+      if (typeof window !== 'undefined' && window.top !== window.self) {
         try {
           if (window.top.document && window.top.document.title) {
             rawTitle = window.top.document.title;
@@ -488,7 +699,7 @@ class SmartDmUtils {
         } catch (e) {}
       }
       if (rawTitle) {
-        const clean = this.sanitizeCleanTitle(rawTitle);
+        const clean = tryAppendYear(this.sanitizeCleanTitle(rawTitle));
         if (!this.isGenericTitle(clean)) return clean;
       }
     } catch(e) {}
@@ -497,6 +708,11 @@ class SmartDmUtils {
 
   static extractWatchPageTitle() {
     try {
+      const animeTitle = this.extractAnimeTitle();
+      if (animeTitle && !this.isGenericTitle(animeTitle)) {
+        return animeTitle;
+      }
+
       if (typeof window !== 'undefined' && window.location?.hostname?.includes('music.youtube.com')) {
         if (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractYouTubeMusicTrackMetadata) {
           const meta = VisualMountDetector.extractYouTubeMusicTrackMetadata();

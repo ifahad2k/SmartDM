@@ -254,4 +254,145 @@ for (const browser of ['chrome', 'firefox']) {
     vm.runInContext(overlaySource, animeContext);
     assert.equal(animeInitCalled, true, 'Legitimate anime player iframe must run coordinator and initialize MediaWatcher');
   });
+
+  test(`${browser} 5 anime sites resolution, title extraction, referer mapping, and player container mounting`, () => {
+    const utilsSource = fs.readFileSync(path.join(__dirname, '..', '..', 'extensions', browser, 'modules', 'utils.js'), 'utf8');
+    const watcherSource = fs.readFileSync(path.join(__dirname, '..', '..', 'extensions', browser, 'modules', 'watcher.js'), 'utf8');
+    const visualMountSource = fs.readFileSync(path.join(__dirname, '..', '..', 'extensions', browser, 'modules', 'visual_mount.js'), 'utf8');
+    const backgroundSource = fs.readFileSync(path.join(__dirname, '..', '..', 'extensions', browser, 'background.js'), 'utf8');
+
+    const context = vm.createContext({
+      document: { querySelector() {}, querySelectorAll() { return []; } },
+      window: { location: {} },
+      URLSearchParams,
+      URL,
+      Set,
+      Map,
+      setTimeout,
+      clearTimeout
+    });
+    vm.runInContext(`${utilsSource}\nthis.SmartDmUtils = SmartDmUtils;`, context);
+    vm.runInContext(`${visualMountSource}\nthis.VisualMountDetector = VisualMountDetector;`, context);
+    vm.runInContext(`${watcherSource}\nthis.MediaWatcher = MediaWatcher;`, context);
+
+    const utils = context.SmartDmUtils;
+    const watcher = context.MediaWatcher;
+
+    // Site 1: miruro.to
+    // Tests: extractAnimeTitle with slug and episode title, and verify generic title rejection for 'strm' and 'strm.mp4'
+    const miruroDoc = {
+      querySelector(selector) {
+        if (selector === '.theatre-info h1' || selector === 'h1.title') {
+          return { textContent: 'Kuroneko to Majo no Kyoushitsu' };
+        }
+        if (selector === '.ep-item.active' || selector === '.theatre-info h2') {
+          return { textContent: '24. The Forbidden Date' };
+        }
+        return null;
+      }
+    };
+    const miruroLoc = {
+      pathname: '/watch/xDSVeTuU_-NWU4T8zLEj9EninGLrZ1k/kuroneko-to-majo-no-kyoushitsu',
+      search: '?ep=24'
+    };
+    const miruroTitle = utils.extractAnimeTitle(miruroDoc, miruroLoc);
+    assert.equal(miruroTitle, 'Kuroneko to Majo no Kyoushitsu - EP 24 - The Forbidden Date');
+    assert.equal(utils.isGenericTitle('strm'), true);
+    assert.equal(utils.isGenericTitle('strm.mp4'), true);
+    assert.equal(utils.isGenericTitle(miruroTitle), false);
+
+    // Site 2: anime.nexus
+    // Tests: SEO title sanitization and CDN referer default
+    const rawNexusTitle = 'Black Clover Season 2 Episode 1 - The Battle Begins - AnimeNexus';
+    const cleanNexus = utils.sanitizeCleanTitle(rawNexusTitle);
+    assert.equal(cleanNexus, 'Black Clover Season 2 Episode 1 - The Battle Begins');
+
+    // Site 3: animesuge.tv
+    // Tests: Title sanitization and iframe player detection for megap.shiora.top
+    const rawSugeTitle = 'Isekai Office Worker Episode 1 English Subbed at AnimeSuge';
+    const cleanSuge = utils.sanitizeCleanTitle(rawSugeTitle);
+    assert.equal(cleanSuge, 'Isekai Office Worker Episode 1');
+    const shioraIframe = {
+      tagName: 'IFRAME',
+      src: 'https://megap.shiora.top/hls/stream.m3u8',
+      getAttribute(attr) { return attr === 'src' ? this.src : null; }
+    };
+    assert.equal(watcher.isPlayerIframe(shioraIframe), true);
+
+    // Site 4: animepahe.pw
+    // Tests: Title sanitization and iframe player detection for kwik.cx / owocdn.top
+    const rawPaheTitle = 'Kimetsu no Yaiba Episode 1 English Subbed - AnimePahe';
+    const cleanPahe = utils.sanitizeCleanTitle(rawPaheTitle);
+    assert.equal(cleanPahe, 'Kimetsu no Yaiba Episode 1');
+    const kwikIframe = {
+      tagName: 'IFRAME',
+      src: 'https://kwik.cx/e/12345',
+      getAttribute(attr) { return attr === 'src' ? this.src : null; }
+    };
+    const owocdnIframe = {
+      tagName: 'IFRAME',
+      src: 'https://vault-99.owocdn.top/video/ep1.mp4',
+      getAttribute(attr) { return attr === 'src' ? this.src : null; }
+    };
+    assert.equal(watcher.isPlayerIframe(kwikIframe), true);
+    assert.equal(watcher.isPlayerIframe(owocdnIframe), true);
+
+    // Site 5: anizone.to
+    // Tests: Player container detection and mounting
+    const anizoneDoc = {
+      querySelector(selector) {
+        if (selector === 'h1' || selector === 'h1.title') return { textContent: 'Cyberpunk: Edgerunners II' };
+        return null;
+      }
+    };
+    const anizoneLoc = {
+      pathname: '/anime/siuvpqmq/1',
+      search: ''
+    };
+    const anizoneTitle = utils.extractAnimeTitle(anizoneDoc, anizoneLoc);
+    assert.equal(anizoneTitle, 'Cyberpunk_ Edgerunners II - EP 1');
+
+    const anizonePlayerIframe = {
+      tagName: 'IFRAME',
+      className: 'player-container',
+      id: 'player',
+      src: 'https://anizone.to/embed/vplayer',
+      matches(selector) {
+        return selector.includes('.player-container') || selector.includes('#player');
+      },
+      closest() { return null; },
+      getAttribute(attr) { return attr === 'src' ? this.src : null; },
+      getBoundingClientRect() { return { width: 900, height: 500, top: 100, bottom: 600, left: 100, right: 1000 }; }
+    };
+    assert.equal(watcher.isPlayerIframe(anizonePlayerIframe), true);
+
+    // Background.js functions verification (getAnimeCdnDefaultReferer & isGenericTitle)
+    const bgContext = vm.createContext({
+      chrome: { tabs: { onRemoved: { addListener() {} } } },
+      browser: { tabs: { onRemoved: { addListener() {} } } },
+      Set,
+      Map
+    });
+    vm.runInContext(
+      `${backgroundSource.substring(backgroundSource.indexOf('function isOpaqueTokenOrHash'), backgroundSource.indexOf('function sanitizeStreamUrl'))}\n` +
+      `${backgroundSource.substring(backgroundSource.indexOf('function getAnimeCdnDefaultReferer'), backgroundSource.indexOf('async function appendCookiesAndSend'))}\n` +
+      `${backgroundSource.substring(backgroundSource.indexOf('function isGenericTitle'), backgroundSource.indexOf('async function fetchPageMediaFormats'))}\n` +
+      `this.getAnimeCdnDefaultReferer = getAnimeCdnDefaultReferer;\n` +
+      `this.isGenericTitle = isGenericTitle;`,
+      bgContext
+    );
+
+    assert.equal(bgContext.getAnimeCdnDefaultReferer('https://clearhoney.sunwaveclear.top/m/strm.m3u8', 'https://miruro.to/watch/123'), 'https://miruro.to/watch/123');
+    assert.equal(bgContext.getAnimeCdnDefaultReferer('https://clearhoney.sunwaveclear.top/m/strm.m3u8', null), 'https://miruro.to/');
+    assert.equal(bgContext.getAnimeCdnDefaultReferer('https://api.anime.nexus/hls/ep1.m3u8', null), 'https://anime.nexus/');
+    assert.equal(bgContext.getAnimeCdnDefaultReferer('https://megap.shiora.top/hls/ep1.m3u8', 'https://animesuge.tv/anime/test'), 'https://animesuge.tv/anime/test');
+    assert.equal(bgContext.getAnimeCdnDefaultReferer('https://vault-99.owocdn.top/video.mp4', 'https://kwik.cx/e/123'), 'https://kwik.cx/e/123');
+    assert.equal(bgContext.getAnimeCdnDefaultReferer('https://anizone.to/embed/player', null), 'https://anizone.to/');
+
+    assert.equal(bgContext.isGenericTitle('strm'), true);
+    assert.equal(bgContext.isGenericTitle('strm.mp4'), true);
+    assert.equal(bgContext.isGenericTitle('video.mp4'), true);
+    assert.equal(bgContext.isGenericTitle('master.m3u8'), true);
+    assert.equal(bgContext.isGenericTitle('Kuroneko to Majo no Kyoushitsu - EP 24 - The Forbidden Date'), false);
+  });
 }

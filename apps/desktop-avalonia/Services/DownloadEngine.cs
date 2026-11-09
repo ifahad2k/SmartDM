@@ -681,8 +681,8 @@ public class DownloadEngine : IDownloadEngine
             if (download.TotalBytes <= 0)
             {
                 long bw = source.Bandwidth > 0 ? source.Bandwidth : download.Bandwidth;
-                int h = HlsMediaResolver.ExtractResolutionNumber(download.FormatId);
-                if (h <= 0) h = HlsMediaResolver.ExtractResolutionNumber(download.Title);
+                int h = HlsMediaResolver.ExtractResolutionNumber(download.FormatId ?? "");
+                if (h <= 0) h = HlsMediaResolver.ExtractResolutionNumber(download.Title ?? "");
                 long expected = HlsMediaResolver.CalculateExpectedTotalBytes(source.TotalDuration, bw, h, source.SegmentCount);
                 if (expected > 0) download.TotalBytes = expected;
             }
@@ -727,7 +727,10 @@ public class DownloadEngine : IDownloadEngine
         }
 
         // Determine segments
-        int threadCount = Math.Clamp(download.ParallelThreads > 0 ? download.ParallelThreads : 16, 1, 32);
+        bool isStreamingHost = IsStreamingCdn(download.Url, download.MediaKind);
+        int defaultThreads = isStreamingHost ? 4 : 16;
+        int maxThreads = isStreamingHost ? 6 : 32;
+        int threadCount = Math.Clamp(download.ParallelThreads > 0 ? (isStreamingHost ? Math.Min(download.ParallelThreads, 6) : download.ParallelThreads) : defaultThreads, 1, maxThreads);
         long totalBytes = download.TotalBytes;
 
         // Check for cached segments in memory or from durable journal on disk
@@ -827,7 +830,7 @@ public class DownloadEngine : IDownloadEngine
                 {
                     var seg = cachedSegs[i];
                     long initialDownloaded = Math.Clamp(seg.DownloadedBytes, 0, seg.EndByte >= 0 ? seg.EndByte - seg.StartByte + 1 : seg.DownloadedBytes);
-                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, seg.SegmentIndex, seg.StartByte, seg.EndByte, initialDownloaded, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag);
+                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, seg.SegmentIndex, seg.StartByte, seg.EndByte, initialDownloaded, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
                     worker.Progress.CheckpointSha256 = seg.CheckpointSha256;
                     session.Workers.Add(worker);
                 }
@@ -846,7 +849,7 @@ public class DownloadEngine : IDownloadEngine
                 {
                     long start = currentOffset;
                     long end = (i == threadCount - 1) ? totalBytes - 1 : (currentOffset + chunkSize - 1);
-                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, i + 1, start, end, 0, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag);
+                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, i + 1, start, end, 0, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
                     session.Workers.Add(worker);
                     currentOffset = end + 1;
                 }
@@ -855,7 +858,7 @@ public class DownloadEngine : IDownloadEngine
         else
         {
             long initialDownloaded = (cachedSegs != null && cachedSegs.Count > 0) ? cachedSegs[0].DownloadedBytes : 0;
-            var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, 1, 0, -1, initialDownloaded, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag);
+            var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, 1, 0, -1, initialDownloaded, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
             session.Workers.Add(worker);
         }
 
@@ -2176,7 +2179,57 @@ public class DownloadEngine : IDownloadEngine
             }
         }
 
-        // 4b. Known embed hosts and anime video streaming providers
+        // 4b. Specific Movie CDN to embedder/page mappings
+        if (targetUrl.Contains("stellarconductornexus.com", StringComparison.OrdinalIgnoreCase) ||
+            targetUrl.Contains("stellar", StringComparison.OrdinalIgnoreCase) ||
+            (pageUrl != null && pageUrl.Contains("hydrahd", StringComparison.OrdinalIgnoreCase)) ||
+            (primaryReferer != null && primaryReferer.Contains("hydrahd", StringComparison.OrdinalIgnoreCase)))
+        {
+            Add("https://hydrahd.gd/");
+            Add("https://hydrahd.com/");
+            Add("https://hydrahd.net/");
+            Add("https://stellarconductornexus.com/");
+        }
+        if (targetUrl.Contains("goldenkite.top", StringComparison.OrdinalIgnoreCase) ||
+            (pageUrl != null && (pageUrl.Contains("ramoflix", StringComparison.OrdinalIgnoreCase) || pageUrl.Contains("111movies", StringComparison.OrdinalIgnoreCase))) ||
+            (primaryReferer != null && (primaryReferer.Contains("ramoflix", StringComparison.OrdinalIgnoreCase) || primaryReferer.Contains("111movies", StringComparison.OrdinalIgnoreCase))))
+        {
+            Add("https://ramoflix.net/");
+            Add("https://111movies.com/");
+            Add("https://111movies.net/");
+            Add("https://moon.goldenkite.top/");
+            Add("https://goldenkite.top/");
+        }
+        if (targetUrl.Contains("jabroni.mov", StringComparison.OrdinalIgnoreCase) ||
+            (pageUrl != null && pageUrl.Contains("goojara", StringComparison.OrdinalIgnoreCase)) ||
+            (primaryReferer != null && primaryReferer.Contains("goojara", StringComparison.OrdinalIgnoreCase)))
+        {
+            Add("https://ww1.goojara.to/");
+            Add("https://goojara.to/");
+            Add("https://drw.jabroni.mov/");
+            Add("https://jabroni.mov/");
+        }
+        if (targetUrl.Contains("wmovies.nl", StringComparison.OrdinalIgnoreCase) ||
+            (pageUrl != null && pageUrl.Contains("wmovies", StringComparison.OrdinalIgnoreCase)) ||
+            (primaryReferer != null && primaryReferer.Contains("wmovies", StringComparison.OrdinalIgnoreCase)))
+        {
+            Add("https://wmovies.nl/");
+        }
+
+        // 4c. Known embed hosts and streaming video providers
+        Add("https://jabroni.mov/");
+        Add("https://drw.jabroni.mov/");
+        Add("https://goldenkite.top/");
+        Add("https://moon.goldenkite.top/");
+        Add("https://stellarconductornexus.com/");
+        Add("https://shiora.top/");
+        Add("https://owocdn.top/");
+        Add("https://111movies.com/");
+        Add("https://111movies.net/");
+        Add("https://goojara.to/");
+        Add("https://hydrahd.gd/");
+        Add("https://ramoflix.net/");
+        Add("https://wmovies.nl/");
         Add("https://megacloud.tv/");
         Add("https://rapid-cloud.ru/");
         Add("https://rabbitstream.net/");
@@ -2185,6 +2238,37 @@ public class DownloadEngine : IDownloadEngine
         Add("https://streamtape.com/");
         Add("https://aniwave.gr/");
         Add("https://hianime.to/");
+        Add("https://vidsrc.stream/");
+        Add("https://2embed.stream/");
+
+        // 4c. Anime specific CDN to embedder/page mappings
+        if (targetUrl.Contains("owocdn.top", StringComparison.OrdinalIgnoreCase))
+        {
+            Add("https://kwik.cx/");
+            Add("https://animepahe.pw/");
+            Add("https://animepahe.org/");
+            Add("https://animepahe.ru/");
+            Add("https://animepahe.com/");
+        }
+        if (targetUrl.Contains("shiora.top", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("megap", StringComparison.OrdinalIgnoreCase))
+        {
+            Add("https://animesuge.tv/");
+            Add("https://megaplay.buzz/");
+            Add("https://megacloud.tv/");
+        }
+        if (targetUrl.Contains("sunwave", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("sunwaveclear.top", StringComparison.OrdinalIgnoreCase))
+        {
+            Add("https://miruro.to/");
+            Add("https://miruro.online/");
+        }
+        if (targetUrl.Contains("nexus", StringComparison.OrdinalIgnoreCase) || (pageUrl != null && pageUrl.Contains("nexus", StringComparison.OrdinalIgnoreCase)))
+        {
+            Add("https://anime.nexus/");
+        }
+        if (targetUrl.Contains("anizone", StringComparison.OrdinalIgnoreCase) || (pageUrl != null && pageUrl.Contains("anizone", StringComparison.OrdinalIgnoreCase)))
+        {
+            Add("https://anizone.to/");
+        }
 
         // 5. Blank / empty (no referer / anti-hotlink bypass)
         if (!seen.Contains(""))
@@ -2193,6 +2277,66 @@ public class DownloadEngine : IDownloadEngine
         }
 
         return list;
+    }
+
+    public static bool IsStreamingCdn(string? url, string? mediaKind = null)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (string.Equals(mediaKind, "hls", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(mediaKind, "dash", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string lower = url.ToLowerInvariant();
+        if (lower.Contains(".m3u8") || lower.Contains(".mpd")) return true;
+
+        string[] cdnIndicators = new string[]
+        {
+            "goldenkite.top", "stellarconductornexus.com", "jabroni.mov", "shiora.top", "owocdn.top",
+            "shioricdn.top", "streamtape.com", "rabbitstream.net", "megacloud.tv", "rapid-cloud.ru",
+            "vidsrc", "2embed", "autoembed", "superembed", "streamembed", "filemoon", "dood",
+            "mixdrop", "streamwish", "mp4upload", "upstream", "vidcloud", "akamaized.net", "byteoversea.com",
+            "111movies", "wmovies", "ramoflix", "hydrahd", "goojara", "sunwaveclear.top", "sunwave",
+            "anime.nexus", "kwik.cx", "anizone"
+        };
+
+        foreach (var cdn in cdnIndicators)
+        {
+            if (lower.Contains(cdn)) return true;
+        }
+
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            string host = uri.Host.ToLowerInvariant();
+            if (host.EndsWith(".top") || host.EndsWith(".mov") || host.EndsWith(".stream") || host.EndsWith(".buzz"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool IsHtmlResponse(string? contentType, string? bodyPrefix)
+    {
+        if (!string.IsNullOrEmpty(contentType) && contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (!string.IsNullOrEmpty(bodyPrefix))
+        {
+            string trimmed = bodyPrefix.TrimStart();
+            if (trimmed.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Contains("challenge-platform", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Contains("Just a moment...", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Contains("cf-browser-verification", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static string? FormatCookieHeader(string? cookieData, string? targetUrl)
@@ -2278,6 +2422,12 @@ public class DownloadEngine : IDownloadEngine
                 var candidateResp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
                 if (candidateResp.IsSuccessStatusCode)
                 {
+                    string? mediaType = candidateResp.Content.Headers.ContentType?.MediaType;
+                    if (mediaType != null && mediaType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+                    {
+                        candidateResp.Dispose();
+                        continue; // Skip HTML bot check/error pages
+                    }
                     resp = candidateResp;
                     effectiveWorkingReferer = candRef;
                     info.EffectiveReferer = candRef;
@@ -2287,6 +2437,17 @@ public class DownloadEngine : IDownloadEngine
                 {
                     candidateResp.Dispose();
                     continue; // Try next candidate referer
+                }
+                else if (candidateResp.StatusCode == (System.Net.HttpStatusCode)429)
+                {
+                    int delayMs = 1500;
+                    if (candidateResp.Headers.RetryAfter?.Delta.HasValue == true)
+                    {
+                        delayMs = (int)Math.Max(delayMs, candidateResp.Headers.RetryAfter.Delta.Value.TotalMilliseconds);
+                    }
+                    candidateResp.Dispose();
+                    await Task.Delay(Math.Min(delayMs, 5000), token);
+                    continue; // Wait and try next candidate or retry
                 }
                 else
                 {
@@ -2313,6 +2474,12 @@ public class DownloadEngine : IDownloadEngine
                 }
 
                 string content = await ReadManifestAsync(resp.Content, token);
+                if (IsHtmlResponse(resp.Content.Headers.ContentType?.MediaType, content))
+                {
+                    info.ErrorMessage = "Stream CDN returned a bot verification or challenge page (HTML) instead of a video manifest. The stream requires browser verification or the access token has expired.";
+                    return info;
+                }
+
                 if (string.IsNullOrWhiteSpace(content) || !content.Contains("#EXTM3U"))
                 {
                     info.ErrorMessage = "Invalid stream manifest: response is not a valid HLS playlist";
@@ -2533,6 +2700,19 @@ public class DownloadEngine : IDownloadEngine
 
         if (playlistInfo == null || !string.IsNullOrEmpty(playlistInfo.ErrorMessage))
         {
+            if (capturedPlaylist == null && playlistInfo?.ErrorMessage != null &&
+                (playlistInfo.ErrorMessage.Contains("bot verification", StringComparison.OrdinalIgnoreCase) ||
+                 playlistInfo.ErrorMessage.Contains("challenge page", StringComparison.OrdinalIgnoreCase)))
+            {
+                dl.Status = DownloadStatus.Failed;
+                dl.SpeedMbps = 0;
+                dl.StatusDetail = playlistInfo.ErrorMessage;
+                dl.Subline = "Failed • Bot Check / Challenge Page Detected";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
+                return;
+            }
+
             Debug.WriteLine($"[DownloadEngine] ParseHlsPlaylistAsync could not parse playlist ({playlistInfo?.ErrorMessage}), delegating to FFmpeg native pipeline.");
             if (capturedPlaylist != null)
             {
@@ -2639,7 +2819,10 @@ public class DownloadEngine : IDownloadEngine
             segmentEncryption.AddRange(audioInfo.SegmentEncryption);
         }
         int totalSegments = segmentUrls.Count;
-        int threadCount = Math.Clamp(dl.ParallelThreads > 0 ? dl.ParallelThreads : 8, 1, 32);
+        bool isStreamingHost = IsStreamingCdn(dl.Url, dl.MediaKind) || (segmentUrls.Count > 0 && IsStreamingCdn(segmentUrls[0], dl.MediaKind));
+        int defaultThreads = isStreamingHost ? 4 : 8;
+        int maxThreads = isStreamingHost ? 6 : 32;
+        int threadCount = Math.Clamp(dl.ParallelThreads > 0 ? (isStreamingHost ? Math.Min(dl.ParallelThreads, 6) : dl.ParallelThreads) : defaultThreads, 1, maxThreads);
         threadCount = Math.Max(1, Math.Min(threadCount, totalSegments));
         dl.ParallelThreads = threadCount;
 
@@ -2664,7 +2847,8 @@ public class DownloadEngine : IDownloadEngine
                     testReq.Headers.TryAddWithoutValidation("Accept", "*/*");
                     using var testCts = new CancellationTokenSource(4000);
                     using var testResp = await _httpClient.SendAsync(testReq, HttpCompletionOption.ResponseHeadersRead, testCts.Token);
-                    if (testResp.IsSuccessStatusCode || testResp.StatusCode == System.Net.HttpStatusCode.PartialContent)
+                    if ((testResp.IsSuccessStatusCode || testResp.StatusCode == System.Net.HttpStatusCode.PartialContent) &&
+                        !IsHtmlResponse(testResp.Content.Headers.ContentType?.MediaType, null))
                     {
                         segmentAccessible = true;
                         referer = cand;
@@ -2716,7 +2900,8 @@ public class DownloadEngine : IDownloadEngine
                                 cReq.Headers.TryAddWithoutValidation("Accept", "*/*");
                                 using var cCts = new CancellationTokenSource(4000);
                                 using var cResp = await _httpClient.SendAsync(cReq, HttpCompletionOption.ResponseHeadersRead, cCts.Token);
-                                if (cResp.IsSuccessStatusCode || cResp.StatusCode == System.Net.HttpStatusCode.PartialContent)
+                                if ((cResp.IsSuccessStatusCode || cResp.StatusCode == System.Net.HttpStatusCode.PartialContent) &&
+                                    !IsHtmlResponse(cResp.Content.Headers.ContentType?.MediaType, null))
                                 {
                                     Debug.WriteLine($"[DownloadEngine] Auto-failover: switched from blocked stream to working variant ({variant.Resolution}) -> {variant.DirectUrl}");
                                     dl.Url = variant.DirectUrl;
@@ -2811,7 +2996,8 @@ public class DownloadEngine : IDownloadEngine
                 referer: referer,
                 userAgent: uaString,
                 cookies: cookieHeader,
-                speedLimiter: _speedLimiter);
+                speedLimiter: _speedLimiter,
+                pageUrl: dl.PageUrl);
             session.Workers.Add(worker);
         }
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
@@ -2967,9 +3153,18 @@ public class DownloadEngine : IDownloadEngine
             if (!allChunksPresent || hasFatalError)
             {
                 Debug.WriteLine("[DownloadEngine] Direct parallel HLS download encountered segment errors. Falling back to native FFmpeg stream engine...");
-                dl.StatusDetail = "Parallel stream throttled; switching to native FFmpeg engine...";
+                bool isThrottled = (fatalSegmentError != null && fatalSegmentError.Contains("429")) || session.Workers.Any(w => w.LastError != null && w.LastError.Contains("429"));
+                dl.StatusDetail = isThrottled
+                    ? "Parallel stream throttled (HTTP 429); cooling down before switching to native stream engine..."
+                    : "Parallel stream throttled; switching to native FFmpeg engine...";
                 dl.SpeedMbps = 0;
                 DownloadProgressChanged?.Invoke(dl);
+
+                if (isThrottled && !token.IsCancellationRequested)
+                {
+                    // Allow CDN rate-limit burst bucket to drain before starting FFmpeg
+                    try { await Task.Delay(2500, token); } catch (OperationCanceledException) { return; }
+                }
 
                 // Seamlessly fall back to native FFmpeg stream session
                 session.Workers.Clear();
@@ -3175,10 +3370,58 @@ public class DownloadEngine : IDownloadEngine
                 using var pResp = await _httpClient.SendAsync(pReq, HttpCompletionOption.ResponseHeadersRead, pCts.Token);
                 if (pResp.IsSuccessStatusCode)
                 {
+                    string? mediaType = pResp.Content.Headers.ContentType?.MediaType;
+                    if (mediaType != null && mediaType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
                     referer = cand;
                     dl.Referer = cand;
                     session.Download.Referer = cand;
                     break;
+                }
+            }
+            catch { }
+        }
+
+        if (capturedInput == null)
+        {
+            try
+            {
+                using var preflightReq = HttpTransferRequest.Create(HttpMethod.Get, dl.Url);
+                if (!string.IsNullOrEmpty(referer))
+                {
+                    preflightReq.Headers.TryAddWithoutValidation("Referer", referer);
+                    try { preflightReq.Headers.TryAddWithoutValidation("Origin", new Uri(referer).GetLeftPart(UriPartial.Authority)); } catch { }
+                }
+                if (!string.IsNullOrEmpty(uaString)) preflightReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
+                if (!string.IsNullOrEmpty(cookieHeader)) preflightReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                preflightReq.Headers.TryAddWithoutValidation("Accept", "*/*");
+                using var pfCts = new CancellationTokenSource(3500);
+                using var pfResp = await _httpClient.SendAsync(preflightReq, HttpCompletionOption.ResponseHeadersRead, pfCts.Token);
+                string? ct = pfResp.Content.Headers.ContentType?.MediaType;
+                if (ct != null && ct.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+                {
+                    string bodySample = "";
+                    try
+                    {
+                        var buffer = new byte[1024];
+                        using var s = await pfResp.Content.ReadAsStreamAsync(pfCts.Token);
+                        int read = await s.ReadAsync(buffer, 0, buffer.Length, pfCts.Token);
+                        bodySample = System.Text.Encoding.UTF8.GetString(buffer, 0, read);
+                    }
+                    catch { }
+
+                    if (IsHtmlResponse(ct, bodySample))
+                    {
+                        dl.Status = DownloadStatus.Failed;
+                        dl.SpeedMbps = 0;
+                        dl.StatusDetail = "Stream CDN returned a bot verification or challenge page (HTML) instead of media. Refresh the video page in your browser or try another stream server.";
+                        dl.Subline = "Failed • Bot Check / Challenge Page Detected";
+                        await _repository.SaveDownloadAsync(dl);
+                        DownloadStatusChanged?.Invoke(dl);
+                        return;
+                    }
                 }
             }
             catch { }
@@ -3251,6 +3494,14 @@ public class DownloadEngine : IDownloadEngine
             psi.ArgumentList.Add("-protocol_whitelist");
             psi.ArgumentList.Add("http,https,tcp,tls");
         }
+        psi.ArgumentList.Add("-reconnect");
+        psi.ArgumentList.Add("1");
+        psi.ArgumentList.Add("-reconnect_at_eof");
+        psi.ArgumentList.Add("1");
+        psi.ArgumentList.Add("-reconnect_streamed");
+        psi.ArgumentList.Add("1");
+        psi.ArgumentList.Add("-reconnect_delay_max");
+        psi.ArgumentList.Add("5");
         psi.ArgumentList.Add("-i");
         psi.ArgumentList.Add(capturedInput ?? dl.Url);
 
@@ -3275,6 +3526,14 @@ public class DownloadEngine : IDownloadEngine
                 psi.ArgumentList.Add("-protocol_whitelist");
                 psi.ArgumentList.Add("http,https,tcp,tls");
             }
+            psi.ArgumentList.Add("-reconnect");
+            psi.ArgumentList.Add("1");
+            psi.ArgumentList.Add("-reconnect_at_eof");
+            psi.ArgumentList.Add("1");
+            psi.ArgumentList.Add("-reconnect_streamed");
+            psi.ArgumentList.Add("1");
+            psi.ArgumentList.Add("-reconnect_delay_max");
+            psi.ArgumentList.Add("5");
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(capturedAudioInput ?? dl.AudioUrl);
             psi.ArgumentList.Add("-c:v");
@@ -3329,6 +3588,9 @@ public class DownloadEngine : IDownloadEngine
                     line.Contains("Server returned 4XX", StringComparison.OrdinalIgnoreCase) ||
                     line.Contains("Server returned 410", StringComparison.OrdinalIgnoreCase) ||
                     line.Contains("410 Gone", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Server returned 429", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("429 Too Many Requests", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase) ||
                     line.Contains("Error opening input", StringComparison.OrdinalIgnoreCase) ||
                     line.Contains("Invalid data found", StringComparison.OrdinalIgnoreCase))
                 {
@@ -3526,6 +3788,11 @@ public class DownloadEngine : IDownloadEngine
                         lastError.Contains("410", StringComparison.OrdinalIgnoreCase))
                     {
                         friendlyError = "Stream link expired (HTTP 410 Gone). Please refresh the video page in your browser for a fresh link.";
+                    }
+                    else if (lastError.Contains("429", StringComparison.OrdinalIgnoreCase) ||
+                             lastError.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase))
+                    {
+                        friendlyError = "Server rate limited requests (HTTP 429 Too Many Requests). Concurrency reduced. Please wait a few seconds and try again.";
                     }
                     else if (lastError.Contains("403", StringComparison.OrdinalIgnoreCase))
                     {

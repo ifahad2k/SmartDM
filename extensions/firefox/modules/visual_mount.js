@@ -111,10 +111,10 @@ class VisualMountDetector {
   static isAnimeCatalogOrEpisode(el, urlStr = '') {
     try {
       const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname.toLowerCase() : '';
-      const isAnimeHost = /(?:anime|aniwave|9anime|hianime|zoro|gogoanime|animesaturn|animixplay|kissanime|kickassanime|allanime|aniwatch|kaido|miruro|yugenanime)/i.test(host);
+      const isAnimeHost = /(?:anime|aniwave|9anime|hianime|zoro|gogoanime|animesaturn|animixplay|kissanime|kickassanime|allanime|aniwatch|kaido|miruro|yugenanime|anizone|animepahe|animesuge|nexus)/i.test(host);
 
       const hasPlayerIframe = typeof document !== 'undefined' && !!document.querySelector?.(
-        'iframe[src*="stream"], iframe[src*="embed"], iframe[src*="player"], iframe[src*="megaplay"], iframe[src*="vidstream"], iframe[src*="mp4upload"], iframe[src*="cloud"], iframe[src*="tape"], #player, #player-wrapper'
+        'iframe[src*="stream"], iframe[src*="embed"], iframe[src*="player"], iframe[src*="megaplay"], iframe[src*="vidstream"], iframe[src*="mp4upload"], iframe[src*="cloud"], iframe[src*="tape"], iframe[src*="kwik"], iframe[src*="megap"], iframe[src*="sunwave"], iframe[src*="shiora"], iframe[src*="owocdn"], iframe[src*="anizone"], iframe[src*="vplayer"], iframe[src*="nexus"], #player, #vplayer, .player-container, #player-container, #player-wrapper, .player-box, #player-box, .play-box, #play-box'
       );
 
       const isAnimeContext = isAnimeHost || (hasPlayerIframe && typeof window !== 'undefined' && window.top === window.self);
@@ -219,7 +219,14 @@ class VisualMountDetector {
         return false;
       }
 
+      const videoLinkEl = cardContainer.querySelector?.(
+        'a#thumbnail[href], a#video-title[href], a#video-title-link[href], a[id*="thumbnail"][href], a[class*="thumbnail"][href], ' +
+        'a.yt-simple-endpoint[href*="watch?v="], a.yt-simple-endpoint[href*="/shorts/"], a.yt-simple-endpoint[href*="/live/"], ' +
+        'a[href*="watch?v="], a[href*="/shorts/"], a[href*="/live/"], a[href*="youtu.be/"], ' +
+        'a[href*="/video/BV"], a[href*="/view_video.php"], a[href*="/watch/"], a[href*="/video/"]'
+      );
       const href = (linkEl?.href || linkEl?.getAttribute?.('href') ||
+                    videoLinkEl?.href || videoLinkEl?.getAttribute?.('href') ||
                     cardContainer.getAttribute?.('href') || cardContainer.href ||
                     cardContainer.querySelector?.('a[href]')?.getAttribute?.('href') || '').toLowerCase().trim();
 
@@ -236,7 +243,7 @@ class VisualMountDetector {
       }
 
       if (host.includes('youtube.com') || host.includes('youtu.be')) {
-        if (!href.includes('watch?v=') && !href.includes('/shorts/') && !href.includes('youtu.be/')) {
+        if (!href.includes('watch?v=') && !href.includes('/shorts/') && !href.includes('/live/') && !href.includes('youtu.be/')) {
           return false;
         }
       }
@@ -252,7 +259,24 @@ class VisualMountDetector {
         '[class*="duration" i], [class*="time-status" i], var.duration, span.duration, .badge-shape, ytd-thumbnail-overlay-time-status-renderer'
       );
 
-      const isKnownThumbnailContainer = cardContainer.tagName === 'YTD-THUMBNAIL' ||
+      const isKnownYouTube = cardContainer.tagName === 'YTD-THUMBNAIL' ||
+        cardContainer.tagName === 'YT-THUMBNAIL-VIEW-MODEL' ||
+        cardContainer.tagName === 'YTD-RICH-ITEM-RENDERER' ||
+        cardContainer.tagName === 'YTD-VIDEO-RENDERER' ||
+        cardContainer.tagName === 'YTD-GRID-VIDEO-RENDERER' ||
+        cardContainer.tagName === 'YTD-COMPACT-VIDEO-RENDERER' ||
+        cardContainer.tagName === 'YTD-REEL-ITEM-RENDERER' ||
+        cardContainer.tagName === 'YTD-RICH-GRID-MEDIA' ||
+        cardContainer.tagName === 'YT-LOCKUP-VIEW-MODEL' ||
+        cardContainer.tagName === 'YTD-VIDEO-CARD-RENDERER' ||
+        cardContainer.tagName === 'YTD-PLAYLIST-VIDEO-RENDERER' ||
+        cardContainer.tagName === 'YTD-PLAYLIST-PANEL-VIDEO-RENDERER' ||
+        cardContainer.tagName === 'YTD-RICH-SECTION-RENDERER' ||
+        cardContainer.tagName === 'YTD-SHELF-RENDERER' ||
+        cardContainer.tagName === 'YTD-REEL-SHELF-RENDERER' ||
+        !!cardContainer.querySelector?.('ytd-thumbnail, yt-thumbnail-view-model, #thumbnail, a#thumbnail, a#video-title, a[href*="watch?v="], a[href*="/shorts/"], a[href*="/live/"]');
+
+      const isKnownThumbnailContainer = isKnownYouTube ||
         cardContainer.classList?.contains?.('phimage') ||
         cardContainer.classList?.contains?.('thumbnailWrapper') ||
         cardContainer.classList?.contains?.('bili-video-card') ||
@@ -315,6 +339,37 @@ class VisualMountDetector {
 
     if (cardContainer.tagName === 'IMG' || cardContainer.tagName === 'VIDEO') {
       return cardContainer.parentElement || cardContainer;
+    }
+
+    // Specialized YouTube mounts (accurate, direct, zero aspect-ratio ambiguity)
+    if (cardContainer.tagName === 'YTD-THUMBNAIL' || cardContainer.tagName === 'YT-THUMBNAIL-VIEW-MODEL') {
+      return cardContainer;
+    }
+    const isShortsCard = cardContainer.tagName === 'YTD-REEL-ITEM-RENDERER' ||
+      (cardContainer.getAttribute && cardContainer.getAttribute('is-shorts') !== null) ||
+      (cardContainer.classList && cardContainer.classList.contains('is-shorts')) ||
+      (cardContainer.querySelector && !!cardContainer.querySelector('a[href*="/shorts/"]'));
+    if (isShortsCard) {
+      const ytShortsLink = cardContainer.querySelector?.('a[href*="/shorts/"], a#thumbnail[href*="/shorts/"], a.yt-simple-endpoint[href*="/shorts/"]');
+      if (ytShortsLink && !this.isActionElement(ytShortsLink) && !this.isCategoryOrTagPill(ytShortsLink)) {
+        return ytShortsLink;
+      }
+      const ytReelThumb = cardContainer.querySelector?.('#thumbnail-container, [id*="thumbnail-container"], ytd-thumbnail, yt-thumbnail-view-model');
+      if (ytReelThumb && !this.isActionElement(ytReelThumb) && !this.isCategoryOrTagPill(ytReelThumb)) {
+        return ytReelThumb;
+      }
+    }
+    const ytThumb = cardContainer.querySelector?.('ytd-thumbnail, yt-thumbnail-view-model, [class*="thumbnail-view-model"]');
+    if (ytThumb && !this.isActionElement(ytThumb) && !this.isCategoryOrTagPill(ytThumb)) {
+      return ytThumb;
+    }
+    const ytReelThumb = cardContainer.querySelector?.('#thumbnail-container, [id*="thumbnail-container"], #thumbnail, a#thumbnail, [class*="content-image"]');
+    if (ytReelThumb && !this.isActionElement(ytReelThumb) && !this.isCategoryOrTagPill(ytReelThumb)) {
+      return ytReelThumb;
+    }
+    const ytShortsLink = cardContainer.querySelector?.('a[href*="/shorts/"]');
+    if (ytShortsLink && !this.isActionElement(ytShortsLink) && !this.isCategoryOrTagPill(ytShortsLink)) {
+      return ytShortsLink;
     }
 
     const mediaList = Array.from(
@@ -390,7 +445,7 @@ class VisualMountDetector {
       }
     }
 
-    if (cardContainer.tagName === 'YTD-THUMBNAIL' || cardContainer.classList?.contains?.('phimage') || cardContainer.classList?.contains?.('thumbnailWrapper')) {
+    if (cardContainer.tagName === 'YTD-THUMBNAIL' || cardContainer.tagName === 'YT-THUMBNAIL-VIEW-MODEL' || cardContainer.classList?.contains?.('phimage') || cardContainer.classList?.contains?.('thumbnailWrapper')) {
       return cardContainer;
     }
 

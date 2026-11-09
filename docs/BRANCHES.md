@@ -81,3 +81,21 @@ publication targets; Java main is unchanged.
 `tools/testing-desk` on sdm2.0. It changes no product runtime or Java track. See
 [testing handoff](implementation/TESTING_DESK_HANDOFF.md); branch publication is
 not part of this tooling change.
+
+2026-11-08: The shared thumbnail-button style repair changes only the two C#-track
+extension watcher copies and regression coverage. See
+[handoff](implementation/THUMBNAIL_STYLE_HANDOFF.md). Java main remains preserved.
+
+2026-11-08: YouTube menu prefetch and completed-result caching are local C#-track
+extension changes. Both browser copies are updated; no Java worktree or remote
+branch update is part of this task. See
+[handoff](implementation/YOUTUBE_MENU_PREFETCH_HANDOFF.md).
+
+2026-11-08 correction: the first prefetch implementation caused a reported
+YouTube regression. The local repair preserves selected-player fallback and
+aligns the UI deadline with the longer existing resolver route. See
+[live evidence](implementation/YOUTUBE_MENU_REGRESSION_HANDOFF.md). No branch
+publication or Java change was performed.
+
+2026-11-08 linked-thumbnail discovery repair is local to the C#-track extensions;
+no remote/Java change. See [handoff](implementation/LINKED_THUMBNAIL_HANDOFF.md).

@@ -252,6 +252,13 @@ class OverlayUiRenderer {
       }
     }
 
+    if (authoritativeTitle && typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeCleanTitle) {
+      const sanitized = SmartDmUtils.sanitizeCleanTitle(authoritativeTitle);
+      if (sanitized && !SmartDmUtils.isGenericTitle(sanitized)) {
+        authoritativeTitle = sanitized;
+      }
+    }
+
     const cleanBaseName = authoritativeTitle.replace(/\.[a-z0-9]+$/i, '').replace(/[\\/:*?""<>|]/g, '_').trim();
     const finalBaseTitle = cleanBaseName.length > 0 ? cleanBaseName : 'video';
 

@@ -18,6 +18,7 @@ public class SegmentWorker
     private string? _referer;
     private readonly string? _userAgent;
     private readonly string? _cookies;
+    private readonly string? _pageUrl;
     private readonly long _expectedTotalBytes;
     private readonly string? _expectedETag;
     public SegmentProgress Progress { get; }
@@ -40,7 +41,8 @@ public class SegmentWorker
         string? cookies = null,
         ISpeedLimiter? speedLimiter = null,
         long expectedTotalBytes = 0,
-        string? expectedETag = null)
+        string? expectedETag = null,
+        string? pageUrl = null)
     {
         _httpClient = httpClient;
         _url = DownloadEngine.SanitizeMediaUrl(url);
@@ -52,6 +54,7 @@ public class SegmentWorker
         }
         _userAgent = userAgent;
         _cookies = cookies;
+        _pageUrl = pageUrl;
         _expectedTotalBytes = expectedTotalBytes;
         _expectedETag = expectedETag;
         SpeedLimiter = speedLimiter;
@@ -84,71 +87,96 @@ public class SegmentWorker
 
         try
         {
-            using var req = HttpTransferRequest.Create(HttpMethod.Get, _url);
-            req.Headers.AcceptEncoding.ParseAdd("identity");
+            HttpResponseMessage? resp = null;
+            HttpRequestMessage? lastReq = null;
+            int retries429 = 0;
 
-            if (!string.IsNullOrEmpty(_referer))
+            while (retries429 <= 3)
             {
-                req.Headers.TryAddWithoutValidation("Referer", _referer);
-                try { req.Headers.TryAddWithoutValidation("Origin", new Uri(_referer).GetLeftPart(UriPartial.Authority)); } catch { }
-            }
-            if (!string.IsNullOrEmpty(_userAgent))
-            {
-                req.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-            }
-            if (!string.IsNullOrEmpty(_cookies))
-            {
-                req.Headers.TryAddWithoutValidation("Cookie", _cookies);
-            }
+                var req = HttpTransferRequest.Create(HttpMethod.Get, _url);
+                req.Headers.AcceptEncoding.ParseAdd("identity");
 
-            if (Progress.EndByte >= 0)
-            {
-                req.Headers.Range = new RangeHeaderValue(currentStart, Progress.EndByte);
-            }
-            else if (currentStart > 0)
-            {
-                req.Headers.Range = new RangeHeaderValue(currentStart, null);
-            }
-            if (req.Headers.Range != null &&
-                EntityTagHeaderValue.TryParse(_expectedETag, out var entityTag) && !entityTag.IsWeak)
-            {
-                req.Headers.IfRange = new RangeConditionHeaderValue(entityTag);
-            }
-
-            var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!resp.IsSuccessStatusCode &&
-                (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized))
-            {
-                resp.Dispose();
-                var candidates = DownloadEngine.GetCandidateReferers(_url, _referer);
-                foreach (var cand in candidates)
+                if (!string.IsNullOrEmpty(_referer))
                 {
-                    if (string.Equals(cand, _referer, StringComparison.OrdinalIgnoreCase)) continue;
-                    using var candReq = HttpTransferRequest.Create(HttpMethod.Get, _url);
-
-                    if (req.Headers.Range != null) candReq.Headers.Range = req.Headers.Range;
-                    if (req.Headers.IfRange != null) candReq.Headers.IfRange = req.Headers.IfRange;
-                    if (!string.IsNullOrEmpty(cand))
-                    {
-                        candReq.Headers.TryAddWithoutValidation("Referer", cand);
-                        try { candReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
-                    }
-                    if (!string.IsNullOrEmpty(_userAgent)) candReq.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-                    if (!string.IsNullOrEmpty(_cookies)) candReq.Headers.TryAddWithoutValidation("Cookie", _cookies);
-                    candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
-
-                    var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                    if (candResp.IsSuccessStatusCode)
-                    {
-                        resp = candResp;
-                        _referer = cand;
-                        break;
-                    }
-                    candResp.Dispose();
+                    req.Headers.TryAddWithoutValidation("Referer", _referer);
+                    try { req.Headers.TryAddWithoutValidation("Origin", new Uri(_referer).GetLeftPart(UriPartial.Authority)); } catch { }
                 }
+                if (!string.IsNullOrEmpty(_userAgent))
+                {
+                    req.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
+                }
+                if (!string.IsNullOrEmpty(_cookies))
+                {
+                    req.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                }
+
+                if (Progress.EndByte >= 0)
+                {
+                    req.Headers.Range = new RangeHeaderValue(currentStart, Progress.EndByte);
+                }
+                else if (currentStart > 0)
+                {
+                    req.Headers.Range = new RangeHeaderValue(currentStart, null);
+                }
+                if (req.Headers.Range != null &&
+                    EntityTagHeaderValue.TryParse(_expectedETag, out var entityTag) && !entityTag.IsWeak)
+                {
+                    req.Headers.IfRange = new RangeConditionHeaderValue(entityTag);
+                }
+
+                lastReq?.Dispose();
+                lastReq = req;
+
+                resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (!resp.IsSuccessStatusCode &&
+                    (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized || (int)resp.StatusCode == 429))
+                {
+                    var candidates = DownloadEngine.GetCandidateReferers(_url, _referer, _pageUrl);
+                    foreach (var cand in candidates)
+                    {
+                        if (string.Equals(cand, _referer, StringComparison.OrdinalIgnoreCase)) continue;
+                        using var candReq = HttpTransferRequest.Create(HttpMethod.Get, _url);
+
+                        if (req.Headers.Range != null) candReq.Headers.Range = req.Headers.Range;
+                        if (req.Headers.IfRange != null) candReq.Headers.IfRange = req.Headers.IfRange;
+                        if (!string.IsNullOrEmpty(cand))
+                        {
+                            candReq.Headers.TryAddWithoutValidation("Referer", cand);
+                            try { candReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
+                        }
+                        if (!string.IsNullOrEmpty(_userAgent)) candReq.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
+                        if (!string.IsNullOrEmpty(_cookies)) candReq.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                        candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
+
+                        var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                        if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
+                        {
+                            resp.Dispose();
+                            resp = candResp;
+                            _referer = cand;
+                            break;
+                        }
+                        candResp.Dispose();
+                    }
+                }
+                if ((int)resp.StatusCode == 429 && retries429 < 3)
+                {
+                    int delayMs = 1500 * (retries429 + 1);
+                    if (resp.Headers.RetryAfter?.Delta.HasValue == true)
+                    {
+                        delayMs = (int)Math.Max(delayMs, resp.Headers.RetryAfter.Delta.Value.TotalMilliseconds);
+                    }
+                    resp.Dispose();
+                    retries429++;
+                    await Task.Delay(Math.Min(delayMs, 8000), cancellationToken);
+                    continue;
+                }
+                break;
             }
-            using var _respScope = resp;
-            resp.EnsureSuccessStatusCode();
+
+            using var _reqScope = lastReq;
+            using var _respScope = resp!;
+            resp!.EnsureSuccessStatusCode();
 
             foreach (string encoding in resp.Content.Headers.ContentEncoding)
             {
@@ -159,7 +187,7 @@ public class SegmentWorker
                 resp.Headers.ETag is { } actualTag && !actualTag.Equals(expectedTag))
                 throw new HttpRequestException("Server resource validator changed before transfer.");
 
-            bool isFullBodyTransfer = req.Headers.Range == null;
+            bool isFullBodyTransfer = lastReq!.Headers.Range == null;
             if (isFullBodyTransfer)
             {
                 if (resp.StatusCode != System.Net.HttpStatusCode.OK)
@@ -356,11 +384,34 @@ public class SegmentWorker
                     req.Headers.Range = new RangeHeaderValue(chunk.StartByte, chunk.EndByte);
 
                     var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+                    // Automatic throttle down with exponential backoff on HTTP 429
+                    if (resp.StatusCode == (System.Net.HttpStatusCode)429)
+                    {
+                        int backoffDelayMs = Math.Min(1500 * (chunk.Retries + 1), 8000);
+                        if (resp.Headers.RetryAfter?.Delta.HasValue == true)
+                        {
+                            backoffDelayMs = (int)Math.Max(backoffDelayMs, resp.Headers.RetryAfter.Delta.Value.TotalMilliseconds);
+                        }
+                        resp.Dispose();
+                        chunk.Retries++;
+                        if (chunk.Retries <= 5)
+                        {
+                            await Task.Delay(Math.Min(backoffDelayMs, 8000), cancellationToken);
+                            queue.Enqueue(chunk);
+                            continue;
+                        }
+                        else
+                        {
+                            LastError = "Media stream throttled by server (HTTP 429). Please wait a moment and try again.";
+                            break;
+                        }
+                    }
+
                     if (!resp.IsSuccessStatusCode &&
                         (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized))
                     {
-                        resp.Dispose();
-                        var candidates = DownloadEngine.GetCandidateReferers(_url, _referer);
+                        var candidates = DownloadEngine.GetCandidateReferers(_url, _referer, _pageUrl);
                         foreach (var cand in candidates)
                         {
                             if (string.Equals(cand, _referer, StringComparison.OrdinalIgnoreCase)) continue;
@@ -377,8 +428,9 @@ public class SegmentWorker
                             candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                             var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                            if (candResp.IsSuccessStatusCode)
+                            if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
                             {
+                                resp.Dispose();
                                 resp = candResp;
                                 _referer = cand;
                                 break;
@@ -547,12 +599,35 @@ public class SegmentWorker
 
                     var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
 
+                    // Automatic throttle down with exponential backoff on HTTP 429
+                    if (resp.StatusCode == (System.Net.HttpStatusCode)429)
+                    {
+                        int backoffDelayMs = Math.Min(1500 * (chunk.Retries + 1), 8000);
+                        if (resp.Headers.RetryAfter?.Delta.HasValue == true)
+                        {
+                            backoffDelayMs = (int)Math.Max(backoffDelayMs, resp.Headers.RetryAfter.Delta.Value.TotalMilliseconds);
+                        }
+                        resp.Dispose();
+                        chunk.Retries++;
+                        if (chunk.Retries <= 5)
+                        {
+                            await Task.Delay(Math.Min(backoffDelayMs, 8000), cancellationToken);
+                            queue.Enqueue(chunk);
+                            continue;
+                        }
+                        else
+                        {
+                            LastError = "Media stream throttled by server (HTTP 429). Please wait a moment and try again.";
+                            onFatalError?.Invoke(LastError);
+                            break;
+                        }
+                    }
+
                     // Adaptive anti-hotlink fallback: If server returns 403 or 401, test candidate referers
                     if (!resp.IsSuccessStatusCode &&
                         (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized))
                     {
-                        resp.Dispose();
-                        var workerCandidates = DownloadEngine.GetCandidateReferers(chunk.Url, activeReferer, null);
+                        var workerCandidates = DownloadEngine.GetCandidateReferers(chunk.Url, activeReferer, _pageUrl);
 
                         foreach (var cand in workerCandidates)
                         {
@@ -568,7 +643,7 @@ public class SegmentWorker
                             candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                             var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
-                            if (candResp.IsSuccessStatusCode)
+                            if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
                             {
                                 resp = candResp;
                                 _referer = cand; // Update working referer for remaining chunks
@@ -585,6 +660,10 @@ public class SegmentWorker
                     using (resp)
                     {
                         resp.EnsureSuccessStatusCode();
+                        if (DownloadEngine.IsHtmlResponse(resp.Content.Headers.ContentType?.MediaType, null))
+                        {
+                            throw new HttpRequestException("Media stream segment returned HTML challenge page instead of video data.");
+                        }
 
                         long expectedLength = resp.Content.Headers.ContentLength ?? 4_500_000;
                         Progress.StartByte = 0;
@@ -656,10 +735,10 @@ public class SegmentWorker
 
                 if (!chunkSuccess && !cancellationToken.IsCancellationRequested)
                 {
-                    if (chunk.Retries < 2)
+                    if (chunk.Retries < 4)
                     {
                         chunk.Retries++;
-                        int backoffMs = Math.Min(1000, 100 * (1 << chunk.Retries));
+                        int backoffMs = Math.Min(1500, 150 * (1 << chunk.Retries));
                         await Task.Delay(backoffMs, cancellationToken);
                         queue.Enqueue(chunk);
                     }

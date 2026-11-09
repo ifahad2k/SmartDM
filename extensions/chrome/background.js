@@ -3,6 +3,7 @@ const detectedMediaMap = new Map(); // tabId -> Array<{ url, type, contentType, 
 const tabUrlMap = new Map(); // tabId -> url
 const tabTitleMap = new Map(); // tabId -> title
 const probedM3u8Urls = new Set(); // url -> boolean (prevents duplicate manifest probing loops)
+const ytBackgroundFormatCache = new Map(); // cacheKey -> { data, expiresAt }
 function shouldProbeM3u8(url) {
   if (!url || probedM3u8Urls.has(url)) return false;
   probedM3u8Urls.add(url);
@@ -1559,6 +1560,52 @@ function postToDesktopApp(request) {
   });
 }
 
+function getAnimeCdnDefaultReferer(url, pageUrl) {
+  if (!url) return null;
+  const lowerUrl = url.toLowerCase();
+  const lowerPage = (pageUrl || '').toLowerCase();
+  if (lowerUrl.includes('jabroni.mov') || lowerPage.includes('goojara.')) {
+    if (lowerPage.includes('goojara.')) return pageUrl;
+    return 'https://ww1.goojara.to/';
+  }
+  if (lowerUrl.includes('stellarconductornexus.com') || lowerPage.includes('hydrahd.')) {
+    if (lowerPage.includes('hydrahd.')) return pageUrl;
+    return 'https://hydrahd.gd/';
+  }
+  if (lowerUrl.includes('goldenkite.top') || lowerPage.includes('ramoflix.') || lowerPage.includes('111movies.')) {
+    if (lowerPage.includes('ramoflix.')) return pageUrl;
+    if (lowerPage.includes('111movies.')) return pageUrl;
+    return 'https://ramoflix.net/';
+  }
+  if (lowerUrl.includes('111movies.')) {
+    return 'https://111movies.net/';
+  }
+  if (lowerUrl.includes('wmovies.nl') || lowerPage.includes('wmovies.nl')) {
+    return 'https://wmovies.nl/';
+  }
+  if (lowerUrl.includes('owocdn.top')) {
+    if (lowerPage.includes('kwik.cx')) return pageUrl;
+    if (lowerPage.includes('animepahe.')) return pageUrl;
+    return 'https://kwik.cx/';
+  }
+  if (lowerUrl.includes('shiora.top') || lowerUrl.includes('megap.')) {
+    if (lowerPage.includes('animesuge.')) return pageUrl;
+    if (lowerPage.includes('megaplay.')) return pageUrl;
+    return 'https://animesuge.tv/';
+  }
+  if (lowerUrl.includes('sunwave') || lowerUrl.includes('sunwaveclear.top')) {
+    if (lowerPage.includes('miruro.')) return pageUrl;
+    return 'https://miruro.to/';
+  }
+  if (lowerUrl.includes('anime.nexus')) {
+    return 'https://anime.nexus/';
+  }
+  if (lowerUrl.includes('anizone') || lowerPage.includes('anizone')) {
+    return 'https://anizone.to/';
+  }
+  return null;
+}
+
 async function appendCookiesAndSend(request, sendResponse) {
   let targetUrl = request.url;
   if (!targetUrl && request.urls && request.urls.length > 0) {
@@ -1577,6 +1624,14 @@ async function appendCookiesAndSend(request, sendResponse) {
   }
   if (!request.userAgent) request.userAgent = navigator.userAgent;
   if (!request.referer) request.referer = request.pageUrl || null;
+  const animeRef = getAnimeCdnDefaultReferer(targetUrl, request.pageUrl || request.referer);
+  if (animeRef) {
+    if (!request.referer) {
+      request.referer = animeRef;
+    } else if (targetUrl?.includes('owocdn.top') && !request.referer.includes('kwik.cx') && !request.referer.includes('animepahe')) {
+      request.referer = animeRef;
+    }
+  }
   if (!request.origin && request.referer) {
     try { request.origin = new URL(request.referer).origin; } catch(e) {}
   }
@@ -1731,23 +1786,29 @@ async function appendCookiesAndSend(request, sendResponse) {
   // 1. Send directly to active SmartDM desktop app port (default 18420)
   const isFormatQuery = request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo' || request.type === 'RESOLVE_M3U8_VARIANTS';
   const tryPostToPort = async (port) => {
-    try {
-      const timeoutMs = isFormatQuery ? 15000 : 8000;
-      const reqController = new AbortController();
-      const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
-      const res = await fetch(`http://127.0.0.1:${port}/api/browser`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-        signal: reqController.signal
-      });
-      clearTimeout(reqTimer);
-      if (res.ok) {
-        cachedActivePort = port;
-        const data = await res.json();
-        return data || { success: true, status: 'ok' };
-      }
-    } catch (e) {}
+    const endpoints = [
+      `http://127.0.0.1:${port}/api/download`,
+      `http://127.0.0.1:${port}/api/browser`
+    ];
+    for (const ep of endpoints) {
+      try {
+        const timeoutMs = isFormatQuery ? 15000 : 8000;
+        const reqController = new AbortController();
+        const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
+        const res = await fetch(ep, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+          signal: reqController.signal
+        });
+        clearTimeout(reqTimer);
+        if (res.ok) {
+          cachedActivePort = port;
+          const data = await res.json();
+          return data || { success: true, status: 'ok' };
+        }
+      } catch (e) {}
+    }
     return null;
   };
 
@@ -1759,7 +1820,7 @@ async function appendCookiesAndSend(request, sendResponse) {
 
   // If cached port failed or wasn't set, scan remaining ports
   if (!postResult) {
-    const ports = [18420, 18421, 18422, 18423, 18424, 18425].filter(p => p !== cachedActivePort);
+    const ports = [18420, 9191, 18421, 18422, 18423, 18424, 18425].filter(p => p !== cachedActivePort);
     for (const p of ports) {
       postResult = await tryPostToPort(p);
       if (postResult) break;
@@ -1779,15 +1840,33 @@ async function appendCookiesAndSend(request, sendResponse) {
 
   // 2. Fallback to Native Messaging Host for download requests if desktop app was launched via browser host
   try {
-    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, async (response) => {
       if (chrome.runtime.lastError || !response || response.status === 'error') {
+        const retryPorts = [18420, 9191, 18421, 18422, 18423];
+        for (const p of retryPorts) {
+          const retryRes = await tryPostToPort(p);
+          if (retryRes) {
+            if (sendResponse) sendResponse(retryRes);
+            return;
+          }
+        }
         if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
       } else {
         if (sendResponse) sendResponse(response || { success: true, status: 'ok' });
       }
     });
   } catch (err) {
-    if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
+    (async () => {
+      const retryPorts = [18420, 9191, 18421, 18422, 18423];
+      for (const p of retryPorts) {
+        const retryRes = await tryPostToPort(p);
+        if (retryRes) {
+          if (sendResponse) sendResponse(retryRes);
+          return;
+        }
+      }
+      if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
+    })();
   }
 }
 
@@ -1899,16 +1978,22 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
         const combined = streamingData.formats || [];
         combined.forEach(f => {
           if (f.url && f.url.startsWith('http')) {
+            const height = f.height || (typeof extractResolutionNumber === 'function' ? extractResolutionNumber(f.qualityLabel || f.quality || '') : 360) || 360;
             formats.push({
               formatId: String(f.itag || ('fmt_' + formats.length)),
-              resolution: f.qualityLabel || f.quality || '360p',
+              resolution: f.qualityLabel || f.quality || `${height}p`,
+              height: height,
               ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
               formatNote: 'Direct Video + Audio',
               fileSize: parseInt(f.contentLength || 0, 10),
               fps: f.fps || 30,
               isAudioOnly: false,
+              isVideoOnly: false,
               title: title,
-              url: f.url
+              url: f.url,
+              directUrl: f.url,
+              videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+              assetId: `https://www.youtube.com/watch?v=${videoId}`
             });
           }
         });
@@ -1921,9 +2006,11 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
             const kbps = Math.round((f.bitrate || 0) / 1000);
             const videoSize = parseInt(f.contentLength || 0, 10);
             const totalSize = isVideo && defaultAudioSize > 0 ? videoSize + defaultAudioSize : videoSize;
+            const height = isVideo ? (f.height || (typeof extractResolutionNumber === 'function' ? extractResolutionNumber(f.qualityLabel || '') : 0) || 0) : 0;
             formats.push({
               formatId: String(f.itag || ('fmt_' + formats.length)),
-              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || (f.height ? f.height + 'p' : 'Video')),
+              resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || (height ? `${height}p` : 'Video')),
+              height: height,
               ext: mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
               formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
               fileSize: totalSize,
@@ -1933,7 +2020,10 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
               isVideoOnly: isVideo,
               title: title,
               url: f.url,
-              audioUrl: (!isAudio && defaultAudioUrl) ? defaultAudioUrl : null
+              directUrl: f.url,
+              audioUrl: (!isAudio && defaultAudioUrl) ? defaultAudioUrl : null,
+              videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+              assetId: `https://www.youtube.com/watch?v=${videoId}`
             });
           }
         });
@@ -1948,7 +2038,10 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
             fileSize: defaultAudioSize,
             isAudioOnly: true,
             title: title,
-            url: defaultAudioUrl
+            url: defaultAudioUrl,
+            directUrl: defaultAudioUrl,
+            videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+            assetId: `https://www.youtube.com/watch?v=${videoId}`
           });
 
           // Append HD Thumbnail option
@@ -1960,7 +2053,10 @@ async function fetchYouTubeFormatsInServiceWorker(videoUrl) {
             fileSize: 0,
             isAudioOnly: false,
             title: title,
-            url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+            url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+            directUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+            videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+            assetId: `https://www.youtube.com/watch?v=${videoId}`
           });
 
           return { success: true, status: 'ok', title: title, formats: formats };
@@ -2004,11 +2100,16 @@ function sanitizeCleanTitle(str) {
   if (!str || typeof str !== 'string') return '';
   let clean = str.replace(/^\(\d+\)\s*/, '').trim();
 
-  // Strip leading action verbs: Watch, Streaming, Play, Download, Free
-  clean = clean.replace(/^(?:watch|streaming|play|download|free)\s+/i, '').trim();
+  // Strip trailing video/audio extension if present
+  clean = clean.replace(/\.(?:mp4|mkv|webm|avi|mov|ts|m4v|mp3|m4a|aac|wav|flac)$/i, '').trim();
 
-  // Strip leading site brands (e.g. "67movies - ", "123movies | ")
-  clean = clean.replace(/^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies)\s*[\-\|\•\—:\s]\s*/i, '').trim();
+  // Strip leading action verbs: Watch, Streaming, Stream, Play, Download
+  clean = clean.replace(/^(?:watch|streaming|stream|play|download)\s+/i, '').trim();
+  // Only strip leading "Free" if followed by SEO verbs/words, preserving legitimate titles like "Free Guy"
+  clean = clean.replace(/^free\s+(?:watch|streaming|stream|download|movie|movies|hd|online|full)\s+/i, '').trim();
+
+  // Strip leading site brands (e.g. "67movies - ", "123movies | ", "ramoflix", "hydrahd", "goojara", "wmovies")
+  clean = clean.replace(/^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies|ramoflix(?:\.[a-z]+)?|hydrahd(?:\.[a-z]+)?|goojara(?:\.[a-z]+)?|wmovies(?:\.[a-z]+)?|miruro(?:\.[a-z]+)?|anime(?:\.|\s*)nexus|animesuge(?:\.[a-z]+)?|anizone(?:\.[a-z]+)?)\s*[\-\|\•\—:\s]\s*/i, '').trim();
 
   // Strip resolution brackets like [1080p], [720p], (1080p), [1080p HD], [Full HD]
   clean = clean.replace(/\[\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\]/gi, '').trim();
@@ -2041,11 +2142,6 @@ function sanitizeCleanTitle(str) {
 function isGenericTitle(t) {
   if (!t || typeof t !== 'string') return true;
   let clean = t.trim();
-  const hasExt = /\.(zip|rar|7z|tar|gz|bz2|xz|zst|iso|img|cab|exe|msi|apk|dmg|pkg|deb|rpm|appx|msix|appimage|torrent|pdf|epub|mobi|docx?|xlsx?|pptx?|txt|csv|tsv|rtf|odt|ods|odp|mp4|mkv|webm|avi|mov|wmv|flv|ts|mp3|flac|wav|aac|ogg|opus|m4a|wma|json|xml|whl|jar)$/i.test(clean);
-  if (hasExt) {
-    const stem = clean.replace(/\.[a-z0-9]+$/i, '').trim();
-    return !stem;
-  }
   clean = clean.replace(/\.[a-z0-9]+$/i, '').trim();
   clean = clean.replace(/^\(\d+\)\s*/, '').replace(/\s*\(\d+\)$/, '').trim().toLowerCase();
   if (!clean || clean.length < 2) return true;
@@ -2063,7 +2159,9 @@ function isGenericTitle(t) {
     'reels', 'reel', 'player', 'embed', 'kwik', 'megaplay', 'streamwish', 'vidcloud', 'upcloud',
     'mp4upload', 'filemoon', 'doodstream', 'streamtape', 'mixdrop', 'luluvdo', 'voe',
     'vidqueen', 'vidsrc', '2embed', 'autoembed', 'superembed', 'streamembed', 'rabbitstream', 'megacloud',
-    'watch', 'play', 'index', 'untitled', 'html5 player', 'video player', 'just now', 'now'
+    'watch', 'play', 'index', 'untitled', 'html5 player', 'video player', 'just now', 'now',
+    'strm', 'master', 'playlist', 'manifest', 'chunklist', 'media', 'main', 'track', 'segment', 'segment-0',
+    'video-0', 'stream-0', 'stream-1', 'init', 'audio', 'audio-0'
   ]);
   if (genericExact.has(clean)) return true;
 
@@ -2096,7 +2194,7 @@ function isGenericTitle(t) {
   }
 
   // Single word player tokens
-  if (/^(?:player|embed|iframe|video)[\s_-]*\d*$/i.test(clean)) return true;
+  if (/^(?:strm|stream|video|master|playlist|manifest|index|chunklist|seg|fragment|chunk|track|audio|play|player|embed|iframe)[_\-\d]*$/i.test(clean)) return true;
 
   return isOpaqueTokenOrHash(clean);
 }
@@ -2321,6 +2419,33 @@ async function fetchPageMediaFormats(pageUrl) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'UPDATE_TAB_TITLE' || request.type === 'SET_TAB_TITLE') {
+    const tabId = (sender && sender.tab) ? sender.tab.id : (request.tabId || lastActiveTabId);
+    if (tabId && request.title && !isGenericTitle(request.title)) {
+      tabTitleMap.set(tabId, request.title);
+      // Retroactively update existing detected media in this tab if their title was generic
+      const mediaList = detectedMediaMap.get(tabId);
+      if (Array.isArray(mediaList)) {
+        let updatedAny = false;
+        for (const item of mediaList) {
+          if (!item.title || isGenericTitle(item.title) || !item.customTitle || isGenericTitle(item.customTitle) || isGenericTitle(item.filename) || isGenericTitle(item.fileName)) {
+            item.title = request.title;
+            item.customTitle = request.title;
+            item.filename = `${sanitizeCleanTitle(request.title)}.mp4`;
+            item.fileName = `${sanitizeCleanTitle(request.title)}.mp4`;
+            updatedAny = true;
+          }
+        }
+        if (updatedAny) broadcastNewMedia(tabId, mediaList);
+      }
+    }
+    if (tabId && request.url) {
+      tabUrlMap.set(tabId, request.url);
+    }
+    sendResponse({ success: true });
+    return false;
+  }
+
   if (request.type === 'GET_DETECTED_MEDIA' || request.type === 'GET_TAB_MEDIA') {
     const tabId = request.tabId || (sender && sender.tab ? sender.tab.id : lastActiveTabId);
     if (request.currentUrl && tabId) {
@@ -2329,11 +2454,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     let media = tabId ? (detectedMediaMap.get(tabId) || []) : [];
     // Return newest media streams first so the currently active/played video is prioritized
     const sortedMedia = media.slice().reverse();
+    const storedTitle = tabId ? tabTitleMap.get(tabId) : null;
+    const tabTitle = (storedTitle && !isGenericTitle(storedTitle))
+      ? storedTitle
+      : ((sender && sender.tab && sender.tab.title) ? sender.tab.title : storedTitle);
     sendResponse({
       success: true,
       media: sortedMedia,
-      tabTitle: (sender.tab && sender.tab.title) ? sender.tab.title : (tabId ? tabTitleMap.get(tabId) : null),
-      tabUrl: tabId ? (tabUrlMap.get(tabId) || (sender.tab && sender.tab.url ? sender.tab.url : null)) : null
+      tabTitle: tabTitle,
+      tabUrl: tabId ? (tabUrlMap.get(tabId) || (sender && sender.tab && sender.tab.url ? sender.tab.url : null)) : null
     });
     return false;
   }
@@ -2353,22 +2482,52 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const isYouTube = url && (url.includes('youtube.com') || url.includes('youtu.be'));
 
     if (isYouTube) {
-      // Query SmartDM desktop app first (native YoutubeExplode + Innertube engine)
+      const vid = extractYouTubeVideoId(url);
+      const cacheKey = vid || url;
+      const cached = ytBackgroundFormatCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now() && cached.data?.formats?.length) {
+        sendResponse(cached.data);
+        return false;
+      }
+
+      let responded = false;
+      const sendFastResponse = (res) => {
+        if (responded) return;
+        if (res && (res.status === 'ok' || res.success) && Array.isArray(res.formats) && res.formats.length > 0) {
+          responded = true;
+          ytBackgroundFormatCache.set(cacheKey, { data: res, expiresAt: Date.now() + 120000 });
+          sendResponse(res);
+        }
+      };
+
+      // 1. Immediately launch service worker fetch (direct ~50-100ms Innertube ANDROID_VR client)
+      fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
+        if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
+          sendFastResponse(ytRes);
+        }
+      }).catch(() => {});
+
+      // 2. Concurrently query SmartDM desktop app (native YoutubeExplode + Innertube engine)
       appendCookiesAndSend({ type: 'GET_MEDIA_FORMATS', url: url }, (desktopRes) => {
         if (desktopRes && (desktopRes.status === 'ok' || desktopRes.success) && desktopRes.formats && desktopRes.formats.length > 0) {
-          sendResponse(desktopRes);
-        } else {
+          sendFastResponse(desktopRes);
+        } else if (!responded) {
           fetchYouTubeFormatsInServiceWorker(url).then(ytRes => {
             if (ytRes && ytRes.formats && ytRes.formats.length > 0) {
-              sendResponse(ytRes);
-            } else {
-              sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+              sendFastResponse(ytRes);
+            } else if (!responded) {
+              responded = true;
+              sendResponse(desktopRes || ytRes || { success: false, status: 'error', message: 'Could not extract YouTube formats.' });
             }
           }).catch(() => {
-            sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+            if (!responded) {
+              responded = true;
+              sendResponse(desktopRes || { success: false, status: 'error', message: 'Could not extract YouTube formats.' });
+            }
           });
         }
       });
+
       return true; // Async response for YouTube
     }
 
@@ -2393,7 +2552,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       } else {
         const directVideo = tabMedia.slice().reverse().find(m => m.url && (m.contentType?.includes('video/') || /\.(?:mp4|webm|mkv|mov)(?:[?#]|$)/i.test(m.url)));
         if (directVideo) {
-          const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+          const storedTitle = tabId ? tabTitleMap.get(tabId) : null;
+          const rawTabTitle = (storedTitle && !isGenericTitle(storedTitle))
+            ? storedTitle
+            : ((sender && sender.tab && sender.tab.title) || storedTitle);
           const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
           const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : (directVideo.customTitle || 'Video');
           const h = directVideo.height || extractResolutionNumber(directVideo.url, authoritativeTitle) || 0;
@@ -2539,7 +2701,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         let variants = text.includes('#EXT-X-STREAM-INF') ? parseM3u8Formats(text, effectiveBaseUrl) : [];
         const itemReferer = (cachedHeaders && cachedHeaders.referer) || tabUrl || null;
         const itemOrigin = (cachedHeaders && cachedHeaders.origin) || (itemReferer ? new URL(itemReferer).origin : null);
-        const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+        const storedTitle = tabId ? tabTitleMap.get(tabId) : null;
+        const rawTabTitle = (storedTitle && !isGenericTitle(storedTitle))
+          ? storedTitle
+          : ((sender && sender.tab && sender.tab.title) || storedTitle);
         const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
         const authoritativeTitle = (cleanTabTitle && !isGenericTitle(cleanTabTitle)) ? cleanTabTitle : null;
 
@@ -2697,8 +2862,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'START_MEDIA_DOWNLOAD' || request.type === 'ADD_BATCH' || request.type === 'ADD_MEDIA_BATCH' || request.type === 'ADD_DOWNLOAD') {
     const isExplicitMedia = request.type !== 'ADD_DOWNLOAD' || Array.isArray(request.formats) || Boolean(request.formatId) || Boolean(request.videoUrl);
     const tabId = (sender && sender.tab && sender.tab.id) || lastActiveTabId;
-    const rawTabTitle = (sender && sender.tab && sender.tab.title) || (tabId ? tabTitleMap.get(tabId) : null);
+    const storedTabTitle = tabId ? tabTitleMap.get(tabId) : null;
+    const rawTabTitle = (storedTabTitle && !isGenericTitle(storedTabTitle))
+      ? storedTabTitle
+      : ((sender && sender.tab && sender.tab.title) || storedTabTitle);
     const cleanTabTitle = rawTabTitle ? sanitizeCleanTitle(rawTabTitle) : null;
+
+    const targetMediaUrl = request.url || (Array.isArray(request.formats) && request.formats[0]?.url) || (Array.isArray(request.items) && request.items[0]?.url);
+    const animeRef = getAnimeCdnDefaultReferer(targetMediaUrl, request.pageUrl || request.referer);
+    if (animeRef) {
+      if (!request.referer) {
+        request.referer = animeRef;
+      } else if (targetMediaUrl?.includes('owocdn.top') && !request.referer.includes('kwik.cx') && !request.referer.includes('animepahe')) {
+        request.referer = animeRef;
+      }
+    }
 
     if (isExplicitMedia) {
       if (cleanTabTitle && !isGenericTitle(cleanTabTitle)) {

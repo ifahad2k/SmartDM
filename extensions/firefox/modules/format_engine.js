@@ -10,6 +10,55 @@ class FormatRegistryEngine {
   static processedManifests = new Set(); // manifestKey -> boolean
   static activeProbes = new Set(); // url -> boolean
 
+  static fetchLinkedPageFormats(videoUrl, callback = null, isBackgroundPolling = false) {
+    let url;
+    try {
+      url = new URL(videoUrl);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password) throw new Error('Invalid page URL');
+    } catch (_) {
+      callback?.({success: false, formats: [], message: 'Invalid video page URL.'}, false);
+      return;
+    }
+    this.pruneCache();
+    const key = SmartDmUtils.getMediaCacheKey(url.href, null);
+    const cached = this.mediaFormatCache[key];
+    if (cached?.linkedPage && cached.status === 'pending') {
+      if (!isBackgroundPolling && callback) cached.callbacks.push(callback);
+      return;
+    }
+    if (cached?.linkedPage && cached.expiresAt > Date.now()) {
+      callback?.(cached.data, false);
+      return;
+    }
+    const entry = {linkedPage: true, status: 'pending', data: null, callbacks: callback ? [callback] : []};
+    this.mediaFormatCache[key] = entry;
+    let settled = false, timer;
+    const finish = response => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const formats = Array.isArray(response?.formats) ? response.formats.filter(f =>
+        f && !f.provisional && /^https?:\/\//i.test(f.url || f.directUrl || '')).map(f => ({...f,
+          assetId: key, videoUrl: f.videoUrl || url.href, referer: f.referer || url.href})) : [];
+      const success = !!(response?.success || response?.status === 'ok') && formats.length > 0;
+      entry.status = 'done';
+      entry.data = success ? {...response, success: true, status: 'ok', formats} : {success: false, status: 'error', formats: [],
+        message: 'Could not resolve this selected video. Open its page, play it briefly, and try again.'};
+      entry.expiresAt = Date.now() + 60000;
+      // A failed listing lookup must retry on reopen, never reuse a search preview.
+      if (!success && this.mediaFormatCache[key] === entry) delete this.mediaFormatCache[key];
+      const callbacks = entry.callbacks;
+      entry.callbacks = [];
+      callbacks.forEach(cb => { try { cb(entry.data, false); } catch (_) {} });
+      this.pruneCache();
+    };
+    timer = setTimeout(() => finish(null), 20000);
+    try {
+      const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+      runtime.sendMessage({type: 'GET_PAGE_MEDIA_FORMATS', url: url.href}, finish);
+    } catch (_) { finish(null); }
+  }
+
   static rememberFormats(key, formats) {
     this.accumulatedFormatsByCacheKey.delete(key);
     this.accumulatedFormatsByCacheKey.set(key, formats);
@@ -379,9 +428,334 @@ class FormatRegistryEngine {
     } catch(e) {}
   }
 
+  static extractYouTubeVideoId(url) {
+    if (!url) return null;
+    try {
+      const u = new URL(url, 'https://www.youtube.com');
+      if (u.searchParams.has('v')) {
+        const v = u.searchParams.get('v');
+        if (/^[A-Za-z0-9_-]{11}$/.test(v || '')) return v;
+      }
+      if (u.pathname.includes('/shorts/')) {
+        const m = u.pathname.match(/\/shorts\/([A-Za-z0-9_-]{11})/);
+        if (m) return m[1];
+      }
+      if (u.hostname === 'youtu.be') {
+        const id = u.pathname.replace(/^\//, '').split('?')[0].split('/')[0];
+        if (/^[A-Za-z0-9_-]{11}$/.test(id || '')) return id;
+      }
+    } catch (_) {}
+    const m = String(url).match(/[?&]v=([A-Za-z0-9_-]{11})/) || String(url).match(/\/shorts\/([A-Za-z0-9_-]{11})/) || String(url).match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+
+  static parseYouTubePlayerResponse(data, videoId = null, videoUrl = null) {
+    try {
+      if (!data) return null;
+      let resp = data;
+      if (typeof resp === 'string') {
+        if (!resp.includes('streamingData')) return null;
+        try { resp = JSON.parse(resp); } catch (_) { return null; }
+      }
+      if (!resp || typeof resp !== 'object' || !resp.streamingData) return null;
+
+      const streamingData = resp.streamingData;
+      const videoDetails = resp.videoDetails || {};
+      const title = videoDetails.title || 'YouTube Video';
+      const resolvedVid = videoDetails.videoId || videoId ||
+        (videoUrl ? this.extractYouTubeVideoId(videoUrl) : null);
+      if (!resolvedVid) return null;
+
+      const formats = [];
+      let defaultAudioUrl = null;
+      let defaultAudioSize = 0;
+
+      const adaptive = Array.isArray(streamingData.adaptiveFormats) ? streamingData.adaptiveFormats : [];
+      adaptive.forEach(f => {
+        if (!f) return;
+        let u = f.url;
+        if (!u && (f.signatureCipher || f.cipher)) {
+          try { u = new URLSearchParams(f.signatureCipher || f.cipher).get('url'); } catch (_) {}
+        }
+        if (u && typeof u === 'string' && u.startsWith('http')) {
+          const mime = (f.mimeType || '').toLowerCase();
+          if (mime.includes('audio/')) {
+            if (!defaultAudioUrl || f.itag === 140) {
+              defaultAudioUrl = u;
+              defaultAudioSize = parseInt(f.contentLength || 0, 10);
+            }
+          }
+        }
+      });
+
+      const combined = Array.isArray(streamingData.formats) ? streamingData.formats : [];
+      combined.forEach(f => {
+        if (!f) return;
+        let u = f.url;
+        if (!u && (f.signatureCipher || f.cipher)) {
+          try { u = new URLSearchParams(f.signatureCipher || f.cipher).get('url'); } catch (_) {}
+        }
+        if (u && typeof u === 'string' && u.startsWith('http')) {
+          const height = f.height || (typeof SmartDmUtils !== 'undefined' ? SmartDmUtils.extractResolutionNumber?.(f.qualityLabel || f.quality || '') : 360) || 360;
+          formats.push({
+            formatId: String(f.itag || ('fmt_' + formats.length)),
+            resolution: f.qualityLabel || f.quality || `${height}p`,
+            height: height,
+            ext: (f.mimeType || '').includes('webm') ? 'webm' : 'mp4',
+            formatNote: 'Direct Video + Audio',
+            fileSize: parseInt(f.contentLength || 0, 10),
+            fps: f.fps || 30,
+            isAudioOnly: false,
+            isVideoOnly: false,
+            title: title,
+            url: u,
+            directUrl: u,
+            videoUrl: `https://www.youtube.com/watch?v=${resolvedVid}`,
+            assetId: `https://www.youtube.com/watch?v=${resolvedVid}`
+          });
+        }
+      });
+
+      adaptive.forEach(f => {
+        if (!f) return;
+        let u = f.url;
+        if (!u && (f.signatureCipher || f.cipher)) {
+          try { u = new URLSearchParams(f.signatureCipher || f.cipher).get('url'); } catch (_) {}
+        }
+        if (u && typeof u === 'string' && u.startsWith('http')) {
+          const mime = (f.mimeType || '').toLowerCase();
+          const isAudio = mime.includes('audio/');
+          const isVideo = mime.includes('video/');
+          const kbps = Math.round((f.bitrate || 0) / 1000);
+          const videoSize = parseInt(f.contentLength || 0, 10);
+          const totalSize = isVideo && defaultAudioSize > 0 ? videoSize + defaultAudioSize : videoSize;
+          const height = isVideo ? (f.height || (typeof SmartDmUtils !== 'undefined' ? SmartDmUtils.extractResolutionNumber?.(f.qualityLabel || '') : 0) || 0) : 0;
+          formats.push({
+            formatId: String(f.itag || ('fmt_' + formats.length)),
+            resolution: isAudio ? ('Audio Only (' + (kbps > 0 ? kbps + 'k' : '128k') + ')') : (f.qualityLabel || (height ? `${height}p` : 'Video')),
+            height: height,
+            ext: mime.includes('webm') ? (isAudio ? 'webm' : 'webm') : (isAudio ? 'm4a' : 'mp4'),
+            formatNote: isAudio ? 'Audio Only Stream' : 'High Res Video',
+            fileSize: totalSize,
+            tbr: kbps,
+            fps: f.fps || 0,
+            isAudioOnly: isAudio,
+            isVideoOnly: isVideo,
+            title: title,
+            url: u,
+            directUrl: u,
+            audioUrl: (!isAudio && defaultAudioUrl) ? defaultAudioUrl : null,
+            videoUrl: `https://www.youtube.com/watch?v=${resolvedVid}`,
+            assetId: `https://www.youtube.com/watch?v=${resolvedVid}`
+          });
+        }
+      });
+
+      if (formats.length > 0) {
+        if (defaultAudioUrl) {
+          formats.push({
+            formatId: 'bestaudio/best',
+            resolution: 'Audio (MP3 / High Quality)',
+            ext: 'mp3',
+            formatNote: 'MP3 High Quality',
+            fileSize: defaultAudioSize,
+            isAudioOnly: true,
+            title: title,
+            url: defaultAudioUrl,
+            directUrl: defaultAudioUrl,
+            videoUrl: `https://www.youtube.com/watch?v=${resolvedVid}`,
+            assetId: `https://www.youtube.com/watch?v=${resolvedVid}`
+          });
+        }
+        formats.push({
+          formatId: 'thumbnail',
+          resolution: 'Thumbnail (Cover Image / HD)',
+          ext: 'jpg',
+          formatNote: 'HD Cover Image',
+          fileSize: 0,
+          isAudioOnly: false,
+          title: title,
+          url: `https://i.ytimg.com/vi/${resolvedVid}/maxresdefault.jpg`,
+          directUrl: `https://i.ytimg.com/vi/${resolvedVid}/maxresdefault.jpg`,
+          videoUrl: `https://www.youtube.com/watch?v=${resolvedVid}`,
+          assetId: `https://www.youtube.com/watch?v=${resolvedVid}`
+        });
+
+        return { success: true, status: 'ok', title: title, formats: formats };
+      }
+      return null;
+    } catch (_) { return null; }
+  }
+
+  static extractInPageYouTubeFormats(videoUrl) {
+    try {
+      const vid = this.extractYouTubeVideoId(videoUrl || (typeof window !== 'undefined' ? window.location?.href : ''));
+      if (!vid) return null;
+
+      // 0. Synchronously request in-page sniffer to capture current YouTube player data
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+          window.dispatchEvent(new CustomEvent('__smartdm_query_youtube__', { detail: { videoId: vid } }));
+        } catch (_) {}
+      }
+
+      // 1. Direct window property
+      if (typeof window !== 'undefined' && window.ytInitialPlayerResponse) {
+        const res = this.parseYouTubePlayerResponse(window.ytInitialPlayerResponse, vid, videoUrl);
+        if (res && res.formats?.length) return res;
+      }
+
+      // 2. Stashed element by sniffer
+      if (typeof document !== 'undefined') {
+        const safeVid = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') ? CSS.escape(vid) : vid.replace(/"/g, '\\"');
+        const stashEl = document.querySelector ? (document.querySelector(`smartdm-player-response[data-smartdm-video-id="${safeVid}"]`) || document.querySelector('smartdm-player-response')) : null;
+        if (stashEl && stashEl.textContent) {
+          const res = this.parseYouTubePlayerResponse(stashEl.textContent, vid, videoUrl);
+          if (res && res.formats?.length) return res;
+        }
+
+        // 3. Embedded scripts containing ytInitialPlayerResponse
+        const scripts = document.querySelectorAll ? document.querySelectorAll('script') : [];
+        for (let i = 0; i < scripts.length; i++) {
+          const text = scripts[i].textContent || '';
+          const idx = text.indexOf('ytInitialPlayerResponse');
+          if (idx !== -1) {
+            const firstBrace = text.indexOf('{', idx);
+            if (firstBrace > idx && firstBrace < idx + 100) {
+              let openCount = 0, lastBrace = -1, inString = false, escape = false;
+              for (let j = firstBrace; j < text.length; j++) {
+                const c = text.charAt(j);
+                if (inString) {
+                  if (escape) escape = false;
+                  else if (c === '\\') escape = true;
+                  else if (c === '"') inString = false;
+                } else {
+                  if (c === '"') inString = true;
+                  else if (c === '{') openCount++;
+                  else if (c === '}') {
+                    openCount--;
+                    if (openCount === 0) { lastBrace = j; break; }
+                  }
+                }
+              }
+              if (lastBrace > firstBrace) {
+                try {
+                  const parsed = JSON.parse(text.substring(firstBrace, lastBrace + 1));
+                  const res = this.parseYouTubePlayerResponse(parsed, vid, videoUrl);
+                  if (res && res.formats?.length) return res;
+                } catch (_) {}
+              }
+            }
+          }
+        }
+      }
+      return null;
+    } catch (_) { return null; }
+  }
+
   static getInstantYouTubeFormats(videoUrl, title = 'YouTube Video') {
-    // Resolution choices become selectable only after real discovery.
+    const key = this.youTubeCacheKey(videoUrl);
+    if (!key) return [];
+    const entry = this.mediaFormatCache[key];
+    if (entry?.youtube && entry.status === 'done' && entry.expiresAt > Date.now() && Array.isArray(entry.data?.formats) && entry.data.formats.length > 0) {
+      return entry.data.formats;
+    }
+    // Attempt instant in-page extraction
+    const inPage = this.extractInPageYouTubeFormats(videoUrl);
+    if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+      this.mediaFormatCache[key] = {
+        youtube: true,
+        status: 'done',
+        data: inPage,
+        expiresAt: Date.now() + 120000,
+        callbacks: []
+      };
+      return inPage.formats;
+    }
     return [];
+  }
+
+  static youTubeCacheKey(videoUrl) {
+    try {
+      const url = new URL(videoUrl);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password) return null;
+      let id;
+      if (url.hostname === 'youtu.be') id = url.pathname.split('/')[1];
+      else if (/(^|\.)youtube\.com$/.test(url.hostname)) {
+        id = url.pathname === '/watch' ? url.searchParams.get('v')
+          : url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1];
+      }
+      return /^[A-Za-z0-9_-]{11}$/.test(id || '') ? `https://www.youtube.com/watch?v=${id}` : null;
+    } catch (_) { return null; }
+  }
+
+  static fetchYouTubeFormats(videoUrl, callback = null, isBackgroundPolling = false) {
+    const key = this.youTubeCacheKey(videoUrl);
+    if (!key) {
+      callback?.({success: false, formats: [], message: 'Invalid YouTube video URL.'}, false);
+      return;
+    }
+    const cached = this.mediaFormatCache[key];
+    if (cached?.youtube && cached.status === 'done' && cached.expiresAt > Date.now()) {
+      callback?.(cached.data, false);
+      return;
+    }
+    if (cached?.youtube && cached.status === 'pending') {
+      if (!isBackgroundPolling && callback) cached.callbacks.push(callback);
+      return;
+    }
+    // Check in-page player response first for instant resolution (<5ms)
+    const inPage = this.extractInPageYouTubeFormats(videoUrl);
+    if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+      const entry = {
+        youtube: true,
+        status: 'done',
+        data: inPage,
+        expiresAt: Date.now() + 120000,
+        callbacks: []
+      };
+      this.mediaFormatCache[key] = entry;
+      callback?.(inPage, false);
+      return;
+    }
+    const entry = {youtube: true, status: 'pending', data: null, callbacks: callback ? [callback] : []};
+    this.mediaFormatCache[key] = entry;
+    let settled = false;
+    let timer;
+    const finish = response => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const formats = Array.isArray(response?.formats)
+        ? response.formats.filter(f => f && !f.provisional && /^https?:\/\//i.test(f.url || f.directUrl || '')) : [];
+      const success = !!(response?.success || response?.status === 'ok') && formats.length > 0;
+      entry.data = success ? {...response, success: true, status: 'ok', formats} : {success: false, status: 'error', formats: [],
+        message: 'YouTube format lookup failed; reopen this menu to retry.'};
+      entry.status = 'done';
+      // Short failure cooldown prevents a visible shelf repeatedly probing a closed app.
+      entry.expiresAt = Date.now() + (success ? 120000 : 5000);
+      if (success) {
+        for (const format of formats) {
+          for (const stream of [format.url, format.directUrl, format.audioUrl]) {
+            try {
+              const expiry = Number(new URL(stream).searchParams.get('expire')) * 1000;
+              if (expiry > 0) entry.expiresAt = Math.min(entry.expiresAt, expiry - 30000);
+            } catch (_) { /* Not every representation has a signed URL. */ }
+          }
+        }
+      }
+      const callbacks = entry.callbacks;
+      entry.callbacks = [];
+      callbacks.forEach(cb => { try { cb(entry.data, false); } catch (_) {} });
+      this.pruneCache();
+    };
+    // The desktop HTTP attempt allows 15 seconds, followed by browser fallback.
+    // A shorter UI deadline discarded valid responses from that existing route.
+    timer = setTimeout(() => finish(null), 30000);
+    try {
+      const runtime = (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : chrome.runtime;
+      runtime.sendMessage({type: 'GET_MEDIA_FORMATS', url: key}, finish);
+    } catch (_) { finish(null); }
   }
 
   static extractTubeFormatsFromDOM(pageTitle = 'video') {
@@ -479,6 +853,145 @@ class FormatRegistryEngine {
 
     formats.sort((a, b) => (b.height || 0) - (a.height || 0));
     return formats;
+  }
+
+  static extractInPageMovieStreams(mediaEl, pageTitle = 'video') {
+    const list = [];
+    const seenUrls = new Set();
+    const addUrl = (url, height, label) => {
+      if (!url || typeof url !== 'string' || seenUrls.has(url)) return;
+      if (!url.startsWith('http') && !url.startsWith('//') && !url.startsWith('/')) return;
+      if (url.includes('/analytics') || url.includes('recaptcha') || url.includes('doubleclick')) return;
+      let fullUrl = url;
+      if (url.startsWith('//')) {
+        fullUrl = (typeof window !== 'undefined' && window.location?.protocol ? window.location.protocol : 'https:') + url;
+      } else if (url.startsWith('/') && typeof window !== 'undefined' && window.location?.origin) {
+        fullUrl = window.location.origin + url;
+      }
+      if (seenUrls.has(fullUrl)) return;
+      seenUrls.add(fullUrl);
+
+      const isHls = /\.m3u8(?:[?#]|$)/i.test(fullUrl);
+      let h = height || SmartDmUtils.extractResolutionNumber(fullUrl);
+      if (h <= 0 && mediaEl && mediaEl.videoHeight > 0) {
+        h = SmartDmUtils.normalizeVideoResolution(mediaEl.videoWidth || 0, mediaEl.videoHeight);
+      }
+      if (h <= 0) h = 720;
+      const resLabel = label || SmartDmUtils.getResolutionLabel(h, 'mp4');
+
+      list.push({
+        formatId: `inpage_${h}p_${list.length}`,
+        resolution: resLabel,
+        ext: 'mp4',
+        mediaKind: isHls ? 'hls' : null,
+        fileSize: 0,
+        isAudioOnly: false,
+        title: pageTitle,
+        url: fullUrl,
+        videoUrl: fullUrl,
+        referer: window.location.href,
+        height: h
+      });
+    };
+
+    try {
+      if (mediaEl) {
+        const directAttrs = [
+          mediaEl.src,
+          mediaEl.currentSrc,
+          mediaEl.getAttribute?.('src'),
+          mediaEl.getAttribute?.('data-src'),
+          mediaEl.getAttribute?.('data-video-src'),
+          mediaEl.getAttribute?.('data-stream'),
+          mediaEl.getAttribute?.('data-file')
+        ];
+        directAttrs.forEach(s => {
+          if (s && !s.startsWith('blob:')) addUrl(s, 0);
+        });
+
+        const childSources = mediaEl.querySelectorAll ? mediaEl.querySelectorAll('source, track') : [];
+        childSources.forEach(sc => {
+          const s = sc.src || sc.getAttribute('src') || sc.getAttribute('data-src') || sc.getAttribute('data-file');
+          if (s && !s.startsWith('blob:')) addUrl(s, 0);
+        });
+      }
+
+      if (typeof document !== 'undefined') {
+        const allVideos = document.querySelectorAll('video');
+        allVideos.forEach(v => {
+          if (v === mediaEl) return;
+          const s = v.src || v.currentSrc || v.getAttribute('src') || v.getAttribute('data-src');
+          if (s && !s.startsWith('blob:')) addUrl(s, 0);
+          const scs = v.querySelectorAll('source');
+          scs.forEach(sc => {
+            const u = sc.src || sc.getAttribute('src') || sc.getAttribute('data-src');
+            if (u && !u.startsWith('blob:')) addUrl(u, 0);
+          });
+        });
+
+        const iframes = document.querySelectorAll('iframe');
+        iframes.forEach(ifr => {
+          const isrc = ifr.src || ifr.getAttribute('src') || ifr.getAttribute('data-src');
+          if (isrc) {
+            const m = isrc.match(/[?&#](?:file|url|src|stream|source)=([^&#]+)/i);
+            if (m) {
+              try {
+                const decoded = decodeURIComponent(m[1]);
+                if (decoded.includes('.m3u8') || decoded.includes('.mp4')) addUrl(decoded, 0);
+              } catch (_) {}
+            }
+          }
+        });
+
+        const unpackDeanEdwards = (str) => {
+          const m = str.match(/eval\(function\(p,a,c,k,e,[rd]\)\s*\{[\s\S]*?\}\s*\(\s*(['"][\s\S]*?['"])\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(['"][\s\S]*?['"])\.split\(['"]\|['"]\)/);
+          if (!m) return null;
+          try {
+            let p = JSON.parse(m[1]);
+            const a = parseInt(m[2], 10);
+            const c = parseInt(m[3], 10);
+            const k = m[4].slice(1, -1).split('|');
+            const baseUnpack = (val) => {
+              let res = '';
+              if (val >= a) res += baseUnpack(Math.floor(val / a));
+              const rem = val % a;
+              res += (rem > 35) ? String.fromCharCode(rem + 29) : rem.toString(36);
+              return res;
+            };
+            const dict = {};
+            for (let i = 0; i < c; i++) {
+              const key = (a > 36) ? baseUnpack(i) : i.toString(a);
+              dict[key] = k[i] || key;
+            }
+            return p.replace(/\b\w+\b/g, w => Object.prototype.hasOwnProperty.call(dict, w) ? dict[w] : w);
+          } catch (_) { return null; }
+        };
+
+        const scripts = document.querySelectorAll('script');
+        const streamRegex = /(?:https?:)?\/\/[^\s"'<>]+\.(?:m3u8|mp4|webm)(?:\?[^\s"'<>]*)?/gi;
+        const configRegex = /(?:file|source|url|src|stream)\s*:\s*["']([^"']+\.(?:m3u8|mp4|webm)[^"']*)["']/gi;
+        for (const s of scripts) {
+          let text = s.textContent || '';
+          if (!text || text.length < 20) continue;
+          if (text.includes('eval(function(p,a,c,k,e,')) {
+            const unpacked = unpackDeanEdwards(text);
+            if (unpacked) text += '\n' + unpacked;
+          }
+          if (text.includes('.m3u8') || text.includes('.mp4') || text.includes('.webm')) {
+            let match;
+            while ((match = streamRegex.exec(text)) !== null) {
+              addUrl(match[0], 0);
+            }
+            while ((match = configRegex.exec(text)) !== null) {
+              addUrl(match[1], 0);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    list.sort((a, b) => (b.height || 0) - (a.height || 0));
+    return list;
   }
 
   static extractDashManifestFromText(text, targetVideoId = null) {
@@ -1899,6 +2412,12 @@ class FormatRegistryEngine {
             callback({ success: true, status: 'ok', title: pageTitle, formats: formats });
           } else {
             if (!isYouTube) {
+              const inPageStreams = this.extractInPageMovieStreams(mediaEl, pageTitle);
+              if (inPageStreams && inPageStreams.length > 0) {
+                this.rememberFormats(activeKey, inPageStreams.slice());
+                callback({ success: true, status: 'ok', title: pageTitle, formats: inPageStreams });
+                return;
+              }
               const tubeFormats = this.extractTubeFormatsFromDOM(pageTitle);
               if (tubeFormats && tubeFormats.length > 0) {
                 callback({ success: true, status: 'ok', title: pageTitle, formats: tubeFormats });
@@ -1930,6 +2449,9 @@ class FormatRegistryEngine {
 
   static pruneCache() {
     try {
+      for (const [key, entry] of Object.entries(this.mediaFormatCache)) {
+        if ((entry.youtube || entry.linkedPage) && entry.status !== 'pending' && entry.expiresAt <= Date.now()) delete this.mediaFormatCache[key];
+      }
       const keys = Object.keys(this.mediaFormatCache).filter(k => this.mediaFormatCache[k].status !== 'pending');
       if (keys.length > 30) {
         keys.slice(0, keys.length - 30).forEach(k => delete this.mediaFormatCache[k]);
@@ -2009,11 +2531,50 @@ class FormatRegistryEngine {
     return formats.length ? {success: true, title: formats[0].title, formats} : null;
   }
 
-  static fetchMediaFormats(videoUrl, mediaEl = null, callback = null, isBackgroundPolling = false) {
+  static fetchMediaFormats(videoUrl, mediaEl = null, callback = null, isBackgroundPolling = false, lookupOptions = null) {
     if (typeof callback === 'function') {
       const deliver = callback;
       callback = (result, pending) => deliver(result && result.formats ? {...result,
         formats: result.formats.map(format => ({...format, assetId: format.assetId || videoUrl || window.location.href}))} : result, pending);
+    }
+    const isYouTube = /(^|\.)(youtube\.com|youtu\.be)$/.test(window.location.hostname) || !!this.youTubeCacheKey(videoUrl);
+    if (isYouTube) {
+      this.pruneCache();
+      // Keep a usable selected-player capture while the complete resolver runs.
+      // Unbound tab-wide captures must not substitute a different thumbnail video.
+      const key = this.youTubeCacheKey(videoUrl);
+      const binding = mediaEl ? this.playerBinding(mediaEl) : null;
+      const selectedSource = binding?.video || mediaEl?.currentSrc || mediaEl?.src;
+      let available = null;
+      let lookupDone = false;
+      let lookupResult = null;
+      let fallbackDone = !/^https?:\/\//i.test(selectedSource || '');
+      const deliverFailure = () => {
+        if (lookupDone && fallbackDone && !available && !lookupResult?.success) callback?.(lookupResult, false);
+      };
+      this.fetchYouTubeFormats(videoUrl, result => {
+        lookupDone = true;
+        lookupResult = result;
+        if (result?.success && result.formats?.length) callback?.(result, false);
+        else if (available) callback?.(available, false);
+        else deliverFailure();
+      }, isBackgroundPolling);
+      if (!fallbackDone && !lookupResult?.success) this.buildFallbackFormats(videoUrl, mediaEl, result => {
+        fallbackDone = true;
+        const selected = (result?.formats || []).filter(f => (f.url || f.directUrl) === selectedSource ||
+          (binding?.audio && (f.url || f.directUrl) === binding.audio));
+        if (selected.length) {
+          available = {...result, formats: selected.map(f => ({...f, assetId: key}))};
+          if (!lookupResult?.success) callback?.(available, false);
+        } else deliverFailure();
+      });
+      return;
+    }
+    // A card targets another document. Listing previews and the current page's
+    // player graph cannot establish which streams belong to that linked video.
+    if (lookupOptions?.fromThumbnail && !this.isSocialFeed()) {
+      this.fetchLinkedPageFormats(videoUrl, callback, isBackgroundPolling);
+      return;
     }
     const captured = this.capturedPlayerFormats(mediaEl);
     if (captured) { if (typeof callback === 'function') callback(captured, false); return; }
@@ -2032,7 +2593,6 @@ class FormatRegistryEngine {
     }
 
     this.pruneCache();
-    const isYouTube = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be') || (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')));
     const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
     const isBili = typeof window !== 'undefined' && window.location?.hostname &&
       (window.location.hostname.includes('bilibili.com') || window.location.hostname.includes('bilibili.tv'));
@@ -2309,36 +2869,6 @@ class FormatRegistryEngine {
           this.buildFallbackFormats(videoUrl, mediaEl, (fallbackRes) => {
             clearTimeout(safetyTimer);
             notifyCallbacks(fallbackRes);
-          });
-        }
-      });
-      return;
-    }
-
-    if (isYouTube) {
-      runtime.sendMessage({ type: 'GET_MEDIA_FORMATS', url: videoUrl }, (res) => {
-        clearTimeout(safetyTimer);
-        if (res && (res.success || res.status === 'ok') && res.formats && res.formats.length > 0) {
-          notifyCallbacks(res);
-          return;
-        }
-
-        const isOnWatchPage = window.location.pathname.includes('/watch') || window.location.pathname.includes('/shorts/');
-        if (isOnWatchPage && window.location.href.includes(videoUrl)) {
-          const instantYt = this.getInstantYouTubeFormats(videoUrl, SmartDmUtils.extractWatchPageTitle());
-          if (instantYt && instantYt.length > 0) {
-            notifyCallbacks({ success: true, status: 'ok', title: SmartDmUtils.extractWatchPageTitle(), formats: instantYt });
-            return;
-          }
-        }
-
-        if (instantDelivered) {
-          if (typeof callback === 'function') callback(null, false);
-        } else {
-          notifyCallbacks({
-            success: false,
-            status: 'error',
-            message: 'Could not resolve YouTube formats.<br><span style="font-size:10px; color:#94a3b8;">Ensure SmartDM desktop app is running.</span>'
           });
         }
       });

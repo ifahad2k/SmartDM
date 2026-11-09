@@ -161,3 +161,36 @@ results, multiple bugs and original screenshot Blobs in browser IndexedDB and
 exports Markdown/JSON/image ZIP handoffs. No SmartDM network endpoint is involved.
 See [implementation and evidence](implementation/TESTING_DESK_HANDOFF.md). This
 tooling addition changes no transfer/media/safety module and closes no product gate.
+
+2026-11-08 thumbnail presentation: thumbnail controls now share the existing
+`banner-btn` styles through the same adopted-sheet/inline-fallback path, while
+retaining the thumbnail listener selector. No new CSS copy or runtime service.
+[Evidence](implementation/THUMBNAIL_STYLE_HANDOFF.md): 203 browser tests pass;
+loaded-browser appearance was not rechecked using screen capture.
+
+2026-11-08 YouTube menus: `MediaWatcher` now observes visible cards/players and
+warms their format lists before click, with pointer/focus priority, two awaiting
+background lookups and an eight-target queue per document. `FormatRegistryEngine`
+coalesces prefetch and foreground lookups by exact, case-sensitive YouTube video ID.
+Completed results render synchronously, reuse the existing 30-entry cache limit,
+expire after two minutes or 30 seconds before an earlier signed URL expiry, and
+retain no UI callbacks after completion. Failure has a 30-second UI deadline
+and five-second retry cooldown. Discovery still uses the existing background
+desktop/YoutubeExplode and service-worker fallback route; no new extractor or
+backend. Completed resolver results are preferred; selected-player HTTP captures
+remain usable while discovery runs or fails. Unbound tab-wide streams are not
+used as a different thumbnail's fallback. Non-YouTube discovery remains on its existing path. See
+[evidence and limits](implementation/YOUTUBE_MENU_PREFETCH_HANDOFF.md).
+
+The initial nine-second/final-error implementation regressed live usage and was
+corrected the same day. Real Chrome/runtime/desktop/menu tests now have evidence;
+see [regression repair](implementation/YOUTUBE_MENU_REGRESSION_HANDOFF.md).
+
+2026-11-08 linked thumbnails: the watcher declares `{fromThumbnail: true}`.
+Non-social/non-YouTube cards now resolve their selected watch document through
+the existing background `GET_PAGE_MEDIA_FORMATS` route, before inspecting listing
+captures. Requests coalesce by selected URL, expire after one minute, share the
+30-result cache cap and have a 20-second UI deadline. Failures retry on reopen;
+listing previews cannot substitute for the selected video. Background parsing
+and player/social/YouTube discovery are unchanged. See
+[evidence and limitations](implementation/LINKED_THUMBNAIL_HANDOFF.md).

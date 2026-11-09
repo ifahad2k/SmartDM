@@ -40,7 +40,8 @@ public static class HlsMediaResolver
         string? referer = null,
         string? userAgent = null,
         string? cookies = null,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        string? pageUrl = null)
     {
         var result = new HlsResolutionResult();
         if (string.IsNullOrWhiteSpace(streamUrl))
@@ -53,7 +54,7 @@ public static class HlsMediaResolver
             ? userAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 
-        var (initialText, effectiveUrl, workingReferer) = await FetchPlaylistWithCandidatesAsync(streamUrl, referer, uaString, cookies, token);
+        var (initialText, effectiveUrl, workingReferer) = await FetchPlaylistWithCandidatesAsync(streamUrl, referer, uaString, cookies, token, pageUrl);
         if (string.IsNullOrWhiteSpace(initialText))
         {
             result.ErrorMessage = "Could not fetch playlist";
@@ -65,6 +66,10 @@ public static class HlsMediaResolver
         {
             result.MasterUrl = effectiveUrl;
             result.Formats = ParseMasterManifest(initialText, effectiveUrl);
+            if (!string.IsNullOrEmpty(workingReferer))
+            {
+                foreach (var f in result.Formats) f.Referer = workingReferer;
+            }
             result.Success = result.Formats.Count > 0;
             return result;
         }
@@ -76,7 +81,7 @@ public static class HlsMediaResolver
             foreach (var candUrl in candidates)
             {
                 if (token.IsCancellationRequested) break;
-                var (candText, candEffectiveUrl, _) = await FetchPlaylistWithCandidatesAsync(candUrl, workingReferer ?? referer, uaString, cookies, token);
+                var (candText, candEffectiveUrl, _) = await FetchPlaylistWithCandidatesAsync(candUrl, workingReferer ?? referer, uaString, cookies, token, pageUrl);
                 if (!string.IsNullOrWhiteSpace(candText) && candText.Contains("#EXT-X-STREAM-INF", StringComparison.OrdinalIgnoreCase))
                 {
                     result.MasterUrl = candEffectiveUrl;
@@ -108,7 +113,8 @@ public static class HlsMediaResolver
                 Bandwidth = br,
                 TotalDuration = dur,
                 FileSize = expectedBytes,
-                ManifestText = initialText
+                ManifestText = initialText,
+                Referer = workingReferer ?? referer
             });
             result.Success = true;
             return result;
@@ -123,9 +129,10 @@ public static class HlsMediaResolver
         string? baseReferer,
         string userAgent,
         string? cookies,
-        CancellationToken token)
+        CancellationToken token,
+        string? pageUrl = null)
     {
-        var candidates = DownloadEngine.GetCandidateReferers(targetUrl, baseReferer, null);
+        var candidates = DownloadEngine.GetCandidateReferers(targetUrl, baseReferer, pageUrl);
         foreach (var candRef in candidates)
         {
             if (token.IsCancellationRequested) break;
@@ -155,8 +162,13 @@ public static class HlsMediaResolver
                 using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
                 if (resp.IsSuccessStatusCode)
                 {
+                    string? ct = resp.Content.Headers.ContentType?.MediaType;
+                    if (ct != null && ct.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue; // Skip HTML bot check/error pages
+                    }
                     string content = await HlsManifestSnapshot.ReadAsync(resp.Content, cts.Token);
-                    if (content.Contains("#EXTM3U", StringComparison.OrdinalIgnoreCase))
+                    if (content.Contains("#EXTM3U", StringComparison.OrdinalIgnoreCase) && !DownloadEngine.IsHtmlResponse(ct, content))
                     {
                         string effective = resp.RequestMessage?.RequestUri?.ToString() ?? targetUrl;
                         return (content, effective, candRef);

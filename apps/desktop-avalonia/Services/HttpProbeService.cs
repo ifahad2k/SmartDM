@@ -146,19 +146,29 @@ public class HttpProbeService : IHttpProbeService
                     catch { }
                 }
 
-                // If still 403/Forbidden, test site root origin referer fallback
-                if (response != null && (response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.Unauthorized))
+                // If still 403/Forbidden, 401, or 429, test candidate referers
+                if (response != null && (response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == (HttpStatusCode)429))
                 {
-                    string siteRootRef = $"{uri.Scheme}://{uri.Authority}/";
-                    if (!string.Equals(effectiveRef, siteRootRef, StringComparison.OrdinalIgnoreCase))
+                    var candidates = DownloadEngine.GetCandidateReferers(url, effectiveRef, null);
+                    foreach (var candRef in candidates)
                     {
+                        if (string.Equals(effectiveRef, candRef, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (response.StatusCode == (HttpStatusCode)429)
+                        {
+                            await Task.Delay(500, cancellationToken);
+                        }
                         response.Dispose();
                         using var altGetReq = HttpTransferRequest.Create(HttpMethod.Get, uri);
-                        ApplyHeaders(altGetReq, siteRootRef);
+                        ApplyHeaders(altGetReq, candRef);
                         altGetReq.Headers.AcceptEncoding.ParseAdd("identity");
                         try
                         {
                             response = await _httpClient.SendAsync(altGetReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.PartialContent)
+                            {
+                                effectiveRef = candRef;
+                                break;
+                            }
                         }
                         catch { }
                     }
@@ -683,6 +693,15 @@ public class HttpProbeService : IHttpProbeService
         // Prevent RTLO exploit in filename
         clean = clean.Replace("\u202E", "").Replace("\u202D", "");
 
+        // Clean SEO junk from base name if present
+        string ext = Path.GetExtension(clean);
+        string nameWithoutExt = Path.GetFileNameWithoutExtension(clean);
+        string cleanedBase = CleanWebTitle(nameWithoutExt);
+        if (!string.IsNullOrWhiteSpace(cleanedBase) && !IsGenericName(cleanedBase))
+        {
+            clean = string.IsNullOrEmpty(ext) ? cleanedBase : $"{cleanedBase}{ext}";
+        }
+
         return string.IsNullOrWhiteSpace(clean) ? "download.dat" : clean;
     }
 
@@ -723,12 +742,58 @@ public class HttpProbeService : IHttpProbeService
         };
     }
 
+    public static bool IsGenericStem(string? stem)
+    {
+        if (string.IsNullOrWhiteSpace(stem)) return true;
+        string lower = stem.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(lower) || lower.Length < 2) return true;
+
+        var genericExact = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "youtube", "youtube music", "watch", "videoplayback", "video", "media stream",
+            "download", "downloads", "notifications", "notification", "facebook", "pornhub",
+            "bin", "player", "embed", "video stream", "stream", "kwik", "megaplay",
+            "strm", "master", "playlist", "manifest", "chunklist", "media", "main", "track",
+            "segment", "segment-0", "video-0", "stream-0", "stream-1", "init", "audio", "audio-0",
+            "untitled", "null", "undefined", "feed", "newsfeed", "stories", "reels", "reel",
+            "index", "play", "html5 player", "video player", "file"
+        };
+
+        if (genericExact.Contains(lower)) return true;
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(lower, @"^file[\s_-]*\d+")) return true;
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(lower, @"^(?:strm|stream|video|master|playlist|manifest|index|chunklist|seg|fragment|chunk|track|audio|play|player|embed|iframe)[_\-\d]*$")) return true;
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(lower, @"^(?:seg|fragment|chunk|track|stream|video|audio)[_-]?\d+")) return true;
+
+        if (lower.Contains("megaplay") || lower.Contains("kwik") || lower.Contains("streamwish") ||
+            lower.Contains("vidcloud") || lower.Contains("upcloud") || lower.Contains("filemoon") ||
+            lower.Contains("doodstream") || lower.Contains("streamtape") || lower.Contains("mp4upload"))
+        {
+            if (lower.StartsWith("file") || lower.StartsWith("player") || lower.StartsWith("embed") || lower.StartsWith("video") || lower.Contains("server") || lower == "megaplay" || lower == "kwik")
+            {
+                return true;
+            }
+        }
+
+        // Detect Facebook CDN tokens (e.g. AQPEv8rliM4qIQGkbci...)
+        if (lower.StartsWith("aq") && lower.Length >= 12 && !lower.Contains(' '))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     public static bool IsGenericName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return true;
         string clean = name.Trim().Trim('\"', '\'');
         string ext = Path.GetExtension(clean).ToLowerInvariant();
         string stem = Path.GetFileNameWithoutExtension(clean).Trim().ToLowerInvariant();
+
+        if (IsGenericStem(stem)) return true;
 
         var nonGenericExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -857,25 +922,111 @@ public class HttpProbeService : IHttpProbeService
     {
         if (string.IsNullOrWhiteSpace(html)) return string.Empty;
 
+        string cleanTitle = string.Empty;
+
+        // 1. JSON-LD Structured Data
+        var jsonLdMatches = Regex.Matches(html, @"<script[^>]*type=[""']application\/ld\+json[""'][^>]*>(.*?)<\/script>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        foreach (Match jm in jsonLdMatches)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(jm.Groups[1].Value);
+                var root = doc.RootElement;
+                IEnumerable<System.Text.Json.JsonElement> items = root.ValueKind == System.Text.Json.JsonValueKind.Array ? root.EnumerateArray() : new[] { root };
+                foreach (var item in items)
+                {
+                    if (item.TryGetProperty("@type", out var typeElem))
+                    {
+                        string t = typeElem.GetString() ?? "";
+                        if (t.Equals("Movie", StringComparison.OrdinalIgnoreCase) ||
+                            t.Equals("VideoObject", StringComparison.OrdinalIgnoreCase) ||
+                            t.Equals("TVEpisode", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (item.TryGetProperty("name", out var nElem) && !string.IsNullOrWhiteSpace(nElem.GetString()))
+                            {
+                                string baseName = CleanWebTitle(nElem.GetString()!);
+                                string yearStr = "";
+                                if (item.TryGetProperty("datePublished", out var dp) && !string.IsNullOrWhiteSpace(dp.GetString()))
+                                {
+                                    var ym = Regex.Match(dp.GetString()!, @"\b(19\d\d|20\d\d)\b");
+                                    if (ym.Success) yearStr = $" ({ym.Groups[1].Value})";
+                                }
+                                if (!string.IsNullOrEmpty(baseName))
+                                {
+                                    cleanTitle = (!baseName.Contains("(") && !string.IsNullOrEmpty(yearStr)) ? $"{baseName}{yearStr}" : baseName;
+                                    return cleanTitle;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 2. OpenGraph
         var ogMatch = Regex.Match(html, @"<meta\s+property=""og:title""\s+content=""([^""]+)""", RegexOptions.IgnoreCase);
         if (ogMatch.Success && !string.IsNullOrWhiteSpace(ogMatch.Groups[1].Value))
         {
-            return CleanWebTitle(ogMatch.Groups[1].Value);
+            cleanTitle = CleanWebTitle(ogMatch.Groups[1].Value);
         }
 
-        var titleMatch = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        if (titleMatch.Success && !string.IsNullOrWhiteSpace(titleMatch.Groups[1].Value))
+        // 3. Document Title
+        if (string.IsNullOrWhiteSpace(cleanTitle))
         {
-            return CleanWebTitle(titleMatch.Groups[1].Value);
+            var titleMatch = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (titleMatch.Success && !string.IsNullOrWhiteSpace(titleMatch.Groups[1].Value))
+            {
+                cleanTitle = CleanWebTitle(titleMatch.Groups[1].Value);
+            }
         }
 
-        return string.Empty;
+        // 4. Try appending release year if missing
+        if (!string.IsNullOrWhiteSpace(cleanTitle) && !Regex.IsMatch(cleanTitle, @"\b(?:19|20)\d{2}\b"))
+        {
+            var yearMatch = Regex.Match(html, @"(?:class=[""'][^""']*(?:year|release)[^""']*[""']|itemprop=[""'](?:dateCreated|copyrightYear)[""']|href=[""'][^""']*\/year\/\d+[^""']*[""'])[^>]*>\s*(\b(?:19|20)\d{2}\b)", RegexOptions.IgnoreCase);
+            if (yearMatch.Success)
+            {
+                cleanTitle = $"{cleanTitle} ({yearMatch.Groups[1].Value})";
+            }
+        }
+
+        return cleanTitle;
     }
 
-    private static string CleanWebTitle(string raw)
+    public static string CleanWebTitle(string raw)
     {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
         string clean = WebUtility.HtmlDecode(raw).Trim();
-        clean = Regex.Replace(clean, @"\s*[\-\|\:·–—]\s*(YouTube|Bilibili|TikTok|Vimeo|Instagram|Facebook|Google\s+(?:Sheets|Docs|Slides|Drive|Forms|Spreadsheets|Documents|Presentations)).*$", "", RegexOptions.IgnoreCase).Trim();
+
+        // Strip trailing extension if present (e.g. .mp4, .mkv)
+        clean = Regex.Replace(clean, @"\.(?:mp4|mkv|webm|avi|mov|ts|m4v|mp3|m4a|aac|wav|flac)$", "", RegexOptions.IgnoreCase).Trim();
+
+        // 1. Strip leading action verbs: Stream, Watch, Streaming, Play, Download, Free Online
+        clean = Regex.Replace(clean, @"^(?:stream|watch|streaming|play|download)\s+", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"^free\s+(?:watch|streaming|stream|download|movie|movies|hd|online|full)\s+", "", RegexOptions.IgnoreCase).Trim();
+
+        // 2. Strip leading site brands (e.g. "67movies - ", "HydraHD | ", "Miruro - ")
+        clean = Regex.Replace(clean, @"^(?:67movies(?:\.[a-z]+)?|123movies(?:\.[a-z]+)?|solarmovie|fmovies|ramoflix(?:\.[a-z]+)?|hydrahd(?:\.[a-z]+)?|goojara(?:\.[a-z]+)?|wmovies(?:\.[a-z]+)?|miruro(?:\.[a-z]+)?|anime(?:\.|\s*)nexus|animesuge(?:\.[a-z]+)?|anizone(?:\.[a-z]+)?)\s*[\-\|\:·–—\s]\s*", "", RegexOptions.IgnoreCase).Trim();
+
+        // 3. Strip resolution brackets [1080p], (1080p), [Full HD], etc.
+        clean = Regex.Replace(clean, @"\[\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\]", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"\(\s*(?:2160p?|1440p?|1080p?|720p?|480p?|360p?|4k|uhd|full\s*hd|hd)\s*\)", "", RegexOptions.IgnoreCase).Trim();
+
+        // 4. Strip site suffixes separated by ::
+        clean = Regex.Replace(clean, @"\s*::\s*.*$", "").Trim();
+
+        // 5. Strip site/brand suffixes separated by - or | or • or —
+        clean = Regex.Replace(clean, @"\s*[\-\|\:·–—]\s*(?:RamoFlix(?:\.[a-z]+)?.*|HydraHD(?:\.[a-z]+)?.*|Goojara(?:\.[a-z]+)?.*|111movies(?:\.[a-z]+)?.*|Wmovies(?:\.[a-z]+)?.*|Unlimited\s+Movies\s+&.*|Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe.*|Miruro(?:\.[a-z]+)?.*|Anime(?:\.|\s*)Nexus.*|AnimeSuge(?:\.[a-z]+)?.*|AniZone(?:\.[a-z]+)?.*|HiAnime.*|123movies.*|67movies.*|SolarMovie.*|FMovies.*|Crunchyroll.*|Funimation.*|YouTube\s*Music.*|YouTube.*|Pornhub.*|Facebook.*|Bilibili.*|TikTok.*|Vimeo.*|Instagram.*|Twitter.*|X.*|Reddit.*|Dailymotion.*|Google\s+(?:Sheets|Docs|Slides|Drive|Forms|Spreadsheets|Documents|Presentations).*)$", "", RegexOptions.IgnoreCase).Trim();
+
+        // 6. Strip trailing SEO junk phrases and sub/dub markers
+        clean = Regex.Replace(clean, @"\s+(?:online\s+free\s+watch\s+full\s+(?:now\s+)?hd|online\s+free\s+watch\s+full|watch\s+full\s+now\s+hd|watch\s+full\s+movie\s+(?:online\s+)?(?:free\s+)?hd|watch\s+full\s+movie\s+online|watch\s+full\s+movie|watch\s+online\s+free|watch\s+online\s+hd|watch\s+free\s+online|watch\s+free\s+hd|watch\s+online|online\s+free|free\s+online|full\s+movie\s+hd|full\s+movie|full\s+hd|watch\s+now\s+hd|watch\s+now|full\s+now\s+hd|unlimited\s+movies\s+&\s+tv\s+shows\s+online.*|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"\s+(?:at|on)\s+[a-z0-9.-]+\.[a-z]{2,}\b.*$", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"\s+(?:on|at)\s+(?:67movies|ramoflix|hydrahd|goojara|wmovies|vidqueen|vidsrc|2embed|autoembed|superembed|streamembed|miruro|animesuge|animepahe|anizone|nexus)\b.*$", "", RegexOptions.IgnoreCase).Trim();
+
+        // 7. Strip trailing delimiters
+        clean = Regex.Replace(clean, @"[\s\-\|\:·–—]+$", "").Trim();
+
         clean = Regex.Replace(clean, @"[\\/:*?""<>|]", "_");
         clean = Regex.Replace(clean, @"\s+", " ").Trim();
         return clean;

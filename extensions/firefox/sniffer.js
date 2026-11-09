@@ -47,14 +47,60 @@
   const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
   const MAX_STASH_CHARS = 8 * 1024 * 1024;
 
+  function stashYouTubePlayerResponse(data, videoId = null) {
+    try {
+      if (!data) return;
+      let resp = data;
+      if (typeof resp === 'string') {
+        if (!resp.includes('"streamingData"')) return;
+        try { resp = JSON.parse(resp); } catch (_) { return; }
+      }
+      if (!resp || typeof resp !== 'object' || !resp.streamingData) return;
+      let vid = resp.videoDetails?.videoId || videoId;
+      if (!vid && typeof window !== 'undefined' && window.location) {
+        try {
+          const u = new URL(window.location.href);
+          vid = u.searchParams.get('v') || u.pathname.match(/\/shorts\/([^/]+)/)?.[1];
+        } catch (_) {}
+      }
+      if (!vid || typeof vid !== 'string' || vid.length < 5) return;
+
+      const jsonStr = JSON.stringify(resp);
+      const root = document.head || document.documentElement || document.body;
+      if (root) {
+        const safeVidSelector = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+          ? CSS.escape(vid) : vid.replace(/"/g, '\\"');
+        let stashEl = root.querySelector ? root.querySelector(`smartdm-player-response[data-smartdm-video-id="${safeVidSelector}"]`) : null;
+        if (!stashEl && document.createElement) {
+          stashEl = document.createElement('smartdm-player-response');
+          stashEl.setAttribute('data-smartdm-video-id', vid);
+          stashEl.style.display = 'none';
+          root.appendChild(stashEl);
+        }
+        if (stashEl) stashEl.textContent = jsonStr;
+      }
+
+      try {
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+          window.dispatchEvent(new CustomEvent('__smartdm_youtube_response__', {
+            detail: { videoId: vid, playerResponse: resp }
+          }));
+        }
+      } catch (_) {}
+    } catch (_) {}
+  }
+
   function inspectJsonResponseForManifests(text, requestUrl) {
     if (!text || typeof text !== 'string' || text.length > MAX_MANIFEST_BYTES) return;
     try {
+      if (text.includes('"streamingData"') && (text.includes('"adaptiveFormats"') || text.includes('"formats"'))) {
+        stashYouTubePlayerResponse(text);
+      }
       if (text.includes('"playurl"') || text.includes('"video_resource"') || text.includes('"audio_resource"') || text.includes('"video_data"') || (text.includes('"dash"') && (text.includes('"video"') || text.includes('"baseUrl"') || text.includes('"base_url"')))) {
         stashAndEmitManifest(requestUrl, text);
         try {
           window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
-            detail: { url: requestUrl, text, playerId: null, candidateUrl: requestUrl }
+            detail: { url: requestUrl, text, playerId: null, candidateUrl: requestUrl, referer: window.location.href, origin: window.location.origin }
           }));
         } catch (_) {}
         return;
@@ -68,7 +114,7 @@
             stashAndEmitManifest(mUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${mUrl}`);
             try {
               window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
-                detail: { url: mUrl, text: null, playerId: null, candidateUrl: mUrl }
+                detail: { url: mUrl, text: null, playerId: null, candidateUrl: mUrl, referer: window.location.href, origin: window.location.origin }
               }));
             } catch (_) {}
           }
@@ -89,7 +135,7 @@
                 stashAndEmitManifest(fullUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${fullUrl}`);
                 try {
                   window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
-                    detail: { url: fullUrl, text: null, playerId: null, candidateUrl: fullUrl }
+                    detail: { url: fullUrl, text: null, playerId: null, candidateUrl: fullUrl, referer: window.location.href, origin: window.location.origin }
                   }));
                 } catch (_) {}
               }
@@ -151,6 +197,53 @@
         if (window.__playinfo__) checkAndEmitBiliPlayinfo(window.__playinfo__);
         if (window.__NEXT_DATA__) checkAndEmitBiliPlayinfo(window.__NEXT_DATA__);
       });
+    }
+  } catch (_) {}
+
+  try {
+    const isYtPage = typeof window !== 'undefined' && window.location?.hostname &&
+      /(^|\.)(youtube\.com|youtu\.be)$/i.test(window.location.hostname);
+    if (isYtPage) {
+      const checkCurrentYtData = (hintVid = null) => {
+        try {
+          if (window.ytInitialPlayerResponse) stashYouTubePlayerResponse(window.ytInitialPlayerResponse, hintVid);
+          const app = document.querySelector ? document.querySelector('ytd-app') : null;
+          if (app && app.data && app.data.playerResponse) stashYouTubePlayerResponse(app.data.playerResponse, hintVid);
+          const moviePlayer = (document.getElementById ? document.getElementById('movie_player') : null) ||
+            (document.querySelector ? document.querySelector('#movie_player') : null);
+          if (moviePlayer && typeof moviePlayer.getPlayerResponse === 'function') {
+            stashYouTubePlayerResponse(moviePlayer.getPlayerResponse(), hintVid);
+          }
+        } catch (_) {}
+      };
+
+      if (window.ytInitialPlayerResponse) {
+        stashYouTubePlayerResponse(window.ytInitialPlayerResponse);
+      }
+      let currentYtInitial = window.ytInitialPlayerResponse;
+      try {
+        Object.defineProperty(window, 'ytInitialPlayerResponse', {
+          configurable: true,
+          enumerable: true,
+          get() { return currentYtInitial; },
+          set(val) {
+            currentYtInitial = val;
+            stashYouTubePlayerResponse(val);
+          }
+        });
+      } catch (_) {}
+
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', () => checkCurrentYtData());
+      }
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('yt-navigate-finish', () => checkCurrentYtData());
+        window.addEventListener('yt-page-data-updated', () => checkCurrentYtData());
+        window.addEventListener('yt-player-updated', () => checkCurrentYtData());
+        window.addEventListener('__smartdm_query_youtube__', (e) => {
+          checkCurrentYtData(e?.detail?.videoId || null);
+        });
+      }
     }
   } catch (_) {}
 
@@ -594,7 +687,7 @@
 
       try {
         window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
-          detail: { url: manifestUrl, text: playerId ? null : text, playerId }
+          detail: { url: manifestUrl, text: playerId ? null : text, playerId, referer: window.location.href, origin: window.location.origin }
         }));
       } catch(e) {}
     }

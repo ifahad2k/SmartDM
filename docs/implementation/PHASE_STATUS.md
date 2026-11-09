@@ -160,3 +160,22 @@ See [handoff](STREAM_BINDING_HANDOFF.md). Full Package 4 exit gate remains NO.
 2026-11-08: Standalone owner-requested manual Testing desk implemented with 9 data/
 ZIP regressions and Chrome single/all export/import/persistence evidence.
 [Handoff](TESTING_DESK_HANDOFF.md). No package closure, installer or runtime change.
+
+2026-11-08: Thumbnail CSS regression repaired in both extension watcher copies;
+203 browser tests pass. [Handoff](THUMBNAIL_STYLE_HANDOFF.md). Full gates remain NO.
+
+2026-11-08 Package 4 owner-requested menu latency repair: bounded YouTube prefetch,
+completed-list caching, expiry and terminal UI completion implemented in both
+extensions. 227 browser tests pass, including 24 new cases. This is fixture proof,
+not a live-site timing or package-wide exit gate. See
+[handoff](YOUTUBE_MENU_PREFETCH_HANDOFF.md). Full gates remain NO.
+
+Same-day regression repair: the owner's loaded-browser report reopened this
+slice. The premature deadline and removed selected-player fallback are corrected.
+233 browser tests pass; three real Chrome extension/desktop/menu checks and
+1080p60 video/paired-audio range probes pass. Loaded-page refresh and broader
+media gates remain open. See [handoff](YOUTUBE_MENU_REGRESSION_HANDOFF.md).
+
+2026-11-08 Package 4 linked-thumbnail source repair: 12 new cases, 245 browser
+tests passed. Loaded-browser verification is blocked/pending; full exit gate NO.
+See [handoff](LINKED_THUMBNAIL_HANDOFF.md).

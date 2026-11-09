@@ -358,3 +358,74 @@ all-site ZIP: 51 sites, 1 passed, 1 failed, 49 untested, 2 bugs, 1 image; both C
 checks pass. These are tool fixtures, not SmartDM download results. See exact
 [handoff and limitations](TESTING_DESK_HANDOFF.md). No desktop/Java suites were
 rerun for this independent HTML utility.
+
+## 2026-11-08 thumbnail style regression
+
+`node --test tests/browser/*.test.cjs`: **203 passed, zero failed/skipped**.
+Four new mount/real-stylesheet cases failed before the repair and now pass for
+Chrome/Firefox and adopted/inline CSS. Existing thumbnail clicks and memory
+lifecycle cases also pass. `git diff --check` passes. No live browser visual
+claim; see [handoff](THUMBNAIL_STYLE_HANDOFF.md).
+
+## 2026-11-08 YouTube menu preparation and completion
+
+`node --test tests/browser/*.test.cjs`: **227 passed, zero failed/skipped**.
+The 24 new cases cover real watcher/renderer mount and click, synchronous prepared
+menus without spinner flashes, audio pairing, selected-ID isolation, concurrent
+click coalescing, timeout/retry/late-reply handling, signed URL/TTL expiry, malformed
+results, queue/cache bounds, visibility/priority and observer/listener cleanup.
+The two existing memory-test VM fixtures now expose the standard `URL` API; their
+coalescing and stale-reply assertions remain in place. All four changed browser
+modules pass `node --check`; `git diff --check` passes. Chrome/Firefox copies match.
+No .NET/Java runtime files changed, so those suites were not rerun. No live browser
+or screen-capture timing check was performed. See
+[full handoff](YOUTUBE_MENU_PREFETCH_HANDOFF.md).
+
+## 2026-11-08 YouTube prefetch regression correction
+
+The owner's screenshots contradicted the initial fixture-only success claim.
+The UI deadline was nine seconds, less than the existing 15-second desktop
+attempt plus browser fallback, and the new path had removed captured formats.
+The correction uses 30 seconds, normalizes successful responses, and retains
+only captures belonging to the selected player's source when full discovery
+fails. It does not restore an arbitrary tab-wide stream guess.
+
+`node --test tests/browser/*.test.cjs`: **233 passed, 0 failed/skipped**.
+Six additional cases cover responses later than nine seconds, actual desktop
+DTO fields (`directUrl`, zero height/resolution label), status-only success and
+selected fallback surviving resolver failure without including another video.
+
+Actual Chrome extension-origin test page loaded production `utils.js`,
+`format_engine.js` and `overlay_ui.js`, using `chrome.runtime.sendMessage` through
+the installed background and running desktop. Rendered results:
+`UGrn-X7krkQ` (matching Casetoo title/channel): 20 entries including 1080p60,
+0.1 s; `FJqSrQIRM88`: 9 entries including 720p60, 6.4 s;
+`9Gx6BkqobkQ`: 20 entries including 1080p, cached 0.0 s. Earlier desktop-only
+probe `Pc1JzImPw_M`: 24 entries in 5.33 s. These samples do not establish general
+latency or reproduce every reported failure. The Casetoo 1080p60 MP4 and paired
+audio both returned HTTP 206 with the expected media MIME type and 1024 bytes
+in bounded range probes; no complete video download was performed.
+
+The temporary diagnostic tab/files were removed and computer-use session reset.
+No screenshots were captured. Activation in existing YouTube tabs still requires
+the extension reload/page refresh. See
+[complete correction handoff](YOUTUBE_MENU_REGRESSION_HANDOFF.md).
+
+## 2026-11-08 linked-thumbnail discovery
+
+Initial `node --test tests/browser/linked_thumbnail.test.cjs`: 10 failed before
+the source fix, reproducing listing-preview delivery before the watch response.
+Two actual mounted-button cases were then added. Final
+`node --test tests/browser/*.test.cjs`: **245 passed, 0 failed/skipped**.
+Coverage includes home/search parity, actual watcher routing, separate card
+identity, coalescing, failure retry, timeout/late replies and expiry.
+
+Initial platform HTTP metadata requests returned search/watch HTTP 200, with
+36 watch links and player/HLS definitions in one selected watch document. This
+did not establish successful parser/menu completion. Later Node transport failed
+and a platform HTTP retry timed out. Computer-use then denied the current URL;
+browser testing stopped. The final shell syntax/hash/cleanup command was rejected
+by automatic approval review as blocked by policy; it did not execute. Fixed-path
+local file edits removed workspace diagnostic scripts. No full live verification
+or .NET/Java runtime validation is claimed. See
+[handoff](LINKED_THUMBNAIL_HANDOFF.md).

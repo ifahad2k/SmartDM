@@ -81,3 +81,33 @@ in memory with an explicit warning. Live Chrome attachment/export/import/reload
 was checked; clipboard/drop, restore confirmation, mobile and Firefox/Linux UI
 were not separately exercised. This tool does not verify downloads or change any
 open media/security/package gate. See [handoff](TESTING_DESK_HANDOFF.md).
+
+2026-11-08 thumbnail style: source repair and 203 browser fixtures pass, but the
+loaded extension must be reloaded and its page refreshed for visual confirmation.
+This presentation-only repair changes none of the open media/security gates.
+See [handoff](THUMBNAIL_STYLE_HANDOFF.md).
+
+2026-11-08 YouTube menus: prepared cached lists open synchronously; a newly visible
+video clicked before resolution, an evicted/expired entry, or an unavailable
+resolver still needs a network lookup or displays an error. Prefetch is limited
+to visible/intent targets, two awaiting requests and eight queued targets per
+document; it does not crawl the entire feed. The corrected 30-second UI deadline does not
+cancel an already executing desktop/service-worker request. This change does
+not establish live YouTube latency, universal quality availability, native cache
+memory bounds or new Firefox/Linux runtime evidence. See
+[handoff](YOUTUBE_MENU_PREFETCH_HANDOFF.md).
+
+The first implementation removed the prior fallback and timed out sooner than
+the existing desktop route, causing a user-reported regression despite passing
+fixtures. Corrected behavior retains selected-player captures while the full
+lookup continues/fails. Three live extension/runtime/menu checks and bounded
+video/audio range probes now pass; this does not prove every YouTube video,
+uncached lookup timing, loaded-page activation or full-download completion.
+See [correction handoff](YOUTUBE_MENU_REGRESSION_HANDOFF.md).
+
+2026-11-08 linked thumbnails: source tests exclude listing previews, but the
+selected watch page still needs a supported stream that the existing background
+parser can read. Authentication/dynamic setup/network errors can prevent this.
+The 20-second UI deadline does not cancel that existing background fetch.
+Live verification stopped when computer-use denied the current URL. See
+[handoff](LINKED_THUMBNAIL_HANDOFF.md).

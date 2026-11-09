@@ -20,6 +20,7 @@ public class MediaFormatDto
     public int Height { get; set; }
     public long Bandwidth { get; set; }
     public double TotalDuration { get; set; }
+    public string? Referer { get; set; }
 }
 
 public class BrowserDownloadRequest

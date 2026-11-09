@@ -117,7 +117,7 @@ public class LocalIpcService : ILocalIpcService
                 return;
             }
 
-            if (req.Url?.AbsolutePath != "/api/browser")
+            if (req.Url?.AbsolutePath != "/api/browser" && req.Url?.AbsolutePath != "/api/download")
             {
                 resp.StatusCode = 404;
                 resp.Close();
@@ -191,6 +191,8 @@ public class LocalIpcService : ILocalIpcService
 
                 string? queryReferer = null;
                 if (root.TryGetProperty("referer", out var rElem)) queryReferer = rElem.GetString();
+                string? queryPageUrl = null;
+                if (root.TryGetProperty("pageUrl", out var puElemQ)) queryPageUrl = puElemQ.GetString();
                 string? queryUa = null;
                 if (root.TryGetProperty("userAgent", out var uaElemQ)) queryUa = uaElemQ.GetString();
                 string? queryCookies = null;
@@ -224,7 +226,7 @@ public class LocalIpcService : ILocalIpcService
                              queryUrl.Contains("stream-embed", StringComparison.OrdinalIgnoreCase) ||
                              queryUrl.Contains("playlist", StringComparison.OrdinalIgnoreCase))
                     {
-                        var hlsRes = await HlsMediaResolver.ResolveHlsFormatsAsync(queryUrl, queryReferer, queryUa, queryCookies);
+                        var hlsRes = await HlsMediaResolver.ResolveHlsFormatsAsync(queryUrl, queryReferer ?? queryPageUrl, queryUa, queryCookies, token: _cts?.Token ?? default, pageUrl: queryPageUrl ?? queryReferer);
                         if (hlsRes.Success && hlsRes.Formats.Count > 0)
                         {
                             var jsonPayload = JsonSerializer.Serialize(new
@@ -469,7 +471,7 @@ public class LocalIpcService : ILocalIpcService
 
     private static int GetAvailablePort()
     {
-        int[] preferredPorts = new int[] { 18420, 18421, 18422, 18423, 18424, 18425 };
+        int[] preferredPorts = new int[] { 18420, 9191, 18421, 18422, 18423, 18424, 18425 };
         foreach (int p in preferredPorts)
         {
             try

@@ -111,17 +111,18 @@ public partial class AddDownloadViewModel : ViewModelBase
     private readonly string? _initialMime;
     private readonly AppSettingsModel _settings;
 
+    public static bool IsGenericStem(string? stem)
+    {
+        return HttpProbeService.IsGenericStem(stem);
+    }
+
     public static bool IsGenericOrInvalidFileName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return true;
-        string clean = name.Trim();
+        string clean = name.Trim().Trim('\"', '\'');
         string lower = Path.GetFileNameWithoutExtension(clean).ToLowerInvariant();
 
-        // Strip notification badge e.g. "(311) " or "(1) "
-        lower = System.Text.RegularExpressions.Regex.Replace(lower, @"^\(\d+\)\s*", "").Trim();
-
-        // Strip duplicate counter suffix e.g. " (1)", " (2)", " (5)"
-        lower = System.Text.RegularExpressions.Regex.Replace(lower, @"\s*\(\d+\)$", "").Trim();
+        if (IsGenericStem(lower)) return true;
 
         string ext = Path.GetExtension(clean).ToLowerInvariant();
         var nonGenericExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -139,59 +140,7 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (!string.IsNullOrEmpty(ext) && nonGenericExtensions.Contains(ext))
         {
-            return string.IsNullOrEmpty(lower);
-        }
-
-        if (lower == "youtube" ||
-            lower == "youtube music" ||
-            lower == "watch" ||
-            lower == "videoplayback" ||
-            lower == "video" ||
-            lower == "media stream" ||
-            lower == "download" ||
-            lower == "downloads" ||
-            lower == "notifications" ||
-            lower == "notification" ||
-            lower == "facebook" ||
-            lower == "pornhub" ||
-            lower == "bin" ||
-            lower == "player" ||
-            lower == "embed" ||
-            lower == "video stream" ||
-            lower == "stream" ||
-            lower == "kwik" ||
-            lower == "megaplay" ||
-            lower.Length < 2)
-        {
-            return true;
-        }
-
-        // Detect embed player host tokens or generic files like "file 179829 - megaplay" or "file 12345"
-        if (System.Text.RegularExpressions.Regex.IsMatch(lower, @"^file[\s_-]*\d+"))
-        {
-            return true;
-        }
-
-        if (lower.Contains("megaplay") || lower.Contains("kwik") || lower.Contains("streamwish") ||
-            lower.Contains("vidcloud") || lower.Contains("upcloud") || lower.Contains("filemoon") ||
-            lower.Contains("doodstream") || lower.Contains("streamtape") || lower.Contains("mp4upload"))
-        {
-            if (lower.StartsWith("file") || lower.StartsWith("player") || lower.StartsWith("embed") || lower.StartsWith("video") || lower.Contains("server") || lower == "megaplay" || lower == "kwik")
-            {
-                return true;
-            }
-        }
-
-        // Detect Facebook CDN tokens (e.g. AQPEv8rliM4qIQGkbci...)
-        if (lower.StartsWith("aq") && lower.Length >= 12 && !lower.Contains(' '))
-        {
-            return true;
-        }
-
-        // Detect opaque random hashes or segment tokens (> 25 chars without spaces)
-        if (lower.Length >= 25 && !lower.Contains(' ') && System.Text.RegularExpressions.Regex.IsMatch(lower, @"^[a-z0-9_\-\+\/\=]+$"))
-        {
-            return true;
+            return false;
         }
 
         return false;
@@ -278,6 +227,11 @@ public partial class AddDownloadViewModel : ViewModelBase
         settings ??= new AppSettingsModel();
         _settings = settings;
         ParallelThreads = Math.Clamp(settings.MaxParallelSegments, 1, 32);
+        if (DownloadEngine.IsStreamingCdn(initialUrl) || DownloadEngine.IsStreamingCdn(initialVideoUrl) ||
+            initialFormats?.Any(f => DownloadEngine.IsStreamingCdn(f.DirectUrl, f.MediaKind)) == true)
+        {
+            ParallelThreads = Math.Min(ParallelThreads, 4);
+        }
         _probeService = probeService ?? new HttpProbeService(settings: settings);
         _catalogService = catalogService ?? new FileCatalogService();
         _findActiveDownloadByUrl = findActiveDownloadByUrl;
@@ -296,14 +250,24 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         if (!IsGenericOrInvalidFileName(initialTitle))
         {
-            _authoritativeTitle = initialTitle!.Trim();
+            _authoritativeTitle = HttpProbeService.CleanWebTitle(initialTitle!.Trim());
         }
         else if (initialFormats != null)
         {
             var firstWithTitle = initialFormats.FirstOrDefault(f => !IsGenericOrInvalidFileName(f.Title));
             if (firstWithTitle != null)
             {
-                _authoritativeTitle = firstWithTitle.Title!.Trim();
+                _authoritativeTitle = HttpProbeService.CleanWebTitle(firstWithTitle.Title!.Trim());
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_authoritativeTitle) && !System.Text.RegularExpressions.Regex.IsMatch(_authoritativeTitle, @"\b(?:19|20)\d{2}\b"))
+        {
+            string context = $"{initialUrl} {initialReferer} {initialVideoUrl}";
+            var ym = System.Text.RegularExpressions.Regex.Match(context, @"\b(19\d\d|20\d\d)\b");
+            if (ym.Success)
+            {
+                _authoritativeTitle = $"{_authoritativeTitle} ({ym.Groups[1].Value})";
             }
         }
 
@@ -330,6 +294,18 @@ public partial class AddDownloadViewModel : ViewModelBase
                     FileName += googleExt;
                 }
             }
+            string curExt = Path.GetExtension(FileName).ToLowerInvariant();
+            bool isMediaExt = hasRealFormats || curExt is ".mp4" or ".mkv" or ".webm" or ".ts" or ".m4v" or ".mp3" or ".m4a";
+            if (isMediaExt && !System.Text.RegularExpressions.Regex.IsMatch(FileName, @"\b(?:19|20)\d{2}\b"))
+            {
+                string context = $"{initialUrl} {initialReferer} {initialVideoUrl}";
+                var ym = System.Text.RegularExpressions.Regex.Match(context, @"\b(19\d\d|20\d\d)\b");
+                if (ym.Success)
+                {
+                    string fnStem = Path.GetFileNameWithoutExtension(FileName);
+                    FileName = string.IsNullOrEmpty(curExt) ? $"{fnStem} ({ym.Groups[1].Value})" : $"{fnStem} ({ym.Groups[1].Value}){curExt}";
+                }
+            }
         }
         else if (isGoogleExport && !string.IsNullOrEmpty(googleExt) && googleExt != ".html")
         {
@@ -347,10 +323,6 @@ public partial class AddDownloadViewModel : ViewModelBase
                 FileName = HttpProbeService.ExtractFileNameFromUrl(parsedInitUri!, initialReferer) ?? $"spreadsheet{googleExt}";
             }
         }
-        else if (!string.IsNullOrWhiteSpace(inferredUrlName) && !IsGenericOrInvalidFileName(inferredUrlName))
-        {
-            FileName = inferredUrlName;
-        }
         else if (!string.IsNullOrWhiteSpace(_authoritativeTitle) && !IsGenericOrInvalidFileName(_authoritativeTitle))
         {
             string safeTitle = string.Join("_", _authoritativeTitle.Split(Path.GetInvalidFileNameChars())).Trim();
@@ -363,6 +335,10 @@ public partial class AddDownloadViewModel : ViewModelBase
             {
                 FileName = safeTitle;
             }
+        }
+        else if (!string.IsNullOrWhiteSpace(inferredUrlName) && !IsGenericOrInvalidFileName(inferredUrlName))
+        {
+            FileName = inferredUrlName;
         }
         else if (hasRealFormats)
         {
@@ -616,7 +592,7 @@ public partial class AddDownloadViewModel : ViewModelBase
 
         try
         {
-            var res = await HlsMediaResolver.ResolveHlsFormatsAsync(targetUrl, _initialReferer, null, null);
+            var res = await HlsMediaResolver.ResolveHlsFormatsAsync(targetUrl, _initialReferer, null, null, token: default, pageUrl: _initialReferer);
             if (!res.Success || res.Formats.Count == 0)
             {
                 IsProbing = false;
@@ -988,7 +964,16 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
 
         bool isHls = (SelectedFormat?.MediaKind == "hls" || targetUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(SelectedFormat?.ManifestText));
+        bool isStreamingCdn = DownloadEngine.IsStreamingCdn(targetUrl, SelectedFormat?.MediaKind) || isHls;
         int effectiveThreads = (isHls || _probedAcceptsRanges) ? ParallelThreads : 1;
+        if (isStreamingCdn)
+        {
+            effectiveThreads = Math.Clamp(effectiveThreads, 1, 6);
+            if (effectiveThreads > 4 && ParallelThreads == 16)
+            {
+                effectiveThreads = 4;
+            }
+        }
 
         long targetBytes = (SelectedFormat != null && SelectedFormat.FileSize > 0)
             ? SelectedFormat.FileSize
