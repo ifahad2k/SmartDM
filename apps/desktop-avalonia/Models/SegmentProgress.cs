@@ -11,6 +11,7 @@ public class SegmentProgress
     public double SpeedMbps { get; set; }
     public bool IsActive { get; set; }
     public bool IsCompleted { get; set; }
+    public bool IsRetrying { get; set; }
     public string? CheckpointSha256 { get; set; }
 
     public double ProgressPercentage

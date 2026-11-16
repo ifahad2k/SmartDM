@@ -779,15 +779,13 @@ class SmartDmUtils {
   }
 
   static sanitizeStreamUrl(rawUrl) {
-    if (!rawUrl) return null;
-    try {
-      const u = new URL(rawUrl);
-      if (u.searchParams.has('bytestart')) u.searchParams.delete('bytestart');
-      if (u.searchParams.has('byteend')) u.searchParams.delete('byteend');
-      if (u.searchParams.has('range')) u.searchParams.delete('range');
-      return u.href;
-    } catch(e) {
-      return rawUrl;
-    }
+    if (!rawUrl) return rawUrl;
+    // Remove only transport byte hints, preserving every other signed byte.
+    const match = String(rawUrl).match(/^([^?#]*)(?:\?([^#]*))?(#.*)?$/);
+    if (!match || match[2] === undefined) return rawUrl;
+    const parts = match[2].split('&');
+    const kept = parts.filter(p => !/^(?:(?:bytestart|byteend)=\d+|range=\d+(?:-\d+)?)$/i.test(p));
+    if (kept.length === parts.length) return rawUrl;
+    return match[1] + (kept.length ? '?' + kept.join('&') : '') + (match[3] || '');
   }
 }

@@ -29,16 +29,30 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>", "*://music.youtube.com/*", "*://*.bilibili.com/*", "*://*.bilibili.tv/*"],
-      "js": ["sniffer.js"],
+      "matches": [
+        "<all_urls>",
+        "*://music.youtube.com/*",
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.tv/*"
+      ],
+      "js": [
+        "modules/media_metadata.js",
+        "sniffer.js"
+      ],
       "world": "MAIN",
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_start"
     },
     {
-      "matches": ["<all_urls>", "*://music.youtube.com/*", "*://*.bilibili.com/*", "*://*.bilibili.tv/*"],
+      "matches": [
+        "<all_urls>",
+        "*://music.youtube.com/*",
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.tv/*"
+      ],
       "js": [
+        "modules/media_metadata.js",
         "modules/utils.js",
         "modules/visual_mount.js",
         "modules/format_engine.js",
@@ -53,8 +67,15 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sniffer.js"],
-      "matches": ["<all_urls>", "*://music.youtube.com/*", "*://*.bilibili.com/*", "*://*.bilibili.tv/*"]
+      "resources": [
+        "sniffer.js"
+      ],
+      "matches": [
+        "<all_urls>",
+        "*://music.youtube.com/*",
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.tv/*"
+      ]
     }
   ]
 }

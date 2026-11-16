@@ -68,4 +68,17 @@ for (const browser of ['chrome', 'firefox']) {
     assert.equal(sent.formats[0].manifestText, updated.manifestText);
     assert.equal(sent.title, updated.title);
   });
+  test(`${browser}: selected measured 576p is not advertised as 720p`, () => {
+    const context = vm.createContext({document: {createElement: () => new Element()},
+      window: {location: {hostname: 'www.tiktok.com'}}, URL, CSS: {escape: value => value},
+      FormatRegistryEngine: {drainStashedManifests() {}}});
+    for (const [file, name] of [['utils.js', 'SmartDmUtils'], ['overlay_ui.js', 'OverlayUiRenderer']])
+      vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/${file}`, 'utf8') + `\nthis.${name}=${name};`, context);
+    const container = new Element();
+    context.OverlayUiRenderer.renderFormatDropdown(container,
+      [{formatId:'selected_576_0',height:576,resolution:'576p (captured stream)',url:'https://cdn.invalid/selected.mp4'}],
+      'https://www.tiktok.com/', {}, 'Actual caption');
+    assert.equal(container.children[0].querySelector('.format-title').textContent, '576p (MP4)');
+    assert.equal(container.children[0].dataset.height, '576');
+  });
 }

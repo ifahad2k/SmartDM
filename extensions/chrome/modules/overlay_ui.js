@@ -283,7 +283,9 @@ class OverlayUiRenderer {
       if (hVal <= 0 && formats.length === 1 && container._mediaEl && container._mediaEl.videoHeight > 0) {
         hVal = container._mediaEl.videoHeight;
       }
-      if (hVal > 0) {
+      // Selected-player formats carry measured/declared dimensions. Do not
+      // round a real 576p stream up to a fabricated 720p menu option.
+      if (hVal > 0 && !String(fmt.formatId || '').startsWith('selected_')) {
         if (fmt.width && fmt.width > 0) {
           hVal = SmartDmUtils.normalizeVideoResolution(fmt.width, hVal);
         } else {

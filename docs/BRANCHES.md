@@ -99,3 +99,17 @@ publication or Java change was performed.
 
 2026-11-08 linked-thumbnail discovery repair is local to the C#-track extensions;
 no remote/Java change. See [handoff](implementation/LINKED_THUMBNAIL_HANDOFF.md).
+
+
+2026-11-10: HLS accounting/finite-playlist repair is local on `sdm2.0` at baseline
+`8f1465c`; no remote or Java track changed. See
+[handoff](implementation/HLS_PROGRESS_HANDOFF.md). The rebuilt Windows app is
+running with the existing episode paused and staging preserved.
+
+
+## 2026-11-16 active product scope
+
+Owner reaffirmed active development is **SmartDM 2.0 only**, C# / Avalonia and
+its extensions. Java 1.0 is discontinued for this work; its preserved history is
+not an implementation or analysis target. Report repairs are local at `8f1465c`;
+no new branch publication. See [handoff](implementation/REPORT_REPAIR_HANDOFF.md).

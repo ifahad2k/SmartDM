@@ -1263,7 +1263,7 @@ class VisualMountDetector {
 
       const card = containerEl.closest(
         'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ' +
-        'ytd-grid-video-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ' +
+        'ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytmusic-responsive-list-item-renderer, ' +
         'ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, ' +
         '.videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb'
       ) || containerEl;

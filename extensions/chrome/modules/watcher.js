@@ -1485,6 +1485,7 @@ class MediaWatcher {
       '.bstar-video-card',
       'div[class*="bstar-video-card"]',
       'a[href*="/video/BV"]',
+      'a[href*="/video/"]',
       'a[href*="/play/"]',
       'a[href*="/view_video.php"]',
       'a[href*="/watch?v="]',
@@ -1666,9 +1667,13 @@ class MediaWatcher {
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
     };
-    btn.addEventListener('pointerdown', stopButtonAction);
-    btn.addEventListener('mousedown', stopButtonAction);
-    btn.addEventListener('mouseup', stopButtonAction);
+    const stopButtonPointer = (e) => {
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    };
+    btn.addEventListener('pointerdown', stopButtonPointer);
+    btn.addEventListener('mousedown', stopButtonPointer);
+    btn.addEventListener('mouseup', stopButtonPointer);
 
     const onBtnClick = (e) => {
       stopButtonAction(e);

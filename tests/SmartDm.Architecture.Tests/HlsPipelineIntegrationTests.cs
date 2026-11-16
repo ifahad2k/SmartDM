@@ -10,10 +10,11 @@ namespace SmartDm.Architecture.Tests;
 public sealed class HlsPipelineIntegrationTests
 {
     [HlsPipelineTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task RealEngine_RemuxesLongFmp4Playlist_WithRequiredReferrer(bool captured, bool separateAudio)
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, false)]
+    public async Task RealEngine_RemuxesLongFmp4Playlist_WithRequiredReferrer(bool captured, bool separateAudio, bool longPlaylist)
     {
         string ffmpeg = DownloadEngine.ResolveFfmpegPath() ?? throw new InvalidOperationException("Verified FFmpeg required.");
         string dir = Path.Combine(Path.GetTempPath(), "smartdm-movie-fixture-" + Guid.NewGuid());
@@ -39,7 +40,7 @@ public sealed class HlsPipelineIntegrationTests
             await using var audioSegmentServer = separateAudio ? new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio0.m4s"))) { RequiredReferer = referer } : null;
             string playlist = (await File.ReadAllTextAsync(Path.Combine(dir, "source.m3u8")))
                 .Replace("init.mp4", initServer.BaseUrl + "/init.mp4").Replace("part0.m4s", segmentServer.BaseUrl + "/part.m4s")
-                + "#" + new string('s', 704_377) + "\n";
+                + (longPlaylist ? "#" + new string('s', 704_377) + "\n" : "");
             await using var manifestServer = new TestHttpServer(Encoding.UTF8.GetBytes(playlist)) { RequiredReferer = referer };
             model.Url = manifestServer.BaseUrl + "/movie.m3u8";
             if (captured) model.ManifestText = playlist;
@@ -137,6 +138,37 @@ public sealed class HlsPipelineIntegrationTests
             if (engine != null) await engine.PauseDownloadAsync(model.Id);
             Directory.Delete(dir, true);
         }
+    }
+
+    [HlsPipelineTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealEngine_DualProgressiveTracksMuxAndDecode(bool videoHasOwnAudio)
+    {
+        string ffmpeg = DownloadEngine.ResolveFfmpegPath() ?? throw new InvalidOperationException("Verified FFmpeg required.");
+        string dir = Path.Combine(Path.GetTempPath(), "smartdm-dual-report-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        DownloadEngine? engine = null;
+        var model = new DownloadModel {SavePath = Path.Combine(dir, "result.mp4"), Referer = "https://player.invalid/selected"};
+        try
+        {
+            var args = new List<string> {"-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24"};
+            if (videoHasOwnAudio) args.AddRange(new[] {"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"});
+            args.AddRange(new[] {"-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", Path.Combine(dir, "video.mp4")});
+            await RunFfmpeg(ffmpeg, args);
+            await RunFfmpeg(ffmpeg, new[] {"-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-t", "2", "-c:a", "aac", Path.Combine(dir, "audio.m4a")});
+            await using var video = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "video.mp4"))) {CustomContentType = "video/mp4", RequiredReferer = model.Referer};
+            await using var audio = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio.m4a"))) {CustomContentType = "audio/mp4", RequiredReferer = model.Referer};
+            model.Url = video.BaseUrl + "/video.mp4";
+            model.AudioUrl = audio.BaseUrl + "/audio.m4a";
+            engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner());
+            await engine.StartDownloadAsync(model);
+            var timer = Stopwatch.StartNew();
+            while (model.Status is not (DownloadStatus.Completed or DownloadStatus.Failed) && timer.Elapsed < TimeSpan.FromSeconds(25)) await Task.Delay(25);
+            Assert.True(model.Status == DownloadStatus.Completed, model.StatusDetail);
+            await RunFfmpeg(ffmpeg, new[] {"-i", model.SavePath, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"});
+        }
+        finally {if (engine != null) await engine.PauseDownloadAsync(model.Id); Directory.Delete(dir,true);}
     }
 
     private static async Task RunFfmpeg(string path, IEnumerable<string> args, string? workingDirectory = null)

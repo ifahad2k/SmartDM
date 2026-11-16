@@ -28,12 +28,12 @@ public class HttpProbeService : IHttpProbeService
         {
             var handler = new SocketsHttpHandler
             {
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 10,
+                AllowAutoRedirect = false,
+                UseCookies = false,
                 PooledConnectionLifetime = TimeSpan.FromMinutes(15),
                 EnableMultipleHttp2Connections = true
             };
-            _httpClient = new HttpClient(handler)
+            _httpClient = new HttpClient(new DownloadRedirectHandler(handler))
             {
                 Timeout = TimeSpan.FromSeconds(Math.Clamp(settings?.ConnectionTimeoutSeconds ?? 15, 1, 300))
             };
@@ -71,25 +71,8 @@ public class HttpProbeService : IHttpProbeService
             req.Headers.TryAddWithoutValidation("User-Agent", effectiveUa);
             req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,application/x-bittorrent,*/*;q=0.8");
             req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-            if (!string.IsNullOrWhiteSpace(cookies))
-            {
-                string cookieVal = cookies;
-                if (cookieVal.StartsWith("# Netscape", StringComparison.OrdinalIgnoreCase))
-                {
-                    var pairs = new List<string>();
-                    foreach (var line in cookieVal.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        if (line.StartsWith("#") || string.IsNullOrWhiteSpace(line)) continue;
-                        var parts = line.Split('\t');
-                        if (parts.Length >= 7)
-                        {
-                            pairs.Add($"{parts[5]}={parts[6]}");
-                        }
-                    }
-                    if (pairs.Count > 0) cookieVal = string.Join("; ", pairs);
-                }
-                req.Headers.TryAddWithoutValidation("Cookie", cookieVal);
-            }
+            string? scopedCookies = DownloadEngine.FormatCookieHeader(cookies, req.RequestUri?.AbsoluteUri);
+            if (!string.IsNullOrEmpty(scopedCookies)) req.Headers.TryAddWithoutValidation("Cookie", scopedCookies);
             if (!string.IsNullOrWhiteSpace(rHeader))
             {
                 req.Headers.TryAddWithoutValidation("Referer", rHeader);

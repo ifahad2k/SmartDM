@@ -188,7 +188,7 @@ class FormatRegistryEngine {
           title: null,
           resolution: label,
           ext: 'mp4',
-          mediaKind: 'hls',
+          mediaKind: /\.(?:mp4|webm|mov)(?:[?#]|$)/i.test(streamUrl) ? null : 'hls',
           badge: badge,
           url: streamUrl,
           directUrl: streamUrl,
@@ -462,8 +462,11 @@ class FormatRegistryEngine {
       const streamingData = resp.streamingData;
       const videoDetails = resp.videoDetails || {};
       const title = videoDetails.title || 'YouTube Video';
-      const resolvedVid = videoDetails.videoId || videoId ||
-        (videoUrl ? this.extractYouTubeVideoId(videoUrl) : null);
+      const expectedVid = videoId || (videoUrl ? this.extractYouTubeVideoId(videoUrl) : null);
+      if (expectedVid && videoDetails.videoId && videoDetails.videoId !== expectedVid) {
+        return null;
+      }
+      const resolvedVid = videoDetails.videoId || expectedVid;
       if (!resolvedVid) return null;
 
       const formats = [];
@@ -601,14 +604,16 @@ class FormatRegistryEngine {
 
       // 1. Direct window property
       if (typeof window !== 'undefined' && window.ytInitialPlayerResponse) {
-        const res = this.parseYouTubePlayerResponse(window.ytInitialPlayerResponse, vid, videoUrl);
-        if (res && res.formats?.length) return res;
+        if (!vid || !window.ytInitialPlayerResponse.videoDetails?.videoId || window.ytInitialPlayerResponse.videoDetails.videoId === vid) {
+          const res = this.parseYouTubePlayerResponse(window.ytInitialPlayerResponse, vid, videoUrl);
+          if (res && res.formats?.length) return res;
+        }
       }
 
       // 2. Stashed element by sniffer
       if (typeof document !== 'undefined') {
         const safeVid = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') ? CSS.escape(vid) : vid.replace(/"/g, '\\"');
-        const stashEl = document.querySelector ? (document.querySelector(`smartdm-player-response[data-smartdm-video-id="${safeVid}"]`) || document.querySelector('smartdm-player-response')) : null;
+        const stashEl = document.querySelector ? document.querySelector(`smartdm-player-response[data-smartdm-video-id="${safeVid}"]`) : null;
         if (stashEl && stashEl.textContent) {
           const res = this.parseYouTubePlayerResponse(stashEl.textContent, vid, videoUrl);
           if (res && res.formats?.length) return res;
@@ -653,21 +658,33 @@ class FormatRegistryEngine {
     } catch (_) { return null; }
   }
 
+  static hasHighResFormats(formats) {
+    if (!Array.isArray(formats) || formats.length === 0) return false;
+    return formats.some(f => {
+      if (!f || f.isAudioOnly || f.formatId === 'thumbnail') return false;
+      const h = Number(f.height) || (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractResolutionNumber ? SmartDmUtils.extractResolutionNumber(f.resolution || '') : 0);
+      if (h >= 480) return true;
+      const res = String(f.resolution || '').toLowerCase();
+      return /\b(?:480|720|1080|1440|2160|4k)p?\b/.test(res);
+    });
+  }
+
   static getInstantYouTubeFormats(videoUrl, title = 'YouTube Video') {
     const key = this.youTubeCacheKey(videoUrl);
     if (!key) return [];
     const entry = this.mediaFormatCache[key];
-    if (entry?.youtube && entry.status === 'done' && entry.expiresAt > Date.now() && Array.isArray(entry.data?.formats) && entry.data.formats.length > 0) {
+    if (entry?.youtube && (entry.status === 'done' || entry.status === 'provisional') && entry.expiresAt > Date.now() && Array.isArray(entry.data?.formats) && entry.data.formats.length > 0) {
       return entry.data.formats;
     }
     // Attempt instant in-page extraction
     const inPage = this.extractInPageYouTubeFormats(videoUrl);
     if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+      const hasHd = this.hasHighResFormats(inPage.formats);
       this.mediaFormatCache[key] = {
         youtube: true,
-        status: 'done',
+        status: hasHd ? 'done' : 'provisional',
         data: inPage,
-        expiresAt: Date.now() + 120000,
+        expiresAt: Date.now() + (hasHd ? 120000 : 30000),
         callbacks: []
       };
       return inPage.formats;
@@ -696,7 +713,7 @@ class FormatRegistryEngine {
       return;
     }
     const cached = this.mediaFormatCache[key];
-    if (cached?.youtube && cached.status === 'done' && cached.expiresAt > Date.now()) {
+    if (cached?.youtube && cached.status === 'done' && cached.expiresAt > Date.now() && this.hasHighResFormats(cached.data?.formats)) {
       callback?.(cached.data, false);
       return;
     }
@@ -705,8 +722,8 @@ class FormatRegistryEngine {
       return;
     }
     // Check in-page player response first for instant resolution (<5ms)
-    const inPage = this.extractInPageYouTubeFormats(videoUrl);
-    if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+    const inPage = (cached?.status === 'provisional' && cached.data) ? cached.data : this.extractInPageYouTubeFormats(videoUrl);
+    if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0 && this.hasHighResFormats(inPage.formats)) {
       const entry = {
         youtube: true,
         status: 'done',
@@ -718,7 +735,18 @@ class FormatRegistryEngine {
       callback?.(inPage, false);
       return;
     }
-    const entry = {youtube: true, status: 'pending', data: null, callbacks: callback ? [callback] : []};
+
+    // Deliver provisional in-page formats immediately for 0ms UI responsiveness while background/desktop queries run
+    if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+      try { callback?.(inPage, true); } catch (_) {}
+    }
+
+    const entry = {
+      youtube: true,
+      status: 'pending',
+      data: inPage || null,
+      callbacks: callback ? [callback] : []
+    };
     this.mediaFormatCache[key] = entry;
     let settled = false;
     let timer;
@@ -729,20 +757,30 @@ class FormatRegistryEngine {
       const formats = Array.isArray(response?.formats)
         ? response.formats.filter(f => f && !f.provisional && /^https?:\/\//i.test(f.url || f.directUrl || '')) : [];
       const success = !!(response?.success || response?.status === 'ok') && formats.length > 0;
-      entry.data = success ? {...response, success: true, status: 'ok', formats} : {success: false, status: 'error', formats: [],
-        message: 'YouTube format lookup failed; reopen this menu to retry.'};
-      entry.status = 'done';
-      // Short failure cooldown prevents a visible shelf repeatedly probing a closed app.
-      entry.expiresAt = Date.now() + (success ? 120000 : 5000);
       if (success) {
-        for (const format of formats) {
+        const mergedFormats = (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0)
+          ? FormatRegistryEngine.mergeFormatLists(inPage.formats, formats)
+          : formats;
+        entry.data = { ...response, success: true, status: 'ok', formats: mergedFormats };
+        entry.status = 'done';
+        entry.expiresAt = Date.now() + 120000;
+        for (const format of mergedFormats) {
           for (const stream of [format.url, format.directUrl, format.audioUrl]) {
             try {
               const expiry = Number(new URL(stream).searchParams.get('expire')) * 1000;
               if (expiry > 0) entry.expiresAt = Math.min(entry.expiresAt, expiry - 30000);
-            } catch (_) { /* Not every representation has a signed URL. */ }
+            } catch (_) {}
           }
         }
+      } else if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+        // Fallback to in-page formats if desktop/background unavailable
+        entry.data = inPage;
+        entry.status = 'done';
+        entry.expiresAt = Date.now() + 120000;
+      } else {
+        entry.data = { success: false, status: 'error', formats: [], message: 'YouTube format lookup failed; reopen this menu to retry.' };
+        entry.status = 'done';
+        entry.expiresAt = Date.now() + 5000;
       }
       const callbacks = entry.callbacks;
       entry.callbacks = [];
@@ -790,7 +828,7 @@ class FormatRegistryEngine {
 
     try {
       const ogVideo = document.querySelector('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"], meta[name="twitter:player:stream"]');
-      if (ogVideo && ogVideo.content && ogVideo.content.startsWith('http')) {
+      if (ogVideo && /\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(ogVideo.content || '')) {
         addFormat(ogVideo.content, '720p', ogVideo.content.includes('.m3u8') ? 'm3u8' : 'mp4');
       }
 
@@ -1366,6 +1404,7 @@ class FormatRegistryEngine {
         if (mVid) aid = aid || mVid[1];
 
         try {
+          if (new URL(pageUrl).pathname !== new URL(window.location.href).pathname) throw new Error('Different selected document');
           const nextEl = typeof document !== 'undefined' ? document.getElementById('__NEXT_DATA__') : null;
           const nextJson = (typeof window !== 'undefined' && window.__NEXT_DATA__) || (nextEl?.textContent ? JSON.parse(nextEl.textContent) : null);
           if (nextJson) {
@@ -1819,13 +1858,44 @@ class FormatRegistryEngine {
     return ext ? ext.toLowerCase() : 'mp4';
   }
 
+  static selectedFeedMetadata(mediaEl, source) {
+    if (typeof document === 'undefined') return null;
+    let card = mediaEl?.closest?.('article, [data-e2e="feed-article"], [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"]');
+    if (card?.querySelectorAll?.('video')?.length > 1) card = null;
+    for (let node = mediaEl?.parentElement, depth = 0; !card && node && depth < 16; node = node.parentElement, depth++) {
+      if (/^(?:BODY|MAIN)$/.test(node.tagName || '') || node.querySelectorAll?.('video')?.length > 1) break;
+      if (node.querySelector?.('[data-e2e="video-desc"], [data-e2e="browse-video-desc"], a[href*="/video/"]')) card = node;
+    }
+    const selectedLink = card?.querySelector?.('a[href*="/video/"]')?.getAttribute?.('href');
+    let id = selectedLink?.match(/\/video\/(\d{5,30})/)?.[1];
+    if (!id && /^https?:\/\//i.test(source || '')) {
+      try {
+        const itemId = new URL(source).searchParams.get('item_id');
+        if (/^\d{5,30}$/.test(itemId || '')) id = itemId;
+      } catch (_) {}
+    }
+    const items = [];
+    for (const node of Array.from(document.querySelectorAll?.('smartdm-media-metadata') || []).slice(-20)) {
+      try {if (node.textContent?.length <= 80000) items.push(JSON.parse(node.textContent));} catch (_) {}
+    }
+    // Initial hydration can precede fetch hooks. Parse only bounded JSON script data.
+    for (const node of Array.from(document.querySelectorAll?.('script[type="application/json"]') || []).slice(0, 4)) {
+      try {if (typeof SmartDmMediaMetadata !== 'undefined' && node.textContent?.length <= 4 * 1024 * 1024) items.push(...SmartDmMediaMetadata.parse(JSON.parse(node.textContent)));} catch (_) {}
+    }
+    const clean = u => SmartDmUtils.sanitizeStreamUrl(u);
+    const matches = items.filter(item => item && Array.isArray(item.streams) &&
+      (id ? item.id === id : source && item.streams.some(s => s && /^https?:\/\//i.test(s.url || '') && clean(s.url) === clean(source))));
+    const ids = new Set(matches.map(item => item.id));
+    return ids.size === 1 ? {...matches[matches.length - 1], card} : {card};
+  }
+
   static selectedSocialFormats(mediaEl, media) {
     const src = mediaEl?.currentSrc || mediaEl?.src || '';
     const poster = mediaEl && (mediaEl.poster || mediaEl.getAttribute?.('poster')) || '';
     const asset = poster.match(/(?:ext_tw_video_thumb|amplify_video_thumb)\/(\d+)/)?.[1];
     const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
     const sanitize = u => (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(u) : u;
-    const matches = (media || []).filter(m => m.url === src || (asset && new RegExp('/(?:ext_tw_video|amplify_video)/' + asset + '/').test(m.url || '')));
+    const matches = (media || []).filter(m => sanitize(m.url) === sanitize(src) || (asset && new RegExp('/(?:ext_tw_video|amplify_video)/' + asset + '/').test(m.url || '')));
     let binding = this.playerBinding(mediaEl);
     if (binding) {
       if (!binding.audio && (media || []).length) {
@@ -1837,7 +1907,7 @@ class FormatRegistryEngine {
       if (binding.audioExpected && !binding.audio && !isInsta) return [];
       const cleanVideo = sanitize(binding.video);
       const cleanAudio = binding.audio ? (sanitize(binding.audio) || null) : null;
-      matches.push({...(media || []).find(m => m.url === binding.video) || {}, url: cleanVideo, audioUrl: cleanAudio});
+      matches.push({...(media || []).find(m => sanitize(m.url) === cleanVideo) || {}, url: cleanVideo, audioUrl: cleanAudio});
     } else if (isInsta && !matches.length) {
       const instaVideos = (media || []).filter(m => !m.isAudio && /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url || ''));
       if (instaVideos.length > 0) {
@@ -1848,7 +1918,11 @@ class FormatRegistryEngine {
         matches.push({...best, url: cleanVideo, audioUrl: cleanAudio});
       }
     }
-    let caption = '';
+    const selectedMetadata = this.selectedFeedMetadata(mediaEl, binding?.video || src);
+    if (selectedMetadata?.streams?.length) {
+      for (const stream of selectedMetadata.streams) matches.push({...stream, metadataHeight: stream.width > 0 && stream.height > 0 ? Math.min(stream.width, stream.height) : stream.height || 0});
+    }
+    let caption = selectedMetadata?.description || '';
     if (isInsta && typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractInstagramMediaTitle) {
       const detected = VisualMountDetector.extractInstagramMediaTitle(mediaEl);
       if (detected && !SmartDmUtils.isGenericTitle(detected)) {
@@ -1858,7 +1932,7 @@ class FormatRegistryEngine {
     if (!caption) {
       const card = isInsta
         ? (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.findInstagramPostCard ? VisualMountDetector.findInstagramPostCard(mediaEl) : mediaEl?.closest?.('article, [role="dialog"]'))
-        : mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"]');
+        : (selectedMetadata?.card || mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"]'));
       if (card) {
         if (isInsta && typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractInstagramMediaTitle) {
           const detected = VisualMountDetector.extractInstagramMediaTitle(mediaEl, card);
@@ -1867,7 +1941,7 @@ class FormatRegistryEngine {
           }
         }
         if (!caption) {
-          for (const selector of ['[data-testid="tweetText"]', '[data-e2e="video-desc"]', 'h1', '[data-testid="post-caption"]', 'img[alt]']) {
+          for (const selector of ['[data-testid="tweetText"]', '[data-e2e="video-desc"]', '[data-e2e="browse-video-desc"]', '[data-e2e="video-description"]', '[data-e2e="feed-video-desc"]', '[data-e2e="video-title"]', '[class*="DivVideoDesc"]', 'h1', '[data-testid="post-caption"]', 'img[alt]']) {
             const node = card.querySelector?.(selector);
             let value = (node?.textContent || node?.getAttribute?.('alt') || '').trim();
             if (value) {
@@ -1893,29 +1967,32 @@ class FormatRegistryEngine {
       if (aria && !SmartDmUtils.isGenericTitle(aria)) caption = aria;
     }
     const title = caption ? SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160) : (isInsta ? 'Instagram Video' : 'Selected video');
-    const urls = new Map(matches.map(m => {
+    const urls = new Map();
+    for (const m of matches) {
       const u = sanitize(m.url);
       const a = m.audioUrl ? (sanitize(m.audioUrl) || null) : null;
-      return [u, {...m, url: u, audioUrl: a}];
-    }));
+      const previous = urls.get(u);
+      urls.set(u, {...previous, ...m, url: u, audioUrl: a || previous?.audioUrl || null,
+        originalUrl: previous?.originalUrl || m.originalUrl || null});
+    }
     const cleanSrc = sanitize(src);
     if (/^https?:/.test(cleanSrc) && !urls.has(cleanSrc)) urls.set(cleanSrc, {url:cleanSrc});
     const audio = [...urls.values()].filter(m => m.isAudio || /audio\//.test(m.contentType || ''));
-    return [...urls.values()].filter(m => !audio.includes(m)).flatMap(m => {
+    return [...urls.values()].filter(m => !audio.includes(m)).flatMap((m, sourceIndex) => {
       const cleanUrl = sanitize(m.url);
       const rawA = m.audioUrl || (audio.length === 1 ? audio[0].url : null);
       const audioUrl = rawA ? (sanitize(rawA) || null) : null;
       if (m.hasAudio === false && !audioUrl) return [];
       const cleanBindingVideo = sanitize(binding?.video);
-      const height = m.height || (cleanUrl === cleanSrc || cleanUrl === cleanBindingVideo ? Math.min(mediaEl.videoWidth || Infinity, mediaEl.videoHeight || Infinity) : 0);
+      const height = m.metadataHeight || m.height || (cleanUrl === cleanSrc || cleanUrl === cleanBindingVideo ? Math.min(mediaEl.videoWidth || Infinity, mediaEl.videoHeight || Infinity) : 0);
       const h = Number.isFinite(height) ? height : 0;
       return [{
-        formatId:'selected_' + h,
+        formatId:'selected_' + h + '_' + sourceIndex,
         resolution:h ? h + 'p (captured stream)' : 'Original stream (resolution unknown)',
         height:h,
         ext:/\.m3u8(?:[?#]|$)/i.test(cleanUrl) ? 'm3u8' : 'mp4',
-        url:cleanUrl,
-        directUrl:cleanUrl,
+        url:m.originalUrl || cleanUrl,
+        directUrl:m.originalUrl || cleanUrl,
         audioUrl,
         title,
         isAudioOnly:false,
@@ -2573,7 +2650,25 @@ class FormatRegistryEngine {
     // A card targets another document. Listing previews and the current page's
     // player graph cannot establish which streams belong to that linked video.
     if (lookupOptions?.fromThumbnail && !this.isSocialFeed()) {
-      this.fetchLinkedPageFormats(videoUrl, callback, isBackgroundPolling);
+      if (/(^|\.)bilibili\.(?:tv|com)$/.test(new URL(videoUrl).hostname)) {
+        this.queryBilibiliPlayurlApi(videoUrl).then(formats => callback?.(formats?.length
+          ? {success: true, formats: formats.map(f => ({...f, title: null, assetId: videoUrl})), title: null}
+          : {success: false, formats: [], message: 'Open this video and play it to capture its streams.'}, false))
+          .catch(() => callback?.({success: false, formats: []}, false));
+      } else this.fetchLinkedPageFormats(videoUrl, callback, isBackgroundPolling);
+      return;
+    }
+    // Player configuration is data, not executable code. Resolve all advertised
+    // sources through the bounded background parser, including the current page.
+    const configuredPlayer = !this.isSocialFeed() && typeof document !== 'undefined' && Array.from(document.querySelectorAll?.('script') || []).slice(0, 100)
+      .some(s => /mediaDefinitions|xplayerSettings|html5player\.setVideo/.test(s.textContent || ''));
+    if (configuredPlayer) {
+      this.fetchLinkedPageFormats(videoUrl || window.location.href, callback, isBackgroundPolling);
+      return;
+    }
+    // Feed identity and caption must be resolved before any generic page snapshot.
+    if (this.isSocialFeed()) {
+      this.buildFallbackFormats(videoUrl, mediaEl, result => callback?.(result, false));
       return;
     }
     const captured = this.capturedPlayerFormats(mediaEl);

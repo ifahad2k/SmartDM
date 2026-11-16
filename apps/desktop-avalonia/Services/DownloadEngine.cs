@@ -45,6 +45,7 @@ public class DownloadEngine : IDownloadEngine
         public Task? RunnerTask { get; set; }
         public string StagingDirectory { get; set; } = "";
         public string StagingFilePath { get; set; } = "";
+        public bool IsFiniteHls { get; set; }
     }
 
     public static string GetDownloadStagingDirectory(string downloadId)
@@ -420,12 +421,12 @@ public class DownloadEngine : IDownloadEngine
         {
             var handler = new SocketsHttpHandler
             {
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 10,
+                AllowAutoRedirect = false,
+                UseCookies = false,
                 PooledConnectionLifetime = TimeSpan.FromMinutes(15),
                 EnableMultipleHttp2Connections = true
             };
-            _httpClient = new HttpClient(handler)
+            _httpClient = new HttpClient(new DownloadRedirectHandler(handler))
             {
                 Timeout = Timeout.InfiniteTimeSpan
             };
@@ -601,16 +602,14 @@ public class DownloadEngine : IDownloadEngine
     public static string SanitizeMediaUrl(string? rawUrl)
     {
         if (string.IsNullOrWhiteSpace(rawUrl)) return rawUrl ?? string.Empty;
-        try
-        {
-            string sanitized = System.Text.RegularExpressions.Regex.Replace(rawUrl, @"(?<=[?&])(bytestart|byteend)=\d+&?|(?<=[?&])range=\d+(?:-\d+)?&?", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"[?&]$", "");
-            return sanitized;
-        }
-        catch
-        {
-            return rawUrl;
-        }
+        int query = rawUrl.IndexOf('?');
+        int hash = rawUrl.IndexOf('#');
+        if (query < 0 || (hash >= 0 && query > hash)) return rawUrl;
+        string queryText = hash >= 0 ? rawUrl[(query + 1)..hash] : rawUrl[(query + 1)..];
+        string[] parts = queryText.Split('&');
+        var kept = parts.Where(p => !Regex.IsMatch(p, @"^(?:(?:bytestart|byteend)=\d+|range=\d+(?:-\d+)?)$", RegexOptions.IgnoreCase)).ToArray();
+        if (kept.Length == parts.Length) return rawUrl;
+        return rawUrl[..query] + (kept.Length > 0 ? "?" + string.Join("&", kept) : "") + (hash >= 0 ? rawUrl[hash..] : "");
     }
 
     private async Task PrepareAndRunSessionAsync(DownloadSession session)
@@ -666,6 +665,30 @@ public class DownloadEngine : IDownloadEngine
         if (!string.IsNullOrWhiteSpace(download.AudioUrl) && string.Equals(download.Url, download.AudioUrl, StringComparison.OrdinalIgnoreCase))
         {
             download.AudioUrl = null;
+        }
+
+        if (download.MediaKind == "hls" && string.IsNullOrEmpty(download.ManifestText) &&
+            Uri.TryCreate(download.Url, UriKind.Absolute, out var mediaAddress) &&
+            Regex.IsMatch(mediaAddress.AbsolutePath, @"\.(mp4|webm|mov)$", RegexOptions.IgnoreCase))
+        {
+            using var probe = HttpTransferRequest.Create(HttpMethod.Get, download.Url);
+            probe.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 63);
+            if (!string.IsNullOrEmpty(download.Referer)) probe.Headers.TryAddWithoutValidation("Referer", download.Referer);
+            if (!string.IsNullOrEmpty(download.UserAgent)) probe.Headers.TryAddWithoutValidation("User-Agent", download.UserAgent);
+            string? probeCookies = FormatCookieHeader(download.Cookies, download.Url);
+            if (probeCookies != null) probe.Headers.TryAddWithoutValidation("Cookie", probeCookies);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(session.Cts.Token);
+            budget.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await _httpClient.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, budget.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                await using var body = await response.Content.ReadAsStreamAsync(budget.Token);
+                byte[] signature = new byte[12];
+                int read = await body.ReadAtLeastAsync(signature, 8, throwOnEndOfStream: false, budget.Token);
+                if (read >= 8 && (signature.AsSpan(4, 4).SequenceEqual("ftyp"u8) ||
+                    signature.AsSpan(0, 4).SequenceEqual(new byte[] {0x1a, 0x45, 0xdf, 0xa3})))
+                    download.MediaKind = "http";
+            }
         }
 
         if (!string.IsNullOrEmpty(download.ManifestText))
@@ -1332,7 +1355,9 @@ public class DownloadEngine : IDownloadEngine
         DownloadStatusChanged?.Invoke(dl);
 
         long videoSize = await ProbeStreamLengthAsync(dl.Url, referer, uaString, cookieHeader, token);
-        long audioSize = await ProbeStreamLengthAsync(dl.AudioUrl!, referer, uaString, cookieHeader, token);
+        string? audioCookieHeader = dl.Cookies?.Contains('\t') == true || new Uri(dl.Url).Host == new Uri(dl.AudioUrl!).Host
+            ? FormatCookieHeader(dl.Cookies, dl.AudioUrl) : null;
+        long audioSize = await ProbeStreamLengthAsync(dl.AudioUrl!, referer, uaString, audioCookieHeader, token);
 
         if (videoSize <= 0 || audioSize <= 0)
         {
@@ -1458,7 +1483,7 @@ public class DownloadEngine : IDownloadEngine
         {
             long start = i * audioPerWorker;
             long end = (i == audioThreads - 1) ? audioSize - 1 : (i + 1) * audioPerWorker - 1;
-            var worker = new SegmentWorker(_httpClient, dl.AudioUrl!, audioStagingPath, videoThreads + i + 1, start, end, 0, referer, uaString, cookieHeader, _speedLimiter, audioSize);
+            var worker = new SegmentWorker(_httpClient, dl.AudioUrl!, audioStagingPath, videoThreads + i + 1, start, end, 0, referer, uaString, audioCookieHeader, _speedLimiter, audioSize);
             session.Workers.Add(worker);
         }
 
@@ -1593,6 +1618,10 @@ public class DownloadEngine : IDownloadEngine
                 psi.ArgumentList.Add(videoStagingPath);
                 psi.ArgumentList.Add("-i");
                 psi.ArgumentList.Add(audioStagingPath);
+                psi.ArgumentList.Add("-map");
+                psi.ArgumentList.Add("0:v:0");
+                psi.ArgumentList.Add("-map");
+                psi.ArgumentList.Add("1:a:0");
                 psi.ArgumentList.Add("-c:v");
                 psi.ArgumentList.Add("copy");
                 psi.ArgumentList.Add("-c:a");
@@ -2345,45 +2374,30 @@ public class DownloadEngine : IDownloadEngine
 
         if (!cookieData.Contains("\t"))
         {
-            return cookieData.Trim();
+            return cookieData.IndexOfAny(new[] {'\r', '\n'}) >= 0 ? null : cookieData.Trim();
         }
 
-        string? targetHost = null;
-        if (!string.IsNullOrWhiteSpace(targetUrl) && Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var target)) return null;
+        var pairs = new List<(string Pair, int PathLength)>();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        foreach (var raw in cookieData.Split(new[] {'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries))
         {
-            targetHost = uri.Host.ToLowerInvariant().Replace("www.", "");
+            string line = raw.StartsWith("#HttpOnly_", StringComparison.Ordinal) ? raw[10..] : raw;
+            if (line.StartsWith('#')) continue;
+            string[] parts = line.Split('\t');
+            if (parts.Length < 7) continue;
+            string domain = parts[0].TrimStart('.');
+            bool domainMatch = target.Host.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+                (parts[1].Equals("TRUE", StringComparison.OrdinalIgnoreCase) && target.Host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
+            string path = string.IsNullOrEmpty(parts[2]) ? "/" : parts[2];
+            bool pathMatch = target.AbsolutePath == path || (target.AbsolutePath.StartsWith(path, StringComparison.Ordinal) &&
+                (path.EndsWith('/') || (target.AbsolutePath.Length > path.Length && target.AbsolutePath[path.Length] == '/')));
+            if (!domainMatch || !pathMatch || (parts[3].Equals("TRUE", StringComparison.OrdinalIgnoreCase) && target.Scheme != "https") ||
+                (long.TryParse(parts[4], out long expires) && expires > 0 && expires <= now)) continue;
+            if (string.IsNullOrEmpty(parts[5]) || parts[5].IndexOfAny(new[] {'\r', '\n', ';'}) >= 0 || parts[6].IndexOfAny(new[] {'\r', '\n'}) >= 0) continue;
+            pairs.Add(($"{parts[5]}={parts[6]}", path.Length));
         }
-
-        var matchedPairs = new List<string>();
-        var allPairs = new List<string>();
-        var lines = cookieData.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var l in lines)
-        {
-            if (l.StartsWith("#") || string.IsNullOrWhiteSpace(l)) continue;
-            var parts = l.Split('\t');
-            if (parts.Length >= 7)
-            {
-                string cookieDomain = parts[0].TrimStart('.').ToLowerInvariant().Replace("www.", "");
-                string pair = $"{parts[5]}={parts[6]}";
-                allPairs.Add(pair);
-
-                if (targetHost != null)
-                {
-                    if (targetHost == cookieDomain || targetHost.EndsWith("." + cookieDomain))
-                    {
-                        matchedPairs.Add(pair);
-                    }
-                }
-            }
-        }
-
-        if (matchedPairs.Count > 0)
-        {
-            return string.Join("; ", matchedPairs);
-        }
-
-        return null;
+        return pairs.Count > 0 ? string.Join("; ", pairs.OrderByDescending(p => p.PathLength).Select(p => p.Pair)) : null;
     }
 
     private static Task<string> ReadManifestAsync(HttpContent content, CancellationToken token)
@@ -2735,6 +2749,10 @@ public class DownloadEngine : IDownloadEngine
             session.Download.Referer = playlistInfo.EffectiveReferer;
         }
 
+        // The parser accepts complete ENDLIST media playlists. EOF is expected
+        // for these resources, including a later FFmpeg fallback of this session.
+        session.IsFiniteHls = true;
+
         if (playlistInfo.TotalDuration > 0 && dl.TotalDuration <= 0)
         {
             dl.TotalDuration = playlistInfo.TotalDuration;
@@ -3002,18 +3020,12 @@ public class DownloadEngine : IDownloadEngine
         }
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
-        object hlsLock = new object();
-        long dynamicCompletedBytes = baseDownloadedBytes;
-        int dynamicCompletedCount = completedChunksCount;
+        var hlsProgress = new HlsTransferProgress(totalSegments, completedChunksCount, baseDownloadedBytes);
 
         Action<HlsSegmentTask, long> onChunkDone = (chunk, bytes) =>
         {
-            lock (hlsLock)
-            {
-                dynamicCompletedBytes += bytes;
-                dynamicCompletedCount++;
+            if (hlsProgress.RecordSaved(chunk.Index, bytes))
                 Interlocked.Decrement(ref remainingToDownload);
-            }
         };
 
         Func<bool> isCompletedCheck = () => Volatile.Read(ref remainingToDownload) <= 0;
@@ -3031,14 +3043,15 @@ public class DownloadEngine : IDownloadEngine
             FailSegment,
             keys.DecryptAsync,
             getSharedReferer: () => dl.Referer,
-            setSharedReferer: cand => { dl.Referer = cand; session.Download.Referer = cand; }
+            setSharedReferer: cand => { dl.Referer = cand; session.Download.Referer = cand; },
+            onBytesReceived: hlsProgress.RecordReceived
         )).ToList();
 
         // High-precision Telemetry Monitor loop with EMA smoothing & dynamic total size estimation
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var monitorTask = Task.Run(async () =>
         {
-            long lastReportedBytes = baseDownloadedBytes;
+            long lastReceivedBytes = 0;
             var sw = Stopwatch.StartNew();
             var totalSw = Stopwatch.StartNew();
 
@@ -3055,24 +3068,19 @@ public class DownloadEngine : IDownloadEngine
 
                 if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
 
-                long inFlightBytes = session.Workers.Sum(w => w.Progress.DownloadedBytes);
-                long totalDownloaded;
-                int completedCount;
-                lock (hlsLock)
-                {
-                    totalDownloaded = dynamicCompletedBytes + inFlightBytes;
-                    completedCount = dynamicCompletedCount;
-                }
+                var snapshot = hlsProgress.Capture();
+                long totalDownloaded = snapshot.SavedBytes;
+                int completedCount = snapshot.SavedSegments;
 
                 double elapsedSec = sw.Elapsed.TotalSeconds;
                 if (elapsedSec > 0)
                 {
-                    long delta = totalDownloaded - lastReportedBytes;
+                    long delta = snapshot.ReceivedBytes - lastReceivedBytes;
                     double rawSpeed = Math.Max(0, (delta / (1024.0 * 1024.0)) / elapsedSec);
                     dl.SpeedMbps = dl.SpeedMbps <= 0.05
                         ? rawSpeed
                         : (dl.SpeedMbps * 0.72) + (rawSpeed * 0.28);
-                    lastReportedBytes = totalDownloaded;
+                    lastReceivedBytes = snapshot.ReceivedBytes;
                     sw.Restart();
                 }
 
@@ -3085,9 +3093,9 @@ public class DownloadEngine : IDownloadEngine
                     if (expected > 0) dl.TotalBytes = expected;
                 }
 
-                if (completedCount >= 5 && dynamicCompletedBytes > 0)
+                if (completedCount >= 5 && snapshot.SavedBytes > 0)
                 {
-                    long avgBytesPerChunk = dynamicCompletedBytes / completedCount;
+                    long avgBytesPerChunk = snapshot.SavedBytes / completedCount;
                     long estimatedTotal = avgBytesPerChunk * totalSegments;
                     if (dl.TotalBytes <= 0)
                     {
@@ -3098,16 +3106,17 @@ public class DownloadEngine : IDownloadEngine
                         dl.TotalBytes = (long)(dl.TotalBytes * 0.75 + estimatedTotal * 0.25);
                     }
                 }
-                else if (dl.TotalBytes <= 0 && inFlightBytes > 0)
+                else if (dl.TotalBytes <= 0 && snapshot.ReceivedBytes > 0)
                 {
                     dl.TotalBytes = 4_500_000L * totalSegments;
                 }
 
-                dl.DownloadedBytes = dl.TotalBytes > 0 ? Math.Min(dl.TotalBytes, totalDownloaded) : totalDownloaded;
+                dl.DownloadedBytes = totalDownloaded;
+                if (dl.TotalBytes > 0) dl.TotalBytes = Math.Max(dl.TotalBytes, totalDownloaded);
+                dl.ProgressPercentage = snapshot.Percentage;
 
                 if (dl.TotalBytes > 0)
                 {
-                    dl.ProgressPercentage = Math.Clamp(((double)dl.DownloadedBytes / dl.TotalBytes) * 100.0, 0.0, 99.0);
                     if (dl.SpeedMbps > 0.05)
                     {
                         long remaining = Math.Max(0, dl.TotalBytes - dl.DownloadedBytes);
@@ -3116,7 +3125,6 @@ public class DownloadEngine : IDownloadEngine
                 }
                 else if (totalSegments > 0)
                 {
-                    dl.ProgressPercentage = Math.Clamp(((double)completedCount / totalSegments) * 100.0, 0.0, 99.0);
                     double totalSecElapsed = totalSw.Elapsed.TotalSeconds;
                     if (completedCount > 0 && totalSecElapsed > 0)
                     {
@@ -3125,7 +3133,10 @@ public class DownloadEngine : IDownloadEngine
                     }
                 }
 
-                dl.StatusDetail = $"Accelerated Stream ({dl.ProgressPercentage:F1}% • {completedCount}/{totalSegments} chunks)...";
+                int retryingWorkers = session.Workers.Count(w => w.Progress.IsRetrying);
+                dl.StatusDetail = retryingWorkers > 0
+                    ? $"Retrying stream segments ({retryingWorkers} workers • {completedCount}/{totalSegments} chunks saved)..."
+                    : $"Downloading stream ({dl.ProgressPercentage:F1}% • {completedCount}/{totalSegments} chunks saved)...";
                 dl.Subline = dl.TotalBytes > 0
                     ? $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} / ~{MediaFormatItem.FormatBytes(dl.TotalBytes)} • {dl.SpeedMbps:F1} MB/s"
                     : $"{MediaFormatItem.FormatBytes(dl.DownloadedBytes)} • {dl.SpeedMbps:F1} MB/s";
@@ -3496,8 +3507,13 @@ public class DownloadEngine : IDownloadEngine
         }
         psi.ArgumentList.Add("-reconnect");
         psi.ArgumentList.Add("1");
-        psi.ArgumentList.Add("-reconnect_at_eof");
-        psi.ArgumentList.Add("1");
+        // A captured VOD snapshot is finite. Reconnecting at its normal EOF can
+        // repeatedly reopen the loopback playlist before demuxing ever starts.
+        if (capturedInput == null && !session.IsFiniteHls)
+        {
+            psi.ArgumentList.Add("-reconnect_at_eof");
+            psi.ArgumentList.Add("1");
+        }
         psi.ArgumentList.Add("-reconnect_streamed");
         psi.ArgumentList.Add("1");
         psi.ArgumentList.Add("-reconnect_delay_max");
@@ -3528,8 +3544,11 @@ public class DownloadEngine : IDownloadEngine
             }
             psi.ArgumentList.Add("-reconnect");
             psi.ArgumentList.Add("1");
-            psi.ArgumentList.Add("-reconnect_at_eof");
-            psi.ArgumentList.Add("1");
+            if (capturedAudioInput == null && !session.IsFiniteHls)
+            {
+                psi.ArgumentList.Add("-reconnect_at_eof");
+                psi.ArgumentList.Add("1");
+            }
             psi.ArgumentList.Add("-reconnect_streamed");
             psi.ArgumentList.Add("1");
             psi.ArgumentList.Add("-reconnect_delay_max");

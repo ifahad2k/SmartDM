@@ -179,3 +179,23 @@ media gates remain open. See [handoff](YOUTUBE_MENU_REGRESSION_HANDOFF.md).
 2026-11-08 Package 4 linked-thumbnail source repair: 12 new cases, 245 browser
 tests passed. Loaded-browser verification is blocked/pending; full exit gate NO.
 See [handoff](LINKED_THUMBNAIL_HANDOFF.md).
+
+
+2026-11-10 Package 4 owner-reported HLS retry/progress defect: received/saved
+accounting, retry presentation and finite-playlist FFmpeg EOF repair implemented.
+406 default .NET cases and eight enabled real FFmpeg cases pass. Updated app
+restarted with approval; episode remains paused. Full live completion and wider
+Package 2/3/4/5 gates remain NO. See [handoff](HLS_PROGRESS_HANDOFF.md).
+
+
+## 2026-11-16 Package 4 report repair continuation
+
+Seven owner ZIPs / nine distinct bugs reconciled in
+[REPORT_REPAIR_HANDOFF.md](REPORT_REPAIR_HANDOFF.md). Shared source/identity,
+request-entry, cookie/redirect, thumbnail and mux repairs have 306 browser,
+420 default .NET and ten enabled native FFmpeg passes. Three opt-in theories
+skip in the default suite. X is owner-confirmed; TikTok 403/file-examples are
+open and remaining sites need live proof. Full Package 4 exit gate **NO**.
+Graphify/Ponytail installation is complete and Graphify was used to locate the
+relative-XHR gap; neither tool closes a product/package gate. Java excluded;
+installer/release remain owner-deferred.

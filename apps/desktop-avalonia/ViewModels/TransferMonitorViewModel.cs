@@ -229,6 +229,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
             if (Download?.Status == DownloadStatus.Failed) return "Transfer Failed";
             if (Download?.Status == DownloadStatus.Completed) return "Transfer Completed";
             if (Download?.Status == DownloadStatus.Paused || IsPaused) return "Transfer Paused";
+            if (Download?.Status == DownloadStatus.Active && Download.StatusDetail?.StartsWith("Retrying stream segments", StringComparison.Ordinal) == true) return "Retrying stream...";
             if (Download?.SpeedMbps > 0) return "Concurrency Active";
             return "Connecting...";
         }
@@ -241,6 +242,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
             if (Download?.Status == DownloadStatus.Failed) return "#EF4444";
             if (Download?.Status == DownloadStatus.Completed) return "#3B82F6";
             if (Download?.Status == DownloadStatus.Paused || IsPaused) return "#F59E0B";
+            if (Download?.Status == DownloadStatus.Active && Download.StatusDetail?.StartsWith("Retrying stream segments", StringComparison.Ordinal) == true) return "#F59E0B";
             if (Download?.SpeedMbps > 0) return "#16A34A";
             return "#94A3B8";
         }

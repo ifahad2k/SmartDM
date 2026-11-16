@@ -1,0 +1,8 @@
+# SmartDM 2.0 only. Java 1.0, website, user evidence and generated output are out of scope.
+/*
+!/apps/
+!/extensions/
+!/src/
+!/tests/
+/apps/*
+!/apps/desktop-avalonia/

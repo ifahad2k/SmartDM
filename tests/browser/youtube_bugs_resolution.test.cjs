@@ -156,6 +156,8 @@ for (const browser of ['chrome', 'firefox']) {
   test(`${browser}: Bug 1 - In-page playerResponse resolution is instant (<50ms) without network roundtrip`, () => {
     const c = vm.createContext({
       URL,
+      setTimeout,
+      clearTimeout,
       document: {
         querySelector() { return null; },
         querySelectorAll() { return []; }
@@ -511,6 +513,112 @@ for (const browser of ['chrome', 'firefox']) {
     messageListener({ type: 'SMARTDM_MEDIA_DETECTED' });
     assert.ok(mockEngine.mediaFormatCache['https://www.youtube.com/watch?v=testVid1234'], 'YouTube cache preserved on media detected');
     assert.equal(mockEngine.mediaFormatCache['https://example.com/other2'], undefined, 'Non-YouTube cache cleared on media detected');
+  });
+
+  test(`${browser}: YouTube 360p in-page provisional upgrade to 1080p via desktop query`, () => {
+    let sentMessage = null;
+    let messageCallback = null;
+
+    const sample360Only = {
+      videoDetails: { videoId: 'lowResVid12', title: 'Real YouTube 360p Video' },
+      streamingData: {
+        formats: [{
+          itag: 18,
+          url: 'https://rr1---sn-test.googlevideo.com/videoplayback?expire=9999999999&itag=18',
+          mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"',
+          qualityLabel: '360p',
+          contentLength: '8000000',
+          height: 360
+        }],
+        adaptiveFormats: []
+      }
+    };
+
+    const c = vm.createContext({
+      URL,
+      setTimeout,
+      clearTimeout,
+      document: {
+        querySelector() { return null; },
+        querySelectorAll() { return []; }
+      },
+      window: {
+        location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/watch?v=lowResVid12' },
+        ytInitialPlayerResponse: sample360Only
+      },
+      SmartDmUtils: {
+        extractResolutionNumber(str) {
+          const m = String(str).match(/(\d+)p?/);
+          return m ? parseInt(m[1], 10) : 0;
+        }
+      },
+      chrome: {
+        runtime: {
+          sendMessage(msg, cb) {
+            sentMessage = msg;
+            messageCallback = cb;
+          }
+        }
+      }
+    });
+
+    const code = fs.readFileSync(`extensions/${browser}/modules/format_engine.js`, 'utf8');
+    vm.runInContext(`${code}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, c);
+    const engine = c.FormatRegistryEngine;
+
+    // 1. getInstantYouTubeFormats returns 360p instantly, but marks cache provisional
+    const instant = engine.getInstantYouTubeFormats('https://www.youtube.com/watch?v=lowResVid12');
+    assert.ok(instant.length > 0);
+    assert.equal(instant.some(f => f.resolution.includes('360p')), true);
+    const cacheKey = engine.youTubeCacheKey('https://www.youtube.com/watch?v=lowResVid12');
+    assert.equal(engine.mediaFormatCache[cacheKey].status, 'provisional');
+
+    // 2. fetchYouTubeFormats delivers provisional 360p with pending=true, then sends GET_MEDIA_FORMATS
+    const delivered = [];
+    engine.fetchYouTubeFormats('https://www.youtube.com/watch?v=lowResVid12', (res, pending) => {
+      delivered.push({ res, pending });
+    });
+
+    assert.equal(delivered.length, 1, 'Provisional 360p delivered immediately');
+    assert.equal(delivered[0].pending, true, 'Marked pending = true');
+    assert.ok(sentMessage, 'Sent GET_MEDIA_FORMATS to desktop/background');
+    assert.equal(sentMessage.type, 'GET_MEDIA_FORMATS');
+
+    // 3. Desktop app replies with 1080p, 720p ladder
+    messageCallback({
+      status: 'ok',
+      success: true,
+      title: 'Real YouTube 360p Video',
+      formats: [
+        { formatId: '137_mp4', resolution: '1080p', height: 1080, ext: 'mp4', directUrl: 'https://googlevideo.com/1080p', isAudioOnly: false },
+        { formatId: '136_mp4', resolution: '720p', height: 720, ext: 'mp4', directUrl: 'https://googlevideo.com/720p', isAudioOnly: false },
+        { formatId: '18_mp4', resolution: '360p', height: 360, ext: 'mp4', directUrl: 'https://googlevideo.com/360p', isAudioOnly: false }
+      ]
+    });
+
+    assert.equal(delivered.length, 2, 'Final HD ladder delivered to callback');
+    assert.equal(delivered[1].pending, false, 'Final delivery has pending = false');
+    assert.ok(delivered[1].res.formats.some(f => f.resolution.includes('1080p')), '1080p present');
+    assert.ok(delivered[1].res.formats.some(f => f.resolution.includes('720p')), '720p present');
+    assert.equal(engine.mediaFormatCache[cacheKey].status, 'done');
+  });
+
+  test(`${browser}: Mismatched videoId player response is rejected`, () => {
+    const c = vm.createContext({
+      URL,
+      SmartDmUtils: {}
+    });
+    const code = fs.readFileSync(`extensions/${browser}/modules/format_engine.js`, 'utf8');
+    vm.runInContext(`${code}\nthis.FormatRegistryEngine = FormatRegistryEngine;`, c);
+    const engine = c.FormatRegistryEngine;
+
+    const dataFromOtherVideo = {
+      videoDetails: { videoId: 'videoAAA1111', title: 'Wrong Video' },
+      streamingData: { formats: [{ itag: 18, url: 'https://googlevideo.com/test' }] }
+    };
+
+    const res = engine.parseYouTubePlayerResponse(dataFromOtherVideo, 'videoBBB2222');
+    assert.equal(res, null, 'Mismatched videoId player response must return null');
   });
 }
 

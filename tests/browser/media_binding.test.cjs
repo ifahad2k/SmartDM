@@ -14,6 +14,7 @@ for (const browser of ['chrome', 'firefox']) {
         this.headers = {get: key => key === 'content-type' ? type : key === 'content-range' ? `bytes 0-${data.byteLength - 1}/${total}` : key === 'content-length' ? String(total) : null};
       }
       arrayBuffer() {return Promise.resolve(this.data);}
+      clone() {return new Response(this.url, this.data);}
       get body() {return this.stream ??= new ReadableStream(this.data);}
     }
     class ReadableStreamDefaultReader {
@@ -24,11 +25,18 @@ for (const browser of ['chrome', 'firefox']) {
     class SourceBuffer {appendBuffer(bytes) {this.lastBytes = bytes;}}
     class MediaSource {addSourceBuffer() {return new SourceBuffer();}}
     let next = 0;
-    const url = {createObjectURL: () => 'blob:player-' + ++next};
+    class BrowserUrl extends URL {static createObjectURL() {return 'blob:player-' + ++next;}}
+    const url = BrowserUrl;
     const root = {setAttribute() {}};
     const document = {documentElement: root, querySelectorAll: () => players};
-    const window = {location: {hostname: 'player.invalid'}}; window.top = window.self = window;
-    class Xhr {open() {} send() {}}
+    let fetchResponse;
+    const window = {location: {hostname: 'player.invalid',href:'https://player.invalid/feed'}, fetch: async () => fetchResponse}; window.top = window.self = window;
+    class Xhr {
+      constructor() {this.status=206;this.responseType='arraybuffer';this.responseURL='https://cdn.invalid/final-file';this.data=new ArrayBuffer(1024);}
+      get response() {return this.data;}
+      getResponseHeader(key) {return key==='content-type'?'video/mp4':key==='content-range'?'bytes 0-1023/20000000':null;}
+      open() {} send() {}
+    }
     const c = vm.createContext({window, document, Response, SourceBuffer, MediaSource, URL: url, XMLHttpRequest: Xhr,
       ReadableStream, ReadableStreamDefaultReader});
     vm.runInContext(fs.readFileSync(`extensions/${browser}/sniffer.js`, 'utf8'), c);
@@ -50,8 +58,27 @@ for (const browser of ['chrome', 'firefox']) {
       players.push(el);
       return {el, source};
     }
-    return {player, Response, copy, join};
+    return {player, Response, Xhr, copy, join, fetch: async (entry, response) => {fetchResponse = response; return window.fetch(entry);}};
   }
+
+  test(`${browser}: appended redirected fetch bytes retain their actual request entry point`, async () => {
+    const f = fixture(), a = f.player(), b = f.player();
+    const entry = 'https://player.invalid/play?item_id=123456&signature=a%20b';
+    const response = await f.fetch(entry, new f.Response('https://cdn.invalid/final-signed-file', new ArrayBuffer(1024)));
+    a.source.addSourceBuffer('video/mp4').appendBuffer(await response.clone().arrayBuffer());
+    assert.equal(a.el.getAttribute('data-smartdm-video-url'), entry);
+    b.source.addSourceBuffer('video/mp4').appendBuffer((await response.body.getReader().read()).value);
+    assert.equal(b.el.getAttribute('data-smartdm-video-url'), entry);
+  });
+  test(`${browser}: relative XHR entry survives redirects and failed responses cannot bind`, () => {
+    const f=fixture(),a=f.player(),b=f.player(),xhr=new f.Xhr();
+    xhr.open('GET','/play?item_id=123456&signature=a%20b');
+    a.source.addSourceBuffer('video/mp4').appendBuffer(xhr.response);
+    assert.equal(a.el.getAttribute('data-smartdm-video-url'),'https://player.invalid/play?item_id=123456&signature=a%20b');
+    xhr.status=403;xhr.data=new ArrayBuffer(1024);
+    b.source.addSourceBuffer('video/mp4').appendBuffer(xhr.response);
+    assert.equal(b.el.getAttribute('data-smartdm-video-url'),undefined);
+  });
 
   test(`${browser}: MSE binds only appended response bytes to their own player with audio`, async () => {
     const f = fixture(), a = f.player(), b = f.player();

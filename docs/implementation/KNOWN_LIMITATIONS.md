@@ -111,3 +111,31 @@ parser can read. Authentication/dynamic setup/network errors can prevent this.
 The 20-second UI deadline does not cancel that existing background fetch.
 Live verification stopped when computer-use denied the current URL. See
 [handoff](LINKED_THUMBNAIL_HANDOFF.md).
+
+
+2026-11-10 HLS progress: received traffic now includes retry bytes while saved
+progress counts verified chunk commits. Chunk-count percent is monotonic within
+the native HLS session; estimated size/ETA and actual network rate may vary.
+Finite-input FFmpeg EOF stalls have real regression proof, but full live anisuge
+completion/throughput on the restarted build remains unverified. Previous app
+failures included HTTP 403; exact authorization/expiry cause is not established.
+Existing fallback/multi-track progress semantics and package security/release gaps
+remain. See [handoff](HLS_PROGRESS_HANDOFF.md); no universal speed/site claim.
+
+
+## 2026-11-16 report repair limits
+
+TikTok 403 is still an open live defect after an earlier successful download.
+The latest fetch/reader/XHR original-entry repair has fixture proof, not a fresh
+completed live download. Higher renditions require metadata for the selected
+item; 720p alone does not prove a bug, and measured 576p is now labeled honestly.
+Bilibili search badges and actual-media API routing pass fixtures; full live
+thumbnail/mux confirmation is pending. Other linked-source repairs likewise do
+not guarantee authorization or source availability. File-examples HTTP 403 is
+not established as resolved. Prior storage/IPC/security/release limitations stand.
+
+Graphify's v2-only AST map omits `.axaml`, docs and dynamic message routing.
+Its health diagnostics include unresolved endpoints, repeated-edge collapse and
+self-loops; verify source rather than treating graph absence as proof of no call.
+No Java, Linux, installer, memory benchmark or universal compatibility proof.
+See [handoff](REPORT_REPAIR_HANDOFF.md).

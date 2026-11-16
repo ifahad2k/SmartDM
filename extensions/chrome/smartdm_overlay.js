@@ -109,9 +109,9 @@
         const linkImg = document.querySelector?.('link[rel="image_src"]');
         if (linkImg && linkImg.href) thumbUrl = linkImg.href;
       }
-      const pageUrl = window.location.href;
-      if (!thumbUrl && (pageUrl.includes('youtube.com') || pageUrl.includes('youtu.be'))) {
-        const vidMatch = pageUrl.match(/[?&]v=([^&#]+)/) || pageUrl.match(/youtu\.be\/([^?&#]+)/) || pageUrl.match(/\/shorts\/([^?&#]+)/);
+      const videoSource = targetItem.videoUrl || targetItem.assetId || (typeof targetItem.url === 'string' && (targetItem.url.includes('youtube.com') || targetItem.url.includes('youtu.be')) ? targetItem.url : window.location.href);
+      if (!thumbUrl && (videoSource.includes('youtube.com') || videoSource.includes('youtu.be'))) {
+        const vidMatch = videoSource.match(/[?&]v=([^&#]+)/) || videoSource.match(/youtu\.be\/([^?&#]+)/) || videoSource.match(/\/shorts\/([^?&#]+)/);
         if (vidMatch) thumbUrl = `https://i.ytimg.com/vi/${vidMatch[1]}/maxresdefault.jpg`;
       }
     } catch(e) {}
@@ -460,13 +460,17 @@
             if (parsed && Array.isArray(parsed.formats) && parsed.formats.length > 0) {
               const key = FormatRegistryEngine.youTubeCacheKey?.(`https://www.youtube.com/watch?v=${vid}`);
               if (key) {
-                FormatRegistryEngine.mediaFormatCache[key] = {
-                  youtube: true,
-                  status: 'done',
-                  data: parsed,
-                  expiresAt: Date.now() + 120000,
-                  callbacks: []
-                };
+                const existing = FormatRegistryEngine.mediaFormatCache[key];
+                const hasHd = FormatRegistryEngine.hasHighResFormats ? FormatRegistryEngine.hasHighResFormats(parsed.formats) : false;
+                if (!existing || existing.status !== 'done' || !FormatRegistryEngine.hasHighResFormats?.(existing.data?.formats)) {
+                  FormatRegistryEngine.mediaFormatCache[key] = {
+                    youtube: true,
+                    status: hasHd ? 'done' : 'provisional',
+                    data: parsed,
+                    expiresAt: Date.now() + (hasHd ? 120000 : 30000),
+                    callbacks: existing?.callbacks || []
+                  };
+                }
               }
             }
           }

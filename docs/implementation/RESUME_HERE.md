@@ -162,3 +162,32 @@ range requests. Loaded YouTube content scripts still require reload/refresh.
 thumbnail intent and selected-page-first discovery. 245 browser tests pass; live
 menu verification remains pending after the computer-use URL restriction.
 Do not work around that restriction or claim a completed live download.
+
+
+## 2026-11-10 HLS progress repair — current task
+
+Read [HLS_PROGRESS_HANDOFF.md](HLS_PROGRESS_HANDOFF.md) for the local, uncommitted
+repair on baseline `8f1465c`. Preserve separate received/saved accounting, bounded
+retry state, response disposal and finite-playlist EOF handling. Default tests:
+406 passed, two opt-in theories skipped; enabled real FFmpeg cases: eight passed.
+Normal output was rebuilt and SmartDM restarted with owner approval; current
+episode remains paused and 310 chunk/checkpoint pairs are preserved. Next check:
+fresh live chunk growth and completed audio/video decoding, with source access
+recaptured if needed. No installer/publication or full package closure.
+
+
+## 2026-11-16 current continuation
+
+Start with [REPORT_REPAIR_HANDOFF.md](REPORT_REPAIR_HANDOFF.md). Work only on v2
+C# / Avalonia and extensions. Preserve the HLS dirty work and report fixes.
+X is owner-confirmed working; TikTok 403 and file-examples remain open. Other
+report rows need fresh live confirmation. Latest fixtures: 306 browser passes;
+.NET 420 passes / three opt-in skips; ten enabled native FFmpeg cases passed
+separately. Normal solution rebuilt. The final relative-XHR entry-point repair
+has not been live-verified; loaded extensions require reload/page refresh.
+
+Graphify 0.9.111 and Ponytail are installed globally as Codex skills. Local
+`graphify-out/` is ignored. Query it for structure, then check cited source.
+Refresh with `graphify extract . --code-only --max-workers 2`; `.graphifyignore`
+excludes Java, website, docs and user evidence. Do not upload sources or claim
+that a graph proves correctness. No installer, push or package closure.

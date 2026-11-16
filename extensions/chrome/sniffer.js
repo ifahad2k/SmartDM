@@ -42,6 +42,8 @@
   const IGNORED_DOMAINS_REGEX = /(?:fbcdn\.net|facebook\.com|messenger\.com|instagram\.com|googlevideo\.com|ytimg\.com|googleads|doubleclick\.net)/i;
   const capturedUrls = new Set();
   const pendingReads = new Set();
+  const responseEntries = new WeakMap();
+  const responseAddress = response => responseEntries.get(response) || response.url;
   // Long VOD playlists contain thousands of signed URLs. Bound both reads and
   // retained snapshots; a three-entry count alone is insufficient for movies.
   const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
@@ -90,8 +92,26 @@
     } catch (_) {}
   }
 
+  function stashMediaMetadata(text) {
+    try {
+      if (typeof SmartDmMediaMetadata === 'undefined' || !/"(?:bitrateInfo|playAddr|play_addr|videoInfo)"/.test(text)) return;
+      const items = SmartDmMediaMetadata.parse(JSON.parse(text));
+      const root = document.head || document.documentElement;
+      if (!root) return;
+      for (const item of items) {
+        let node = root.querySelector(`smartdm-media-metadata[data-smartdm-item-id="${item.id}"]`);
+        if (!node) {node = document.createElement('smartdm-media-metadata');node.setAttribute('data-smartdm-item-id',item.id);node.style.display='none';root.appendChild(node);}
+        node.textContent = JSON.stringify(item);
+      }
+      const nodes = Array.from(root.querySelectorAll('smartdm-media-metadata'));
+      let chars = nodes.reduce((sum,n) => sum + n.textContent.length, 0);
+      while (nodes.length > 20 || chars > 256000) {const n = nodes.shift();chars -= n.textContent.length;n.remove();}
+    } catch (_) {}
+  }
+
   function inspectJsonResponseForManifests(text, requestUrl) {
     if (!text || typeof text !== 'string' || text.length > MAX_MANIFEST_BYTES) return;
+    stashMediaMetadata(text);
     try {
       if (text.includes('"streamingData"') && (text.includes('"adaptiveFormats"') || text.includes('"formats"'))) {
         stashYouTubePlayerResponse(text);
@@ -125,13 +145,14 @@
           unescapedText.includes('"link"')) {
         try {
           const data = JSON.parse(text);
-          const findSources = (obj) => {
-            if (!obj || typeof obj !== 'object') return;
+          let sourceNodes = 0;
+          const findSources = (obj, depth = 0) => {
+            if (!obj || typeof obj !== 'object' || depth > 14 || ++sourceNodes > 4000) return;
             const candidates = [obj.file, obj.url, obj.src, obj.source, obj.stream, obj.link, obj.video, obj.playlist, obj.manifest].filter(v => typeof v === 'string');
             for (const cand of candidates) {
               let fullUrl = cand;
               try { fullUrl = new URL(cand, requestUrl || window.location.href).href; } catch(_) {}
-              if (!capturedUrls.has(fullUrl) && (isLikelyManifestUrl(fullUrl) || /\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(fullUrl) || /(?:stream|source|playlist|master|hls)/i.test(fullUrl))) {
+              if (!capturedUrls.has(fullUrl) && !BINARY_EXT_REGEX.test(fullUrl) && (isLikelyManifestUrl(fullUrl) || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(fullUrl))) {
                 stashAndEmitManifest(fullUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${fullUrl}`);
                 try {
                   window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
@@ -141,7 +162,7 @@
               }
             }
             for (const k in obj) {
-              if (typeof obj[k] === 'object') findSources(obj[k]);
+              if (typeof obj[k] === 'object') findSources(obj[k], depth + 1);
             }
           };
           findSources(data);
@@ -248,17 +269,12 @@
   } catch (_) {}
 
   function stripByteRangeParams(url) {
-    if (!url || typeof url !== 'string') return url;
-    try {
-      const u = new URL(url, window.location.href);
-      if (u.searchParams.has('bytestart') || u.searchParams.has('byteend') || u.searchParams.has('range')) {
-        u.searchParams.delete('bytestart');
-        u.searchParams.delete('byteend');
-        u.searchParams.delete('range');
-        return u.href;
-      }
-    } catch (_) {}
-    return url;
+    if (!url) return url;
+    const m = String(url).match(/^([^?#]*)(?:\?([^#]*))?(#.*)?$/);
+    if (!m || m[2] === undefined) return url;
+    const parts = m[2].split('&');
+    const kept = parts.filter(p => !/^(?:(?:bytestart|byteend)=\d+|range=\d+(?:-\d+)?)$/i.test(p));
+    return kept.length === parts.length ? url : m[1] + (kept.length ? '?' + kept.join('&') : '') + (m[3] || '');
   }
 
   // Associate actual network buffers with the SourceBuffer that consumes them.
@@ -511,7 +527,7 @@
       Object.defineProperty(Response.prototype, 'body', {...body, get() {
         const stream = body.get.call(this);
         try {
-          if (stream) streamOwners.set(stream, {url: this.url, type: this.headers.get('content-type'), range: this.headers.get('content-range'),
+          if (stream) streamOwners.set(stream, {url: responseAddress(this), type: this.headers.get('content-type'), range: this.headers.get('content-range'),
             length: Number(this.headers.get('content-length')), status: this.status});
         } catch (_) {}
         return stream;
@@ -533,7 +549,7 @@
         const result = read.apply(this, args), metadata = readerOwners.get(this);
         if (!metadata) return result;
         return result.then(chunk => {
-          try { if (chunk.value) { rememberBuffer(chunk.value, metadata.url, metadata.type, metadata.range); sampleResource(chunk.value, metadata); } } catch (_) {}
+          try { if (chunk.value && metadata.status >= 200 && metadata.status < 300) { rememberBuffer(chunk.value, metadata.url, metadata.type, metadata.range); sampleResource(chunk.value, metadata); } } catch (_) {}
           return chunk;
         });
       };
@@ -543,16 +559,24 @@
       Response.prototype.arrayBuffer = function(...args) {
         const response = this;
         return arrayBuffer.apply(this, args).then(buffer => {
-          try { rememberBuffer(buffer, response.url, response.headers.get('content-type'), response.headers.get('content-range')); } catch (_) {}
+          try { if (response.status >= 200 && response.status < 300) rememberBuffer(buffer, responseAddress(response), response.headers.get('content-type'), response.headers.get('content-range')); } catch (_) {}
           return buffer;
         });
+      };
+    }
+    if (typeof Response !== 'undefined' && Response.prototype.clone) {
+      const clone = Response.prototype.clone;
+      Response.prototype.clone = function(...args) {
+        const copy = clone.apply(this, args), entry = responseEntries.get(this);
+        if (entry) responseEntries.set(copy, entry);
+        return copy;
       };
     }
     const response = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'response');
     if (response?.get && response.configurable) {
       Object.defineProperty(XMLHttpRequest.prototype, 'response', {...response, get() {
         const value = response.get.call(this);
-        try { if (this.responseType === 'arraybuffer') rememberBuffer(value, this.responseURL,
+        try { if (this.responseType === 'arraybuffer' && this.status >= 200 && this.status < 300) rememberBuffer(value, /^https?:\/\//i.test(this._smartdm_req_url || '') ? this._smartdm_req_url : this.responseURL,
           this.getResponseHeader('content-type'), this.getResponseHeader('content-range')); } catch (_) {}
         return value;
       }});
@@ -783,6 +807,12 @@
         const resp = await origFetch.apply(this, args);
         try {
           const reqUrl = (typeof args[0] === 'string') ? args[0] : (args[0] && (args[0].url || args[0].href));
+          if (resp.status >= 200 && resp.status < 300 && reqUrl) {
+            try {
+              const entry = new URL(reqUrl, window.location.href).href;
+              if (/^https?:\/\//i.test(entry)) responseEntries.set(resp, entry);
+            } catch (_) { if (/^https?:\/\//i.test(reqUrl)) responseEntries.set(resp, reqUrl); }
+          }
           const contentType = (resp.headers?.get('content-type') || '').toLowerCase();
           const playlistMime = /mpegurl|dash\+xml/i.test(contentType) && !IGNORED_DOMAINS_REGEX.test(reqUrl || '');
           const isManifestUrl = isLikelyManifestUrl(reqUrl);
@@ -820,7 +850,8 @@
     const origSend = XMLHttpRequest.prototype.send;
     const observedXhrs = new WeakSet();
     XMLHttpRequest.prototype.open = function(method, url) {
-      this._smartdm_req_url = url;
+      try { this._smartdm_req_url = new URL(url, window.location.href).href; }
+      catch (_) { this._smartdm_req_url = url; }
       return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function() {

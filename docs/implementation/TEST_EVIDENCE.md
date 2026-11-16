@@ -429,3 +429,42 @@ by automatic approval review as blocked by policy; it did not execute. Fixed-pat
 local file edits removed workspace diagnostic scripts. No full live verification
 or .NET/Java runtime validation is claimed. See
 [handoff](LINKED_THUMBNAIL_HANDOFF.md).
+
+
+## 2026-11-10 HLS saved progress, retries and finite EOF
+
+[Full commands/results](HLS_PROGRESS_HANDOFF.md): isolated and normal Windows
+solution builds pass with zero warnings/errors. Default suite: **406 passed,
+0 failed, two skipped opt-in theories**. Enabled native FFmpeg suite: **8 passed,
+0 failed/skipped**. Initial captured-fMP4 cases failed the 25-second deadline;
+finite-input EOF handling corrected that reproducible failure. New engine test
+injects an interrupted response and proves its bytes are not saved progress;
+concurrent/resumed totals, disposal, monitor states and secret-safe errors pass.
+Native UI pause/restart verified; 310 saved chunk/checkpoint pairs and history
+preserved. Full anisuge completion on the new build remains unverified. No browser
+or Java source changed, so those suites were not rerun. `git diff --check` passes.
+
+
+## 2026-11-16 report repairs and Graphify
+
+Exact commands and per-bug status: [REPORT_REPAIR_HANDOFF.md](REPORT_REPAIR_HANDOFF.md).
+`dotnet restore SmartDm.sln --verbosity minimal` and
+`dotnet build SmartDm.sln --no-restore --verbosity minimal` pass, zero warnings/errors.
+`dotnet test SmartDm.sln --no-build --verbosity minimal`: **420 passed, 0 failed,
+3 skipped opt-in theories**. `node --test tests/browser/*.test.cjs`: **306 passed,
+0 failed/skipped**. Enabled isolated FFmpeg suite: **10 passed** after transport
+changes. These include real engine paired-track mux and complete decode.
+
+New relative-XHR source test failed in both browsers before request normalization
+and passed after; selected 576p renderer and redirected-fetch binding checks pass.
+X repair is owner-confirmed. TikTok later failed 403 after reload; latest hook
+changes are not live-verified. Caption matching was inspected in real Chrome.
+
+Graphify 0.9.111 installed with `uv tool install graphifyy==0.9.111` and
+`graphify install --platform codex`; Ponytail installed at pinned upstream
+`96608e078b2d5ea607c5c3b8b5a54d1c1fba6846`. Scoped local code AST extraction
+and query/explain/affected commands executed. No external semantic LLM calls.
+Initial graph: 162 files / 2,641 nodes / 6,963 edges; refreshed graph deduplicates
+six nodes. Raw diagnostics: 549 dangling endpoints, 587 directed same-endpoint
+collapses, five self-loops. Preserved original graph before accepting dedup shrink.
+No package-wide runtime or security closure follows from these results.

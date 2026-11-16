@@ -37,6 +37,7 @@
         "*://*.bilibili.tv/*"
       ],
       "js": [
+        "modules/media_metadata.js",
         "sniffer.js"
       ],
       "world": "MAIN",
@@ -52,6 +53,7 @@
         "*://*.bilibili.tv/*"
       ],
       "js": [
+        "modules/media_metadata.js",
         "modules/utils.js",
         "modules/visual_mount.js",
         "modules/format_engine.js",

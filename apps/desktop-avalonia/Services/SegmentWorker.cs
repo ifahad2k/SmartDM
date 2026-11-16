@@ -48,7 +48,9 @@ public class SegmentWorker
         _url = DownloadEngine.SanitizeMediaUrl(url);
         _targetFilePath = targetFilePath;
         _referer = referer;
-        if (!string.IsNullOrEmpty(_referer) && (_referer.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || _referer.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase) || _referer.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)))
+        if (Uri.TryCreate(_url, UriKind.Absolute, out var source) &&
+            (source.Host.EndsWith(".fbcdn.net", StringComparison.OrdinalIgnoreCase) || source.Host.EndsWith(".cdninstagram.com", StringComparison.OrdinalIgnoreCase)) &&
+            !string.IsNullOrEmpty(_referer) && (_referer.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) || _referer.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase)))
         {
             _referer = _url.Contains("instagram", StringComparison.OrdinalIgnoreCase) ? "https://www.instagram.com/" : "https://www.facebook.com/";
         }
@@ -440,6 +442,9 @@ public class SegmentWorker
                     }
                     using var _sliceRespScope = resp;
                     resp.EnsureSuccessStatusCode();
+                    string? contentType = resp.Content.Headers.ContentType?.MediaType;
+                    if (DownloadEngine.IsHtmlResponse(contentType, null) || contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+                        throw new InvalidDataException("The media source returned a document instead of a media track. Open the video and capture its streams again.");
 
                     if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent)
                     {
@@ -556,9 +561,10 @@ public class SegmentWorker
         Action<string>? onFatalError = null,
         Func<string, HlsSegmentEncryption, CancellationToken, Task>? decryptSegment = null,
         Func<string?>? getSharedReferer = null,
-        Action<string?>? setSharedReferer = null)
+        Action<string?>? setSharedReferer = null,
+        Action<int>? onBytesReceived = null)
     {
-        Progress.IsActive = true;
+        Progress.IsActive = false;
         Progress.IsCompleted = false;
         _speedStopwatch.Restart();
         _bytesSinceLastCheck = 0;
@@ -579,6 +585,11 @@ public class SegmentWorker
                 string tmpFile = chunk.TargetPath + ".tmp";
                 bool chunkSuccess = false;
                 long chunkBytes = 0;
+                string retryReason = "segment transfer failed";
+                HttpResponseMessage? resp = null;
+                Progress.IsRetrying = false;
+                Progress.IsActive = true;
+                Progress.DownloadedBytes = 0;
 
                 try
                 {
@@ -597,7 +608,7 @@ public class SegmentWorker
                     if (!string.IsNullOrEmpty(_cookies)) req.Headers.TryAddWithoutValidation("Cookie", _cookies);
                     req.Headers.TryAddWithoutValidation("Accept", "*/*");
 
-                    var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
+                    resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
 
                     // Automatic throttle down with exponential backoff on HTTP 429
                     if (resp.StatusCode == (System.Net.HttpStatusCode)429)
@@ -611,6 +622,8 @@ public class SegmentWorker
                         chunk.Retries++;
                         if (chunk.Retries <= 5)
                         {
+                            Progress.IsRetrying = true;
+                            Progress.IsActive = false;
                             await Task.Delay(Math.Min(backoffDelayMs, 8000), cancellationToken);
                             queue.Enqueue(chunk);
                             continue;
@@ -645,6 +658,7 @@ public class SegmentWorker
                             var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
                             if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
                             {
+                                resp.Dispose();
                                 resp = candResp;
                                 _referer = cand; // Update working referer for remaining chunks
                                 setSharedReferer?.Invoke(cand);
@@ -665,9 +679,9 @@ public class SegmentWorker
                             throw new HttpRequestException("Media stream segment returned HTML challenge page instead of video data.");
                         }
 
-                        long expectedLength = resp.Content.Headers.ContentLength ?? 4_500_000;
+                        long? expectedLength = resp.Content.Headers.ContentLength;
                         Progress.StartByte = 0;
-                        Progress.EndByte = expectedLength;
+                        Progress.EndByte = expectedLength > 0 ? expectedLength.Value - 1 : -1;
                         Progress.DownloadedBytes = 0;
 
                         await using (var fs = new FileStream(tmpFile, FileMode.Create, FileAccess.Write, FileShare.None, 131072, useAsync: true))
@@ -677,6 +691,8 @@ public class SegmentWorker
                             {
                                 int read = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length), timeoutCts.Token);
                                 if (read <= 0) break;
+
+                                onBytesReceived?.Invoke(read);
 
                                 if (SpeedLimiter != null)
                                 {
@@ -725,12 +741,21 @@ public class SegmentWorker
                 catch (OperationCanceledException)
                 {
                     if (cancellationToken.IsCancellationRequested) break;
+                    retryReason = "segment timed out";
                     // Stalled socket timed out, proceed to retry with backoff
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[SegmentWorker #{Progress.SegmentIndex}] HLS chunk error (chunk {chunk.Index}): {ex.Message}");
+                    retryReason = ex is HttpRequestException { StatusCode: { } status } ? $"HTTP {(int)status}" :
+                        ex is InvalidDataException ? "segment validation failed" : "segment integrity or transport failed";
+                    Debug.WriteLine($"[SegmentWorker #{Progress.SegmentIndex}] HLS chunk {chunk.Index}: {retryReason}");
                     try { if (File.Exists(tmpFile)) File.Delete(tmpFile); } catch { }
+                }
+                finally
+                {
+                    resp?.Dispose();
+                    Progress.IsActive = false;
+                    Progress.DownloadedBytes = 0;
                 }
 
                 if (!chunkSuccess && !cancellationToken.IsCancellationRequested)
@@ -738,13 +763,14 @@ public class SegmentWorker
                     if (chunk.Retries < 4)
                     {
                         chunk.Retries++;
+                        Progress.IsRetrying = true;
                         int backoffMs = Math.Min(1500, 150 * (1 << chunk.Retries));
                         await Task.Delay(backoffMs, cancellationToken);
                         queue.Enqueue(chunk);
                     }
                     else
                     {
-                        LastError = $"Media segment {chunk.Index} failed after bounded retries. Refresh the original page and select the same format.";
+                        LastError = $"Media segment {chunk.Index} failed after bounded retries ({retryReason}). Refresh the original page and select the same format.";
                         onFatalError?.Invoke(LastError);
                         break;
                     }
@@ -755,9 +781,9 @@ public class SegmentWorker
         {
             // Paused or canceled
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LastError = ex.Message;
+            LastError = "Media segment transfer failed.";
             onFatalError?.Invoke("Media segment transfer failed.");
         }
         finally
@@ -766,6 +792,7 @@ public class SegmentWorker
             Progress.IsCompleted = !cancellationToken.IsCancellationRequested && string.IsNullOrEmpty(LastError) && queue.IsEmpty;
             Progress.SpeedMbps = 0;
             Progress.DownloadedBytes = 0;
+            Progress.IsRetrying = false;
         }
     }
 }

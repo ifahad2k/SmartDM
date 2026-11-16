@@ -194,3 +194,29 @@ captures. Requests coalesce by selected URL, expire after one minute, share the
 listing previews cannot substitute for the selected video. Background parsing
 and player/social/YouTube discovery are unchanged. See
 [evidence and limitations](implementation/LINKED_THUMBNAIL_HANDOFF.md).
+
+
+## 2026-11-10 HLS accounting and finite-playlist EOF
+
+`HlsTransferProgress` now separates received traffic from verified saved chunks.
+The native HLS engine derives speed from reads and percentage from saved chunk
+count; retries do not credit saved progress. Workers expose active/retrying state
+and actual or unknown attempt length. Parsed finite HLS and captured-playlist
+FFmpeg inputs no longer reconnect at normal EOF. Shared transport behavior only;
+no new site adapter, assembly, schema or browser protocol. See
+[implementation/evidence](implementation/HLS_PROGRESS_HANDOFF.md): 406 default
+.NET tests pass and eight opt-in real FFmpeg cases pass. Updated Windows app is
+running with the current episode paused; full live completion remains unverified.
+
+
+## 2026-11-16 local report repairs
+
+Selected social-item captions/renditions, exact signed-query spelling, original
+playback-request provenance across fetch/stream/XHR, bounded declared-source
+parsing, selected Bilibili thumbnail resolution, scoped cookies, explicit paired
+mux maps and guarded HTTP redirects are implemented locally. TikTok 403 remains
+open; tests do not establish universal site compatibility.
+Graphify is developer-only, with a local AST map scoped by `.graphifyignore` to
+v2 app/extensions/src/tests. Unresolved edges and omitted `.axaml` markup mean
+it is not a complete runtime architecture model. No production dependency was
+added. See [evidence/handoff](implementation/REPORT_REPAIR_HANDOFF.md).

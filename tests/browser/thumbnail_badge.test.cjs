@@ -83,6 +83,20 @@ for (const browser of ['chrome', 'firefox']) {
     assert.equal(host.removed, true);
   });
 
+  test(`${browser}: Bilibili numeric video anchors mount without legacy card classes`, () => {
+    const dom = createDOM({hostname: 'www.bilibili.tv', href: 'https://www.bilibili.tv/en/search-result?q=selected'});
+    const link = dom.makeElement('a', {href: 'https://www.bilibili.tv/en/video/123456789', class: 'search-cover'}, [
+      dom.makeElement('img', {src: 'selected.jpg', width: 320, height: 180})
+    ]);
+    const tile = dom.makeElement('div', {class: 'search-result-tile'}, [link]);
+    dom.body.appendChild(tile);
+    const c = vm.createContext({URL,window:dom.window,document:dom.document, setTimeout, clearTimeout,
+      OverlayUiRenderer:{getStyles(){return '';},renderFormatDropdown(){}},FormatRegistryEngine:{fetchMediaFormats(){}}});
+    for(const f of ['utils','visual_mount','watcher']) vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/${f}.js`,'utf8'),c);
+    vm.runInContext('MediaWatcher.scanThumbnails()',c);
+    assert.equal(dom.hostsCreated.length,1);
+  });
+
   test(`${browser} excludes Pornhub tag/search suggestion pills and mounts only legitimate video cards`, () => {
     const dom = createDOM({ hostname: 'www.pornhub.com', href: 'https://www.pornhub.com/video' });
     const tagWrapper = dom.makeElement('div', { class: 'tagsWrapper' }, [
