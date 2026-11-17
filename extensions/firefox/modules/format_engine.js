@@ -118,6 +118,34 @@ class FormatRegistryEngine {
     if (!m3u8Text || typeof m3u8Text !== 'string') return [];
     const lines = m3u8Text.split('\n');
     const formats = [];
+    const audioGroups = new Map();
+    let defaultAudioUrl = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('#EXT-X-MEDIA:') && /TYPE=AUDIO/i.test(line)) {
+        const uriMatch = line.match(/URI="([^"]+)"/i);
+        if (uriMatch) {
+          let audioUrl = uriMatch[1];
+          if (!audioUrl.startsWith('http')) {
+            if (typeof URL !== 'undefined' && baseUrl) {
+              try { audioUrl = new URL(audioUrl, baseUrl).href; } catch (e) {}
+            }
+          }
+          audioUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.inheritQueryTokens)
+            ? SmartDmUtils.inheritQueryTokens(audioUrl, baseUrl)
+            : (baseUrl && baseUrl.includes('?') && !audioUrl.includes('?') ? (audioUrl + baseUrl.substring(baseUrl.indexOf('?'))) : audioUrl);
+          const groupMatch = line.match(/GROUP-ID="([^"]+)"/i);
+          if (groupMatch) {
+            audioGroups.set(groupMatch[1], audioUrl);
+          }
+          if (/DEFAULT=YES/i.test(line) || !defaultAudioUrl) {
+            defaultAudioUrl = audioUrl;
+          }
+        }
+      }
+    }
+
     let currentInfo = null;
 
     for (let i = 0; i < lines.length; i++) {
@@ -130,6 +158,8 @@ class FormatRegistryEngine {
         if (bwMatch) currentInfo.bandwidth = parseInt(bwMatch[1], 10);
         const nameMatch = line.match(/NAME="([^"]+)"/i);
         if (nameMatch) currentInfo.name = nameMatch[1];
+        const audioMatch = line.match(/AUDIO="([^"]+)"/i);
+        if (audioMatch) currentInfo.audioGroup = audioMatch[1];
       } else if (line && !line.startsWith('#') && currentInfo) {
         let streamUrl = line;
         if (!streamUrl.startsWith('http')) {
@@ -148,19 +178,9 @@ class FormatRegistryEngine {
             } catch (e) {}
           }
         }
-        if (baseUrl && baseUrl.includes('?') && !streamUrl.includes('?')) {
-          if (typeof URL !== 'undefined') {
-            try {
-              const bParsed = new URL(baseUrl);
-              const sParsed = new URL(streamUrl);
-              sParsed.search = bParsed.search;
-              streamUrl = sParsed.href;
-            } catch(e) {}
-          } else {
-            const query = baseUrl.split('?')[1];
-            if (query) streamUrl += '?' + query;
-          }
-        }
+        streamUrl = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.inheritQueryTokens)
+          ? SmartDmUtils.inheritQueryTokens(streamUrl, baseUrl)
+          : (baseUrl && baseUrl.includes('?') && !streamUrl.includes('?') ? (streamUrl + baseUrl.substring(baseUrl.indexOf('?'))) : streamUrl);
 
         let height = 0;
         if (currentInfo.resolution) {
@@ -181,6 +201,8 @@ class FormatRegistryEngine {
           badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
         }
 
+        const audioUrl = (currentInfo.audioGroup && audioGroups.get(currentInfo.audioGroup)) || defaultAudioUrl || null;
+
         formats.push({
           formatId: height > 0 ? `m3u8_${height}p` : `m3u8_stream_${formats.length}`,
           // A quality label is not the movie's title. The overlay supplies the
@@ -193,11 +215,12 @@ class FormatRegistryEngine {
           url: streamUrl,
           directUrl: streamUrl,
           videoUrl: streamUrl,
+          audioUrl: audioUrl,
           height: height,
           bandwidth: currentInfo.bandwidth || 0,
           isAudioOnly: false,
-          referer: window.location.href,
-          origin: window.location.origin
+          referer: typeof window !== 'undefined' && window.location ? window.location.href : '',
+          origin: typeof window !== 'undefined' && window.location ? window.location.origin : ''
         });
         currentInfo = null;
       }
@@ -1891,11 +1914,54 @@ class FormatRegistryEngine {
 
   static selectedSocialFormats(mediaEl, media) {
     const src = mediaEl?.currentSrc || mediaEl?.src || '';
-    const poster = mediaEl && (mediaEl.poster || mediaEl.getAttribute?.('poster')) || '';
-    const asset = poster.match(/(?:ext_tw_video_thumb|amplify_video_thumb)\/(\d+)/)?.[1];
+    let poster = mediaEl && (mediaEl.poster || mediaEl.getAttribute?.('poster')) || '';
+    if (!poster && mediaEl) {
+      const container = mediaEl.closest?.('[data-testid="videoPlayer"], [data-testid="videoComponent"], article[data-testid="tweet"], article, [role="dialog"]') || mediaEl.parentElement;
+      if (container) {
+        const thumbImg = container.querySelector?.('img[src*="video_thumb"], img[src*="amplify_video_thumb"], img[src*="ext_tw_video_thumb"]');
+        if (thumbImg) {
+          poster = thumbImg.src || thumbImg.getAttribute?.('src') || '';
+        } else {
+          const thumbDiv = container.querySelector?.('div[style*="video_thumb"], div[style*="amplify_video_thumb"], div[style*="ext_tw_video_thumb"]');
+          if (thumbDiv) {
+            poster = thumbDiv.style?.backgroundImage || thumbDiv.getAttribute?.('style') || '';
+          }
+        }
+      }
+    }
+    const asset = poster.match(/(?:ext_tw_video_thumb|amplify_video_thumb|video_thumb|tweet_video)\/(\d+)/)?.[1];
     const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
+    const isTwitter = typeof window !== 'undefined' && /(^|\.)(x\.com|twitter\.com)$/i.test(window.location.hostname);
     const sanitize = u => (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) ? SmartDmUtils.sanitizeStreamUrl(u) : u;
-    const matches = (media || []).filter(m => sanitize(m.url) === sanitize(src) || (asset && new RegExp('/(?:ext_tw_video|amplify_video)/' + asset + '/').test(m.url || '')));
+
+    let tweetStatusId = null;
+    if (isTwitter && mediaEl) {
+      const card = mediaEl.closest?.('article[data-testid="tweet"], article, [role="dialog"]');
+      const statusLink = card?.querySelector?.('a[href*="/status/"]');
+      if (statusLink) {
+        const match = ((statusLink.getAttribute ? statusLink.getAttribute('href') : statusLink.href) || '').match(/\/status\/(\d+)/);
+        if (match) tweetStatusId = match[1];
+      }
+      if (!tweetStatusId && typeof window !== 'undefined' && window.location?.pathname) {
+        const match = window.location.pathname.match(/\/status\/(\d+)/);
+        if (match) tweetStatusId = match[1];
+      }
+    }
+
+    const matches = (media || []).filter(m => {
+      if (!m || !m.url) return false;
+      if (sanitize(m.url) === sanitize(src)) return true;
+      if (asset && new RegExp('/(?:ext_tw_video|amplify_video|tweet_video)/' + asset + '(/|$)').test(m.url)) return true;
+      if (tweetStatusId && m.url.includes(tweetStatusId)) return true;
+      return false;
+    });
+
+    if (isTwitter && !matches.length && (media || []).length) {
+      const twStreams = (media || []).filter(m => !m.isAudio && m.url && (m.url.includes('video.twimg.com') || m.url.includes('twitter.com') || m.url.includes('x.com')));
+      if (twStreams.length > 0) {
+        matches.push(...twStreams);
+      }
+    }
     let binding = this.playerBinding(mediaEl);
     if (binding) {
       if (!binding.audio && (media || []).length) {
@@ -1904,7 +1970,7 @@ class FormatRegistryEngine {
         const matchedAudio = (media || []).find(m => m.isAudio && ((vid && m.fbVideoId === String(vid)) || /(?:cdninstagram\.com|fbcdn\.net)/i.test(m.url)));
         if (matchedAudio) binding.audio = matchedAudio.url;
       }
-      if (binding.audioExpected && !binding.audio && !isInsta) return [];
+      if (binding.audioExpected && !binding.audio && !isInsta && !isTwitter) return [];
       const cleanVideo = sanitize(binding.video);
       const cleanAudio = binding.audio ? (sanitize(binding.audio) || null) : null;
       matches.push({...(media || []).find(m => sanitize(m.url) === cleanVideo) || {}, url: cleanVideo, audioUrl: cleanAudio});
@@ -1928,14 +1994,26 @@ class FormatRegistryEngine {
       if (detected && !SmartDmUtils.isGenericTitle(detected)) {
         caption = detected;
       }
+    } else if (isTwitter && typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractTwitterMediaTitle) {
+      const detected = VisualMountDetector.extractTwitterMediaTitle(mediaEl);
+      if (detected && !SmartDmUtils.isGenericTitle(detected)) {
+        caption = detected;
+      }
     }
     if (!caption) {
       const card = isInsta
         ? (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.findInstagramPostCard ? VisualMountDetector.findInstagramPostCard(mediaEl) : mediaEl?.closest?.('article, [role="dialog"]'))
-        : (selectedMetadata?.card || mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"]'));
+        : (isTwitter
+          ? (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.findTwitterPostCard ? VisualMountDetector.findTwitterPostCard(mediaEl) : mediaEl?.closest?.('article[data-testid="tweet"], article, [role="dialog"]'))
+          : (selectedMetadata?.card || mediaEl?.closest?.('article, [data-e2e="recommend-list-item-container"], [data-e2e="feed-video"], [role="dialog"]')));
       if (card) {
         if (isInsta && typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractInstagramMediaTitle) {
           const detected = VisualMountDetector.extractInstagramMediaTitle(mediaEl, card);
+          if (detected && !SmartDmUtils.isGenericTitle(detected)) {
+            caption = detected;
+          }
+        } else if (isTwitter && typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractTwitterMediaTitle) {
+          const detected = VisualMountDetector.extractTwitterMediaTitle(mediaEl, card);
           if (detected && !SmartDmUtils.isGenericTitle(detected)) {
             caption = detected;
           }
@@ -1966,7 +2044,7 @@ class FormatRegistryEngine {
       const aria = mediaEl?.getAttribute?.('aria-label') || '';
       if (aria && !SmartDmUtils.isGenericTitle(aria)) caption = aria;
     }
-    const title = caption ? SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160) : (isInsta ? 'Instagram Video' : 'Selected video');
+    const title = caption ? SmartDmUtils.sanitizeCleanTitle(caption).slice(0, 160) : (isInsta ? 'Instagram Video' : (isTwitter ? 'Twitter Video' : 'Selected video'));
     const urls = new Map();
     for (const m of matches) {
       const u = sanitize(m.url);
@@ -1978,11 +2056,16 @@ class FormatRegistryEngine {
     const cleanSrc = sanitize(src);
     if (/^https?:/.test(cleanSrc) && !urls.has(cleanSrc)) urls.set(cleanSrc, {url:cleanSrc});
     const audio = [...urls.values()].filter(m => m.isAudio || /audio\//.test(m.contentType || ''));
+    const twitterAudioUrl = isTwitter ? (
+      [...urls.values()].find(item => item.audioUrl)?.audioUrl ||
+      (media || []).find(item => item.audioUrl && (item.url?.includes('video.twimg.com') || item.url?.includes('twitter') || item.url?.includes('x.com')))?.audioUrl ||
+      null
+    ) : null;
     return [...urls.values()].filter(m => !audio.includes(m)).flatMap((m, sourceIndex) => {
       const cleanUrl = sanitize(m.url);
-      const rawA = m.audioUrl || (audio.length === 1 ? audio[0].url : null);
+      const rawA = m.audioUrl || twitterAudioUrl || (audio.length === 1 ? audio[0].url : null);
       const audioUrl = rawA ? (sanitize(rawA) || null) : null;
-      if (m.hasAudio === false && !audioUrl) return [];
+      if (!isTwitter && m.hasAudio === false && !audioUrl) return [];
       const cleanBindingVideo = sanitize(binding?.video);
       const height = m.metadataHeight || m.height || (cleanUrl === cleanSrc || cleanUrl === cleanBindingVideo ? Math.min(mediaEl.videoWidth || Infinity, mediaEl.videoHeight || Infinity) : 0);
       const h = Number.isFinite(height) ? height : 0;
@@ -2007,6 +2090,7 @@ class FormatRegistryEngine {
     try {
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch') || (videoUrl && (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')));
       const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
+      const isTwitter = typeof window !== 'undefined' && /(^|\.)(x\.com|twitter\.com)$/i.test(window.location.hostname);
       let pageTitle = null;
       if (isFb) {
         const card = mediaEl ? (VisualMountDetector.findFacebookReelCard(mediaEl) || VisualMountDetector.findFacebookPostCard(mediaEl)) : null;
@@ -2020,11 +2104,17 @@ class FormatRegistryEngine {
         if (!pageTitle || SmartDmUtils.isGenericTitle(pageTitle)) {
           pageTitle = (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractInstagramMediaTitle) ? VisualMountDetector.extractInstagramMediaTitle(mediaEl, null) : null;
         }
+      } else if (isTwitter) {
+        const card = mediaEl ? (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.findTwitterPostCard ? VisualMountDetector.findTwitterPostCard(mediaEl) : null) : null;
+        pageTitle = (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractTwitterMediaTitle) ? VisualMountDetector.extractTwitterMediaTitle(mediaEl, card) : null;
+        if (!pageTitle || SmartDmUtils.isGenericTitle(pageTitle)) {
+          pageTitle = (typeof VisualMountDetector !== 'undefined' && VisualMountDetector.extractTwitterMediaTitle) ? VisualMountDetector.extractTwitterMediaTitle(mediaEl, null) : null;
+        }
       }
       if (window.top !== window.self && window._smartdm_cached_tab_title && !SmartDmUtils.isGenericTitle(window._smartdm_cached_tab_title)) {
         pageTitle = window._smartdm_cached_tab_title;
       } else if (!pageTitle || SmartDmUtils.isGenericTitle(pageTitle)) {
-        pageTitle = SmartDmUtils.extractWatchPageTitle() || (isFb ? 'facebook_video' : (isInsta ? 'Instagram Video' : 'video'));
+        pageTitle = SmartDmUtils.extractWatchPageTitle() || (isFb ? 'facebook_video' : (isInsta ? 'Instagram Video' : (isTwitter ? 'Twitter Video' : 'video')));
       }
       const isYouTube = window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be') || (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')));
 
@@ -2041,7 +2131,7 @@ class FormatRegistryEngine {
             const cleanTitle = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeCleanTitle) ? SmartDmUtils.sanitizeCleanTitle(response.tabTitle) : response.tabTitle;
             if (cleanTitle && !SmartDmUtils.isGenericTitle(cleanTitle)) {
               window._smartdm_cached_tab_title = cleanTitle;
-              if ((!isFb && !isInsta) || !pageTitle || SmartDmUtils.isGenericTitle(pageTitle)) {
+              if ((!isFb && !isInsta && !isTwitter) || !pageTitle || SmartDmUtils.isGenericTitle(pageTitle)) {
                 pageTitle = cleanTitle;
               }
             }

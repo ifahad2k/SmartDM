@@ -1,51 +1,17 @@
 #!/usr/bin/env bash
-set -e
-
+set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$DIR/../../.." && pwd)"
-
 chmod +x "$DIR/host.sh"
-
-LIB_DIR="$PROJECT_ROOT/modules/browser-native-host/build/install/browser-native-host/lib"
-if [ ! -d "$LIB_DIR" ] && [ -f "$PROJECT_ROOT/gradlew" ]; then
-    echo "Building browser-native-host distribution..."
-    (cd "$PROJECT_ROOT" && ./gradlew :modules:browser-native-host:installDist)
-fi
-
-TARGET_DIRS=(
-    "$HOME/.mozilla/native-messaging-hosts"
-)
-
-for TARGET_DIR in "${TARGET_DIRS[@]}"; do
-    PARENT_DIR="$(dirname "$TARGET_DIR")"
-    if [ -d "$PARENT_DIR" ] || [[ "$TARGET_DIR" == *".config"* ]]; then
-        mkdir -p "$TARGET_DIR"
-        
-        HOST_BUNDLE_DIR="$TARGET_DIR/smartdm-host-bin"
-        mkdir -p "$HOST_BUNDLE_DIR/lib"
-        cp -f "$DIR/host.sh" "$HOST_BUNDLE_DIR/host.sh"
-        chmod +x "$HOST_BUNDLE_DIR/host.sh"
-        if [ -d "$LIB_DIR" ]; then
-            cp -rf "$LIB_DIR/"* "$HOST_BUNDLE_DIR/lib/"
-        fi
-
-        TEMP_JSON="$(mktemp)"
-        trap 'rm -f "$TEMP_JSON"' EXIT
-        cat <<EOF > "$TEMP_JSON"
-{
-  "name": "io.smartdm.host",
-  "description": "SmartDM Native Messaging Host",
-  "path": "$HOST_BUNDLE_DIR/host.sh",
-  "type": "stdio",
-  "allowed_extensions": [
-    "smartdm-extension@smartdm.io"
-  ]
-}
-EOF
-        cp "$TEMP_JSON" "$TARGET_DIR/io.smartdm.host.json"
-        rm -f "$TEMP_JSON"
-        echo "Installed Firefox Native Messaging Host manifest to: $TARGET_DIR/io.smartdm.host.json"
-    fi
+# Keep the wrapper beside the app; never build or invoke the Java product.
+for TARGET in "$HOME/.mozilla/native-messaging-hosts"; do
+  mkdir -p "$TARGET"
+  TEMP="$(mktemp "$TARGET/.smartdm.XXXXXX")"
+  trap 'rm -f "$TEMP"' EXIT
+  python3 - "$DIR/host.sh" > "$TEMP" <<'PY'
+import json,sys
+manifest={"name":"io.smartdm.host","description":"SmartDM 2.0 C# native host","path":sys.argv[1],"type":"stdio","allowed_extensions": ["smartdm-extension@smartdm.io"]}
+print(json.dumps(manifest))
+PY
+  chmod 600 "$TEMP"
+  mv -f "$TEMP" "$TARGET/io.smartdm.host.json"
 done
-
-echo "Firefox Native Messaging Host installation complete!"

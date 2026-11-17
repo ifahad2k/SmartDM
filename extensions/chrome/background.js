@@ -253,6 +253,19 @@ function broadcastNewMedia(tabId, mediaList) {
 
 async function fetchM3u8Text(url, referrer, initiator = null) {
   if (!url) return null;
+  const reads = (fetchM3u8Text._reads = fetchM3u8Text._reads || new Map());
+  const activeCount = fetchM3u8Text._active || 0;
+  const key = `${url}\n${referrer || ''}\n${initiator || ''}`;
+  if (reads.has(key)) return reads.get(key);
+  if (activeCount >= 4) return null;
+  fetchM3u8Text._active = activeCount + 1;
+  const pending = readManifestText(url, referrer, initiator);
+  reads.set(key, pending);
+  try { return await pending; }
+  finally { fetchM3u8Text._active = Math.max(0, (fetchM3u8Text._active || 1) - 1); reads.delete(key); }
+}
+async function readManifestText(url, referrer, initiator = null) {
+  if (!url) return null;
   const options = [];
   if (initiator && initiator.startsWith('http')) {
     options.push({referrer: initiator});
@@ -330,6 +343,33 @@ function getStreamDirectoryKey(rawUrl) {
 function parseM3u8Formats(m3u8Text, baseUrl) {
   const lines = m3u8Text.split('\n');
   const formats = [];
+  const audioGroups = new Map();
+  let defaultAudioUrl = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#EXT-X-MEDIA:') && /TYPE=AUDIO/i.test(line)) {
+      const uriMatch = line.match(/URI="([^"]+)"/i);
+      if (uriMatch) {
+        let audioUrl = uriMatch[1];
+        if (!audioUrl.startsWith('http')) {
+          try {
+            const resolved = new URL(audioUrl, baseUrl);
+            audioUrl = resolved.href;
+          } catch (e) {}
+        }
+        audioUrl = inheritQueryTokens(audioUrl, baseUrl);
+        const groupMatch = line.match(/GROUP-ID="([^"]+)"/i);
+        if (groupMatch) {
+          audioGroups.set(groupMatch[1], audioUrl);
+        }
+        if (/DEFAULT=YES/i.test(line) || !defaultAudioUrl) {
+          defaultAudioUrl = audioUrl;
+        }
+      }
+    }
+  }
+
   let currentInfo = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -342,6 +382,8 @@ function parseM3u8Formats(m3u8Text, baseUrl) {
       if (bwMatch) currentInfo.bandwidth = parseInt(bwMatch[1], 10);
       const nameMatch = line.match(/NAME="([^"]+)"/i);
       if (nameMatch) currentInfo.name = nameMatch[1];
+      const audioMatch = line.match(/AUDIO="([^"]+)"/i);
+      if (audioMatch) currentInfo.audioGroup = audioMatch[1];
     } else if (line && !line.startsWith('#') && currentInfo) {
       let streamUrl = line;
       if (!streamUrl.startsWith('http')) {
@@ -380,6 +422,8 @@ function parseM3u8Formats(m3u8Text, baseUrl) {
         badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
       }
 
+      const audioUrl = (currentInfo.audioGroup && audioGroups.get(currentInfo.audioGroup)) || defaultAudioUrl || null;
+
       formats.push({
         formatId: height > 0 ? `m3u8_${height}p` : `m3u8_stream_${formats.length}`,
         title: label,
@@ -388,6 +432,7 @@ function parseM3u8Formats(m3u8Text, baseUrl) {
         badge: badge,
         url: streamUrl,
         directUrl: streamUrl,
+        audioUrl: audioUrl,
         height: height,
         bandwidth: currentInfo.bandwidth || 0,
         isAudioOnly: false
@@ -717,6 +762,9 @@ function pushToMediaList(mediaList, newItem) {
         existing.customBadge = newItem.customBadge || `${newItem.height}p`;
       }
     }
+    if (newItem.audioUrl && !existing.audioUrl) {
+      existing.audioUrl = newItem.audioUrl;
+    }
     if (newItem.contentLength > 0 && (!existing.contentLength || existing.contentLength <= 0)) {
       existing.contentLength = newItem.contentLength;
     }
@@ -1031,6 +1079,7 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                 if (!existing) {
                   pushToMediaList(mediaList, {
                     url: v.url,
+                    audioUrl: v.audioUrl || null,
                     contentType: 'application/x-mpegurl',
                     contentLength: 0,
                     filename: finalTitle + '.mp4',
@@ -1047,6 +1096,10 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
                   if (v.height > 0 && (!existing.height || existing.height <= 0)) {
                     existing.height = v.height;
                     existing.customBadge = v.badge || `${v.height}p`;
+                    addedAny = true;
+                  }
+                  if (v.audioUrl && !existing.audioUrl) {
+                    existing.audioUrl = v.audioUrl;
                     addedAny = true;
                   }
                   if (authoritativeTabTitle && (!existing.customTitle || isGenericTitle(existing.customTitle))) {
@@ -1165,8 +1218,8 @@ if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
 
         // If this is an mpd manifest, fetch and parse representations BEFORE adding
         if (targetUrl.includes('.mpd')) {
-          fetch(targetUrl, fetchOpts)
-            .then((r) => r.text())
+          fetchM3u8Text(targetUrl, tabUrl, initiatorUrl)
+            .then((text) => { if (!text) throw new Error('Manifest unavailable within discovery limits.'); return text; })
             .then((text) => {
               const mpdFormats = parseMpdFormats(text, targetUrl);
               if (mpdFormats.length > 0) {
@@ -1760,90 +1813,20 @@ async function appendCookiesAndSend(request, sendResponse) {
     console.warn('Failed to extract cookies:', e);
   }
 
-  // 1. Send directly to active SmartDM desktop app port (default 18420)
-  const isFormatQuery = request.type === 'GET_MEDIA_FORMATS' || request.action === 'extractMediaInfo' || request.type === 'RESOLVE_M3U8_VARIANTS';
-  const tryPostToPort = async (port) => {
-    const endpoints = [
-      `http://127.0.0.1:${port}/api/download`,
-      `http://127.0.0.1:${port}/api/browser`
-    ];
-    for (const ep of endpoints) {
-      try {
-        const timeoutMs = isFormatQuery ? 15000 : 8000;
-        const reqController = new AbortController();
-        const reqTimer = setTimeout(() => reqController.abort(), timeoutMs);
-        const res = await fetch(ep, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request),
-          signal: reqController.signal
-        });
-        clearTimeout(reqTimer);
-        if (res.ok) {
-          cachedActivePort = port;
-          const data = await res.json();
-          return data || { success: true, status: 'ok' };
-        }
-      } catch (e) {}
-    }
-    return null;
-  };
-
-  // Fast direct attempt to cachedActivePort (< 10ms)
-  let postResult = null;
-  if (cachedActivePort) {
-    postResult = await tryPostToPort(cachedActivePort);
-  }
-
-  // If cached port failed or wasn't set, scan remaining ports
-  if (!postResult) {
-    const ports = [18420, 9191, 18421, 18422, 18423, 18424, 18425].filter(p => p !== cachedActivePort);
-    for (const p of ports) {
-      postResult = await tryPostToPort(p);
-      if (postResult) break;
-    }
-  }
-
-  if (postResult) {
-    if (sendResponse) sendResponse(postResult);
-    return;
-  }
-
-  // Never call native messaging for format queries - avoid blocking stalls
-  if (isFormatQuery) {
-    if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
-    return;
-  }
-
-  // 2. Fallback to Native Messaging Host for download requests if desktop app was launched via browser host
+  // Native messaging authenticates the host; never probe HTTP ports with secrets.
   try {
-    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, async (response) => {
-      if (chrome.runtime.lastError || !response || response.status === 'error') {
-        const retryPorts = [18420, 9191, 18421, 18422, 18423];
-        for (const p of retryPorts) {
-          const retryRes = await tryPostToPort(p);
-          if (retryRes) {
-            if (sendResponse) sendResponse(retryRes);
-            return;
-          }
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, {...request, protocolVersion: 1}, (value) => {
+        if (chrome.runtime.lastError) {
+          resolve({success: false, status: 'error', message: 'Start SmartDM and register its C# native host, then reload the extension.'});
+        } else {
+          resolve(value || {success: false, status: 'error', message: 'SmartDM did not acknowledge the request.'});
         }
-        if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
-      } else {
-        if (sendResponse) sendResponse(response || { success: true, status: 'ok' });
-      }
+      });
     });
-  } catch (err) {
-    (async () => {
-      const retryPorts = [18420, 9191, 18421, 18422, 18423];
-      for (const p of retryPorts) {
-        const retryRes = await tryPostToPort(p);
-        if (retryRes) {
-          if (sendResponse) sendResponse(retryRes);
-          return;
-        }
-      }
-      if (sendResponse) sendResponse({ success: false, status: 'error', message: 'Could not connect to SmartDM desktop app.' });
-    })();
+    if (sendResponse) sendResponse(response);
+  } catch (_) {
+    if (sendResponse) sendResponse({success: false, status: 'error', message: 'Authenticated SmartDM integration is unavailable.'});
   }
 }
 
@@ -2584,6 +2567,7 @@ function hasHighResFormats(formats) {
                 if (!existing) {
                   pushToMediaList(mediaList, {
                     url: v.url,
+                    audioUrl: v.audioUrl || null,
                     contentType: 'application/x-mpegurl',
                     contentLength: 0,
                     filename: finalTitle + '.mp4',
@@ -2596,6 +2580,16 @@ function hasHighResFormats(formats) {
                     timestamp: Date.now()
                   });
                   addedAny = true;
+                } else {
+                  if (v.audioUrl && !existing.audioUrl) {
+                    existing.audioUrl = v.audioUrl;
+                    addedAny = true;
+                  }
+                  if (v.height > 0 && (!existing.height || existing.height <= 0)) {
+                    existing.height = v.height;
+                    existing.customBadge = v.badge || `${v.height}p`;
+                    addedAny = true;
+                  }
                 }
               });
               if (addedAny) broadcastNewMedia(tabId, mediaList);
@@ -2681,6 +2675,7 @@ function hasHighResFormats(formats) {
               if (!existing) {
                 pushToMediaList(mediaList, {
                   url: v.url,
+                  audioUrl: v.audioUrl || null,
                   contentType: 'application/x-mpegurl',
                   contentLength: 0,
                   filename: finalTitle + '.mp4',
@@ -2695,6 +2690,16 @@ function hasHighResFormats(formats) {
                   timestamp: Date.now()
                 });
                 addedAny = true;
+              } else {
+                if (v.audioUrl && !existing.audioUrl) {
+                  existing.audioUrl = v.audioUrl;
+                  addedAny = true;
+                }
+                if (v.height > 0 && (!existing.height || existing.height <= 0)) {
+                  existing.height = v.height;
+                  existing.customBadge = v.badge || `${v.height}p`;
+                  addedAny = true;
+                }
               }
             });
             if (addedAny) broadcastNewMedia(tabId, mediaList);
@@ -2733,6 +2738,7 @@ function hasHighResFormats(formats) {
         if (!existing) {
           pushToMediaList(mediaList, {
             url: v.url,
+            audioUrl: v.audioUrl || null,
             contentType: 'application/x-mpegurl',
             contentLength: 0,
             filename: finalTitle + '.mp4',
@@ -2748,6 +2754,10 @@ function hasHighResFormats(formats) {
           });
           addedAny = true;
         } else {
+          if (v.audioUrl && !existing.audioUrl) {
+            existing.audioUrl = v.audioUrl;
+            addedAny = true;
+          }
           if (v.height > 0 && (!existing.height || existing.height <= 0)) {
             existing.height = v.height;
             existing.customBadge = v.badge || `${v.height}p`;

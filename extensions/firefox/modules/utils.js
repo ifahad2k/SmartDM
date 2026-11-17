@@ -165,9 +165,14 @@ class SmartDmUtils {
     clean = clean.replace(/\s*::\s*.*$/, '').trim();
 
     // Strip site/brand suffixes separated by - or | or • or —
+    clean = clean.replace(/\s*[\/\-\|\•\—]\s*(?:X|Twitter)(?:\s*[\/\-\|\•\—].*)?$/i, '').trim();
     clean = clean.replace(/\s*[\-\|\•\—]\s*(?:Watch\s+(?:Free\s+)?Online.*|Watch\s+on\s+.*|Watch\s+Online.*|Watch\s*.*|Full\s+Movie.*|Unlimited\s+Movies.*|Online\s+Free.*|RamoFlix.*|HydraHD.*|Goojara.*|WMovies.*|111Movies.*|Free\s+Online.*|(?:English\s+)?(?:Subbed|Sub|Dubbed|Dub)(?:\s+at\s+.*)?|AnimePahe(?:\.pw|\.org)?|Miruro(?:\.to|\.online)?|Anime(?:\.|\s*)Nexus|AnimeSuge(?:\.tv|\.to)?|AniZone(?:\.to)?|HiAnime(?:\.to)?|123movies(?:\.[a-z]+)?|67movies(?:\.[a-z]+)?|(?:Server\s+)?VidQueen(?:\s*\d*K?)?|(?:Server\s+)?VidSrc(?:\.[a-z]+)?|2embed(?:\.[a-z]+)?|AutoEmbed(?:\.[a-z]+)?|SuperEmbed(?:\.[a-z]+)?|StreamEmbed(?:\.[a-z]+)?|SolarMovie|FMovies|Crunchyroll|Funimation|YouTube\s*Music|YouTube|Pornhub(?:\.com)?|Facebook|Bilibili(?:\s*TV|\s*Global)?|TikTok|Vimeo|Instagram|Twitter|X|Reddit|Dailymotion).*$/i, '').trim();
     clean = clean.replace(/\s*[\-\|\•\—_]\s*(?:哔哩哔哩|_?bilibili(?:\.tv)?).*$/i, '').trim();
     clean = clean.replace(/_哔哩哔哩(?:_bilibili)?$/i, '').replace(/[_\-\|\•\—]\s*(?:哔哩哔哩|bilibili(?:\.tv)?)$/i, '').trim();
+
+    // Strip Twitter / X author prefixes (e.g. "User on X: ", "User (@handle) on X: \"...")
+    clean = clean.replace(/^.*?\s+on\s+(?:X|Twitter):\s*["“]?/i, '').trim();
+    clean = clean.replace(/^["“]|["”]$/g, '').trim();
 
     // Strip "online Free on <Domain>" or "at <Domain>" or "on <Domain>" and trailing SEO junk
     clean = clean.replace(/\s+(?:online\s+free\s+watch\s+full\s+(?:now\s+)?hd|online\s+free\s+watch\s+full|watch\s+full\s+now\s+hd|unlimited\s+movies\s*(?:&|and)\s*tv\s*shows\s*online|watch\s+full\s+movie\s+hd|watch\s+free\s+online\s+hd|online\s+free\s+(?:on|at)\s+[a-z0-9.-]+|free\s+online|watch\s+free\s+online|full\s+movie\s+online\s+free|watch\s+full\s+movie\s+online|watch\s+online\s+free|full\s+movie|(?:online\s+)?sub\/(?:dub|subbed)|(?:english\s+)?subbed\s+online|(?:english\s+)?(?:subbed|sub|dubbed|dub)\b)\b.*$/i, '').trim();
@@ -193,7 +198,9 @@ class SmartDmUtils {
 
     const genericExact = new Set([
       'instagram', 'instagram video', 'instagram reel', 'instagram reels', 'instagram_video', 'instagram_reel',
-      'tiktok', 'x', 'home _ x', 'home / x', 'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
+      'tiktok', 'x', 'home _ x', 'home / x', 'notifications / x', 'explore / x', 'bookmarks / x', 'lists / x',
+      'twitter', 'twitter video', 'twitter_video', 'x video', 'x_video',
+      'youtube', 'youtube music', 'home', 'feed', 'subscriptions', 'library',
       'trending', 'watch later', 'video', 'media stream', 'download', 'downloads',
       'bilibili', 'bilibili tv', 'bilibili global', '哔哩哔哩', '哔哩哔哩动画', 'bilibili 哔哩哔哩',
       'facebook', 'facebook_video', 'facebook_reel', 'facebook video', 'facebook reel', 'facebook reels',
@@ -787,5 +794,25 @@ class SmartDmUtils {
     const kept = parts.filter(p => !/^(?:(?:bytestart|byteend)=\d+|range=\d+(?:-\d+)?)$/i.test(p));
     if (kept.length === parts.length) return rawUrl;
     return match[1] + (kept.length ? '?' + kept.join('&') : '') + (match[3] || '');
+  }
+
+  static inheritQueryTokens(targetUrl, sourceUrl) {
+    if (!targetUrl || !sourceUrl || !sourceUrl.includes('?')) return targetUrl;
+    try {
+      const targetParsed = new URL(targetUrl);
+      const sourceParsed = new URL(sourceUrl);
+      if (!targetParsed.search) {
+        targetParsed.search = sourceParsed.search;
+        return targetParsed.href;
+      }
+      for (const [k, v] of sourceParsed.searchParams.entries()) {
+        if (!targetParsed.searchParams.has(k)) {
+          targetParsed.searchParams.set(k, v);
+        }
+      }
+      return targetParsed.href;
+    } catch (e) {
+      return targetUrl;
+    }
   }
 }

@@ -622,31 +622,69 @@ for (const browser of ['chrome', 'firefox']) {
   });
 
   test(`${browser}: Shorts thumbnail mount escapes anchor tag and stops pointer/click navigation`, () => {
+    let buttonListeners = [];
+    let hostListeners = [];
+    const popoverClasses = new Set();
+    const popover = {
+      tagName: 'DIV',
+      className: 'popover',
+      style: {},
+      classList: {
+        add(cls) { popoverClasses.add(cls); },
+        remove(cls) { popoverClasses.delete(cls); },
+        contains(cls) { return popoverClasses.has(cls); }
+      }
+    };
+    const btn = {
+      tagName: 'BUTTON',
+      className: 'banner-btn thumb-btn',
+      style: {},
+      classList: { contains() { return false; }, add() {}, remove() {} },
+      addEventListener(type, fn) { buttonListeners.push({ type, fn }); }
+    };
+    const content = {
+      tagName: 'DIV',
+      className: 'popover-content',
+      style: {},
+      innerHTML: '',
+      appendChild(child) { (this.children = this.children || []).push(child); },
+      querySelector() { return null; }
+    };
+
+    let formatsFetched = false;
+    let instantFormatsFetched = false;
+
     const c = vm.createContext({
       URL,
       document: {
+        body: {
+          children: [],
+          appendChild(child) { this.children.push(child); child.parentElement = this; }
+        },
+        querySelectorAll() { return []; },
         createElement(tag) {
-          return {
-            tagName: tag.toUpperCase(),
-            style: {},
-            className: '',
-            addEventListener(type, fn) { (this._listeners = this._listeners || []).push({ type, fn }); },
-            attachShadow() {
-              return {
-                innerHTML: '',
-                querySelector(sel) {
-                  return {
-                    tagName: 'BUTTON',
-                    className: 'thumb-btn',
-                    style: {},
-                    classList: { contains() { return false; }, add() {}, remove() {} },
-                    addEventListener(type, fn) { (this._listeners = this._listeners || []).push({ type, fn }); }
-                  };
-                }
-              };
-            },
-            getBoundingClientRect() { return { left: 10, right: 100, top: 10, bottom: 40, width: 90, height: 30 }; }
-          };
+          const upper = tag.toUpperCase();
+          if (upper === 'DIV') {
+            return {
+              tagName: 'DIV',
+              style: {},
+              className: '',
+              addEventListener(type, fn) { hostListeners.push({ type, fn }); },
+              attachShadow() {
+                return {
+                  innerHTML: '',
+                  querySelector(sel) {
+                    if (sel === '.thumb-btn') return btn;
+                    if (sel === '.popover') return popover;
+                    if (sel === '.popover-content') return content;
+                    return null;
+                  }
+                };
+              },
+              getBoundingClientRect() { return { left: 10, right: 100, top: 10, bottom: 40, width: 90, height: 30 }; }
+            };
+          }
+          return { tagName: upper, style: {}, className: '', addEventListener() {} };
         }
       },
       window: {
@@ -655,10 +693,22 @@ for (const browser of ['chrome', 'firefox']) {
         location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' },
         getComputedStyle() { return { position: 'static' }; }
       },
-      OverlayUiRenderer: { getStyles() { return ''; }, renderFormatDropdown() {} },
+      OverlayUiRenderer: {
+        getStyles() { return ''; },
+        renderFormatDropdown(cnt) {
+          cnt.innerHTML = '<div class="format-item">720p</div>';
+        }
+      },
       FormatRegistryEngine: {
-        getInstantYouTubeFormats() { return []; },
-        fetchMediaFormats() {}
+        getInstantYouTubeFormats() {
+          instantFormatsFetched = true;
+          return [{ formatId: '720p', resolution: '720p', height: 720, ext: 'mp4' }];
+        },
+        fetchMediaFormats(url, mediaEl, cb) {
+          formatsFetched = true;
+          cb({ title: 'Shorts Video', formats: [{ formatId: '720p', resolution: '720p' }] }, false);
+        },
+        mergeFormatLists(a, b) { return [...a, ...b]; }
       },
       SmartDmUtils: {
         getCanonicalUrl(url) { return url; },
@@ -692,12 +742,14 @@ for (const browser of ['chrome', 'firefox']) {
     vm.runInContext(`${watcherCode}\nthis.MediaWatcher = MediaWatcher;`, c);
     const watcher = c.MediaWatcher;
 
+    let parentRect = { left: 10, right: 100, top: 10, bottom: 40, width: 90, height: 30 };
     const parentCard = {
       tagName: 'YTD-REEL-ITEM-RENDERER',
       style: {},
       children: [],
       appendChild(child) { this.children.push(child); child.parentElement = this; },
-      querySelector() { return null; }
+      querySelector() { return null; },
+      getBoundingClientRect() { return parentRect; }
     };
     const targetAnchor = {
       tagName: 'A',
@@ -711,17 +763,58 @@ for (const browser of ['chrome', 'firefox']) {
 
     watcher.attachThumbnailBadge(targetAnchor, 'https://www.youtube.com/shorts/shortXYZ123', 'Shorts Title');
     assert.equal(targetAnchor.children.length, 0, 'Host must NOT be appended inside the anchor');
-    assert.equal(parentCard.children.length, 1, 'Host must be appended to the parent container outside anchor');
-    const mountedHost = parentCard.children[0];
+    assert.equal(parentCard.children.length, 0, 'Host must NOT be appended to parent card when detached');
+    assert.equal(c.document.body.children.length, 1, 'Host must be appended to document.body');
+    const mountedHost = c.document.body.children[0];
     assert.equal(mountedHost.tagName, 'DIV');
     assert.equal(mountedHost.className, 'smartdm-thumb-host');
+    assert.equal(mountedHost.style.position, 'fixed');
     assert.equal(mountedHost.style.zIndex, '2147483647');
+    assert.equal(typeof mountedHost._smartdm_sync_pos, 'function');
+    assert.equal(popover.style.position, 'absolute', 'Popover inside detached host must have position: absolute');
 
-    // 3. Verify pointerup event listener is attached to host
-    const hostListeners = mountedHost._listeners || [];
+    // 3. Verify event listeners trap pointer/click propagation on host
     assert.ok(hostListeners.some(l => l.type === 'pointerup'), 'Host must listen to pointerup');
     assert.ok(hostListeners.some(l => l.type === 'pointerdown'), 'Host must listen to pointerdown');
     assert.ok(hostListeners.some(l => l.type === 'click'), 'Host must listen to click');
+
+    // 4. Verify _smartdm_sync_pos positions host and responds to scroll
+    assert.equal(mountedHost.style.display, 'block');
+    assert.equal(mountedHost.style.top, '16px'); // top(10) + 6
+
+    // Scrolled offscreen -> hides host
+    parentRect = { left: 10, right: 100, top: -200, bottom: -50, width: 90, height: 30 };
+    mountedHost._smartdm_sync_pos();
+    assert.equal(mountedHost.style.display, 'none', 'Detached host hides when scrolled offscreen');
+
+    // Scrolled back onscreen -> shows host
+    parentRect = { left: 200, right: 400, top: 100, bottom: 300, width: 200, height: 200 };
+    mountedHost._smartdm_sync_pos();
+    assert.equal(mountedHost.style.display, 'block', 'Detached host shows when scrolled into view');
+    assert.equal(mountedHost.style.top, '106px');
+    assert.equal(mountedHost.style.left, '295px'); // 400 - 105
+
+    // 5. Verify clicking button opens popover with relative offset and fetches formats
+    const btnClick = buttonListeners.find(l => l.type === 'click');
+    assert.ok(btnClick, 'Button must have click listener');
+    let btnPrevented = false, btnStopped = false;
+    const testEvt = {
+      preventDefault() { btnPrevented = true; },
+      stopPropagation() { btnStopped = true; },
+      stopImmediatePropagation() { btnStopped = true; }
+    };
+    btnClick.fn(testEvt);
+    assert.equal(btnPrevented, true, 'Shorts button prevents default navigation');
+    assert.equal(btnStopped, true, 'Shorts button stops propagation');
+    assert.equal(popover.classList.contains('active'), true, 'Popover opens on click');
+    assert.ok(popover.style.left.endsWith('px'), 'Popover has relative left position');
+    assert.ok(popover.style.top.endsWith('px'), 'Popover has relative top position');
+    assert.equal(instantFormatsFetched, true, 'Instant YouTube formats fetched for Shorts');
+    assert.equal(formatsFetched, true, 'fetchMediaFormats invoked for Shorts');
+
+    // Toggle popover off on second click
+    btnClick.fn(testEvt);
+    assert.equal(popover.classList.contains('active'), false, 'Clicking button again closes popover');
   });
 }
 

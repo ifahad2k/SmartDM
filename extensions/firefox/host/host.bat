@@ -1,16 +1,7 @@
 @echo off
-set "DIR=%~dp0"
-
-if exist "%DIR%..\..\..\lib\*" (
-    set "LIB_DIR=%DIR%..\..\..\lib"
-) else if exist "%DIR%..\..\..\modules\browser-native-host\build\install\browser-native-host\lib\*" (
-    set "LIB_DIR=%DIR%..\..\..\modules\browser-native-host\build\install\browser-native-host\lib"
-) else if exist "%DIR%..\..\lib\*" (
-    set "LIB_DIR=%DIR%..\..\lib"
-) else if exist "%DIR%lib\*" (
-    set "LIB_DIR=%DIR%lib"
-) else (
-    set "LIB_DIR=%DIR%..\.."
-)
-
-java -cp "%LIB_DIR%\*" io.smartdm.browser.host.NativeHostMain %*
+setlocal
+set "APP=%~dp0..\..\..\SmartDm.Desktop.Avalonia.exe"
+if not exist "%APP%" set "APP=%~dp0..\..\..\apps\desktop-avalonia\bin\Debug\net9.0\SmartDm.Desktop.Avalonia.exe"
+if not exist "%APP%" set "APP=%~dp0..\..\..\apps\desktop-avalonia\bin\Release\net9.0\SmartDm.Desktop.Avalonia.exe"
+if not exist "%APP%" exit /b 1
+"%APP%" --browser-native-host %*

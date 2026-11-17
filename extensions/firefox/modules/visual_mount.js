@@ -1006,6 +1006,131 @@ class VisualMountDetector {
     }
   }
 
+  static findTwitterPostCard(mediaEl) {
+    if (!mediaEl) return null;
+    let card = mediaEl.closest?.('article[data-testid="tweet"], article');
+    if (card) return card;
+    const modal = mediaEl.closest?.('div[role="dialog"], div[aria-modal="true"]');
+    if (modal) {
+      const modalArticle = modal.querySelector?.('article[data-testid="tweet"], article');
+      if (modalArticle) return modalArticle;
+      return modal;
+    }
+    return mediaEl.parentElement || null;
+  }
+
+  static extractTwitterMediaTitle(mediaEl, cardContainer) {
+    try {
+      const card = cardContainer || (mediaEl ? this.findTwitterPostCard(mediaEl) : null) || (typeof document !== 'undefined' ? document.querySelector('article[data-testid="tweet"], article') : null);
+
+      let textNode = null;
+      if (mediaEl && mediaEl.closest) {
+        // If media is inside a quote tweet, check for quote tweet text
+        const quote = mediaEl.closest('[data-testid="quoteTweet"]');
+        if (quote) {
+          textNode = quote.querySelector('[data-testid="tweetText"]');
+        }
+      }
+      if (!textNode && card && card.querySelector) {
+        textNode = card.querySelector('[data-testid="tweetText"]');
+      }
+
+      let caption = '';
+      if (textNode) {
+        let clone = null;
+        try {
+          clone = textNode.cloneNode(true);
+        } catch (_) {
+          clone = textNode;
+        }
+        if (clone && clone.querySelectorAll) {
+          // Strip trailing media links (https://t.co/..., pic.twitter.com, pic.x.com)
+          const links = clone.querySelectorAll('a');
+          for (const a of links) {
+            const href = a.getAttribute('href') || a.href || '';
+            const txt = (a.textContent || '').trim();
+            if (/https?:\/\/t\.co\/\w+/i.test(href) || /https?:\/\/t\.co\/\w+/i.test(txt) || /pic\.(?:twitter|x)\.com/i.test(txt)) {
+              if (a.remove) a.remove();
+              else if (a.parentNode) a.parentNode.removeChild(a);
+            }
+          }
+          caption = this.extractTextWithEmojis(clone);
+        } else {
+          caption = (textNode.textContent || '').trim();
+        }
+        // Also strip any remaining plain text t.co or pic.twitter links
+        caption = caption.replace(/https?:\/\/t\.co\/\S+/gi, '').replace(/pic\.(?:twitter|x)\.com\/\S+/gi, '').trim();
+      }
+
+      if (caption && caption.length >= 2 && !SmartDmUtils.isGenericTitle(caption)) {
+        const sanitized = SmartDmUtils.sanitizeCleanTitle(caption);
+        return sanitized.length > 100 ? sanitized.substring(0, 100).trim() : sanitized;
+      }
+
+      // If video-only tweet with no text: extract author name from [data-testid="User-Name"] a[role="link"] span and status ID from a[href*="/status/"]
+      let author = '';
+      let statusId = '';
+      if (card && card.querySelector) {
+        const userEl = card.querySelector('[data-testid="User-Name"]');
+        if (userEl) {
+          const authorSpan = userEl.querySelector('a[role="link"] span');
+          if (authorSpan) {
+            author = (authorSpan.textContent || '').trim();
+          }
+        }
+        const statusLink = card.querySelector('a[href*="/status/"]');
+        if (statusLink) {
+          const href = statusLink.getAttribute('href') || statusLink.href || '';
+          const match = href.match(/\/status\/(\d+)/);
+          if (match) statusId = match[1];
+        }
+      }
+
+      if (!statusId && typeof window !== 'undefined' && window.location?.pathname) {
+        const match = window.location.pathname.match(/\/status\/(\d+)/);
+        if (match) statusId = match[1];
+      }
+      if (!author && typeof document !== 'undefined' && document.title) {
+        const docAuthorMatch = document.title.match(/^([^\n\r]+?)\s+on\s+(?:X|Twitter)/i);
+        if (docAuthorMatch) author = docAuthorMatch[1].trim();
+      }
+      if (!author && typeof window !== 'undefined' && window.location?.pathname) {
+        const pathAuthorMatch = window.location.pathname.match(/^\/([^\/]+)\/status\/\d+/);
+        if (pathAuthorMatch && !['i', 'intent'].includes(pathAuthorMatch[1].toLowerCase())) {
+          author = pathAuthorMatch[1];
+        }
+      }
+
+      if (author && !SmartDmUtils.isGenericTitle(author)) {
+        const fallback = statusId ? `${author} - Tweet ${statusId}` : `${author} - Twitter Video`;
+        const sanitized = SmartDmUtils.sanitizeCleanTitle(fallback);
+        return sanitized.length > 100 ? sanitized.substring(0, 100).trim() : sanitized;
+      }
+
+      // Status permalink fallback: parse document.title (e.g. `User on X: "Caption..." / X`)
+      if (typeof document !== 'undefined' && document.title) {
+        let docTitle = document.title.trim();
+        const tweetTitleMatch = docTitle.match(/^(?:.*?\s+on\s+(?:X|Twitter):\s*["“]?)([^"”\n\r]+)["”]?(?:\s*[\/\-].*)?$/i);
+        if (tweetTitleMatch && tweetTitleMatch[1]) {
+          const extracted = tweetTitleMatch[1].trim();
+          if (extracted && !SmartDmUtils.isGenericTitle(extracted)) {
+            const sanitized = SmartDmUtils.sanitizeCleanTitle(extracted);
+            return sanitized.length > 100 ? sanitized.substring(0, 100).trim() : sanitized;
+          }
+        }
+        const strippedTitle = docTitle.replace(/\s*[\/\-].*$/i, '').trim();
+        if (strippedTitle && !SmartDmUtils.isGenericTitle(strippedTitle)) {
+          const sanitized = SmartDmUtils.sanitizeCleanTitle(strippedTitle);
+          if (sanitized && !SmartDmUtils.isGenericTitle(sanitized)) {
+            return sanitized.length > 100 ? sanitized.substring(0, 100).trim() : sanitized;
+          }
+        }
+      }
+    } catch (e) {}
+
+    return 'Twitter Video';
+  }
+
   static extractFacebookMediaTitle(mediaEl, cardContainer) {
     try {
       let card = cardContainer;
@@ -1237,6 +1362,10 @@ class VisualMountDetector {
       const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
       if (isInsta) {
         return this.extractInstagramMediaTitle(null, containerEl);
+      }
+      const isTwitter = typeof window !== 'undefined' && /(^|\.)(x\.com|twitter\.com)$/i.test(window.location.hostname);
+      if (isTwitter) {
+        return this.extractTwitterMediaTitle(null, containerEl);
       }
       const isYtMusic = typeof window !== 'undefined' && window.location?.hostname?.includes('music.youtube.com');
       if (isYtMusic) {

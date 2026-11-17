@@ -331,17 +331,22 @@ class MediaWatcher {
   }
 
   static isBadgeClipped(mount, badgeRect) {
+    if (!mount || !mount.parentElement) return false;
     let depth = 0;
     for (let parent = mount.parentElement; parent && depth < 6; parent = parent.parentElement, depth++) {
       if (parent === document.body || parent === document.documentElement) break;
       const overflow = parent.style ? (parent.style.overflow || parent.style.overflowX || parent.style.overflowY || '') : '';
       let isClipper = /hidden|clip|auto|scroll/.test(overflow);
-      if (!isClipper) {
-        const style = window.getComputedStyle(parent);
-        isClipper = /hidden|clip|auto|scroll/.test(style.overflowX || style.overflowY || style.overflow || '');
+      if (!isClipper && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        try {
+          const style = window.getComputedStyle(parent);
+          isClipper = style && /hidden|clip|auto|scroll/.test(style.overflowX || style.overflowY || style.overflow || '');
+        } catch (_) {}
       }
       if (!isClipper) continue;
+      if (typeof parent.getBoundingClientRect !== 'function') continue;
       const bounds = parent.getBoundingClientRect();
+      if (!bounds) continue;
       if ((badgeRect.left < bounds.left - 2 || badgeRect.right > bounds.right + 2) ||
           (badgeRect.top < bounds.top - 2 || badgeRect.bottom > bounds.bottom + 2)) return true;
     }
@@ -1117,6 +1122,10 @@ class MediaWatcher {
     }
 
     // 4. Muted / auto-looping / short preview video
+    const isTwitter = typeof window !== 'undefined' && /(^|\.)(x\.com|twitter\.com)$/i.test(window.location.hostname);
+    if (isTwitter && mediaEl.closest?.('[data-testid="videoPlayer"], [data-testid="videoComponent"], article[data-testid="tweet"], article')) {
+      return false;
+    }
     const isMuted = mediaEl.muted || mediaEl.hasAttribute('muted');
     const isLoop = mediaEl.loop || mediaEl.hasAttribute('loop');
     const isShort = mediaEl.duration > 0 && mediaEl.duration < 30;
@@ -1241,11 +1250,15 @@ class MediaWatcher {
       mediaEl._smartdm_active_time = Date.now();
       this.queueYouTubePrefetch(mediaEl, true);
     };
+    const isTwitterHost = typeof window !== 'undefined' && /(^|\.)(x\.com|twitter\.com)$/i.test(window.location.hostname);
     const mediaListeners = [
       ['play', trackActivePlayback], ['playing', trackActivePlayback], ['timeupdate', trackActivePlayback],
       ['emptied', onEmptied], ['loadstart', onLoadStart], ['resize', onVideoDimensionChange],
       ['loadedmetadata', onVideoDimensionChange], ['playing', onVideoDimensionChange], ['mouseenter', syncPos]
     ];
+    if (isTwitterHost) {
+      mediaListeners.push(['volumechange', syncPos]);
+    }
 
     if (mediaEl) {
       mediaListeners.forEach(([event, listener]) => mediaEl.addEventListener(event, listener, { passive: true }));
@@ -1279,6 +1292,7 @@ class MediaWatcher {
       const isFb = window.location.hostname.includes('facebook.com') || window.location.hostname.includes('fb.watch');
       const isFbReels = isFb && (window.location.pathname.includes('/reel/') || mediaEl.closest('div[role="dialog"]'));
       const isInsta = typeof window !== 'undefined' && /(^|\.)instagram\.com$/.test(window.location.hostname);
+      const isTwitter = typeof window !== 'undefined' && /(^|\.)(x\.com|twitter\.com)$/i.test(window.location.hostname);
 
       let parentCard = null;
       let reelCard = null;
@@ -1290,6 +1304,8 @@ class MediaWatcher {
         }
       } else if (isInsta) {
         parentCard = VisualMountDetector.findInstagramPostCard(mediaEl);
+      } else if (isTwitter) {
+        parentCard = VisualMountDetector.findTwitterPostCard(mediaEl);
       }
 
       let cardTitle = null;
@@ -1297,10 +1313,12 @@ class MediaWatcher {
         cardTitle = VisualMountDetector.extractFacebookMediaTitle(mediaEl, parentCard);
       } else if (isInsta) {
         cardTitle = VisualMountDetector.extractInstagramMediaTitle(mediaEl, parentCard);
+      } else if (isTwitter) {
+        cardTitle = VisualMountDetector.extractTwitterMediaTitle(mediaEl, parentCard);
       } else if (parentCard) {
         cardTitle = VisualMountDetector.extractCardTitle(parentCard);
       }
-      const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : (isInsta ? 'Instagram Video' : SmartDmUtils.extractWatchPageTitle());
+      const fallbackTitle = isFb ? (isFbReels ? 'facebook_reel' : 'facebook_video') : (isInsta ? 'Instagram Video' : (isTwitter ? 'Twitter Video' : SmartDmUtils.extractWatchPageTitle()));
       const pageTitle = (cardTitle && !SmartDmUtils.isGenericTitle(cardTitle)) ? cardTitle : fallbackTitle;
 
       let initialFormats = null;
@@ -1511,10 +1529,10 @@ class MediaWatcher {
 
       const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytm-shorts-lockup-view-model, yt-shorts-lockup-view-model, [class*="shortsLockupViewModelHost"], ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
 
-      const existingHost = cardContainer.querySelector?.('.smartdm-thumb-host');
+      const existingHost = cardContainer.querySelector?.('.smartdm-thumb-host') || this.thumbnailHosts.get(cardContainer);
       if (existingHost && existingHost.isConnected) return;
-      const enclosingCard = cardContainer.parentElement?.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model, yt-shorts-lockup-view-model, [class*="shortsLockupViewModelHost"], ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .bili-video-card');
-      if (enclosingCard && enclosingCard.querySelector?.('.smartdm-thumb-host')?.isConnected) return;
+      const enclosingCard = cardContainer.parentElement?.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model, yt-shorts-lockup-view-model, [class*="shortsLockupViewModelHost"], ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb');
+      if (enclosingCard && ((enclosingCard.querySelector?.('.smartdm-thumb-host') || this.thumbnailHosts.get(enclosingCard))?.isConnected)) return;
 
       if (isAction(cardContainer)) return;
       if (isPill(cardContainer)) return;
@@ -1550,12 +1568,13 @@ class MediaWatcher {
       if (isPill(targetMount, videoUrl)) return;
       if (isAnime(targetMount, videoUrl)) return;
 
-      if (targetMount.querySelector?.('.smartdm-thumb-host')?.isConnected) return;
+      if ((targetMount.querySelector?.('.smartdm-thumb-host') || this.thumbnailHosts.get(targetMount))?.isConnected) return;
 
       cardContainer.setAttribute(this.ATTR_THUMB_ATTACHED, 'true');
       targetMount.setAttribute(this.ATTR_THUMB_ATTACHED, 'true');
 
-      if (window.getComputedStyle(targetMount).position === 'static') {
+      const mountStyle = typeof window !== 'undefined' && typeof window.getComputedStyle === 'function' ? window.getComputedStyle(targetMount) : null;
+      if (mountStyle && mountStyle.position === 'static') {
         targetMount.style.position = 'relative';
       }
 
@@ -1592,16 +1611,19 @@ class MediaWatcher {
       (containerEl.tagName === 'YTD-REEL-ITEM-RENDERER') ||
       (containerEl.matches && containerEl.matches('ytd-reel-item-renderer, [is-shorts], [class*="shortsLockupViewModel"]')) ||
       (containerEl.closest && containerEl.closest('ytd-reel-item-renderer, [is-shorts], [class*="shortsLockupViewModel"]'));
+    const isDetachedThumb = isFbReel || isShorts;
 
-    if (isFbReel) {
-      // Facebook Reel cards are links inside clipped, transformed carousels.
+    if (isDetachedThumb) {
+      // Detached thumbnail badges (Facebook Reels, YouTube Shorts):
+      // These cards are links inside clipped, transformed carousels/cards.
       // Mount the control at the document root so the link cannot swallow clicks
-      // and the fixed popover is not clipped by the card.
+      // and the fixed popover is not clipped by card layout/paint containment.
       host.style.position = 'fixed';
       host.style.zIndex = '2147483647';
       host.style.pointerEvents = 'auto';
 
       const syncPos = () => {
+        if (!containerEl.getBoundingClientRect) return;
         const rect = containerEl.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0 || rect.bottom <= 0 ||
             rect.top >= window.innerHeight || rect.right <= 0 || rect.left >= window.innerWidth) {
@@ -1623,13 +1645,14 @@ class MediaWatcher {
       // Standard video cards (YouTube, Bilibili, etc.):
       // Mount directly inside containerEl with absolute positioning.
       // Moves naturally with scroll; zero JS reflow overhead.
-      if (window.getComputedStyle(containerEl).position === 'static') {
+      const containerStyle = typeof window !== 'undefined' && typeof window.getComputedStyle === 'function' ? window.getComputedStyle(containerEl) : null;
+      if (containerStyle && containerStyle.position === 'static') {
         containerEl.style.position = 'relative';
       }
       host.style.position = 'absolute';
       host.style.top = '6px';
       host.style.right = '6px';
-      host.style.zIndex = isShorts ? '2147483647' : '99999';
+      host.style.zIndex = '99999';
       host.style.pointerEvents = 'auto';
     }
 
@@ -1663,7 +1686,7 @@ class MediaWatcher {
     const btn = shadow.querySelector('.thumb-btn');
     const popover = shadow.querySelector('.popover');
     // Inline positioning also wins over an adopted stylesheet's source order.
-    popover.style.position = isFbReel ? 'absolute' : 'fixed';
+    popover.style.position = isDetachedThumb ? 'absolute' : 'fixed';
     const content = shadow.querySelector('.popover-content');
 
     const closePopover = () => {
@@ -1709,7 +1732,7 @@ class MediaWatcher {
         left = window.innerWidth - popoverWidth - 10;
       }
 
-      if (isFbReel) {
+      if (isDetachedThumb) {
         // The popover is positioned inside the fixed badge host, so use
         // coordinates relative to that host rather than viewport coordinates.
         popover.style.left = (left - rect.left) + 'px';
@@ -1800,7 +1823,7 @@ class MediaWatcher {
     };
     btn.addEventListener('click', onBtnClick);
 
-    if (isFbReel) {
+    if (isDetachedThumb) {
       document.body.appendChild(host);
       this.thumbnailHosts.set(containerEl, host);
       host._smartdm_sync_pos();

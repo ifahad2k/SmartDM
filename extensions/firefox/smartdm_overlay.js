@@ -21,34 +21,6 @@
       }
     } catch(e) {}
   }
-  async function tryDirectHttpFallback(payload) {
-    const endpoints = [
-      'http://127.0.0.1:9191/api/download',
-      'http://127.0.0.1:18420/api/download',
-      'http://127.0.0.1:18420/api/browser',
-      'http://127.0.0.1:9191/api/browser',
-      'http://127.0.0.1:18421/api/download',
-      'http://127.0.0.1:18421/api/browser'
-    ];
-    for (const ep of endpoints) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2000);
-        const resp = await fetch(ep, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        });
-        clearTimeout(timer);
-        if (resp.ok) {
-          return true;
-        }
-      } catch (_) {}
-    }
-    return false;
-  }
-
   function dispatchDownload(currentFmtList, targetItem, finalBaseTitle, onResult = null) {
     const effectiveFormats = (currentFmtList && currentFmtList.length > 0) ? currentFmtList : [targetItem];
 
@@ -197,24 +169,10 @@
     try {
       runtime.sendMessage(downloadPayload, async (response) => {
         const sendError = runtime.lastError;
-        if (sendError || !response || response.status === 'error' || response.success === false) {
-          const fallbackOk = await tryDirectHttpFallback(downloadPayload);
-          if (fallbackOk) {
-            finish({ success: true, status: 'ok' });
-            return;
-          }
-        }
         finish(sendError ? { success: false, status: 'error' } : (response || { success: false, status: 'error' }));
       });
     } catch (error) {
-      (async () => {
-        const fallbackOk = await tryDirectHttpFallback(downloadPayload);
-        if (fallbackOk) {
-          finish({ success: true, status: 'ok' });
-        } else {
-          finish({ success: false, status: 'error' });
-        }
-      })();
+      finish({ success: false, status: 'error' });
     }
   }
 
@@ -261,24 +219,10 @@
     try {
       runtime.sendMessage(message, async (response) => {
         const sendError = runtime.lastError;
-        if (sendError || !response || response.status === 'error' || response.success === false) {
-          const fallbackOk = await tryDirectHttpFallback(message);
-          if (fallbackOk) {
-            finish({ success: true, status: 'ok' });
-            return;
-          }
-        }
         finish(sendError ? { success: false, status: 'error' } : (response || { success: false, status: 'error' }));
       });
     } catch (error) {
-      (async () => {
-        const fallbackOk = await tryDirectHttpFallback(message);
-        if (fallbackOk) {
-          finish({ success: true, status: 'ok' });
-        } else {
-          finish({ success: false, status: 'error' });
-        }
-      })();
+      finish({ success: false, status: 'error' });
     }
   }
 
