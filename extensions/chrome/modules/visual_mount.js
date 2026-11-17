@@ -350,14 +350,9 @@ class VisualMountDetector {
       (cardContainer.classList && cardContainer.classList.contains('is-shorts')) ||
       (cardContainer.querySelector && !!cardContainer.querySelector('a[href*="/shorts/"]'));
     if (isShortsCard) {
-      const ytShortsLink = cardContainer.querySelector?.('a[href*="/shorts/"], a#thumbnail[href*="/shorts/"], a.yt-simple-endpoint[href*="/shorts/"]');
-      if (ytShortsLink && !this.isActionElement(ytShortsLink) && !this.isCategoryOrTagPill(ytShortsLink)) {
-        return ytShortsLink;
-      }
-      const ytReelThumb = cardContainer.querySelector?.('#thumbnail-container, [id*="thumbnail-container"], ytd-thumbnail, yt-thumbnail-view-model');
-      if (ytReelThumb && !this.isActionElement(ytReelThumb) && !this.isCategoryOrTagPill(ytReelThumb)) {
-        return ytReelThumb;
-      }
+      // Shorts thumbnails are completely enclosed within anchor tags.
+      // Return cardContainer directly so the badge is mounted outside the anchor tag.
+      return cardContainer;
     }
     const ytThumb = cardContainer.querySelector?.('ytd-thumbnail, yt-thumbnail-view-model, [class*="thumbnail-view-model"]');
     if (ytThumb && !this.isActionElement(ytThumb) && !this.isCategoryOrTagPill(ytThumb)) {
@@ -369,7 +364,7 @@ class VisualMountDetector {
     }
     const ytShortsLink = cardContainer.querySelector?.('a[href*="/shorts/"]');
     if (ytShortsLink && !this.isActionElement(ytShortsLink) && !this.isCategoryOrTagPill(ytShortsLink)) {
-      return ytShortsLink;
+      return cardContainer;
     }
 
     const mediaList = Array.from(

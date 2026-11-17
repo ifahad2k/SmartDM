@@ -620,5 +620,108 @@ for (const browser of ['chrome', 'firefox']) {
     const res = engine.parseYouTubePlayerResponse(dataFromOtherVideo, 'videoBBB2222');
     assert.equal(res, null, 'Mismatched videoId player response must return null');
   });
+
+  test(`${browser}: Shorts thumbnail mount escapes anchor tag and stops pointer/click navigation`, () => {
+    const c = vm.createContext({
+      URL,
+      document: {
+        createElement(tag) {
+          return {
+            tagName: tag.toUpperCase(),
+            style: {},
+            className: '',
+            addEventListener(type, fn) { (this._listeners = this._listeners || []).push({ type, fn }); },
+            attachShadow() {
+              return {
+                innerHTML: '',
+                querySelector(sel) {
+                  return {
+                    tagName: 'BUTTON',
+                    className: 'thumb-btn',
+                    style: {},
+                    classList: { contains() { return false; }, add() {}, remove() {} },
+                    addEventListener(type, fn) { (this._listeners = this._listeners || []).push({ type, fn }); }
+                  };
+                }
+              };
+            },
+            getBoundingClientRect() { return { left: 10, right: 100, top: 10, bottom: 40, width: 90, height: 30 }; }
+          };
+        }
+      },
+      window: {
+        innerWidth: 1200,
+        innerHeight: 800,
+        location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' },
+        getComputedStyle() { return { position: 'static' }; }
+      },
+      OverlayUiRenderer: { getStyles() { return ''; }, renderFormatDropdown() {} },
+      FormatRegistryEngine: {
+        getInstantYouTubeFormats() { return []; },
+        fetchMediaFormats() {}
+      },
+      SmartDmUtils: {
+        getCanonicalUrl(url) { return url; },
+        isGenericTitle() { return false; }
+      }
+    });
+
+    const vmdCode = fs.readFileSync(`extensions/${browser}/modules/visual_mount.js`, 'utf8');
+    vm.runInContext(`${vmdCode}\nthis.VisualMountDetector = VisualMountDetector;`, c);
+    const vmd = c.VisualMountDetector;
+
+    // 1. Verify findVisualThumbnailMount on Shorts cards returns the card container, NOT the anchor
+    const anchorEl = { tagName: 'A', href: 'https://www.youtube.com/shorts/shortXYZ123', getAttribute() { return '/shorts/shortXYZ123'; } };
+    const shortsCard = {
+      tagName: 'YTD-REEL-ITEM-RENDERER',
+      querySelector(selector) {
+        if (selector.includes('/shorts/')) return anchorEl;
+        return null;
+      },
+      querySelectorAll() { return []; },
+      getAttribute(attr) { return attr === 'is-shorts' ? '' : null; },
+      classList: { contains(cls) { return cls === 'is-shorts'; } }
+    };
+
+    assert.equal(vmd.isLegitimateThumbnailCard(shortsCard), true);
+    const resolvedMount = vmd.findVisualThumbnailMount(shortsCard);
+    assert.equal(resolvedMount, shortsCard, 'Shorts mount must be the cardContainer directly, never the anchor tag');
+
+    // 2. Verify attachThumbnailBadge escapes anchor tags if an anchor is passed as containerEl
+    const watcherCode = fs.readFileSync(`extensions/${browser}/modules/watcher.js`, 'utf8');
+    vm.runInContext(`${watcherCode}\nthis.MediaWatcher = MediaWatcher;`, c);
+    const watcher = c.MediaWatcher;
+
+    const parentCard = {
+      tagName: 'YTD-REEL-ITEM-RENDERER',
+      style: {},
+      children: [],
+      appendChild(child) { this.children.push(child); child.parentElement = this; },
+      querySelector() { return null; }
+    };
+    const targetAnchor = {
+      tagName: 'A',
+      style: {},
+      parentElement: parentCard,
+      children: [],
+      appendChild(child) { this.children.push(child); child.parentElement = this; },
+      querySelector() { return null; },
+      closest(sel) { if (sel === 'a') return this; return null; }
+    };
+
+    watcher.attachThumbnailBadge(targetAnchor, 'https://www.youtube.com/shorts/shortXYZ123', 'Shorts Title');
+    assert.equal(targetAnchor.children.length, 0, 'Host must NOT be appended inside the anchor');
+    assert.equal(parentCard.children.length, 1, 'Host must be appended to the parent container outside anchor');
+    const mountedHost = parentCard.children[0];
+    assert.equal(mountedHost.tagName, 'DIV');
+    assert.equal(mountedHost.className, 'smartdm-thumb-host');
+    assert.equal(mountedHost.style.zIndex, '2147483647');
+
+    // 3. Verify pointerup event listener is attached to host
+    const hostListeners = mountedHost._listeners || [];
+    assert.ok(hostListeners.some(l => l.type === 'pointerup'), 'Host must listen to pointerup');
+    assert.ok(hostListeners.some(l => l.type === 'pointerdown'), 'Host must listen to pointerdown');
+    assert.ok(hostListeners.some(l => l.type === 'click'), 'Host must listen to click');
+  });
 }
 

@@ -1509,11 +1509,11 @@ class MediaWatcher {
       if (isPill(el)) return;
       if (isAnime(el)) return;
 
-      const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
+      const cardContainer = el.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytm-shorts-lockup-view-model, yt-shorts-lockup-view-model, [class*="shortsLockupViewModelHost"], ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .video-item, .bili-video-card, article, li, .card, .thumb') || el;
 
       const existingHost = cardContainer.querySelector?.('.smartdm-thumb-host');
       if (existingHost && existingHost.isConnected) return;
-      const enclosingCard = cardContainer.parentElement?.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .bili-video-card');
+      const enclosingCard = cardContainer.parentElement?.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model, yt-shorts-lockup-view-model, [class*="shortsLockupViewModelHost"], ytd-video-card-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, .videoBox, .ph-thumbnail, .thumbBlock, .videoCard, .video-card, .bili-video-card');
       if (enclosingCard && enclosingCard.querySelector?.('.smartdm-thumb-host')?.isConnected) return;
 
       if (isAction(cardContainer)) return;
@@ -1566,6 +1566,10 @@ class MediaWatcher {
 
   static attachThumbnailBadge(containerEl, videoUrl, cardTitle = null) {
     if (!containerEl) return;
+    const enclosingAnchor = containerEl.tagName === 'A' ? containerEl : containerEl.closest?.('a');
+    if (enclosingAnchor && enclosingAnchor.parentElement) {
+      containerEl = enclosingAnchor.parentElement;
+    }
     const existing = this.thumbnailHosts.get(containerEl);
     if (existing && existing.isConnected) return;
     if (existing && !existing.isConnected) {
@@ -1584,7 +1588,10 @@ class MediaWatcher {
     const host = document.createElement('div');
     host.className = 'smartdm-thumb-host';
 
-    const isShorts = videoUrl && (videoUrl.includes('/shorts/') || (containerEl.closest && containerEl.closest('ytd-reel-item-renderer, [is-shorts]')));
+    const isShorts = (videoUrl && videoUrl.includes('/shorts/')) ||
+      (containerEl.tagName === 'YTD-REEL-ITEM-RENDERER') ||
+      (containerEl.matches && containerEl.matches('ytd-reel-item-renderer, [is-shorts], [class*="shortsLockupViewModel"]')) ||
+      (containerEl.closest && containerEl.closest('ytd-reel-item-renderer, [is-shorts], [class*="shortsLockupViewModel"]'));
 
     if (isFbReel) {
       // Facebook Reel cards are links inside clipped, transformed carousels.
@@ -1633,6 +1640,7 @@ class MediaWatcher {
     };
     // Trap events bubbling out of host to prevent surrounding anchor tags or Polymer handlers from triggering navigation
     host.addEventListener('pointerdown', stopPropagationAndDefault);
+    host.addEventListener('pointerup', stopPropagationAndDefault);
     host.addEventListener('mousedown', stopPropagationAndDefault);
     host.addEventListener('mouseup', stopPropagationAndDefault);
     host.addEventListener('click', stopPropagationAndDefault);
@@ -1672,6 +1680,7 @@ class MediaWatcher {
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
     };
     btn.addEventListener('pointerdown', stopButtonPointer);
+    btn.addEventListener('pointerup', stopButtonPointer);
     btn.addEventListener('mousedown', stopButtonPointer);
     btn.addEventListener('mouseup', stopButtonPointer);
 
