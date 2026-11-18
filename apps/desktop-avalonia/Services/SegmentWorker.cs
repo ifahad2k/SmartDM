@@ -18,9 +18,13 @@ public class SegmentWorker
     private string? _referer;
     private readonly string? _userAgent;
     private readonly string? _cookies;
+    private readonly string _credentialSourceUrl;
+    private readonly bool _allowSparseWrites;
     private readonly string? _pageUrl;
     private readonly long _expectedTotalBytes;
     private readonly string? _expectedETag;
+    private long _observedTotalBytes;
+    public long ObservedTotalBytes => Interlocked.Read(ref _observedTotalBytes);
     public SegmentProgress Progress { get; }
     public string? LastError { get; private set; }
     public ISpeedLimiter? SpeedLimiter { get; set; }
@@ -42,10 +46,12 @@ public class SegmentWorker
         ISpeedLimiter? speedLimiter = null,
         long expectedTotalBytes = 0,
         string? expectedETag = null,
-        string? pageUrl = null)
+        string? pageUrl = null,
+        string? credentialSourceUrl = null,
+        bool allowSparseWrites = true)
     {
         _httpClient = httpClient;
-        _url = DownloadEngine.SanitizeMediaUrl(url);
+        _url = StreamRequestPolicy.SanitizeMediaUrl(url);
         _targetFilePath = targetFilePath;
         _referer = referer;
         if (Uri.TryCreate(_url, UriKind.Absolute, out var source) &&
@@ -56,6 +62,8 @@ public class SegmentWorker
         }
         _userAgent = userAgent;
         _cookies = cookies;
+        _credentialSourceUrl = credentialSourceUrl ?? url;
+        _allowSparseWrites = allowSparseWrites;
         _pageUrl = pageUrl;
         _expectedTotalBytes = expectedTotalBytes;
         _expectedETag = expectedETag;
@@ -109,7 +117,7 @@ public class SegmentWorker
                 }
                 if (!string.IsNullOrEmpty(_cookies))
                 {
-                    req.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                    ApplyCookies(req);
                 }
 
                 if (Progress.EndByte >= 0)
@@ -133,7 +141,7 @@ public class SegmentWorker
                 if (!resp.IsSuccessStatusCode &&
                     (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized || (int)resp.StatusCode == 429))
                 {
-                    var candidates = DownloadEngine.GetCandidateReferers(_url, _referer, _pageUrl);
+                    var candidates = StreamRequestPolicy.GetCandidateReferers(_url, _referer, _pageUrl);
                     foreach (var cand in candidates)
                     {
                         if (string.Equals(cand, _referer, StringComparison.OrdinalIgnoreCase)) continue;
@@ -147,11 +155,11 @@ public class SegmentWorker
                             try { candReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
                         }
                         if (!string.IsNullOrEmpty(_userAgent)) candReq.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-                        if (!string.IsNullOrEmpty(_cookies)) candReq.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                        ApplyCookies(candReq);
                         candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                         var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                        if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
+                        if (candResp.IsSuccessStatusCode && !StreamRequestPolicy.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
                         {
                             resp.Dispose();
                             resp = candResp;
@@ -248,6 +256,8 @@ public class SegmentWorker
                 }
             }
 
+            if (isFullBodyTransfer && resp.Content.Headers.ContentLength is long observedLength && observedLength > 0)
+                Interlocked.Exchange(ref _observedTotalBytes, observedLength);
             await using var contentStream = await resp.Content.ReadAsStreamAsync(cancellationToken);
             await using var fileStream = new FileStream(_targetFilePath, isFullBodyTransfer ? FileMode.Create : FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite, 131072, useAsync: true);
             fileStream.Seek(currentStart, SeekOrigin.Begin);
@@ -313,7 +323,8 @@ public class SegmentWorker
             }
             else
             {
-                if (_expectedTotalBytes > 0 && Progress.DownloadedBytes != _expectedTotalBytes)
+                long expected = _expectedTotalBytes > 0 ? _expectedTotalBytes : ObservedTotalBytes;
+                if (expected > 0 && Progress.DownloadedBytes != expected)
                     throw new EndOfStreamException("Sequential response ended before its expected length.");
                 if (Progress.DownloadedBytes <= 0)
                 {
@@ -354,6 +365,7 @@ public class SegmentWorker
 
         try
         {
+            if (_expectedTotalBytes <= 0) throw new InvalidDataException("The media resource length must be known before requesting byte ranges.");
             await using var fileStream = new FileStream(
                 _targetFilePath,
                 FileMode.OpenOrCreate,
@@ -382,7 +394,7 @@ public class SegmentWorker
                         try { req.Headers.TryAddWithoutValidation("Origin", new Uri(_referer).GetLeftPart(UriPartial.Authority)); } catch { }
                     }
                     if (!string.IsNullOrEmpty(_userAgent)) req.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-                    if (!string.IsNullOrEmpty(_cookies)) req.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                    ApplyCookies(req);
                     req.Headers.Range = new RangeHeaderValue(chunk.StartByte, chunk.EndByte);
 
                     var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -413,7 +425,7 @@ public class SegmentWorker
                     if (!resp.IsSuccessStatusCode &&
                         (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized))
                     {
-                        var candidates = DownloadEngine.GetCandidateReferers(_url, _referer, _pageUrl);
+                        var candidates = StreamRequestPolicy.GetCandidateReferers(_url, _referer, _pageUrl);
                         foreach (var cand in candidates)
                         {
                             if (string.Equals(cand, _referer, StringComparison.OrdinalIgnoreCase)) continue;
@@ -426,11 +438,11 @@ public class SegmentWorker
                                 try { candReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
                             }
                             if (!string.IsNullOrEmpty(_userAgent)) candReq.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-                            if (!string.IsNullOrEmpty(_cookies)) candReq.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                            ApplyCookies(candReq);
                             candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                             var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                            if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
+                            if (candResp.IsSuccessStatusCode && !StreamRequestPolicy.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
                             {
                                 resp.Dispose();
                                 resp = candResp;
@@ -443,12 +455,12 @@ public class SegmentWorker
                     using var _sliceRespScope = resp;
                     resp.EnsureSuccessStatusCode();
                     string? contentType = resp.Content.Headers.ContentType?.MediaType;
-                    if (DownloadEngine.IsHtmlResponse(contentType, null) || contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+                    if (StreamRequestPolicy.IsHtmlResponse(contentType, null) || contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
                         throw new InvalidDataException("The media source returned a document instead of a media track. Open the video and capture its streams again.");
 
                     if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent)
                     {
-                        if (resp.StatusCode == System.Net.HttpStatusCode.OK && chunk.StartByte == 0 && (chunk.EndByte < 0 || chunk.EndByte == fileStream.Length - 1))
+                        if (resp.StatusCode == System.Net.HttpStatusCode.OK && chunk.StartByte == 0 && (chunk.EndByte < 0 || chunk.EndByte == _expectedTotalBytes - 1))
                         {
                             // Full body 200 OK for complete chunk transfer
                         }
@@ -461,16 +473,18 @@ public class SegmentWorker
                     if (resp.StatusCode == System.Net.HttpStatusCode.PartialContent)
                     {
                         if (cr?.From != chunk.StartByte || cr.To != chunk.EndByte ||
-                            cr.Length != fileStream.Length || fileStream.Length <= chunk.EndByte ||
+                            cr.Length != _expectedTotalBytes || _expectedTotalBytes <= chunk.EndByte ||
                             !string.Equals(cr.Unit, "bytes", StringComparison.OrdinalIgnoreCase))
                             throw new HttpRequestException("The media byte-range response does not match the selected resource and requested bounds.");
                     }
                     else if (resp.StatusCode == System.Net.HttpStatusCode.OK)
                     {
-                        if (resp.Content.Headers.ContentLength.HasValue && resp.Content.Headers.ContentLength.Value != fileStream.Length)
+                        if (resp.Content.Headers.ContentLength.HasValue && resp.Content.Headers.ContentLength.Value != _expectedTotalBytes)
                             throw new HttpRequestException("The media response content length did not match the expected total file size.");
                     }
                     await using var contentStream = await resp.Content.ReadAsStreamAsync(cancellationToken);
+                    if (!_allowSparseWrites && chunk.StartByte > fileStream.Length)
+                        throw new InvalidDataException("A non-sparse transfer must receive the preceding bytes before writing this range.");
                     fileStream.Seek(chunk.StartByte, SeekOrigin.Begin);
 
                     while (chunkDownloaded < chunkLength)
@@ -553,6 +567,11 @@ public class SegmentWorker
         }
     }
 
+    private void ApplyCookies(HttpRequestMessage request)
+    {
+        DownloadRedirectHandler.ApplyCookies(request, _cookies, _credentialSourceUrl);
+    }
+
     public async Task ExecuteHlsChunkQueueAsync(
         System.Collections.Concurrent.ConcurrentQueue<HlsSegmentTask> queue,
         Func<bool> isCompletedCheck,
@@ -605,7 +624,7 @@ public class SegmentWorker
                         try { req.Headers.TryAddWithoutValidation("Origin", new Uri(activeReferer).GetLeftPart(UriPartial.Authority)); } catch { }
                     }
                     if (!string.IsNullOrEmpty(_userAgent)) req.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-                    if (!string.IsNullOrEmpty(_cookies)) req.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                    ApplyCookies(req);
                     req.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                     resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
@@ -640,7 +659,7 @@ public class SegmentWorker
                     if (!resp.IsSuccessStatusCode &&
                         (resp.StatusCode == System.Net.HttpStatusCode.Forbidden || resp.StatusCode == System.Net.HttpStatusCode.Unauthorized))
                     {
-                        var workerCandidates = DownloadEngine.GetCandidateReferers(chunk.Url, activeReferer, _pageUrl);
+                        var workerCandidates = StreamRequestPolicy.GetCandidateReferers(chunk.Url, activeReferer, _pageUrl);
 
                         foreach (var cand in workerCandidates)
                         {
@@ -652,11 +671,11 @@ public class SegmentWorker
                                 try { candReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
                             }
                             if (!string.IsNullOrEmpty(_userAgent)) candReq.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
-                            if (!string.IsNullOrEmpty(_cookies)) candReq.Headers.TryAddWithoutValidation("Cookie", _cookies);
+                            ApplyCookies(candReq);
                             candReq.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                             var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
-                            if (candResp.IsSuccessStatusCode && !DownloadEngine.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
+                            if (candResp.IsSuccessStatusCode && !StreamRequestPolicy.IsHtmlResponse(candResp.Content.Headers.ContentType?.MediaType, null))
                             {
                                 resp.Dispose();
                                 resp = candResp;
@@ -674,9 +693,12 @@ public class SegmentWorker
                     using (resp)
                     {
                         resp.EnsureSuccessStatusCode();
-                        if (DownloadEngine.IsHtmlResponse(resp.Content.Headers.ContentType?.MediaType, null))
+                        var contentType = resp.Content.Headers.ContentType?.MediaType;
+                        if (resp.StatusCode != System.Net.HttpStatusCode.OK ||
+                            StreamRequestPolicy.IsHtmlResponse(contentType, null) ||
+                            contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
                         {
-                            throw new HttpRequestException("Media stream segment returned HTML challenge page instead of video data.");
+                            throw new InvalidDataException("The media server did not return a complete segment.");
                         }
 
                         long? expectedLength = resp.Content.Headers.ContentLength;
@@ -689,7 +711,9 @@ public class SegmentWorker
                         {
                             while (true)
                             {
+                                timeoutCts.CancelAfter(TimeSpan.FromSeconds(35));
                                 int read = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length), timeoutCts.Token);
+                                timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
                                 if (read <= 0) break;
 
                                 onBytesReceived?.Invoke(read);
@@ -749,11 +773,18 @@ public class SegmentWorker
                     retryReason = ex is HttpRequestException { StatusCode: { } status } ? $"HTTP {(int)status}" :
                         ex is InvalidDataException ? "segment validation failed" : "segment integrity or transport failed";
                     Debug.WriteLine($"[SegmentWorker #{Progress.SegmentIndex}] HLS chunk {chunk.Index}: {retryReason}");
-                    try { if (File.Exists(tmpFile)) File.Delete(tmpFile); } catch { }
+                    if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone })
+                    {
+                        LastError = $"The stream host rejected a media segment ({retryReason}). Refresh the video and capture it again.";
+                        onFatalError?.Invoke(LastError);
+                        break;
+                    }
                 }
                 finally
                 {
                     resp?.Dispose();
+                    if (!chunkSuccess)
+                        try { File.Delete(tmpFile); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                     Progress.IsActive = false;
                     Progress.DownloadedBytes = 0;
                 }

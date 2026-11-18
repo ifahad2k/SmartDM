@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -16,6 +17,12 @@ public static class HlsManifestSnapshot
     public const int MaxBytes = 4 * 1024 * 1024;
 
     public static bool IsWithinSizeLimit(string text) => text.Length <= MaxBytes && Encoding.UTF8.GetByteCount(text) <= MaxBytes;
+
+    public static bool IsCompleteMediaPlaylist(string text) =>
+        text.TrimStart().StartsWith("#EXTM3U", StringComparison.Ordinal) &&
+        !text.Contains("#EXT-X-STREAM-INF:", StringComparison.Ordinal) &&
+        text.Contains("#EXTINF:", StringComparison.Ordinal) &&
+        text.Split('\n').Any(line => line.Trim() == "#EXT-X-ENDLIST");
 
     public static async Task<string> ReadAsync(HttpContent content, CancellationToken token)
     {
@@ -36,8 +43,7 @@ public static class HlsManifestSnapshot
 
     public static string Normalize(string text, string baseUrl)
     {
-        if (!IsWithinSizeLimit(text) || !text.TrimStart().StartsWith("#EXTM3U", StringComparison.Ordinal) ||
-            !text.Contains("#EXTINF:") || !text.Contains("#EXT-X-ENDLIST"))
+        if (!IsWithinSizeLimit(text) || !IsCompleteMediaPlaylist(text))
             throw new InvalidDataException("A complete media playlist is required. Play the video and capture it again.");
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var origin) || !IsHttp(origin))
             throw new InvalidDataException("Invalid playlist address.");

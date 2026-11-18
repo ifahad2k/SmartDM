@@ -9,6 +9,94 @@ namespace SmartDm.Architecture.Tests;
 public sealed class HlsProgressTests
 {
     [Fact]
+    public async Task RealEngine_RampsUpToRequestedHlsWorkersAfterVerifiedChunks()
+    {
+        const int workers = 12;
+        int requests = 0;
+        var firstRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bytes = Enumerable.Repeat((byte)0x47, 4096).ToArray();
+        using var client = new HttpClient(new Handler(_ =>
+        {
+            int attempt = Interlocked.Increment(ref requests);
+            if (attempt == 1)
+            {
+                firstRequested.TrySetResult();
+                int reads = 0;
+                return new(HttpStatusCode.OK) {Content = new StreamContent(new ReadStream(async (buffer, token) =>
+                {
+                    await releaseFirst.Task.WaitAsync(token);
+                    if (Interlocked.Increment(ref reads) != 1) return 0;
+                    bytes.AsMemory().CopyTo(buffer);
+                    return bytes.Length;
+                }))};
+            }
+            if (attempt < workers) return new(HttpStatusCode.OK) {Content = new ByteArrayContent(bytes)};
+            if (attempt == workers * 2 - 1) started.TrySetResult();
+            return new(HttpStatusCode.OK) {Content = new StreamContent(new ReadStream(async (_, token) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return 0;
+            }))};
+        }));
+        var download = new DownloadModel
+        {
+            Url = "https://media.invalid/assets/list.m3u8",
+            MediaKind = "hls",
+            SavePath = Path.Combine(Path.GetTempPath(), $"smartdm-workers-{Guid.NewGuid()}.mp4"),
+            ParallelThreads = workers,
+            ManifestText = "#EXTM3U\n#EXT-X-TARGETDURATION:5\n" +
+                string.Concat(Enumerable.Range(0, 32).Select(i => $"#EXTINF:5,\npart-{i}.ts\n")) + "#EXT-X-ENDLIST\n"
+        };
+        var engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner(), client);
+        try
+        {
+            await engine.StartDownloadAsync(download);
+            await firstRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, engine.GetSegments(download.Id).Count(s => s.IsActive));
+            Assert.Equal(1, requests);
+            releaseFirst.SetResult();
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(workers, engine.GetSegments(download.Id).Count(s => s.IsActive));
+            Assert.Equal(workers * 2 - 1, requests);
+        }
+        finally { await engine.CancelDownloadAsync(download.Id); }
+    }
+
+    [Fact]
+    public async Task RealEngine_DeniedFirstChunkDoesNotReleaseTheOtherWorkers()
+    {
+        var requests = new System.Collections.Concurrent.ConcurrentBag<string>();
+        using var client = new HttpClient(new Handler(request =>
+        {
+            requests.Add(request.RequestUri!.AbsolutePath);
+            return new(HttpStatusCode.Forbidden);
+        }));
+        var download = new DownloadModel
+        {
+            Url = "https://media.invalid/assets/list.m3u8",
+            MediaKind = "hls",
+            SavePath = Path.Combine(Path.GetTempPath(), $"smartdm-denied-{Guid.NewGuid()}.mp4"),
+            ParallelThreads = 16,
+            ManifestText = "#EXTM3U\n#EXT-X-TARGETDURATION:5\n" +
+                string.Concat(Enumerable.Range(0, 20).Select(i => $"#EXTINF:5,\npart-{i}.ts\n")) + "#EXT-X-ENDLIST\n"
+        };
+        var engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner(), client);
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.DownloadStatusChanged += model => { if (model.Status == DownloadStatus.Failed) failed.TrySetResult(); };
+        try
+        {
+            await engine.StartDownloadAsync(download);
+            await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal("/assets/part-0.ts", Assert.Single(requests.Distinct()));
+            Assert.Contains("HTTP 403", download.StatusDetail);
+            Assert.False(File.Exists(download.SavePath));
+        }
+        finally { await engine.CancelDownloadAsync(download.Id); }
+    }
+
+    [Fact]
     public void RetransmissionsAreTraffic_NotSavedProgress()
     {
         var progress = new HlsTransferProgress(3);
@@ -88,6 +176,54 @@ public sealed class HlsProgressTests
         finally {File.Delete(path);}
     }
 
+    [Fact]
+    public async Task GoneHlsChunk_FailsWithoutRetryingOrSaving()
+    {
+        int requests = 0;
+        using var client = new HttpClient(new Handler(_ =>
+        {
+            Interlocked.Increment(ref requests);
+            return new(HttpStatusCode.Gone);
+        }));
+        string path = Path.Combine(Path.GetTempPath(), $"smartdm-missing-{Guid.NewGuid()}.ts");
+        var chunk = new HlsSegmentTask {Url = "https://cdn.invalid/missing.ts", TargetPath = path};
+        var worker = new SegmentWorker(client, chunk.Url, path, 1, 0, 0);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await worker.ExecuteHlsChunkQueueAsync(new(new[] {chunk}), () => false, timeout.Token);
+        Assert.Equal(1, requests);
+        Assert.Contains("HTTP 410", worker.LastError);
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task RealEngine_RejectsPreviewPlaylistForLongSelectedVideo()
+    {
+        int requests = 0;
+        using var client = new HttpClient(new Handler(_ =>
+        {
+            Interlocked.Increment(ref requests);
+            return new(HttpStatusCode.OK) {Content = new ByteArrayContent(new byte[] {1})};
+        }));
+        var download = new DownloadModel
+        {
+            Url = "https://cdn.invalid/preview.m3u8", MediaKind = "hls", TotalDuration = 5400,
+            SavePath = Path.Combine(Path.GetTempPath(), $"smartdm-preview-{Guid.NewGuid()}.mp4"),
+            ManifestText = "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5,\npreview.ts\n#EXT-X-ENDLIST\n"
+        };
+        var engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner(), client);
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.DownloadStatusChanged += model => { if (model.Status == DownloadStatus.Failed) failed.TrySetResult(); };
+        try
+        {
+            await engine.StartDownloadAsync(download);
+            await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains("does not match the selected video's duration", download.StatusDetail);
+            Assert.Equal(0, requests);
+            Assert.False(File.Exists(download.SavePath));
+        }
+        finally { await engine.CancelDownloadAsync(download.Id); }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(4)]
@@ -115,7 +251,7 @@ public sealed class HlsProgressTests
         {
             if (request.RequestUri!.AbsolutePath.EndsWith("first.ts"))
             {
-                if (Interlocked.Increment(ref firstRequests) == 2) // First GET is the engine's access probe.
+                if (Interlocked.Increment(ref firstRequests) == 1)
                     return new(HttpStatusCode.OK) {Content = new StreamContent(new ReadStream(async (buffer, token) =>
                     {
                         if (Interlocked.Increment(ref reads) == 1) {media.AsMemory(0, 512).CopyTo(buffer); return 512;}

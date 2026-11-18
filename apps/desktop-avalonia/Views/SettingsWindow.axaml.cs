@@ -46,6 +46,11 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void OnApiKeyTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (DataContext is SettingsViewModel vm && sender is TextBox input) vm.SetPendingApiKey(input.Text);
+    }
+
     private async Task<string?> PickFolderAsync()
     {
         var topLevel = GetTopLevel(this);

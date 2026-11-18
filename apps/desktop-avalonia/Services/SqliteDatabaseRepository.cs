@@ -13,8 +13,9 @@ public class SqliteDatabaseRepository : IDatabaseRepository
     private readonly string _connectionString;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private bool _isInitialized = false;
+    private readonly ISecretProtector _secrets;
 
-    public SqliteDatabaseRepository(string? dbPath = null)
+    public SqliteDatabaseRepository(string? dbPath = null, ISecretProtector? secrets = null)
     {
         if (string.IsNullOrWhiteSpace(dbPath))
         {
@@ -28,6 +29,7 @@ public class SqliteDatabaseRepository : IDatabaseRepository
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         }
 
+        _secrets = secrets ?? new ProfileSecretProtector(Path.GetDirectoryName(Path.GetFullPath(dbPath))!);
         var builder = new SqliteConnectionStringBuilder
         {
             DataSource = dbPath,
@@ -47,6 +49,8 @@ public class SqliteDatabaseRepository : IDatabaseRepository
             if (_isInitialized) return;
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync();
+            await using (var secureDelete = new SqliteCommand("PRAGMA secure_delete=ON;", conn)) await secureDelete.ExecuteNonQueryAsync();
+            bool migratedSecrets = false;
 
             string createTableSql = @"
                 CREATE TABLE IF NOT EXISTS downloads (
@@ -139,7 +143,8 @@ public class SqliteDatabaseRepository : IDatabaseRepository
                 "),
                 (6, "Persist paired HLS audio capture", "ALTER TABLE downloads ADD COLUMN audio_manifest_text TEXT;"),
                 (7, "Persist selected media representation", "ALTER TABLE downloads ADD COLUMN source_page_url TEXT; ALTER TABLE downloads ADD COLUMN format_id TEXT;"),
-                (8, "Persist scanner evidence and quarantine", "ALTER TABLE downloads ADD COLUMN safety_verdict INTEGER NOT NULL DEFAULT 0; ALTER TABLE downloads ADD COLUMN safety_details TEXT; ALTER TABLE downloads ADD COLUMN scanner_name TEXT; ALTER TABLE downloads ADD COLUMN quarantine_path TEXT;")
+                (8, "Persist scanner evidence and quarantine", "ALTER TABLE downloads ADD COLUMN safety_verdict INTEGER NOT NULL DEFAULT 0; ALTER TABLE downloads ADD COLUMN safety_details TEXT; ALTER TABLE downloads ADD COLUMN scanner_name TEXT; ALTER TABLE downloads ADD COLUMN quarantine_path TEXT;"),
+                (9, "Protect transfer credential fields with the OS-backed profile key", "SELECT 1;")
             };
 
             foreach (var mig in versionedMigrations)
@@ -171,6 +176,24 @@ public class SqliteDatabaseRepository : IDatabaseRepository
                         }
                     }
 
+                    if (mig.Version == 9)
+                    {
+                        var credentials = new List<(string Id, string Value)>();
+                        await using (var read = new SqliteCommand("SELECT id,cookies FROM downloads WHERE cookies IS NOT NULL AND cookies <> '';", conn, transaction))
+                        await using (var rows = await read.ExecuteReaderAsync())
+                            while (await rows.ReadAsync()) credentials.Add((rows.GetString(0), rows.GetString(1)));
+                        foreach (var credential in credentials)
+                        {
+                            if (credential.Value.StartsWith(ProfileSecretProtector.Prefix, StringComparison.Ordinal)) continue;
+                            string? protectedValue = await _secrets.ProtectAsync(credential.Value, "download:" + credential.Id);
+                            await using var update = new SqliteCommand("UPDATE downloads SET cookies=@value WHERE id=@id;", conn, transaction);
+                            update.Parameters.AddWithValue("@value", (object?)protectedValue ?? DBNull.Value);
+                            update.Parameters.AddWithValue("@id", credential.Id);
+                            await update.ExecuteNonQueryAsync();
+                        }
+                        migratedSecrets = credentials.Count > 0;
+                    }
+
                     await using var recordCmd = new SqliteCommand("INSERT INTO schema_migrations (version, description, applied_at) VALUES (@v, @desc, @appliedAt);", conn, transaction);
                     recordCmd.Parameters.AddWithValue("@v", mig.Version);
                     recordCmd.Parameters.AddWithValue("@desc", mig.Description);
@@ -178,6 +201,12 @@ public class SqliteDatabaseRepository : IDatabaseRepository
                     await recordCmd.ExecuteNonQueryAsync();
                     transaction.Commit();
                 }
+            }
+
+            if (migratedSecrets)
+            {
+                await using var scrub = new SqliteCommand("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;", conn);
+                await scrub.ExecuteNonQueryAsync();
             }
 
             // Reset any orphaned Active transfers from previous abnormal shutdown to Paused
@@ -247,7 +276,7 @@ public class SqliteDatabaseRepository : IDatabaseRepository
                     FooterRight = reader.IsDBNull(reader.GetOrdinal("footer_right")) ? "" : reader.GetString(reader.GetOrdinal("footer_right")),
                     IsStorage = reader.GetInt32(reader.GetOrdinal("is_storage")) == 1,
                     Referer = reader.IsDBNull(reader.GetOrdinal("referer")) ? null : reader.GetString(reader.GetOrdinal("referer")),
-                    Cookies = reader.IsDBNull(reader.GetOrdinal("cookies")) ? null : reader.GetString(reader.GetOrdinal("cookies")),
+                    Cookies = await _secrets.UnprotectAsync(reader.IsDBNull(reader.GetOrdinal("cookies")) ? null : reader.GetString(reader.GetOrdinal("cookies")), "download:" + reader.GetString(reader.GetOrdinal("id"))),
                     UserAgent = reader.IsDBNull(reader.GetOrdinal("user_agent")) ? null : reader.GetString(reader.GetOrdinal("user_agent")),
                     VideoUrl = reader.IsDBNull(reader.GetOrdinal("video_url")) ? null : reader.GetString(reader.GetOrdinal("video_url")),
                     AudioUrl = reader.IsDBNull(reader.GetOrdinal("audio_url")) ? null : reader.GetString(reader.GetOrdinal("audio_url")),
@@ -267,6 +296,13 @@ public class SqliteDatabaseRepository : IDatabaseRepository
                     ConflictAction = reader.IsDBNull(reader.GetOrdinal("conflict_action")) ? DestinationConflictAction.DefaultNeverOverwrite : (DestinationConflictAction)reader.GetInt32(reader.GetOrdinal("conflict_action"))
                 };
 
+                if (PreviewTransfers.IsPreview(dl))
+                {
+                    dl.IsPreview = true;
+                    if (dl.Status is not (DownloadStatus.Completed or DownloadStatus.Quarantined)) dl.Status = DownloadStatus.Failed;
+                    dl.SpeedMbps = 0;
+                    dl.StatusDetail = PreviewTransfers.DisabledMessage;
+                }
                 list.Add(dl);
             }
         }
@@ -280,6 +316,7 @@ public class SqliteDatabaseRepository : IDatabaseRepository
 
     public async Task SaveDownloadAsync(DownloadModel dl)
     {
+        PreviewTransfers.RequireRealTransfer(dl);
         await InitializeAsync();
         await _semaphore.WaitAsync();
         try
@@ -376,7 +413,7 @@ public class SqliteDatabaseRepository : IDatabaseRepository
             cmd.Parameters.AddWithValue("@footer_right", dl.FooterRight ?? "");
             cmd.Parameters.AddWithValue("@is_storage", dl.IsStorage ? 1 : 0);
             cmd.Parameters.AddWithValue("@referer", (object?)dl.Referer ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@cookies", (object?)dl.Cookies ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@cookies", (object?)await _secrets.ProtectAsync(dl.Cookies, "download:" + dl.Id) ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@user_agent", (object?)dl.UserAgent ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@video_url", (object?)dl.VideoUrl ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@audio_url", (object?)dl.AudioUrl ?? DBNull.Value);

@@ -16,7 +16,8 @@ public sealed class DownloadRedirectTests
         int requests = 0;
         using var client = new HttpClient(new DownloadRedirectHandler(new Handler(request => {
             if (++requests == 1) return new(HttpStatusCode.Found) {Headers = {Location = new Uri(destination)}};
-            Assert.Equal(keepCredentials, request.Headers.Contains("Cookie"));
+            // A raw header has no domain/path policy, so it cannot be forwarded.
+            Assert.False(request.Headers.Contains("Cookie"));
             Assert.Equal(keepCredentials, request.Headers.Contains("Authorization"));
             Assert.Equal(keepCredentials, request.Headers.Contains("Origin"));
             Assert.Equal("bytes=3-9", request.Headers.Range?.ToString());

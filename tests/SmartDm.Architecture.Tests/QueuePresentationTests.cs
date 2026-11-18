@@ -39,7 +39,7 @@ public sealed class QueuePresentationTests
     [Fact]
     public void SimpleQueue_IsDefault_AndAdvancedViewCanBeRestored()
     {
-        var viewModel = new MainViewModel(isDemoMode: true);
+        var viewModel = SmartDm.Desktop.Avalonia.DesktopComposition.CreateMainViewModel(isDemoMode: true);
         Assert.False(viewModel.ShowAdvancedLayout);
         Assert.Equal("Advanced view", viewModel.LayoutButtonText);
 

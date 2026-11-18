@@ -40,12 +40,18 @@ for (const browser of ['chrome', 'firefox']) {
     vm.runInContext(source, context);
     assert.equal(typeof dispatch, 'function');
 
-    const format = { formatId: 'hd', url: 'https://cdn.example/video.mp4', ext: 'mp4', mediaKind: 'hls', manifestText: '#EXTM3U\n#EXTINF:6,\npart.ts\n#EXT-X-ENDLIST' };
+    const format = { formatId: 'hd', url: 'https://cdn.example/video.mp4', ext: 'mp4', mediaKind: 'hls',
+      manifestText: '#EXTM3U\n#EXTINF:6,\npart.ts\n#EXT-X-ENDLIST', totalDuration: 6, bandwidth: 1000000 };
+    const unrelatedAudio = {formatId:'other-audio', url:'https://other.example/audio.m4a', isAudioOnly:true};
     let result;
-    dispatch([format], format, 'Video', value => { result = value; });
+    dispatch([format, unrelatedAudio], format, 'Video', value => { result = value; });
     assert.equal(sent.type, 'START_MEDIA_DOWNLOAD');
     assert.equal(sent.formats[0].mediaKind, 'hls');
     assert.equal(sent.formats[0].manifestText, format.manifestText);
+    assert.equal(sent.formats[0].totalDuration, 6);
+    assert.equal(sent.formats[0].bandwidth, 1000000);
+    assert.equal(sent.formats[0].audioUrl, null);
+    assert.equal(sent.audioUrl, null);
     assert.equal(result.success, true);
 
     const mse = {formatId: 'selected-mse', directUrl: 'https://cdn.example/selected.m4s', ext: 'mp4'};

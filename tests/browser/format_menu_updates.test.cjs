@@ -28,6 +28,56 @@ class Element {
 }
 
 for (const browser of ['chrome', 'firefox']) {
+  const sizeFixture = () => {
+    const requests=[];
+    const context=vm.createContext({document:{createElement:()=>new Element()},window:{location:{hostname:'player.invalid'}},URL,CSS:{escape:v=>v},
+      chrome:{runtime:{sendMessage:(request,reply)=>requests.push({request,reply})}},FormatRegistryEngine:{drainStashedManifests(){}}});
+    for(const [file,name] of [['utils.js','SmartDmUtils'],['overlay_ui.js','OverlayUiRenderer']])
+      vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/${file}`,'utf8')+`\nthis.${name}=${name};`,context);
+    const container=new Element(),format={formatId:'quality',height:720,ext:'mp4',url:'https://cdn.invalid/file.mp4'};
+    const render=fmt=>context.OverlayUiRenderer.renderFormatDropdown(container,[fmt],'https://page.invalid/video',{},'Movie');
+    return {context,container,format,requests,render};
+  };
+
+  test(`${browser}: exact sizes remain visible beside separate format text, including small media`,()=>{
+    const f=sizeFixture();f.render({...f.format,fileSize:200*1024});
+    assert.equal(f.container.children[0].querySelector('.format-size').textContent,'200 KB');
+    assert.equal(f.container.children[0].querySelector('.format-badge').textContent,'MP4');
+    assert.equal(f.requests.length,0);
+  });
+
+  test(`${browser}: unknown sizes resolve without changing the download snapshot and survive refresh`,()=>{
+    const f=sizeFixture();f.render(f.format);
+    const row=f.container.children[0];assert.equal(row.querySelector('.format-size').textContent,'Checking size…');
+    assert.equal(f.requests[0].request.type,'GET_MEDIA_SIZE');
+    f.requests[0].reply({success:true,fileSize:8*1024*1024});
+    assert.equal(row.querySelector('.format-size').textContent,'8 MB');
+    assert.equal(f.format.fileSize,undefined);
+    f.render(f.format);assert.equal(f.requests.length,1);
+    assert.equal(row.querySelector('.format-size').textContent,'8 MB');
+  });
+
+  test(`${browser}: estimates are marked and converted audio/cover do not inherit video bytes`,()=>{
+    const f=sizeFixture();f.render({...f.format,url:'https://cdn.invalid/master.m3u8',mediaKind:'hls',fileSize:3*1024*1024});
+    assert.equal(f.container.children[0].querySelector('.format-size').textContent,'≈ 3 MB');
+    const audio=f.container.children.find(row=>row.dataset.isAudio==='true');
+    assert.equal(audio.querySelector('.format-size').textContent,'Size after conversion');
+    const cover=f.container.children.find(row=>row.dataset.isThumb==='true');
+    assert.equal(cover.querySelector('.format-size').textContent,'Size unknown');
+    assert.equal(f.requests.length,0);
+  });
+
+  test(`${browser}: a late size reply cannot label the next selected source`,()=>{
+    const f=sizeFixture();f.render(f.format);f.render({...f.format,url:'https://cdn.invalid/next.mp4'});
+    f.requests[0].reply({success:true,fileSize:1024});assert.equal(f.requests.length,2);
+    assert.equal(f.requests[1].request.url,'https://cdn.invalid/next.mp4');
+    f.requests[1].reply({success:true,fileSize:2*1024*1024});
+    assert.equal(f.container.children[0].querySelector('.format-size').textContent,'2 MB');
+    const g=sizeFixture();g.render({...g.format,audioUrl:'https://cdn.invalid/a1.mp4'});g.render({...g.format,audioUrl:'https://cdn.invalid/a2.mp4'});
+    g.requests[0].reply({success:true,fileSize:1024});assert.equal(g.requests.length,2);
+    assert.equal(g.requests[1].request.audioUrl,'https://cdn.invalid/a2.mp4');
+  });
+
   test(`${browser}: HLS quality labels never replace the selected movie filename`, () => {
     const context = vm.createContext({document: {createElement: () => new Element()},
       window: {location: {hostname: 'player.invalid'}}, URL, CSS: {escape: value => value},
@@ -78,7 +128,8 @@ for (const browser of ['chrome', 'firefox']) {
     context.OverlayUiRenderer.renderFormatDropdown(container,
       [{formatId:'selected_576_0',height:576,resolution:'576p (captured stream)',url:'https://cdn.invalid/selected.mp4'}],
       'https://www.tiktok.com/', {}, 'Actual caption');
-    assert.equal(container.children[0].querySelector('.format-title').textContent, '576p (MP4)');
+    assert.equal(container.children[0].querySelector('.format-title').textContent, '576p');
+    assert.equal(container.children[0].querySelector('.format-badge').textContent, 'MP4');
     assert.equal(container.children[0].dataset.height, '576');
   });
 }

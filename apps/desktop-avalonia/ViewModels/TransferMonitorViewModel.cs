@@ -142,7 +142,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
         int threadCount = Math.Max(1, Download?.ParallelThreads > 0 ? Download.ParallelThreads : 16);
         if (existingSegs != null && existingSegs.Count > 0)
         {
-            threadCount = Math.Max(threadCount, existingSegs.Count);
+            threadCount = existingSegs.Count;
         }
 
         for (int i = 0; i < threadCount; i++)
@@ -178,6 +178,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
             PeakSpeedMbps = 0.0;
         }
         OnPropertyChanged(nameof(SocketsTelemetryBadge));
+        OnPropertyChanged(nameof(SegmentsBadge));
         OnPropertyChanged(nameof(SegmentsTitle));
         OnPropertyChanged(nameof(PeakSpeedFormatted));
     }
@@ -199,7 +200,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
 
     public string PauseButtonIcon => IsPaused ? "/Assets/Icons/play-gray.png" : "/Assets/Icons/pause-gray.png";
 
-    public string SegmentsBadge => $"{Download?.ParallelThreads ?? 16} SEGMENTS";
+    public string SegmentsBadge => $"{ThreadMetrics.Count} WORKERS";
 
     public string ProtocolInfo => Download?.StatusDetail?.Contains("Single", StringComparison.OrdinalIgnoreCase) == true
         ? "Protocol: HTTP/1.1 • Single-Stream Sequential"
@@ -220,7 +221,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public string SegmentsTitle => $"{Math.Max(Download?.ParallelThreads ?? 16, ThreadMetrics.Count)} Parallel Stream Segments (Chunk Buffers)";
+    public string SegmentsTitle => $"{ThreadMetrics.Count} Transfer Workers";
 
     public string TransferStatusBadgeText
     {
@@ -259,10 +260,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
             if (Download?.Status == DownloadStatus.Paused || IsPaused)
                 return "Paused";
             if (ThreadMetrics.Count == 0)
-            {
-                int threads = Download?.ParallelThreads ?? 16;
-                return (Download?.Status == DownloadStatus.Active && Download?.SpeedMbps > 0) ? $"{threads} Sockets Active" : "Connecting...";
-            }
+                return "Connecting...";
             int active = ThreadMetrics.Count(t => t.IsActive);
             int done = ThreadMetrics.Count(t => t.IsCompleted);
             int total = ThreadMetrics.Count;
@@ -270,7 +268,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
                 return "Connecting...";
             if (done > 0)
                 return $"{active}/{total} In Flight • {done} Done";
-            return $"{active}/{total} Sockets Active";
+            return $"{active}/{total} Workers Active";
         }
     }
 
@@ -359,6 +357,8 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
             if (_engine != null)
             {
                 var segs = _engine.GetSegments(updated.Id);
+                while (segs.Count > 0 && ThreadMetrics.Count > segs.Count)
+                    ThreadMetrics.RemoveAt(ThreadMetrics.Count - 1);
                 while (ThreadMetrics.Count < segs.Count)
                 {
                     ThreadMetrics.Add(new ThreadMetric
@@ -379,6 +379,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
                     if (tm.IsCompleted != s.IsCompleted) tm.IsCompleted = s.IsCompleted;
                 }
                 OnPropertyChanged(nameof(SocketsTelemetryBadge));
+                OnPropertyChanged(nameof(SegmentsBadge));
                 OnPropertyChanged(nameof(SegmentsTitle));
             }
 
@@ -459,6 +460,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
         try
         {
             if (Download == null) return;
+            if (PreviewTransfers.IsPreview(Download)) { Download.StatusDetail = PreviewTransfers.DisabledMessage; return; }
 
             if (Download.Status == DownloadStatus.Failed)
             {
@@ -523,6 +525,7 @@ public partial class TransferMonitorViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task StopAsync()
     {
+        if (Download != null && PreviewTransfers.IsPreview(Download)) { Download.StatusDetail = PreviewTransfers.DisabledMessage; return; }
         try
         {
             Dispose();

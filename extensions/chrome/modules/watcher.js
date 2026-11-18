@@ -19,6 +19,45 @@ class MediaWatcher {
   static youtubePrefetchQueue = new Map();
   static youtubePrefetchActive = 0;
   static youtubePrefetchTimer = null;
+  static childOverlayFrames = new WeakSet();
+  static frameOwnershipInstalled = false;
+
+  static announceFrameOwnership() {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({type: 'SMARTDM_OVERLAY_OWNER', active: this.activePlayers.size > 0}, '*');
+    }
+  }
+
+  static requestFrameOwnership(frame) {
+    frame.contentWindow?.postMessage({type: 'SMARTDM_OVERLAY_OWNER_QUERY'}, '*');
+  }
+
+  static initFrameOwnership() {
+    if (this.frameOwnershipInstalled) return;
+    this.frameOwnershipInstalled = true;
+    window.addEventListener('message', event => {
+      if (event.data?.type === 'SMARTDM_OVERLAY_OWNER_QUERY' && event.source === window.parent && window.parent !== window) {
+        this.announceFrameOwnership();
+        return;
+      }
+      if (event.data?.type !== 'SMARTDM_OVERLAY_OWNER' || typeof event.data.active !== 'boolean' || !event.source) return;
+      // Only the window belonging to this exact mounted iframe may suppress its fallback.
+      for (const [frame, item] of this.activePlayers) {
+        if (frame.tagName !== 'IFRAME' || frame.contentWindow !== event.source) continue;
+        if (event.data.active) {
+          this.childOverlayFrames.add(frame);
+          item.host.shadowRoot?.querySelector('.popover')?.classList.remove('active');
+          item.host._smartdm_stop_poll?.();
+        } else this.childOverlayFrames.delete(frame);
+        item.syncPos();
+      }
+    });
+    window.addEventListener('pagehide', () => {
+      if (window.parent && window.parent !== window)
+        window.parent.postMessage({type: 'SMARTDM_OVERLAY_OWNER', active: false}, '*');
+    });
+    window.addEventListener('pageshow', () => this.announceFrameOwnership());
+  }
 
   static queueYouTubePrefetch(target, priority = false) {
     const item = this.youtubePrefetchTargets.get(target);
@@ -85,6 +124,7 @@ class MediaWatcher {
   }
 
   static styleMarkup(shadow) {
+    OverlayUiRenderer.bindAppearance?.(shadow);
     // One parsed stylesheet per document, rather than a full CSS copy per card.
     try {
       if ('adoptedStyleSheets' in shadow && typeof CSSStyleSheet !== 'undefined') {
@@ -103,6 +143,7 @@ class MediaWatcher {
   static init(onDownloadHandler, onBatchDownloadHandler = null) {
     this.onDownloadHandler = onDownloadHandler;
     this.onBatchDownloadHandler = onBatchDownloadHandler;
+    this.initFrameOwnership();
 
     // 1. Initialize IntersectionObserver for player viewports
     this.viewportObserver = new IntersectionObserver((entries) => {
@@ -300,14 +341,19 @@ class MediaWatcher {
 
     // Phase 2: Batch write styles in a single pass (NO DOM reads here -> ZERO layout thrashing)
     for (const { item, r } of updates) {
+      const frameOwnsOverlay = this.childOverlayFrames.has(item.mediaEl);
+      item.host.style.display = frameOwnsOverlay ? 'none' : '';
+      if (frameOwnsOverlay) continue;
       if ((singleReel && selected?.item !== item) || r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > innerH) {
         item.host.style.opacity = '0';
         item.host.style.pointerEvents = 'none';
       } else {
         item.host.style.opacity = '1';
         item.host.style.pointerEvents = 'auto';
-        item.host.style.top = (r.top + 16) + 'px';
-        item.host.style.left = Math.max(8, Math.min(window.innerWidth - 145, r.right - 145)) + 'px';
+        if (!item.host._smartdm_apply_drag_position?.()) {
+          item.host.style.top = (r.top + 16) + 'px';
+          item.host.style.left = Math.max(8, Math.min(window.innerWidth - 145, r.right - 145)) + 'px';
+        }
       }
     }
   }
@@ -316,6 +362,7 @@ class MediaWatcher {
     for (const [mount, host] of this.thumbnailHosts.entries()) {
       if (!mount.isConnected) {
         if (host._smartdm_stop_poll) host._smartdm_stop_poll();
+        host._smartdm_drag_cleanup?.();
         host._smartdm_prefetch_cleanup?.();
         host.remove();
         this.thumbnailHosts.delete(mount);
@@ -371,7 +418,9 @@ class MediaWatcher {
         this.viewportObserver.unobserve(mediaEl);
       }
       this.activePlayers.delete(mediaEl);
+      this.childOverlayFrames.delete(mediaEl);
       mediaEl.removeAttribute?.(this.ATTR_PLAYER_ATTACHED);
+      this.announceFrameOwnership();
     }
   }
 
@@ -500,7 +549,8 @@ class MediaWatcher {
         <span>Download</span>
       </button>
       <div class="popover">
-        <div class="popover-title">SmartDM Music Download</div>
+        <div class="popover-title">${OverlayUiRenderer.headerMarkup ? OverlayUiRenderer.headerMarkup() : 'Download'}</div>
+        ${OverlayUiRenderer.sectionMarkup ? OverlayUiRenderer.sectionMarkup() : ''}
         <div class="popover-content">
           <div class="status-text">Fetching formats...</div>
         </div>
@@ -689,7 +739,8 @@ class MediaWatcher {
         <span>Download Playlist</span>
       </button>
       <div class="popover">
-        <div class="popover-title">SmartDM Playlist Download</div>
+        <div class="popover-title">${OverlayUiRenderer.headerMarkup ? OverlayUiRenderer.headerMarkup() : 'Download'}</div>
+        ${OverlayUiRenderer.sectionMarkup ? OverlayUiRenderer.sectionMarkup() : ''}
         <div class="popover-content">
           <div class="status-text">Scanning playlist tracks...</div>
         </div>
@@ -1139,6 +1190,11 @@ class MediaWatcher {
   static attachPlayerBanner(mediaEl) {
     if (mediaEl.getAttribute(this.ATTR_PLAYER_ATTACHED)) return;
 
+    // A wrapper and its actual media are one player; prefer the innermost owner.
+    for (const [existing] of this.activePlayers) {
+      if (mediaEl.contains?.(existing)) return;
+    }
+
     const previewCheck = this.isThumbnailOrPreviewMedia(mediaEl);
     if (previewCheck === 'unrendered') {
       if (this.pendingPlayers.has(mediaEl)) return;
@@ -1165,6 +1221,10 @@ class MediaWatcher {
       return;
     }
 
+    for (const [existing] of this.activePlayers) {
+      if (existing.contains?.(mediaEl)) this.cleanupPlayer(existing);
+    }
+
     // Mark element only after confirmed main video player
     mediaEl.setAttribute(this.ATTR_PLAYER_ATTACHED, 'true');
 
@@ -1175,6 +1235,9 @@ class MediaWatcher {
     host.style.pointerEvents = 'auto';
 
     const syncPos = () => {
+      const frameOwnsOverlay = this.childOverlayFrames.has(mediaEl);
+      host.style.display = frameOwnsOverlay ? 'none' : '';
+      if (frameOwnsOverlay) return;
       const r = mediaEl.getBoundingClientRect();
       if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > window.innerHeight) {
         host.style.opacity = '0';
@@ -1182,21 +1245,24 @@ class MediaWatcher {
       } else {
         host.style.opacity = '1';
         host.style.pointerEvents = 'auto';
-        host.style.top = (r.top + 16) + 'px';
-        const clampedLeft = Math.max(10, Math.min(window.innerWidth - 145, r.right - 145));
-        host.style.left = clampedLeft + 'px';
+        if (!host._smartdm_apply_drag_position?.()) {
+          host.style.top = (r.top + 16) + 'px';
+          const clampedLeft = Math.max(10, Math.min(window.innerWidth - 145, r.right - 145));
+          host.style.left = clampedLeft + 'px';
+        }
       }
     };
 
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
       ${this.styleMarkup(shadow)}
-      <button class="banner-btn">
-        <span class="play-icon"></span>
-        <span>Download Video</span>
+      <button type="button" class="banner-btn">
+        ${OverlayUiRenderer.icon ? `<span class="smartdm-grip">${OverlayUiRenderer.icon('grip')}</span>${OverlayUiRenderer.icon('download')}` : '<span class="play-icon"></span>'}
+        <span>Download</span>
       </button>
       <div class="popover">
-        <div class="popover-title">SmartDM Universal Formats</div>
+        <div class="popover-title">${OverlayUiRenderer.headerMarkup ? OverlayUiRenderer.headerMarkup() : 'Download'}</div>
+        ${OverlayUiRenderer.sectionMarkup ? OverlayUiRenderer.sectionMarkup() : ''}
         <div class="popover-content">
           <div class="status-text">Fetching formats...</div>
         </div>
@@ -1206,6 +1272,7 @@ class MediaWatcher {
     const bannerBtn = shadow.querySelector('.banner-btn');
     const popover = shadow.querySelector('.popover');
     const content = shadow.querySelector('.popover-content');
+    host._smartdm_drag_cleanup = OverlayUiRenderer.makeDraggable?.(host, bannerBtn, popover);
 
     let pollTimer = null;
     const stopPolling = () => {
@@ -1256,6 +1323,13 @@ class MediaWatcher {
       ['emptied', onEmptied], ['loadstart', onLoadStart], ['resize', onVideoDimensionChange],
       ['loadedmetadata', onVideoDimensionChange], ['playing', onVideoDimensionChange], ['mouseenter', syncPos]
     ];
+    if (mediaEl.tagName === 'IFRAME') {
+      mediaListeners.push(['load', () => {
+        this.childOverlayFrames.delete(mediaEl);
+        syncPos();
+        this.requestFrameOwnership(mediaEl);
+      }]);
+    }
     if (isTwitterHost) {
       mediaListeners.push(['volumechange', syncPos]);
     }
@@ -1409,10 +1483,12 @@ class MediaWatcher {
     const cleanupPrefetch = this.observeYouTubeFormats(mediaEl, () => window.location.href);
     const playerItem = {
       host: host,
+      mediaEl: mediaEl,
       syncPos: syncPos,
       isVisible: true,
       cleanup: () => {
         stopPolling();
+        host._smartdm_drag_cleanup?.();
         cleanupPrefetch();
         mediaListeners.forEach(([event, listener]) => mediaEl.removeEventListener(event, listener));
         if (!FormatRegistryEngine.youTubeCacheKey?.(window.location.href)) {
@@ -1425,6 +1501,8 @@ class MediaWatcher {
       }
     };
     this.activePlayers.set(mediaEl, playerItem);
+    this.announceFrameOwnership();
+    if (mediaEl.tagName === 'IFRAME') this.requestFrameOwnership(mediaEl);
 
     if (this.viewportObserver) {
       this.viewportObserver.observe(mediaEl);
@@ -1672,11 +1750,12 @@ class MediaWatcher {
     shadow.innerHTML = `
       ${this.styleMarkup(shadow)}
       <button type="button" class="banner-btn thumb-btn" title="Download this video with SmartDM">
-        <span class="download-icon"></span>
-        <span>SmartDM</span>
+        ${OverlayUiRenderer.icon ? OverlayUiRenderer.icon('download') : '<span class="download-icon"></span>'}
+        <span>Download</span>
       </button>
       <div class="popover">
-        <div class="popover-title">SmartDM Video Download</div>
+        <div class="popover-title">${OverlayUiRenderer.headerMarkup ? OverlayUiRenderer.headerMarkup() : 'Download'}</div>
+        ${OverlayUiRenderer.sectionMarkup ? OverlayUiRenderer.sectionMarkup() : ''}
         <div class="popover-content">
           <div class="status-text">Fetching formats...</div>
         </div>
@@ -1688,6 +1767,14 @@ class MediaWatcher {
     // Inline positioning also wins over an adopted stylesheet's source order.
     popover.style.position = isDetachedThumb ? 'absolute' : 'fixed';
     const content = shadow.querySelector('.popover-content');
+    host._smartdm_drag_cleanup = OverlayUiRenderer.makeDraggable?.(host, btn, popover);
+    const originalSyncPos = host._smartdm_sync_pos;
+    host._smartdm_sync_pos = () => {
+      if (!host._smartdm_apply_drag_position?.()) { originalSyncPos?.(); return; }
+      const rect = containerEl.getBoundingClientRect();
+      host.style.display = rect.width && rect.height && rect.bottom > 0 && rect.top < window.innerHeight &&
+        rect.right > 0 && rect.left < window.innerWidth ? 'block' : 'none';
+    };
 
     const closePopover = () => {
       popover.classList.remove('active');
@@ -1732,7 +1819,9 @@ class MediaWatcher {
         left = window.innerWidth - popoverWidth - 10;
       }
 
-      if (isDetachedThumb) {
+      if (host._smartdm_drag_position) {
+        OverlayUiRenderer.positionPopover(popover, btn.getBoundingClientRect(), window.innerWidth, window.innerHeight);
+      } else if (isDetachedThumb) {
         // The popover is positioned inside the fixed badge host, so use
         // coordinates relative to that host rather than viewport coordinates.
         popover.style.left = (left - rect.left) + 'px';

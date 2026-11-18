@@ -1,0 +1,20 @@
+:root { color-scheme:light dark; --paper:light-dark(#ffffff,#252a30); --ink:light-dark(#252c35,#f0f3f6); --muted:light-dark(#566370,#b0bbc6); --line:light-dark(#dfe5eb,#434d58); }
+* { box-sizing:border-box; }
+body { width:336px; margin:0; background:var(--paper); color:var(--ink); font:13px/1.4 'Segoe UI',Arial,sans-serif; }
+main { padding:18px; }
+header { border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:16px; }
+h1 { margin:0; font-size:18px; font-weight:600; letter-spacing:-.3px; }
+h2 { margin:0 0 16px; color:var(--muted); font-size:12px; font-weight:500; }
+label { font-weight:500; }
+select { display:block; width:100%; padding:8px; margin:7px 0 20px; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:6px; font:inherit; }
+.range-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:8px; }
+output { font-variant-numeric:tabular-nums; color:var(--muted); }
+input[type=range] { width:100%; margin:0 0 18px; accent-color:light-dark(#424d5a,#d0d8e1); }
+.hint { font-size:11px; color:var(--muted); margin:0 0 12px; }
+button { background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; cursor:pointer; }
+.form-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+#save-status { color:var(--muted); font-size:11px; }
+footer { border-top:1px solid var(--line); margin-top:16px; padding-top:14px; }
+#download-page { width:100%; }
+#download-status { margin:8px 0 0; font-size:11px; color:var(--muted); }
+#download-status:empty { display:none; }

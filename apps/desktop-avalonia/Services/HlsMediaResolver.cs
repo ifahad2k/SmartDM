@@ -21,13 +21,15 @@ public static class HlsMediaResolver
 {
     private static HttpClient _httpClient = CreateDefaultHttpClient();
 
-    public static HttpClient CreateDefaultHttpClient() => new HttpClient(CreateDefaultHandler())
+    public static HttpClient CreateDefaultHttpClient() => new HttpClient(new DownloadRedirectHandler(CreateDefaultHandler()))
     {
         Timeout = TimeSpan.FromSeconds(8)
     };
 
     public static SocketsHttpHandler CreateDefaultHandler() => new SocketsHttpHandler
     {
+        AllowAutoRedirect = false,
+        UseCookies = false,
         AutomaticDecompression = System.Net.DecompressionMethods.All,
         PooledConnectionLifetime = TimeSpan.FromMinutes(2),
         ConnectTimeout = TimeSpan.FromSeconds(5)
@@ -54,7 +56,7 @@ public static class HlsMediaResolver
             ? userAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 
-        var (initialText, effectiveUrl, workingReferer) = await FetchPlaylistWithCandidatesAsync(streamUrl, referer, uaString, cookies, token, pageUrl);
+        var (initialText, effectiveUrl, workingReferer) = await FetchPlaylistWithCandidatesAsync(streamUrl, referer, uaString, cookies, token, pageUrl, streamUrl);
         if (string.IsNullOrWhiteSpace(initialText))
         {
             result.ErrorMessage = "Could not fetch playlist";
@@ -81,7 +83,7 @@ public static class HlsMediaResolver
             foreach (var candUrl in candidates)
             {
                 if (token.IsCancellationRequested) break;
-                var (candText, candEffectiveUrl, _) = await FetchPlaylistWithCandidatesAsync(candUrl, workingReferer ?? referer, uaString, cookies, token, pageUrl);
+                var (candText, candEffectiveUrl, _) = await FetchPlaylistWithCandidatesAsync(candUrl, workingReferer ?? referer, uaString, cookies, token, pageUrl, streamUrl);
                 if (!string.IsNullOrWhiteSpace(candText) && candText.Contains("#EXT-X-STREAM-INF", StringComparison.OrdinalIgnoreCase))
                 {
                     result.MasterUrl = candEffectiveUrl;
@@ -130,9 +132,9 @@ public static class HlsMediaResolver
         string userAgent,
         string? cookies,
         CancellationToken token,
-        string? pageUrl = null)
+        string? pageUrl = null, string? credentialSourceUrl = null)
     {
-        var candidates = DownloadEngine.GetCandidateReferers(targetUrl, baseReferer, pageUrl);
+        var candidates = StreamRequestPolicy.GetCandidateReferers(targetUrl, baseReferer, pageUrl);
         foreach (var candRef in candidates)
         {
             if (token.IsCancellationRequested) break;
@@ -153,7 +155,8 @@ public static class HlsMediaResolver
                 }
 
                 if (!string.IsNullOrEmpty(userAgent)) req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-                if (!string.IsNullOrEmpty(cookies)) req.Headers.TryAddWithoutValidation("Cookie", cookies);
+                var scopedCookies = CookieHeaderPolicy.Select(cookies, targetUrl, credentialSourceUrl);
+                DownloadRedirectHandler.ApplyCookies(req, cookies, credentialSourceUrl);
                 req.Headers.TryAddWithoutValidation("Accept", "*/*");
 
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -168,7 +171,7 @@ public static class HlsMediaResolver
                         continue; // Skip HTML bot check/error pages
                     }
                     string content = await HlsManifestSnapshot.ReadAsync(resp.Content, cts.Token);
-                    if (content.Contains("#EXTM3U", StringComparison.OrdinalIgnoreCase) && !DownloadEngine.IsHtmlResponse(ct, content))
+                    if (content.Contains("#EXTM3U", StringComparison.OrdinalIgnoreCase) && !StreamRequestPolicy.IsHtmlResponse(ct, content))
                     {
                         string effective = resp.RequestMessage?.RequestUri?.ToString() ?? targetUrl;
                         return (content, effective, candRef);
@@ -232,6 +235,34 @@ public static class HlsMediaResolver
         var formats = new List<MediaFormatDto>();
         var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         var seenHeights = new HashSet<int>();
+        var audioGroups = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i].Trim();
+            if (line.StartsWith("#EXT-X-MEDIA:", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("TYPE=AUDIO", StringComparison.OrdinalIgnoreCase))
+            {
+                var uriMatch = Regex.Match(line, @"URI=""([^""]+)""", RegexOptions.IgnoreCase);
+                if (uriMatch.Success)
+                {
+                    string audioUri = uriMatch.Groups[1].Value.Trim();
+                    string fullAudioUrl = StreamRequestPolicy.CombineHlsUri(masterUrl, audioUri);
+                    if (!fullAudioUrl.Contains('?') && masterUrl.Contains('?'))
+                    {
+                        int qIdx = masterUrl.IndexOf('?');
+                        fullAudioUrl += masterUrl.Substring(qIdx);
+                    }
+
+                    var groupMatch = Regex.Match(line, @"GROUP-ID=""([^""]+)""", RegexOptions.IgnoreCase);
+                    bool isDefault = Regex.IsMatch(line, @"DEFAULT=YES", RegexOptions.IgnoreCase);
+                    if (groupMatch.Success && (isDefault || !audioGroups.ContainsKey(groupMatch.Groups[1].Value)))
+                    {
+                        audioGroups[groupMatch.Groups[1].Value] = fullAudioUrl;
+                    }
+                }
+            }
+        }
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -240,6 +271,7 @@ public static class HlsMediaResolver
             {
                 int height = 0;
                 long bandwidth = 0;
+                string? audioGroup = null;
 
                 var resMatch = Regex.Match(line, @"RESOLUTION=(\d+)x(\d+)", RegexOptions.IgnoreCase);
                 if (resMatch.Success)
@@ -256,6 +288,12 @@ public static class HlsMediaResolver
                 if (avgBwMatch.Success && long.TryParse(avgBwMatch.Groups[1].Value, out long avgBw) && avgBw > 0)
                 {
                     bandwidth = avgBw;
+                }
+
+                var audioMatch = Regex.Match(line, @"AUDIO=""([^""]+)""", RegexOptions.IgnoreCase);
+                if (audioMatch.Success)
+                {
+                    audioGroup = audioMatch.Groups[1].Value;
                 }
 
                 if (height <= 0)
@@ -280,7 +318,7 @@ public static class HlsMediaResolver
                 if (i + 1 < lines.Length && !lines[i + 1].StartsWith("#"))
                 {
                     string streamPath = lines[i + 1].Trim();
-                    string fullStreamUrl = DownloadEngine.CombineHlsUri(masterUrl, streamPath);
+                    string fullStreamUrl = StreamRequestPolicy.CombineHlsUri(masterUrl, streamPath);
 
                     // Inherit master URL query parameters (e.g. ?token=...) if variant has no query
                     if (!fullStreamUrl.Contains('?') && masterUrl.Contains('?'))
@@ -295,6 +333,10 @@ public static class HlsMediaResolver
                     }
                     if (height <= 0) height = 720;
 
+                    string? matchedAudioUrl = (audioGroup != null && audioGroups.TryGetValue(audioGroup, out var agUrl))
+                        ? agUrl
+                        : null;
+
                     if (!seenHeights.Contains(height))
                     {
                         seenHeights.Add(height);
@@ -305,6 +347,7 @@ public static class HlsMediaResolver
                             Resolution = label,
                             Ext = "mp4",
                             DirectUrl = fullStreamUrl,
+                            AudioUrl = matchedAudioUrl,
                             Title = label,
                             Height = height,
                             Bandwidth = bandwidth

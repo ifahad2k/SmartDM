@@ -11,11 +11,11 @@ dated observations remain historical; target architecture is still separate.
 | --- | --- |
 | `apps/desktop-avalonia/Program.cs` | Process entry, single-instance activation and diagnostic modes |
 | `apps/desktop-avalonia/App.axaml.cs` | Avalonia startup, window wiring, theme and snapshot modes |
-| `apps/desktop-avalonia/ViewModels/MainViewModel.cs` | Creates default services, loads history, starts local IPC and coordinates queue/UI actions |
+| `apps/desktop-avalonia/ViewModels/MainViewModel.cs` | Receives injected services, loads history, starts local IPC and coordinates queue/UI actions |
 | `apps/desktop-avalonia/Services/DownloadEngine.cs` | Production transfer engine: HTTP segments, recovery, staging/finalization and media processing |
 | `apps/desktop-avalonia/Services/SegmentWorker.cs` | Range workers and transfer/retry handling |
-| `apps/desktop-avalonia/Services/SqliteDatabaseRepository.cs` | Microsoft.Data.Sqlite history and versioned migrations; currently unencrypted |
-| `apps/desktop-avalonia/Services/LocalIpcService.cs` | Loopback HttpListener browser handoff; security gaps remain |
+| `apps/desktop-avalonia/Services/SqliteDatabaseRepository.cs` | Microsoft.Data.Sqlite history and versioned migrations; cookie fields protected, full history encryption pending |
+| `apps/desktop-avalonia/Services/LocalIpcService.cs` | Authenticated HTTP activation plus current-user native browser bridge |
 | `apps/desktop-avalonia/Services/YouTubeMediaResolver.cs` | YoutubeExplode discovery |
 | `apps/desktop-avalonia/Services/HlsMediaResolver.cs` | Native HLS discovery with platform TLS |
 | `apps/desktop-avalonia/Services/SafetyScannerService.cs` | Scanner/hash/heuristic implementation; do not assume missing evidence means clean |
@@ -220,3 +220,102 @@ Graphify is developer-only, with a local AST map scoped by `.graphifyignore` to
 v2 app/extensions/src/tests. Unresolved edges and omitted `.axaml` markup mean
 it is not a complete runtime architecture model. No production dependency was
 added. See [evidence/handoff](implementation/REPORT_REPAIR_HANDOFF.md).
+
+
+## 2026-11-17 implemented security boundaries
+
+- `DownloadRedirectHandler` carries cookie policy through each actual target,
+  including same-host path redirects. Workers retain jars and the raw credential
+  source; paired audio cannot rebind a video header to a different source.
+- `ProfileSecretProtector` uses AES-GCM with a Windows DPAPI or Linux Secret
+  Service profile key. Migration 9 protects cookie fields transactionally; API-key
+  JSON migrates atomically. This is field encryption, not SQLCipher history encryption.
+- Extensions send privileged messages only through the C# native host, which
+  validates protocol/origin and uses an authenticated current-user pipe. HTTP
+  activation requires a bearer token; bodies, handlers and deadlines are bounded.
+- `MediaTransportProxy` owns FFmpeg remote HTTP/TLS, cookie selection, ranges and
+  manifest rewriting. FFmpeg receives opaque loopback inputs; no cookie headers
+  or signed source query enters its arguments. It still bypasses the worker speed limiter.
+- HTML metadata has a 256 KiB budget. Browser manifests share a 4 MiB reader,
+  four-request admission and coalescing. Native requests are capped at 16 MiB,
+  replies at 1 MiB, active handlers at eight. A bounded desktop snapshot cache
+  preserves large resolved HLS playlists without sending them back over native IPC.
+
+Windows proof: 464 C# and 333 browser tests pass, including 12 real synthetic
+FFmpeg cases and a native-host subprocess. Linux runtime and installed browser
+registration remain unverified. See [test evidence](implementation/TEST_EVIDENCE.md).
+
+
+## 2026-11-17 structural ownership update
+
+`Composition/DesktopComposition` now constructs production services; MainViewModel
+requires injection. `DownloadJournalStore`, `DownloadStaging`, `CookieHeaderPolicy`,
+`StreamRequestPolicy` and the injected `HlsPlaylistReader` own their implementation
+outside DownloadEngine. Its existing static entry points delegate for compatibility.
+DemoDownloads and DownloadLookup separate previews and identity/path matching from UI
+coordination. There is no new assembly, DI framework or service locator.
+
+Browser background source now lives in seven sections under
+`extensions/shared/background`; `node tools/build-extensions.cjs` generates both
+browser bundles, and `--check`/tests enforce freshness. Other browser modules and
+platform manifests retain their existing loading. Generated bundles are excluded
+from Graphify. `tools/architecture_graph.py` reduces the AST graph to 17 production
+components/19 resolved call relationships; tests/package copies are hidden in this
+view, not deleted from the detailed graph.
+
+468 C# (including 12 real media), 335 browser and two graph-tool tests pass.
+See [handoff, commands and limits](implementation/STRUCTURAL_REFACTOR_HANDOFF.md).
+Media-session orchestration and UI lifecycle remain concentrated; the planned
+assembly boundaries and prior security/release gates are not fully implemented.
+
+## 2026-11-17 implemented preview and staging boundaries
+
+`PreviewTransfers` classifies explicit design items and exact legacy mock
+signatures. Engine, repository, monitor and destination helpers reject their real
+transfer/file operations. User-confirmed removal is history-only; preview mode
+does not persist rows. Demo execution uses an isolated profile.
+
+`DownloadStaging` defaults to `<AppProfile.DirectoryPath>/staging`, shared by
+Debug/Release. Known legacy partials resume in place without a migration/copy.
+`StagingFile` creates empty files and marks Windows files sparse before parallel
+offset writes; unsupported capability falls back to sequential writes without
+skipping missing prefixes. Preparation can shrink stale tails but never extends
+to remote size. Range validation uses expected resource size independently of
+current file length. 478 C# / 335 browser tests pass; physical Windows allocation
+was measured. See [evidence and limits](implementation/STAGING_DISK_USAGE_HANDOFF.md).
+
+2026-11-17: both packaged `OverlayUiRenderer` modules own button drag mechanics;
+`MediaWatcher` preserves the chosen viewport position during synchronization and
+cleans transient pointer listeners on removal. Moved thumbnail controls mount at
+the document/fullscreen root while retaining the original card/media association.
+No new background, storage or permission path. See
+[UI evidence and limits](implementation/DRAGGABLE_OVERLAY_HANDOFF.md).
+
+2026-11-17: MediaWatcher now deduplicates nested wrapper/media mounts. Fixed
+status-only page messages let a child player suppress its matching parent iframe
+fallback, with exact source matching and load/page/cleanup restoration. Separate
+players retain separate controls. See [ownership evidence](implementation/PLAYER_OWNERSHIP_HANDOFF.md).
+
+2026-11-17: `OverlayAppearance` applies browser-local theme/opacity preferences to
+shadow hosts. The toolbar action opens `popup.html`, with Appearance controls and
+the existing current-page handoff action. No separate options page. Renderer now
+uses the selected compact Graphite Direct menu with native format buttons and
+light/dark tokens. Both packages mirror these authored UI assets; storage events
+update open frames. See [proof/limits](implementation/OVERLAY_APPEARANCE_HANDOFF.md).
+
+
+## 2026-11-17 visible media size and progressive metadata
+
+Renderer shows sizes and asynchronously queries missing progressive metadata through a bounded, body-cancelled background reader. DesktopComposition injects the probe into DownloadEngine; missing length/capability is resolved before partitioning, and actual worker counts are reported. Sequential responses expose validated length for progress. See [evidence/limits](implementation/MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md).
+
+## 2026-11-18 HLS stream reliability
+
+The extension passes complete media snapshots per selected HLS URL. The C# engine transfers whole-file clear fragmented MP4 and TS resources through its bounded workers, then performs a local FFmpeg remux. [HLS handoff](implementation/HLS_STREAM_RELIABILITY_HANDOFF.md).
+
+## 2026-11-18 worker count and media discovery
+
+The add-download dialog passes the configured worker count to the engine. HLS uses up to that many outstanding chunks, and the monitor labels the units as workers. The YouTube resolver waits for its second source when the first one yields only SD. [Handoff](implementation/WORKERS_AND_MEDIA_DISCOVERY_HANDOFF.md)
+
+## 2026-11-18 HLS startup and selected audio
+
+An HLS transfer starts with one worker and admits more only after verified chunks are saved. Player capture can hand off an explicit selected audio URL before its playlist body arrives. [Handoff](implementation/HLS_START_AND_AUDIO_HANDOFF.md)

@@ -16,16 +16,18 @@ public class SettingsService : ISettingsService
 
     private readonly string _settingsPath;
     private readonly string _aiConfigPath;
+    private readonly ISecretProtector _secrets;
 
     public AppSettingsModel CurrentSettings { get; private set; } = new();
     public AiConfigModel CurrentAiConfig { get; private set; } = new();
 
-    public SettingsService(string? baseDir = null)
+    public SettingsService(string? baseDir = null, ISecretProtector? secrets = null)
     {
         string dir = baseDir ?? AppProfile.DirectoryPath;
         Directory.CreateDirectory(dir);
         _settingsPath = Path.Combine(dir, "app_settings.json");
         _aiConfigPath = Path.Combine(dir, "ai_config.json");
+        _secrets = secrets ?? new ProfileSecretProtector(dir);
     }
 
     public async Task<AppSettingsModel> LoadAppSettingsAsync()
@@ -70,43 +72,27 @@ public class SettingsService : ISettingsService
 
     public async Task<AiConfigModel> LoadAiConfigAsync()
     {
-        try
+        if (!File.Exists(_aiConfigPath)) return CurrentAiConfig = new AiConfigModel();
+        string json = await File.ReadAllTextAsync(_aiConfigPath);
+        var config = JsonSerializer.Deserialize<AiConfigModel>(json, JsonOptions) ?? new AiConfigModel();
+        using var data = JsonDocument.Parse(json);
+        if (data.RootElement.TryGetProperty("apiKey", out var legacy) && legacy.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrEmpty(legacy.GetString()))
         {
-            if (File.Exists(_aiConfigPath))
-            {
-                string json = await File.ReadAllTextAsync(_aiConfigPath);
-                var config = JsonSerializer.Deserialize<AiConfigModel>(json, JsonOptions);
-                if (config != null)
-                {
-                    CurrentAiConfig = config;
-                    return config;
-                }
-            }
+            config.ProtectedApiKey = await _secrets.ProtectAsync(legacy.GetString(), "ai-api-key");
+            // Commit the protected replacement only after the OS store succeeds.
+            PrivateProfileFiles.WriteText(_aiConfigPath, JsonSerializer.Serialize(config, JsonOptions));
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to load ai_config.json: {ex.Message}");
-        }
-
-        CurrentAiConfig = new AiConfigModel();
-        return CurrentAiConfig;
+        return CurrentAiConfig = config;
     }
 
-    public async Task SaveAiConfigAsync(AiConfigModel config)
+    public async Task SaveAiConfigAsync(AiConfigModel config, string? newApiKey = null, bool clearApiKey = false)
     {
-        CurrentAiConfig = config ?? new AiConfigModel();
-        try
-        {
-            string? dir = Path.GetDirectoryName(_aiConfigPath);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            string json = JsonSerializer.Serialize(CurrentAiConfig, JsonOptions);
-            await File.WriteAllTextAsync(_aiConfigPath, json);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to save ai_config.json: {ex.Message}");
-        }
+        ArgumentNullException.ThrowIfNull(config);
+        config.ProtectedApiKey = clearApiKey ? null : CurrentAiConfig.ProtectedApiKey;
+        if (!string.IsNullOrEmpty(newApiKey)) config.ProtectedApiKey = await _secrets.ProtectAsync(newApiKey, "ai-api-key");
+        PrivateProfileFiles.WriteText(_aiConfigPath, JsonSerializer.Serialize(config, JsonOptions));
+        CurrentAiConfig = config;
     }
 
     public bool SetStartup(bool enable)

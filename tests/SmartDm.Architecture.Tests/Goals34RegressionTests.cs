@@ -36,7 +36,7 @@ public sealed class Goals34RegressionTests
         {
             await File.WriteAllBytesAsync(file, new byte[100]);
             using var client = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.PartialContent) { Content = new ByteArrayContent(Enumerable.Repeat((byte)99, 100).ToArray()) }));
-            var worker = new SegmentWorker(client, "https://fixture.invalid/media", file, 1, 0, 99);
+            var worker = new SegmentWorker(client, "https://fixture.invalid/media", file, 1, 0, 99, expectedTotalBytes: 100);
             var queue = new ConcurrentQueue<ChunkRange>(new[] { new ChunkRange(0, 99) });
             await worker.ExecuteChunkQueueAsync(queue, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(4));
             Assert.NotNull(worker.LastError);

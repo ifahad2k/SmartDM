@@ -494,10 +494,18 @@ segment1.ts
     const foundEvent = dispatchedEvents.find(e => e.detail?.candidateUrl === resolvedUrl || e.detail?.url === resolvedUrl);
     assert.ok(foundEvent, 'Must dispatch event for intercepted JSON stream URL');
 
-    // Verify DOM stash element was created for the stream
+    assert.equal(foundEvent.detail.text, null);
+    assert.equal(elements.find(el => el.getAttribute('data-smartdm-url') === resolvedUrl), undefined);
+
+    // The same address can later return a real playlist and must still be captured.
+    xhr.open('GET', resolvedUrl);
+    xhr.responseURL = resolvedUrl;
+    xhr.responseType = 'text';
+    xhr.responseText = '#EXTM3U\n#EXTINF:6,\npart.ts\n#EXT-X-ENDLIST';
+    xhr.setRequestHeader('content-type', 'application/vnd.apple.mpegurl');
+    xhrLoadListener.call(xhr);
     const stash = elements.find(el => el.getAttribute('data-smartdm-url') === resolvedUrl);
-    assert.ok(stash, 'Must create smartdm-manifest-stash element');
-    assert.ok(stash.textContent.includes(resolvedUrl));
+    assert.equal(stash?.textContent, xhr.responseText);
   });
 
   test(`${browser}: Plural/tokenized stream paths (/sources/, /streams/, /chunklist.m3u8, /vod/) matched across regexes`, () => {
@@ -615,6 +623,7 @@ segment1.ts
     assert.ok(resolveReply !== null);
     assert.equal(resolveReply.success, true);
     assert.ok(resolveReply.formats.some(f => f.height === 1080), 'Must resolve the newest 1080p stream rather than the 360p ad bumper');
+    assert.ok(resolveReply.formats.every(f => !f.manifestText), 'A master must never be attached as the body of a variant');
 
     // Case 2: Tab 304 has only a direct MP4 video
     let directReply = null;

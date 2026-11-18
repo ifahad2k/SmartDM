@@ -52,7 +52,7 @@ public static class YouTubeMediaResolver
         return !string.IsNullOrEmpty(ExtractYouTubeVideoId(url));
     }
 
-    public static async Task<YouTubeResolveResult> ResolveYouTubeFormatsAsync(string targetUrl, bool forceRefresh = false)
+    public static async Task<YouTubeResolveResult> ResolveYouTubeFormatsAsync(string targetUrl, bool forceRefresh = false, System.Threading.CancellationToken token = default)
     {
         var result = new YouTubeResolveResult();
         string? videoId = ExtractYouTubeVideoId(targetUrl);
@@ -69,8 +69,8 @@ public static class YouTubeMediaResolver
         // Native YoutubeExplode Resolver with signature deciphering (Concurrent execution for 2x speed)
         try
         {
-            var manifestTask = _ytClient.Videos.Streams.GetManifestAsync(videoId).AsTask();
-            var videoTask = _ytClient.Videos.GetAsync(videoId).AsTask();
+            var manifestTask = _ytClient.Videos.Streams.GetManifestAsync(videoId, token).AsTask();
+            var videoTask = _ytClient.Videos.GetAsync(videoId, token).AsTask();
 
             YoutubeExplode.Videos.Streams.StreamManifest streamManifest;
             try
@@ -114,6 +114,7 @@ public static class YouTubeMediaResolver
 
                 long totalBytes = stream.Size.Bytes;
                 bool isVideoOnly = stream is VideoOnlyStreamInfo;
+                if (isVideoOnly && string.IsNullOrEmpty(bestAudioUrl)) continue;
                 if (isVideoOnly && bestAudioSize > 0)
                 {
                     totalBytes += bestAudioSize;
@@ -123,6 +124,7 @@ public static class YouTubeMediaResolver
                 {
                     FormatId = key,
                     Resolution = qualityLabel,
+                    Height = stream.VideoQuality.MaxHeight,
                     Ext = ext,
                     FileSize = totalBytes,
                     IsAudioOnly = false,
@@ -161,7 +163,7 @@ public static class YouTubeMediaResolver
                 AudioUrl = null
             });
 
-            if (list.Count > 0)
+            if (list.Any(format => !format.IsAudioOnly && format.FormatId != "thumbnail"))
             {
                 result.Success = true;
                 result.Formats = list;

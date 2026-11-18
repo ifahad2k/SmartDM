@@ -109,6 +109,16 @@
     } catch (_) {}
   }
 
+  const announcedCandidates = new Set();
+  function announceManifestCandidate(url) {
+    if (!/^https?:\/\//i.test(url) || capturedUrls.has(url) || announcedCandidates.has(url)) return;
+    if (announcedCandidates.size >= 50) announcedCandidates.delete(announcedCandidates.values().next().value);
+    announcedCandidates.add(url);
+    window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
+      detail: {url, text: null, playerId: null, candidateUrl: url, referer: window.location.href, origin: window.location.origin}
+    }));
+  }
+
   function inspectJsonResponseForManifests(text, requestUrl) {
     if (!text || typeof text !== 'string' || text.length > MAX_MANIFEST_BYTES) return;
     stashMediaMetadata(text);
@@ -130,14 +140,7 @@
       if (m3u8Matches && m3u8Matches.length > 0) {
         for (let mUrl of m3u8Matches) {
           mUrl = mUrl.replace(/\\/g, '');
-          if (!capturedUrls.has(mUrl)) {
-            stashAndEmitManifest(mUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${mUrl}`);
-            try {
-              window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
-                detail: { url: mUrl, text: null, playerId: null, candidateUrl: mUrl, referer: window.location.href, origin: window.location.origin }
-              }));
-            } catch (_) {}
-          }
+          announceManifestCandidate(mUrl);
         }
       }
       if (unescapedText.includes('"file"') || unescapedText.includes('"url"') || unescapedText.includes('"sources"') ||
@@ -153,12 +156,7 @@
               let fullUrl = cand;
               try { fullUrl = new URL(cand, requestUrl || window.location.href).href; } catch(_) {}
               if (!capturedUrls.has(fullUrl) && !BINARY_EXT_REGEX.test(fullUrl) && (isLikelyManifestUrl(fullUrl) || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(fullUrl))) {
-                stashAndEmitManifest(fullUrl, `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n${fullUrl}`);
-                try {
-                  window.dispatchEvent(new CustomEvent('__smartdm_manifest_captured__', {
-                    detail: { url: fullUrl, text: null, playerId: null, candidateUrl: fullUrl, referer: window.location.href, origin: window.location.origin }
-                  }));
-                } catch (_) {}
+                announceManifestCandidate(fullUrl);
               }
             }
             for (const k in obj) {
@@ -554,6 +552,21 @@
         });
       };
     }
+    if (typeof Response !== 'undefined' && Response.prototype.text) {
+      const text = Response.prototype.text;
+      Response.prototype.text = function(...args) {
+        return text.apply(this, args).then(value => {
+          const url = this.url || responseAddress(this);
+          try {
+            if (this.ok && /^https?:\/\//i.test(url || '') && !IGNORED_DOMAINS_REGEX.test(url) &&
+                value.length <= MAX_MANIFEST_BYTES && /^\s*#EXTM3U(?:\s|$)/.test(value)) {
+              stashAndEmitManifest(url, value);
+            }
+          } catch (_) {}
+          return value;
+        });
+      };
+    }
     if (typeof Response !== 'undefined' && Response.prototype.arrayBuffer) {
       const arrayBuffer = Response.prototype.arrayBuffer;
       Response.prototype.arrayBuffer = function(...args) {
@@ -669,9 +682,10 @@
     return MANIFEST_EXT_REGEX.test(url) || MANIFEST_PATH_REGEX.test(url);
   }
 
-  function stashAndEmitManifest(url, text, playerId = null, height = 0, track = "video") {
+  function stashAndEmitManifest(url, text, playerId = null, height = 0, track = "video", rendition = null) {
     if (!text || typeof text !== 'string' || text.length > MAX_MANIFEST_BYTES) return;
     const manifestUrl = url || window.location.href;
+    const complete = /^#EXT-X-ENDLIST[ \t\r]*$/m.test(text);
     if (capturedUrls.has(manifestUrl) && !playerId) return;
 
     if (text.includes('#EXT-X-STREAM-INF') || text.includes('<MPD') || text.includes('&lt;MPD') || (text.includes('#EXTM3U') && (text.includes('#EXTINF') || text.includes('#EXT-X-TARGETDURATION') || text.includes('#EXT-X-MEDIA')))) {
@@ -679,14 +693,16 @@
         const first = capturedUrls.values().next().value;
         if (first) capturedUrls.delete(first);
       }
-      capturedUrls.add(manifestUrl);
+      // A growing playlist may later finish at the same address.
+      if (complete || !text.includes('#EXTINF:')) capturedUrls.add(manifestUrl);
 
       try {
         const root = document.head || document.documentElement || document.body;
         if (root) {
           const existing = root.querySelector(`smartdm-manifest-stash[data-smartdm-url="${CSS.escape(manifestUrl)}"]`);
-          if (existing && playerId && existing.textContent === text && existing.getAttribute('data-smartdm-player') === playerId &&
-              existing.getAttribute('data-smartdm-height') === String(height) && existing.getAttribute('data-smartdm-track') === track) return;
+          if (existing?.textContent === text && (!playerId || (existing.getAttribute('data-smartdm-player') === playerId &&
+              existing.getAttribute('data-smartdm-height') === String(height) && existing.getAttribute('data-smartdm-track') === track &&
+              existing.getAttribute('data-smartdm-rendition-url') === rendition))) return;
           const retained = Array.from(root.querySelectorAll('smartdm-manifest-stash')).filter(s => s !== existing);
           let retainedChars = retained.reduce((sum, s) => sum + (s.textContent || '').length, 0);
           while (retained.length && (retained.length >= 4 || retainedChars + text.length > MAX_STASH_CHARS)) {
@@ -705,7 +721,9 @@
             if (playerId) { stashEl.setAttribute('data-smartdm-player', playerId); stashEl.setAttribute('data-smartdm-height', String(height)); stashEl.setAttribute('data-smartdm-track', track); }
             if (stashEl.style) stashEl.style.display = 'none';
             root.appendChild(stashEl);
+            if (rendition) stashEl.setAttribute('data-smartdm-rendition-url', rendition);
           }
+          if (existing && rendition) existing.setAttribute('data-smartdm-rendition-url', rendition);
         }
       } catch(e) {}
 
@@ -729,13 +747,29 @@
       try {
         const id = `hls-${++nextPlayerId}`;
         let expectsAudio = false;
-        const markAudio = tracks => {
-          if ((tracks || []).some(t => !!t.url)) expectsAudio = true;
-          if (instance.media) instance.media.setAttribute('data-smartdm-hls-external-audio', expectsAudio ? '1' : '0');
+        const markAudio = (tracks, selected = (instance.audioTracks || [])[instance.audioTrack]) => {
+          const video = instance.media;
+          if (!video) return;
+          if (selected) {
+            const url = Array.isArray(selected.url) ? selected.url[0] : selected.url;
+            expectsAudio = !!url;
+            const httpUrl = /^https?:\/\//i.test(url || '') ? url : '';
+            video.setAttribute('data-smartdm-hls-audio-url', httpUrl);
+            video.setAttribute('data-smartdm-hls-audio-group', selected.groupId || '');
+          } else {
+            if ((tracks || []).some(t => !!t.url)) expectsAudio = true;
+            video.setAttribute('data-smartdm-hls-audio-url', '');
+            video.setAttribute('data-smartdm-hls-audio-group', '');
+          }
+          video.setAttribute('data-smartdm-hls-external-audio', expectsAudio ? '1' : '0');
         };
         const clear = () => {
           expectsAudio = false;
-          if (instance.media) instance.media.setAttribute('data-smartdm-hls-external-audio', '0');
+          if (instance.media) {
+            instance.media.setAttribute('data-smartdm-hls-external-audio', '0');
+            instance.media.setAttribute('data-smartdm-hls-audio-url', '');
+            instance.media.setAttribute('data-smartdm-hls-audio-group', '');
+          }
           document.querySelectorAll('smartdm-manifest-stash').forEach(s => {
             if (s.getAttribute('data-smartdm-player') === id) s.remove();
           });
@@ -749,6 +783,8 @@
         instance.on(Hls.Events.MANIFEST_PARSED, (_event, data) => markAudio(data?.audioTracks || instance.audioTracks));
         if (Hls.Events.AUDIO_TRACKS_UPDATED)
           instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => markAudio(data?.audioTracks || instance.audioTracks));
+        if (Hls.Events.AUDIO_TRACK_SWITCHING)
+          instance.on(Hls.Events.AUDIO_TRACK_SWITCHING, (_event, data) => markAudio(instance.audioTracks, data));
         const capture = (track, data) => {
           try {
             const video = instance.media;
@@ -764,14 +800,18 @@
               // into the currently exposed tracks, not necessarily that ID.
               if (!selectedAudio || (data.id !== undefined && data.id !== (selectedAudio.id ?? instance.audioTrack)) ||
                   (data.groupId && selectedAudio.groupId && data.groupId !== selectedAudio.groupId)) return;
-              expectsAudio = true;
-              markAudio([]);
+              if (!selectedAudio.url) {
+                expectsAudio = true;
+                if (!/^https?:\/\//i.test(details.url || '')) return;
+                markAudio([], {...selectedAudio, url: details.url});
+              }
             }
             const level = track === 'audio' ? selectedAudio : data.levelInfo || (instance.levels && instance.levels[data.level]);
             const url = details.url || (level && (Array.isArray(level.url) ? level.url[0] : level.url)) || instance.url;
             if (!/^https?:\/\//i.test(url || '')) return;
             const height = level && level.height || video.videoHeight || 0;
-            stashAndEmitManifest(url, details.m3u8, id, height, track);
+            const rendition = track === 'audio' ? video.getAttribute('data-smartdm-hls-audio-url') : null;
+            stashAndEmitManifest(url, details.m3u8, id, height, track, rendition);
           } catch (_) {}
         };
         instance.on(Hls.Events.LEVEL_LOADED, (_event, data) => capture('video', data));

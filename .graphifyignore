@@ -6,3 +6,7 @@
 !/tests/
 /apps/*
 !/apps/desktop-avalonia/
+
+# The background implementations live in shared sources; packaged bundles are generated.
+/extensions/chrome/background.js
+/extensions/firefox/background.js

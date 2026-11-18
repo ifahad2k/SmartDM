@@ -119,7 +119,6 @@ class FormatRegistryEngine {
     const lines = m3u8Text.split('\n');
     const formats = [];
     const audioGroups = new Map();
-    let defaultAudioUrl = null;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -136,11 +135,8 @@ class FormatRegistryEngine {
             ? SmartDmUtils.inheritQueryTokens(audioUrl, baseUrl)
             : (baseUrl && baseUrl.includes('?') && !audioUrl.includes('?') ? (audioUrl + baseUrl.substring(baseUrl.indexOf('?'))) : audioUrl);
           const groupMatch = line.match(/GROUP-ID="([^"]+)"/i);
-          if (groupMatch) {
+          if (groupMatch && (/DEFAULT=YES/i.test(line) || !audioGroups.has(groupMatch[1]))) {
             audioGroups.set(groupMatch[1], audioUrl);
-          }
-          if (/DEFAULT=YES/i.test(line) || !defaultAudioUrl) {
-            defaultAudioUrl = audioUrl;
           }
         }
       }
@@ -201,7 +197,7 @@ class FormatRegistryEngine {
           badge = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps';
         }
 
-        const audioUrl = (currentInfo.audioGroup && audioGroups.get(currentInfo.audioGroup)) || defaultAudioUrl || null;
+        const audioUrl = audioGroups.get(currentInfo.audioGroup) || null;
 
         formats.push({
           formatId: height > 0 ? `m3u8_${height}p` : `m3u8_stream_${formats.length}`,
@@ -216,6 +212,7 @@ class FormatRegistryEngine {
           directUrl: streamUrl,
           videoUrl: streamUrl,
           audioUrl: audioUrl,
+          audioGroup: currentInfo.audioGroup || null,
           height: height,
           bandwidth: currentInfo.bandwidth || 0,
           isAudioOnly: false,
@@ -446,7 +443,7 @@ class FormatRegistryEngine {
         if (txt) {
           this.processCapturedManifest(u, txt, onRefresh, h);
         }
-        if (!el.getAttribute('data-smartdm-player')) el.remove();
+        if (!el.getAttribute('data-smartdm-player') && !this.completeHlsDuration(txt, null)) el.remove();
       });
     } catch(e) {}
   }
@@ -499,10 +496,7 @@ class FormatRegistryEngine {
       const adaptive = Array.isArray(streamingData.adaptiveFormats) ? streamingData.adaptiveFormats : [];
       adaptive.forEach(f => {
         if (!f) return;
-        let u = f.url;
-        if (!u && (f.signatureCipher || f.cipher)) {
-          try { u = new URLSearchParams(f.signatureCipher || f.cipher).get('url'); } catch (_) {}
-        }
+        const u = f.url;
         if (u && typeof u === 'string' && u.startsWith('http')) {
           const mime = (f.mimeType || '').toLowerCase();
           if (mime.includes('audio/')) {
@@ -517,10 +511,7 @@ class FormatRegistryEngine {
       const combined = Array.isArray(streamingData.formats) ? streamingData.formats : [];
       combined.forEach(f => {
         if (!f) return;
-        let u = f.url;
-        if (!u && (f.signatureCipher || f.cipher)) {
-          try { u = new URLSearchParams(f.signatureCipher || f.cipher).get('url'); } catch (_) {}
-        }
+        const u = f.url;
         if (u && typeof u === 'string' && u.startsWith('http')) {
           const height = f.height || (typeof SmartDmUtils !== 'undefined' ? SmartDmUtils.extractResolutionNumber?.(f.qualityLabel || f.quality || '') : 360) || 360;
           formats.push({
@@ -544,14 +535,12 @@ class FormatRegistryEngine {
 
       adaptive.forEach(f => {
         if (!f) return;
-        let u = f.url;
-        if (!u && (f.signatureCipher || f.cipher)) {
-          try { u = new URLSearchParams(f.signatureCipher || f.cipher).get('url'); } catch (_) {}
-        }
+        const u = f.url;
         if (u && typeof u === 'string' && u.startsWith('http')) {
           const mime = (f.mimeType || '').toLowerCase();
           const isAudio = mime.includes('audio/');
           const isVideo = mime.includes('video/');
+          if ((!isAudio && !isVideo) || (isVideo && !defaultAudioUrl)) return;
           const kbps = Math.round((f.bitrate || 0) / 1000);
           const videoSize = parseInt(f.contentLength || 0, 10);
           const totalSize = isVideo && defaultAudioSize > 0 ? videoSize + defaultAudioSize : videoSize;
@@ -686,9 +675,9 @@ class FormatRegistryEngine {
     return formats.some(f => {
       if (!f || f.isAudioOnly || f.formatId === 'thumbnail') return false;
       const h = Number(f.height) || (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractResolutionNumber ? SmartDmUtils.extractResolutionNumber(f.resolution || '') : 0);
-      if (h >= 480) return true;
+      if (h >= 720) return true;
       const res = String(f.resolution || '').toLowerCase();
-      return /\b(?:480|720|1080|1440|2160|4k)p?\b/.test(res);
+      return /\b(?:720|1080|1440|2160)p(?:\d+)?\b|\b4k\b/.test(res);
     });
   }
 
@@ -777,16 +766,17 @@ class FormatRegistryEngine {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      const local = entry.data;
       const formats = Array.isArray(response?.formats)
         ? response.formats.filter(f => f && !f.provisional && /^https?:\/\//i.test(f.url || f.directUrl || '')) : [];
       const success = !!(response?.success || response?.status === 'ok') && formats.length > 0;
       if (success) {
-        const mergedFormats = (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0)
-          ? FormatRegistryEngine.mergeFormatLists(inPage.formats, formats)
+        const mergedFormats = (local && Array.isArray(local.formats) && local.formats.length > 0)
+          ? FormatRegistryEngine.mergeFormatLists(local.formats, formats)
           : formats;
         entry.data = { ...response, success: true, status: 'ok', formats: mergedFormats };
         entry.status = 'done';
-        entry.expiresAt = Date.now() + 120000;
+        entry.expiresAt = Date.now() + (this.hasHighResFormats(entry.data.formats) ? 120000 : 5000);
         for (const format of mergedFormats) {
           for (const stream of [format.url, format.directUrl, format.audioUrl]) {
             try {
@@ -795,11 +785,11 @@ class FormatRegistryEngine {
             } catch (_) {}
           }
         }
-      } else if (inPage && Array.isArray(inPage.formats) && inPage.formats.length > 0) {
+      } else if (local && Array.isArray(local.formats) && local.formats.length > 0) {
         // Fallback to in-page formats if desktop/background unavailable
-        entry.data = inPage;
+        entry.data = local;
         entry.status = 'done';
-        entry.expiresAt = Date.now() + 120000;
+        entry.expiresAt = Date.now() + (this.hasHighResFormats(entry.data.formats) ? 120000 : 5000);
       } else {
         entry.data = { success: false, status: 'error', formats: [], message: 'YouTube format lookup failed; reopen this menu to retry.' };
         entry.status = 'done';
@@ -2379,6 +2369,8 @@ class FormatRegistryEngine {
           if (prioritizedMedia.length === 0 && !this.isSocialFeed() && (!selectedSrc || isIframePlayer || (mediaEl && (mediaEl.currentSrc || mediaEl.src || '').startsWith('blob:')))) {
             const videoMedia = netMedia.filter(m => {
               if (m.isAudio) return false;
+              if (m.manifestText && /^#EXTINF:/m.test(m.manifestText) &&
+                  !this.completeHlsDuration(m.manifestText, mediaEl)) return false;
               const u = m.url || '';
               const ct = m.contentType || '';
               return ct.includes('video/') || ct.includes('mpegurl') || ct.includes('dash') ||
@@ -2488,9 +2480,12 @@ class FormatRegistryEngine {
               resolution: resLabel,
               ext: ext === 'm3u8' ? 'mp4' : ext,
               mediaKind: m.mediaKind || (ext === 'm3u8' ? 'hls' : /dash\+xml/i.test(m.contentType || '') ? 'dash' : null),
-              manifestText: m.manifestText || null,
+              manifestText: this.completeHlsDuration(m.manifestText, mediaEl) > 0 ? m.manifestText : null,
+              audioUrl: m.audioUrl || null,
+              audioManifestText: this.completeHlsDuration(m.audioManifestText, mediaEl) > 0 ? m.audioManifestText : null,
               bandwidth: m.bandwidth || 0,
-              totalDuration: m.totalDuration || null,
+              totalDuration: Number.isFinite(mediaEl?.duration) && mediaEl.duration > 0
+                ? mediaEl.duration : m.totalDuration || null,
               badge: m.customBadge || (vH > 0 ? `${vH}p` : null),
               fileSize: (m.contentLength && m.contentLength >= 1048576) ? m.contentLength : 0,
               isAudioOnly: isAudio,
@@ -2641,6 +2636,18 @@ class FormatRegistryEngine {
     } catch(e) {}
   }
 
+  // Reject short preload/preview playlists when the selected player has a known VOD duration.
+  static completeHlsDuration(text, mediaEl) {
+    if (typeof text !== 'string' || !text.trimStart().startsWith('#EXTM3U') ||
+        !/^#EXT-X-ENDLIST[ \t\r]*$/m.test(text) || /^#EXT-X-STREAM-INF:/m.test(text)) return 0;
+    let seconds = 0;
+    for (const match of text.matchAll(/^#EXTINF:([\d.]+)/gm)) seconds += Number(match[1]);
+    const duration = mediaEl?.duration;
+    return Number.isFinite(seconds) &&
+      (!Number.isFinite(duration) || duration <= 0 || Math.abs(duration - seconds) <= Math.max(15, duration * 0.15))
+      ? seconds : 0;
+  }
+
   static capturedPlayerFormats(mediaEl) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return null;
     const id = mediaEl && typeof mediaEl.getAttribute === 'function' ? mediaEl.getAttribute('data-smartdm-hls-player') : null;
@@ -2653,46 +2660,67 @@ class FormatRegistryEngine {
       }
     }
     if (!matching.length) return null;
-    const audio = matching.find(s => s.getAttribute('data-smartdm-track') === 'audio');
-    if (!audio && mediaEl && typeof mediaEl.getAttribute === 'function' && mediaEl.getAttribute('data-smartdm-hls-external-audio') === '1')
-      return {success: false, formats: [], message: 'Play the video until its audio playlist is available, then try again.'};
+    const requiresAudio = mediaEl?.getAttribute?.('data-smartdm-hls-external-audio') === '1';
+    const selectedAudioUrl = mediaEl?.getAttribute?.('data-smartdm-hls-audio-url');
+    const hasSelectedAudio = /^https?:\/\//i.test(selectedAudioUrl || '');
+    const selectedGroup = mediaEl?.getAttribute?.('data-smartdm-hls-audio-group');
+    const findAudio = url => stashes.find(s => {
+      const address = s.getAttribute('data-smartdm-url');
+      const owner = s.getAttribute('data-smartdm-player');
+      const rendition = s.getAttribute('data-smartdm-rendition-url');
+      if (owner && owner !== id) return false;
+      return (address === url || (owner === id && rendition === url)) &&
+        /^https?:\/\//i.test(address || '') && this.completeHlsDuration(s.textContent, mediaEl) > 0;
+    });
+    const audio = hasSelectedAudio ? findAudio(selectedAudioUrl) : null;
 
-    const masterStash = matching.find(s => (s.textContent || '').includes('#EXT-X-STREAM-INF'));
-    if (masterStash) {
-      let masterUrl = masterStash.getAttribute('data-smartdm-url');
-      if (!masterUrl || masterUrl.startsWith('blob:')) {
-        const src = mediaEl && (mediaEl.currentSrc || mediaEl.src);
-        masterUrl = (src && !src.startsWith('blob:')) ? src : window.location.href;
-      }
-      const parsedVariants = this.parseM3u8Formats(masterStash.textContent, masterUrl);
-      if (parsedVariants && parsedVariants.length > 0) {
+    const videoUrls = new Set(matching.filter(s => s.getAttribute('data-smartdm-track') === 'video')
+      .map(s => s.getAttribute('data-smartdm-url')));
+    for (const master of stashes) {
+      if (!master.textContent?.includes('#EXT-X-STREAM-INF')) continue;
+      const owner = master.getAttribute('data-smartdm-player');
+      const masterUrl = master.getAttribute('data-smartdm-url');
+      if ((owner && owner !== id) || !/^https?:\/\//i.test(masterUrl || '')) continue;
+      const parsedVariants = this.parseM3u8Formats(master.textContent, masterUrl);
+      if (!matching.includes(master) && !parsedVariants.some(variant => videoUrls.has(variant.url))) continue;
+      if (parsedVariants.length > 0) {
         const pageTitle = (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractWatchPageTitle?.()) || (typeof document !== 'undefined' && document.title) || 'Video';
-        const formats = parsedVariants.map(v => ({
-          ...v,
-          title: pageTitle,
-          audioUrl: audio && audio.getAttribute('data-smartdm-url'),
-          audioManifestText: audio && audio.textContent,
-          referer: window.location.href
-        }));
-        return { success: true, title: pageTitle, formats };
+        const formats = parsedVariants.filter(v => !requiresAudio || v.audioUrl).map(v => {
+          const preferredAudio = hasSelectedAudio && selectedGroup && selectedGroup === v.audioGroup
+            ? selectedAudioUrl : v.audioUrl;
+          const track = preferredAudio ? findAudio(preferredAudio) : null;
+          const video = matching.find(s => s.getAttribute('data-smartdm-url') === v.url &&
+            this.completeHlsDuration(s.textContent, mediaEl) > 0);
+          const totalDuration = Number.isFinite(mediaEl?.duration) && mediaEl.duration > 0
+            ? mediaEl.duration : this.completeHlsDuration(video?.textContent, mediaEl);
+          const fileSize = totalDuration > 0 && v.bandwidth > 0 ? Math.round(totalDuration * v.bandwidth / 8) : 0;
+          return {
+            ...v, title: pageTitle, totalDuration, fileSize,
+            ...(video ? {manifestText: video.textContent} : {}),
+            audioUrl: track?.getAttribute('data-smartdm-url') || preferredAudio || null,
+            audioManifestText: track?.textContent || null,
+            referer: window.location.href
+          };
+        });
+        if (formats.length) return { success: true, title: pageTitle, formats };
       }
     }
 
+    if (!hasSelectedAudio && requiresAudio)
+      return {success: false, formats: [], message: 'Play the video until its audio playlist is available, then try again.'};
     const formats = matching.filter(s => s.getAttribute('data-smartdm-track') !== 'audio').flatMap(s => {
       const url = s.getAttribute('data-smartdm-url');
       const manifestText = s.textContent || '';
       if (!/^https?:\/\//i.test(url || '') || !manifestText.startsWith('#EXTM3U')) return [];
-      if (manifestText.includes('#EXT-X-STREAM-INF')) {
-        const parsed = this.parseM3u8Formats(manifestText, url);
-        return parsed || [];
-      }
-      if (!manifestText.includes('#EXTINF') && !manifestText.includes('#EXT-X-ENDLIST')) return [];
+      if (manifestText.includes('#EXT-X-STREAM-INF') || (hasSelectedAudio && url === selectedAudioUrl)) return [];
+      const totalDuration = this.completeHlsDuration(manifestText, mediaEl);
+      if (totalDuration <= 0) return [];
       let height = Number(s.getAttribute('data-smartdm-height')) || 0;
       if (height <= 0 && url) height = SmartDmUtils.extractResolutionNumber(url);
       if (height <= 0 && mediaEl && mediaEl.videoHeight > 0) height = SmartDmUtils.normalizeVideoResolution(mediaEl.videoWidth || 0, mediaEl.videoHeight);
       return [{formatId: 'captured_hls_' + height, resolution: height ? `${height}p (MP4)` : 'Playing quality (MP4)',
-        ext: 'mp4', mediaKind: 'hls', manifestText, audioUrl: audio && audio.getAttribute('data-smartdm-url'),
-        audioManifestText: audio && audio.textContent, url, directUrl: url, height, isAudioOnly: false,
+        ext: 'mp4', mediaKind: 'hls', manifestText, totalDuration, audioUrl: audio?.getAttribute('data-smartdm-url') || (hasSelectedAudio ? selectedAudioUrl : null),
+        audioManifestText: audio?.textContent || null, url, directUrl: url, height, isAudioOnly: false,
         title: (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.extractWatchPageTitle?.()) || (typeof document !== 'undefined' && document.title) || 'Video', referer: window.location.href}];
     }).filter(Boolean);
     return formats.length ? {success: true, title: formats[0].title, formats} : null;
@@ -2711,7 +2739,8 @@ class FormatRegistryEngine {
       // Unbound tab-wide captures must not substitute a different thumbnail video.
       const key = this.youTubeCacheKey(videoUrl);
       const binding = mediaEl ? this.playerBinding(mediaEl) : null;
-      const selectedSource = binding?.video || mediaEl?.currentSrc || mediaEl?.src;
+      const adPlaying = mediaEl?.closest?.('.html5-video-player')?.classList?.contains('ad-showing');
+      const selectedSource = adPlaying ? null : binding?.video || mediaEl?.currentSrc || mediaEl?.src;
       let available = null;
       let lookupDone = false;
       let lookupResult = null;
@@ -2719,7 +2748,8 @@ class FormatRegistryEngine {
       const deliverFailure = () => {
         if (lookupDone && fallbackDone && !available && !lookupResult?.success) callback?.(lookupResult, false);
       };
-      this.fetchYouTubeFormats(videoUrl, result => {
+      this.fetchYouTubeFormats(videoUrl, (result, pending) => {
+        if (pending) { callback?.(result, true); return; }
         lookupDone = true;
         lookupResult = result;
         if (result?.success && result.formats?.length) callback?.(result, false);
@@ -2732,7 +2762,7 @@ class FormatRegistryEngine {
           (binding?.audio && (f.url || f.directUrl) === binding.audio));
         if (selected.length) {
           available = {...result, formats: selected.map(f => ({...f, assetId: key}))};
-          if (!lookupResult?.success) callback?.(available, false);
+          if (!lookupResult?.success) callback?.(available, !lookupDone);
         } else deliverFailure();
       });
       return;

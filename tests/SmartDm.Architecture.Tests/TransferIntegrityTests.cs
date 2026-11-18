@@ -49,7 +49,7 @@ public class TransferIntegrityTests
             DefaultSpeedLimitKbps = 250
         });
         var engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner());
-        var viewModel = new MainViewModel(engine: engine, settingsService: settings, isDemoMode: true);
+        var viewModel = SmartDm.Desktop.Avalonia.DesktopComposition.CreateMainViewModel(engine: engine, settingsService: settings, isDemoMode: true);
 
         Assert.Equal(250 * 1024, engine.SpeedLimiter.LimitBytesPerSec);
         Assert.Contains("HTTP Speed Limit", viewModel.ThrottlingStatus);
@@ -466,7 +466,7 @@ public class TransferIntegrityTests
     [Fact]
     public void MainViewModel_FindActiveDownloadByUrl_PreventsCdnVideoplaybackCollisions()
     {
-        var mainVm = new MainViewModel(isDemoMode: true);
+        var mainVm = SmartDm.Desktop.Avalonia.DesktopComposition.CreateMainViewModel(isDemoMode: true);
         string streamUrlA = "https://rr3---sn-4g5edn6s.googlevideo.com/videoplayback?expire=12345&id=videoA_stream";
         string streamUrlB = "https://rr3---sn-4g5edn6s.googlevideo.com/videoplayback?expire=99999&id=videoB_stream";
 

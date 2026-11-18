@@ -49,13 +49,13 @@ public sealed class MovieStreamingRecoveryTests
     }
 
     [Theory]
-    [InlineData("https://moon.goldenkite.top/hls/master.m3u8", 4)]
-    [InlineData("https://api.anime.nexus/hls/01a1025f/master.m3u8", 4)]
-    [InlineData("https://clearhoney.sunwaveclear.top/m/strm.m3u8", 4)]
-    [InlineData("https://megap.shiora.top/hls/stream.m3u8", 4)]
-    public void AddDownloadViewModel_CapsParallelThreads_ForStreamingCdns(string url, int expectedThreads)
+    [InlineData("https://moon.goldenkite.top/hls/master.m3u8", 16)]
+    [InlineData("https://api.anime.nexus/hls/01a1025f/master.m3u8", 8)]
+    [InlineData("https://clearhoney.sunwaveclear.top/m/strm.m3u8", 12)]
+    [InlineData("https://megap.shiora.top/hls/stream.m3u8", 2)]
+    public void AddDownloadViewModel_KeepsConfiguredWorkers_ForStreamingCdns(string url, int expectedThreads)
     {
-        var settings = new AppSettingsModel { MaxParallelSegments = 16 };
+        var settings = new AppSettingsModel { MaxParallelSegments = expectedThreads };
         var vm = new AddDownloadViewModel(
             settings: settings,
             initialUrl: url,

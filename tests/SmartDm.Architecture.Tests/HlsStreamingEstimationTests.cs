@@ -143,6 +143,15 @@ public sealed class HlsStreamingEstimationTests
     }
 
     [Fact]
+    public void ParseMasterManifest_PopulatesAudioUrl_FromAudioMediaRendition()
+    {
+        var formats = HlsMediaResolver.ParseMasterManifest(MasterPlaylistWithBw, "https://example.com/master.m3u8?token=secret123");
+        Assert.Equal(2, formats.Count);
+        Assert.Equal("https://example.com/audio/prog_index.m3u8?token=secret123", formats[0].AudioUrl);
+        Assert.Equal("https://example.com/audio/prog_index.m3u8?token=secret123", formats[1].AudioUrl);
+    }
+
+    [Fact]
     public void AddDownloadViewModel_ComputesEffectiveSize_FromDurationAndBandwidth()
     {
         var formats = new List<MediaFormatDto>

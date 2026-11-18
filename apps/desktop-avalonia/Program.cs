@@ -12,7 +12,12 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        if (System.Linq.Enumerable.Any(args ?? Array.Empty<string>(), value => value.StartsWith("--test-", StringComparison.Ordinal) || value.StartsWith("--snapshot", StringComparison.Ordinal) || value == "--child-transfer-worker")) Services.AppProfile.IsolateDiagnostics();
+        if (System.Linq.Enumerable.Contains(args ?? Array.Empty<string>(), "--browser-native-host"))
+        {
+            Services.NativeMessagingBridge.RunHostAsync(args ?? Array.Empty<string>()).GetAwaiter().GetResult();
+            return;
+        }
+        if (System.Linq.Enumerable.Any(args ?? Array.Empty<string>(), value => value.StartsWith("--test-", StringComparison.Ordinal) || value.StartsWith("--snapshot", StringComparison.Ordinal) || value == "--demo" || value == "--child-transfer-worker")) Services.AppProfile.IsolateDiagnostics();
         if (args != null && System.Linq.Enumerable.Contains(args, "--child-transfer-worker"))
         {
             RunChildTransferWorkerAsync(args).GetAwaiter().GetResult();
@@ -144,7 +149,7 @@ sealed class Program
         try
         {
             string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string ipcPath = System.IO.Path.Combine(userProfile, ".smartdm", "ipc.info");
+            string ipcPath = System.IO.Path.Combine(Services.AppProfile.DirectoryPath, "ipc.info");
             if (!System.IO.File.Exists(ipcPath)) return false;
 
             string[] lines = System.IO.File.ReadAllLines(ipcPath);
@@ -155,7 +160,8 @@ sealed class Program
             using var client = new System.Net.Http.HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(800) };
             using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"http://127.0.0.1:{port}/api/browser");
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            req.Content = new System.Net.Http.StringContent("{\"type\":\"RESTORE_WINDOW\"}", System.Text.Encoding.UTF8, "application/json");
+            req.Headers.Add("X-SmartDM-Protocol", "1");
+            req.Content = new System.Net.Http.StringContent("{\"protocolVersion\":1,\"type\":\"RESTORE_WINDOW\"}", System.Text.Encoding.UTF8, "application/json");
 
             var resp = client.Send(req);
             if (resp.IsSuccessStatusCode)
@@ -737,7 +743,7 @@ sealed class Program
 
         // 3. MainViewModel PauseAllCommand & ResumeAllCommand Test
         Console.WriteLine("[TEST 3] Verifying MainViewModel PauseAllCommand & ResumeAllCommand...");
-        var mainVm = new ViewModels.MainViewModel(isDemoMode: true);
+        var mainVm = DesktopComposition.CreateMainViewModel(isDemoMode: true);
 
         // Execute PauseAll
         await mainVm.PauseAllCommand.ExecuteAsync(null);
@@ -811,7 +817,7 @@ sealed class Program
 
         // TEST 2: MainViewModel Active Download Tracking
         Console.WriteLine("[TEST 2] Verifying MainViewModel.FindActiveDownloadByUrl & IsPathInUse...");
-        var mainVm = new ViewModels.MainViewModel(isDemoMode: true);
+        var mainVm = DesktopComposition.CreateMainViewModel(isDemoMode: true);
         string testUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
         string targetPath = @"C:\Users\test\Downloads\rickroll.mp4";
 
@@ -877,85 +883,32 @@ sealed class Program
 
     private static async System.Threading.Tasks.Task RunPnaPreflightTestAsync()
     {
-        Console.WriteLine("=== Starting SmartDM 2.0 PNA Preflight & Media Format Resolution Test ===");
-        string ipcInfoPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm", "ipc.info");
-        bool existing = System.IO.File.Exists(ipcInfoPath);
-
-        int port = 18420;
-        if (existing)
-        {
-            string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
-            if (lines.Length > 0 && int.TryParse(lines[0], out int parsedPort)) port = parsedPort;
-        }
-
-        bool serverAlive = false;
+        Console.WriteLine("=== SmartDM 2.0 authenticated IPC diagnostic ===");
+        var ipc = new Services.LocalIpcService();
+        await ipc.StartAsync();
         try
         {
-            using var pingClient = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromMilliseconds(600) };
-            var ping = await pingClient.GetAsync($"http://127.0.0.1:{port}/api/browser");
-            if (ping.IsSuccessStatusCode) serverAlive = true;
+            string[] descriptor = await System.IO.File.ReadAllLinesAsync(System.IO.Path.Combine(Services.AppProfile.DirectoryPath, "ipc.info"));
+            string address = $"http://127.0.0.1:{descriptor[0]}/api/browser";
+            using var client = new System.Net.Http.HttpClient {Timeout = TimeSpan.FromSeconds(5)};
+            using var forbidden = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Options, address);
+            forbidden.Headers.Add("Origin", "https://untrusted.invalid");
+            forbidden.Headers.Add("Access-Control-Request-Private-Network", "true");
+            using var refused = await client.SendAsync(forbidden);
+            if (refused.StatusCode != System.Net.HttpStatusCode.Forbidden || refused.Headers.Contains("Access-Control-Allow-Private-Network"))
+                throw new InvalidOperationException("Foreign-origin requests must fail closed.");
+            using var unauthorized = await client.PostAsync(address, new System.Net.Http.StringContent("{}"));
+            if (unauthorized.StatusCode != System.Net.HttpStatusCode.Unauthorized)
+                throw new InvalidOperationException("Loopback alone must not authorize a request.");
+            using var authorized = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, address);
+            authorized.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", descriptor[1]);
+            authorized.Headers.Add("X-SmartDM-Protocol", "1");
+            authorized.Content = new System.Net.Http.StringContent("{\"protocolVersion\":1,\"type\":\"SHOW_WINDOW\"}");
+            using var accepted = await client.SendAsync(authorized);
+            accepted.EnsureSuccessStatusCode();
+            Console.WriteLine("Authenticated activation accepted; unauthenticated and foreign-origin requests rejected.");
         }
-        catch { }
-
-        Services.LocalIpcService? ipc = null;
-        if (!serverAlive)
-        {
-            ipc = new Services.LocalIpcService();
-            await ipc.StartAsync();
-            string[] lines = await System.IO.File.ReadAllLinesAsync(ipcInfoPath);
-            port = int.Parse(lines[0]);
-        }
-
-        Console.WriteLine($"[INFO] Testing LocalIpcService on port: {port} (external instance: {serverAlive})");
-
-        using var client = new System.Net.Http.HttpClient();
-
-        // 1. Send GET for fast liveness probe
-        var getReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"http://127.0.0.1:{port}/api/browser");
-        getReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
-        var getResp = await client.SendAsync(getReq);
-        Console.WriteLine($"[GET LIVENESS] Status: {getResp.StatusCode}");
-        if (getResp.StatusCode != System.Net.HttpStatusCode.OK) throw new Exception("GET /api/browser did not return 200 OK!");
-
-        // 2. Send OPTIONS with Access-Control-Request-Private-Network
-        var optReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Options, $"http://127.0.0.1:{port}/api/browser");
-        optReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
-        optReq.Headers.Add("Access-Control-Request-Private-Network", "true");
-        optReq.Headers.Add("Access-Control-Request-Method", "POST");
-
-        var optResp = await client.SendAsync(optReq);
-        Console.WriteLine($"[OPTIONS] Status: {optResp.StatusCode}");
-        bool hasPnaHeader = optResp.Headers.TryGetValues("Access-Control-Allow-Private-Network", out var pnaVals) &&
-                            System.Linq.Enumerable.FirstOrDefault(pnaVals) == "true";
-        Console.WriteLine($"[PASS] Access-Control-Allow-Private-Network: true => {hasPnaHeader}");
-        if (!hasPnaHeader) throw new Exception("OPTIONS preflight missing Access-Control-Allow-Private-Network header!");
-
-        // 2. Send POST GET_MEDIA_FORMATS for YouTube
-        var postContent = new System.Net.Http.StringContent(
-            "{\"type\":\"GET_MEDIA_FORMATS\",\"url\":\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"}",
-            System.Text.Encoding.UTF8,
-            "application/json"
-        );
-        var postReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"http://127.0.0.1:{port}/api/browser");
-        postReq.Content = postContent;
-        postReq.Headers.Add("Origin", "chrome-extension://test-smartdm");
-
-        var postResp = await client.SendAsync(postReq);
-        string body = await postResp.Content.ReadAsStringAsync();
-        Console.WriteLine($"[POST] Status: {postResp.StatusCode}");
-        Console.WriteLine($"[POST] Response length: {body.Length} bytes");
-
-        bool postHasPna = postResp.Headers.TryGetValues("Access-Control-Allow-Private-Network", out var postPnaVals) &&
-                          System.Linq.Enumerable.FirstOrDefault(postPnaVals) == "true";
-        Console.WriteLine($"[PASS] POST Access-Control-Allow-Private-Network: true => {postHasPna}");
-
-        using var jsonDoc = System.Text.Json.JsonDocument.Parse(body);
-        string status = jsonDoc.RootElement.GetProperty("status").GetString() ?? "";
-        int formatsCount = jsonDoc.RootElement.GetProperty("formats").GetArrayLength();
-        Console.WriteLine($"[PASS] Resolved status: '{status}', formats count: {formatsCount}");
-
-        ipc?.Stop();
-        Console.WriteLine("=== SmartDM 2.0 PNA Preflight & Media Format Resolution Test PASSED! ===");
+        finally {ipc.Stop();}
     }
 
     private static async System.Threading.Tasks.Task RunHlsSegmentationTestAsync()
@@ -1149,7 +1102,7 @@ index-f3.m3u8";
             Console.WriteLine($"Path:    {dl.SavePath}");
             Console.WriteLine($"URL:     {dl.Url}");
             Console.WriteLine($"Referer: {dl.Referer ?? "<null>"}");
-            Console.WriteLine($"Cookies:\n{dl.Cookies ?? "<null>"}");
+            Console.WriteLine("Cookies: [REDACTED]");
             Console.WriteLine($"UA:      {dl.UserAgent ?? "<null>"}");
             Console.WriteLine($"PageUrl: {dl.PageUrl ?? "<null>"}");
         }

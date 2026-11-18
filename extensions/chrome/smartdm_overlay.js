@@ -38,6 +38,8 @@
       }
     });
 
+    const isHls = (format, url) => (format.mediaKind || format.MediaKind) === 'hls' ||
+      /\.m3u8(?:[?#]|$)/i.test(url || '');
     const formatsList = effectiveFormats.map((f, index) => {
       const isAud = !!(f.isAudioOnly || f.IsAudioOnly);
       const fUrl = f.directUrl || f.DirectUrl || f.url || f.Url || f.videoUrl || f.VideoUrl || null;
@@ -48,6 +50,8 @@
         resolution: f.resolution || f.Resolution || f.qualityLabel || (isAud ? 'Audio Only' : 'Video'),
         ext: fExt,
         fileSize: f.fileSize || f.FileSize || 0,
+        totalDuration: f.totalDuration || f.TotalDuration || 0,
+        bandwidth: f.bandwidth || f.Bandwidth || 0,
         isAudioOnly: isAud,
         title: finalBaseTitle,
         url: fUrl,
@@ -55,7 +59,7 @@
         mediaKind: f.mediaKind || f.MediaKind || (/\.m3u8(?:[?#]|$)/i.test(fUrl || '') ? 'hls' : null),
         manifestText: f.manifestText || f.ManifestText || null,
         audioManifestText: f.audioManifestText || f.AudioManifestText || null,
-        audioUrl: f.audioUrl || f.AudioUrl || (!isAud && bestAudioUrl && bestAudioUrl !== fUrl ? bestAudioUrl : null)
+        audioUrl: f.audioUrl || f.AudioUrl || (!isAud && !isHls(f, fUrl) && bestAudioUrl && bestAudioUrl !== fUrl ? bestAudioUrl : null)
       };
     });
 
@@ -122,7 +126,7 @@
     }
     const selectedFormatId = String(targetItem.formatId || targetItem.FormatId || formatsList.find(f => f.directUrl === directDownloadUrl)?.formatId || 'direct_selected');
 
-    let rawAudio = targetItem.audioUrl || (!targetItem.isAudioOnly && targetItem.formatId !== 'thumbnail' ? bestAudioUrl : null);
+    let rawAudio = targetItem.audioUrl || targetItem.AudioUrl || (!isHls(targetItem, directDownloadUrl) && !targetItem.isAudioOnly && targetItem.formatId !== 'thumbnail' ? bestAudioUrl : null);
     if (typeof SmartDmUtils !== 'undefined' && SmartDmUtils.sanitizeStreamUrl) {
       rawAudio = SmartDmUtils.sanitizeStreamUrl(rawAudio);
     }
@@ -406,6 +410,10 @@
               if (key) {
                 const existing = FormatRegistryEngine.mediaFormatCache[key];
                 const hasHd = FormatRegistryEngine.hasHighResFormats ? FormatRegistryEngine.hasHighResFormats(parsed.formats) : false;
+                if (existing?.status === 'pending') {
+                  if (hasHd || !existing.data) existing.data = parsed;
+                  return;
+                }
                 if (!existing || existing.status !== 'done' || !FormatRegistryEngine.hasHighResFormats?.(existing.data?.formats)) {
                   FormatRegistryEngine.mediaFormatCache[key] = {
                     youtube: true,

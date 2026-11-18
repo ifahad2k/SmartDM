@@ -113,3 +113,55 @@ Owner reaffirmed active development is **SmartDM 2.0 only**, C# / Avalonia and
 its extensions. Java 1.0 is discontinued for this work; its preserved history is
 not an implementation or analysis target. Report repairs are local at `8f1465c`;
 no new branch publication. See [handoff](implementation/REPORT_REPAIR_HANDOFF.md).
+
+
+## 2026-11-17 security remediation snapshot
+
+Security work began on `sdm2.0` at `3f59d5e`. A concurrent browser commit moved
+HEAD to `6c91563`; its changes are preserved. The security session did not commit,
+push or synchronize branches. Java worktree `main` remains at `b705fd0` untouched.
+Current proof: 464 C# / 333 browser tests pass; see [test evidence](implementation/TEST_EVIDENCE.md).
+
+
+## 2026-11-17 structural refactor snapshot
+
+Graphify-guided cleanup remains on `sdm2.0` at `6c91563` plus preserved dirty work.
+No commit, push or branch synchronization was performed. Java `main` is unchanged.
+See [structural handoff](implementation/STRUCTURAL_REFACTOR_HANDOFF.md): 468 C#,
+335 browser and two graph-tool checks pass; package/release gates remain open.
+
+## 2026-11-17 staging disk-use repair
+
+Still `sdm2.0` at `6c91563` plus preserved working changes. Preview transfers and
+legacy mock history are blocked from real I/O; staging grows with received data
+under the shared user profile. No Java changes, commit, push or branch sync.
+478 C# / 335 browser checks pass. See
+[disk-use handoff](implementation/STAGING_DISK_USAGE_HANDOFF.md).
+
+2026-11-17: draggable player/thumbnail buttons implemented on this same C# branch;
+347 browser checks pass. No publication or Java changes. See
+[UI handoff](implementation/DRAGGABLE_OVERLAY_HANDOFF.md).
+
+2026-11-17: nested-player control ownership repaired on `sdm2.0`; 357 browser tests
+pass. No branch publication. See [handoff](implementation/PLAYER_OWNERSHIP_HANDOFF.md).
+
+2026-11-17: approved Graphite Direct menu and native toolbar popup implemented on
+the same working branch; 376 browser checks pass. No publication. See
+[appearance handoff](implementation/OVERLAY_APPEARANCE_HANDOFF.md).
+
+
+## 2026-11-17 visible media size and progressive metadata
+
+Still sdm2.0 at 6c91563 plus preserved working changes; no publication/Java edits. Visible media sizes and progressive metadata/parallelism repaired: 483 C# / 391 browser cases pass. See [handoff](implementation/MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md).
+
+## 2026-11-18 HLS stream reliability
+
+The `sdm2.0` working tree repairs shared HLS handoff and fragmented MP4 transfers. [HLS handoff](implementation/HLS_STREAM_RELIABILITY_HANDOFF.md).
+
+## 2026-11-18 worker count and media discovery
+
+The C# checkout keeps the configured worker count for supported HLS and range transfers. Both browser extensions preserve YouTube HD discovery and verified playlist captures. [Handoff](implementation/WORKERS_AND_MEDIA_DISCOVERY_HANDOFF.md)
+
+## 2026-11-18 HLS startup and selected audio
+
+The C# checkout keeps gradual HLS startup and selected audio discovery in the shared SmartDM 2.0 paths. [Handoff](implementation/HLS_START_AND_AUDIO_HANDOFF.md)

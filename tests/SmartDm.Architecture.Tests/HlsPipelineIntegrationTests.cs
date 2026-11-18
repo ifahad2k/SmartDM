@@ -10,17 +10,19 @@ namespace SmartDm.Architecture.Tests;
 public sealed class HlsPipelineIntegrationTests
 {
     [HlsPipelineTheory]
-    [InlineData(false, false, true)]
-    [InlineData(true, false, true)]
-    [InlineData(true, true, true)]
-    [InlineData(false, false, false)]
-    public async Task RealEngine_RemuxesLongFmp4Playlist_WithRequiredReferrer(bool captured, bool separateAudio, bool longPlaylist)
+    [InlineData(false, false, true, false, false)]
+    [InlineData(true, false, true, false, false)]
+    [InlineData(true, true, true, false, false)]
+    [InlineData(true, true, false, false, true)]
+    [InlineData(false, false, false, false, false)]
+    [InlineData(true, false, false, true, false)]
+    public async Task RealEngine_RemuxesLongFmp4Playlist_WithRequiredReferrer(bool captured, bool separateAudio, bool longPlaylist, bool staleMaster, bool audioUrlOnly)
     {
         string ffmpeg = DownloadEngine.ResolveFfmpegPath() ?? throw new InvalidOperationException("Verified FFmpeg required.");
         string dir = Path.Combine(Path.GetTempPath(), "smartdm-movie-fixture-" + Guid.NewGuid());
         Directory.CreateDirectory(dir);
         const string referer = "https://player.invalid/embed/movie";
-        var model = new DownloadModel { SavePath = Path.Combine(dir, "result.mp4"), MediaKind = "hls", Referer = referer };
+        var model = new DownloadModel { SavePath = Path.Combine(dir, "result.mp4"), MediaKind = "hls", Referer = referer, ParallelThreads = 4 };
         DownloadEngine? engine = null;
         try
         {
@@ -35,31 +37,52 @@ public sealed class HlsPipelineIntegrationTests
                     "-hls_time", "4", "-hls_segment_type", "fmp4", "-hls_playlist_type", "vod", "-hls_fmp4_init_filename", "audio-init.mp4",
                     "-hls_segment_filename", Path.Combine(dir, "audio%d.m4s"), Path.Combine(dir, "audio.m3u8") }, dir);
             await using var initServer = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "init.mp4"))) { RequiredReferer = referer };
-            await using var segmentServer = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "part0.m4s"))) { RequiredReferer = referer };
+            await using var segmentServer = new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "part0.m4s")))
+            { RequiredReferer = referer, ChunkDelayMs = separateAudio ? 200 : 0 };
             await using var audioInitServer = separateAudio ? new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio-init.mp4"))) { RequiredReferer = referer } : null;
-            await using var audioSegmentServer = separateAudio ? new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio0.m4s"))) { RequiredReferer = referer } : null;
+            await using var audioSegmentServer = separateAudio ? new TestHttpServer(await File.ReadAllBytesAsync(Path.Combine(dir, "audio0.m4s")))
+            { RequiredReferer = referer, ChunkDelayMs = 200 } : null;
             string playlist = (await File.ReadAllTextAsync(Path.Combine(dir, "source.m3u8")))
                 .Replace("init.mp4", initServer.BaseUrl + "/init.mp4").Replace("part0.m4s", segmentServer.BaseUrl + "/part.m4s")
                 + (longPlaylist ? "#" + new string('s', 704_377) + "\n" : "");
             await using var manifestServer = new TestHttpServer(Encoding.UTF8.GetBytes(playlist)) { RequiredReferer = referer };
             model.Url = manifestServer.BaseUrl + "/movie.m3u8";
-            if (captured) model.ManifestText = playlist;
+            if (captured) model.ManifestText = staleMaster
+                ? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nmovie.m3u8\n"
+                : playlist;
+            string? audioPlaylist = separateAudio
+                ? (await File.ReadAllTextAsync(Path.Combine(dir, "audio.m3u8")))
+                    .Replace("audio-init.mp4", audioInitServer!.BaseUrl + "/init.mp4").Replace("audio0.m4s", audioSegmentServer!.BaseUrl + "/part.m4s")
+                : null;
+            await using var audioPlaylistServer = audioUrlOnly
+                ? new TestHttpServer(Encoding.UTF8.GetBytes(audioPlaylist!)) { RequiredReferer = referer }
+                : null;
             if (separateAudio)
             {
-                model.AudioUrl = manifestServer.BaseUrl + "/audio.m3u8";
-                model.AudioManifestText = (await File.ReadAllTextAsync(Path.Combine(dir, "audio.m3u8")))
-                    .Replace("audio-init.mp4", audioInitServer!.BaseUrl + "/init.mp4").Replace("audio0.m4s", audioSegmentServer!.BaseUrl + "/part.m4s");
+                model.AudioUrl = (audioPlaylistServer?.BaseUrl ?? manifestServer.BaseUrl) + "/audio.m3u8";
+                if (!audioUrlOnly) model.AudioManifestText = audioPlaylist;
             }
             engine = new DownloadEngine(new InMemoryDatabaseRepository(), new DirectCleanSafetyScanner());
+            bool usedNativeChunks = false;
+            int peakActiveWorkers = 0;
+            engine.DownloadProgressChanged += download =>
+            {
+                if (download.StatusDetail?.StartsWith("Remuxing stream to MP4", StringComparison.Ordinal) == true)
+                    usedNativeChunks = true;
+                peakActiveWorkers = Math.Max(peakActiveWorkers, engine.GetSegments(download.Id).Count(s => s.IsActive));
+            };
             await engine.StartDownloadAsync(model);
             var deadline = Stopwatch.StartNew();
             while (deadline.Elapsed < TimeSpan.FromSeconds(25) && model.Status is not (DownloadStatus.Completed or DownloadStatus.Failed))
                 await Task.Delay(50);
             Assert.True(model.Status == DownloadStatus.Completed, model.StatusDetail);
+            Assert.True(usedNativeChunks, "Initialization and media fragments must be downloaded before local remux.");
+            Assert.Equal(4, model.ParallelThreads);
             Assert.Contains(referer, initServer.ObservedReferers);
             Assert.Contains(referer, segmentServer.ObservedReferers);
             if (separateAudio)
             {
+                Assert.True(peakActiveWorkers >= 2, "Video and audio fragment requests must overlap.");
                 Assert.Contains(referer, audioInitServer!.ObservedReferers);
                 Assert.Contains(referer, audioSegmentServer!.ObservedReferers);
             }

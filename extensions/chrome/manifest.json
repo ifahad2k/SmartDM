@@ -13,7 +13,8 @@
     "downloads",
     "*://music.youtube.com/*",
     "*://*.bilibili.com/*",
-    "*://*.bilibili.tv/*"
+    "*://*.bilibili.tv/*",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>",
@@ -25,7 +26,8 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Download with SmartDM"
+    "default_title": "SmartDM",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {
@@ -56,6 +58,7 @@
         "modules/utils.js",
         "modules/visual_mount.js",
         "modules/format_engine.js",
+        "modules/appearance.js",
         "modules/overlay_ui.js",
         "modules/watcher.js",
         "smartdm_overlay.js"

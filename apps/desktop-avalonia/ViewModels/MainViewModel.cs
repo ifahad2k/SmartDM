@@ -191,25 +191,25 @@ public partial class MainViewModel : ViewModelBase
     public IHttpProbeService ProbeService => _probeService;
 
     public MainViewModel(
-        IDownloadEngine? engine = null,
-        IDatabaseRepository? repository = null,
-        IHttpProbeService? probeService = null,
-        ISafetyScanner? safetyScanner = null,
-        ILocalIpcService? ipcService = null,
-        ISettingsService? settingsService = null,
-        IFileCatalogService? catalogService = null,
-        IQueueManager? queueManager = null,
+        IDownloadEngine engine,
+        IDatabaseRepository repository,
+        IHttpProbeService probeService,
+        ISafetyScanner safetyScanner,
+        ILocalIpcService ipcService,
+        ISettingsService settingsService,
+        IFileCatalogService catalogService,
+        IQueueManager queueManager,
         bool isDemoMode = false)
     {
         _isDemoMode = isDemoMode;
-        _repository = repository ?? new SqliteDatabaseRepository();
-        _safetyScanner = safetyScanner ?? new SafetyScannerService();
-        _engine = engine ?? new DownloadEngine(_repository, _safetyScanner);
-        _probeService = probeService ?? new HttpProbeService();
-        _ipcService = ipcService ?? new LocalIpcService();
-        _settingsService = settingsService ?? new SettingsService();
-        _catalogService = catalogService ?? new FileCatalogService();
-        _queueManager = queueManager ?? new QueueManager();
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _safetyScanner = safetyScanner ?? throw new ArgumentNullException(nameof(safetyScanner));
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _probeService = probeService ?? throw new ArgumentNullException(nameof(probeService));
+        _ipcService = ipcService ?? throw new ArgumentNullException(nameof(ipcService));
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _catalogService = catalogService ?? throw new ArgumentNullException(nameof(catalogService));
+        _queueManager = queueManager ?? throw new ArgumentNullException(nameof(queueManager));
 
         // Only explicitly indexed downloads enter the catalog.
 
@@ -324,7 +324,7 @@ public partial class MainViewModel : ViewModelBase
 
             // Reconcile staging directories: preserve valid partials for active/resumable downloads
             var activeOrResumableIds = stored
-                .Where(d => d.Status != DownloadStatus.Completed)
+                .Where(d => d.Status != DownloadStatus.Completed && !PreviewTransfers.IsPreview(d))
                 .Select(d => d.Id)
                 .ToHashSet();
             DownloadEngine.CleanupOrphanStagingDirectories(activeOrResumableIds, TimeSpan.FromHours(24));
@@ -379,6 +379,15 @@ public partial class MainViewModel : ViewModelBase
         dl.IconBitmap = LoadIcon(Path.GetFileName(dl.IconSource ?? "disc-blue.png"));
         dl.OnOpenMonitor = d => RequestOpenMonitor?.Invoke(d);
         dl.OnOpenInspector = d => RequestOpenInspector?.Invoke(d);
+        if (_isDemoMode || PreviewTransfers.IsPreview(dl))
+        {
+            dl.IsPreview = true;
+            dl.OnPause = dl.OnResume = dl.OnCancel = d => d.StatusDetail = PreviewTransfers.DisabledMessage;
+            dl.OnDelete = d => RequestOpenDeleteConfirm?.Invoke(d);
+            dl.OnProperties = d => ShowProperties(d);
+            dl.OnSelect = d => SelectDownload(d);
+            return;
+        }
         dl.OnPause = async d =>
         {
             try
@@ -725,9 +734,10 @@ public partial class MainViewModel : ViewModelBase
 
     public async Task DeleteDownloadAsync(DownloadModel dl, bool deleteFileOnDisk = false)
     {
+        bool preview = _isDemoMode || PreviewTransfers.IsPreview(dl);
         try
         {
-            if (dl.Status == DownloadStatus.Active || dl.Status == DownloadStatus.Queued)
+            if (!preview && (dl.Status == DownloadStatus.Active || dl.Status == DownloadStatus.Queued))
             {
                 await _engine.CancelDownloadAsync(dl.Id);
             }
@@ -738,11 +748,11 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
-        if (deleteFileOnDisk)
+        if (deleteFileOnDisk && !preview)
             await DownloadDestinationService.DeleteConfirmedFileAsync(dl);
 
         _allMasterDownloads.Remove(dl);
-        await _repository.DeleteDownloadAsync(dl.Id);
+        if (!_isDemoMode) await _repository.DeleteDownloadAsync(dl.Id);
 
         if (SelectedDownload == dl)
         {
@@ -752,7 +762,7 @@ public partial class MainViewModel : ViewModelBase
         UpdateCounts();
         ApplyFilters();
         RefreshEngineMetrics();
-        _queueManager.TriggerQueueProcessing();
+        if (!preview) _queueManager.TriggerQueueProcessing();
     }
 
     private static void OpenFileNative(string filePath)
@@ -819,182 +829,7 @@ public partial class MainViewModel : ViewModelBase
 
     private void InitializeDemoData()
     {
-        // Reserved strictly for UI preview & automated snapshots
-        _allMasterDownloads.Add(new DownloadModel
-        {
-            Title = "Ubuntu-24.04-LTS-Desktop-Kernel6.8-x86_64.iso",
-            Url = "https://releases.ubuntu.com/24.04/Ubuntu-24.04-LTS-Desktop-Kernel6.8-x86_64.iso",
-            Domain = "releases.ubuntu.com",
-            TotalBytes = 6657199308L,
-            DownloadedBytes = 5176162385L,
-            ProgressPercentage = 77.9,
-            SpeedMbps = 84.6,
-            Status = DownloadStatus.Active,
-            Category = "ISO",
-            SecondaryBadge = "TURBO x16",
-            IconSource = "/Assets/Icons/disc-blue.png",
-            IconBitmap = LoadIcon("disc-blue.png"),
-            IconBg = "#EAF2FF",
-            ParallelThreads = 16,
-            ActiveMirrors = 3,
-            EtaSeconds = 16,
-            StatusDetail = "16 Multi-Socket Chunks",
-            SavePath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Ubuntu-24.04-LTS-Desktop-Kernel6.8-x86_64.iso"),
-            FooterDetail = "Pre-allocated memory space • Safe hash pre-match (SHA-256)",
-            FooterRight = "Chunk allocation: 16/16 Connected",
-            HttpProtocol = "HTTP/2 TLS 1.3",
-            MimeType = "application/x-iso9660-image",
-            AcceptsRanges = "bytes (Multi-part enabled)",
-            ServerSoftware = "Apache/2.4.58 (Ubuntu)",
-            ETag = "\"66228ba7-18d223c\"",
-            Sha256Hash = "a4358a9e7eb22f46215320579e09d17d5e6de6b92f7c030ef7682f71f654b0e9",
-            StartedAt = "Today 10:14 PM",
-            CompletedAt = "--",
-            SmartRule = "by extension (*.iso -> ISO Images)",
-            AllocationMethod = "Pre-allocated Sparse (Zero Frag)",
-            AvScannerName = "Windows Defender Engine 1.1.24080"
-        });
-
-        _allMasterDownloads.Add(new DownloadModel
-        {
-            Title = "AI_LLM_Weights_70B_Q4_K_M_Instruct_v2.gguf.zip",
-            Url = "https://huggingface.co/models/AI_LLM_Weights_70B_Q4_K_M_Instruct_v2.gguf.zip",
-            Domain = "huggingface.co/models",
-            TotalBytes = 41768878080L,
-            DownloadedBytes = 15245864110L,
-            ProgressPercentage = 36.5,
-            SpeedMbps = 43.8,
-            Status = DownloadStatus.Active,
-            Category = "ZIP",
-            SecondaryBadge = "32 Chunks",
-            IconSource = "/Assets/Icons/box-blue.png",
-            IconBitmap = LoadIcon("box-blue.png"),
-            IconBg = "#EAF2FF",
-            ParallelThreads = 32,
-            ActiveMirrors = 2,
-            EtaSeconds = 563,
-            StatusDetail = "Hetzner Multi-Mirror Cluster",
-            SavePath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AI_LLM_Weights_70B_Q4_K_M_Instruct_v2.gguf.zip"),
-            FooterDetail = "Direct Multi-mirror Hetzner cluster (Active peer mesh)",
-            FooterRight = "Segment Write Rate: 720 IOPS",
-            HttpProtocol = "HTTP/2 TLS 1.3",
-            MimeType = "application/zip",
-            AcceptsRanges = "bytes (Multi-part enabled)",
-            ServerSoftware = "cloudflare-nginx",
-            ETag = "\"5f8b2a19-9b98020\"",
-            Sha256Hash = "8f4e2c91b53e77862a901f4c2847a9501a4e21bc0879f98231c5908e7df01a2b",
-            StartedAt = "Today 09:42 PM",
-            CompletedAt = "--",
-            SmartRule = "by extension (*.zip -> Archives)",
-            AllocationMethod = "Sparse Fallocate (Zero Frag)",
-            AvScannerName = "Windows Defender Engine 1.1.24080"
-        });
-
-        _allMasterDownloads.Add(new DownloadModel
-        {
-            Title = "Render_Cinematic_Frame_Pass_8K_Master_001.png",
-            Url = "https://cdn.motionstorage.net/assets/Render_Cinematic_Frame_Pass_8K_Master_001.png",
-            Domain = "cdn.motionstorage.net",
-            TotalBytes = 155609088L,
-            DownloadedBytes = 155609088L,
-            ProgressPercentage = 100,
-            SpeedMbps = 0,
-            Status = DownloadStatus.Completed,
-            Category = "PNG",
-            SecondaryBadge = "",
-            IconSource = "/Assets/Icons/image-green.png",
-            IconBitmap = LoadIcon("image-green.png"),
-            IconBg = "#E6FBF2",
-            ParallelThreads = 8,
-            ActiveMirrors = 1,
-            EtaSeconds = 0,
-            StatusDetail = "Status: Healthy",
-            SavePath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Render_Cinematic_Frame_Pass_8K_Master_001.png"),
-            FooterDetail = "Verified clean • Written to local cache",
-            FooterRight = "Status: Healthy",
-            HttpProtocol = "HTTP/3 QUIC TLS 1.3",
-            MimeType = "image/png",
-            AcceptsRanges = "bytes (Multi-part enabled)",
-            ServerSoftware = "AmazonS3 / Fastly",
-            ETag = "\"90810724-bfbf-4ea9-8d76-574f88e7b931\"",
-            Sha256Hash = "3b7194f1c7d23e8095b5c907106e2cf83f8b0561e718b52f440a2f7c0628e932",
-            StartedAt = "Today 09:10 PM",
-            CompletedAt = "Today 09:12 PM",
-            SmartRule = "by extension (*.png -> Media)",
-            AllocationMethod = "Standard Buffer Stream",
-            AvScannerName = "Windows Defender Engine 1.1.24080"
-        });
-
-        _allMasterDownloads.Add(new DownloadModel
-        {
-            Title = "macOS_Sequoia_15.1_Developer_Restore.dmg",
-            Url = "https://swcdn.apple.com/updates/macOS_Sequoia_15.1_Developer_Restore.dmg",
-            Domain = "swcdn.apple.com",
-            TotalBytes = 15569256448L,
-            DownloadedBytes = 8696803328L,
-            ProgressPercentage = 55.8,
-            SpeedMbps = 0,
-            Status = DownloadStatus.Paused,
-            Category = "DMG",
-            SecondaryBadge = "",
-            IconSource = "/Assets/Icons/apple-gray.png",
-            IconBitmap = LoadIcon("apple-gray.png"),
-            IconBg = "#F1F3F6",
-            ParallelThreads = 16,
-            ActiveMirrors = 1,
-            EtaSeconds = 0,
-            StatusDetail = "Resumable state valid",
-            Subline = "8.10 GB / 14.50 GB (55.8%) • Thread State Suspended (Keep-Alive Header Retained)",
-            FooterDetail = "Keep-Alive header retained • Sockets suspended",
-            FooterRight = "Resumable state valid",
-            HttpProtocol = "HTTP/2 TLS 1.3",
-            MimeType = "application/x-apple-diskimage",
-            AcceptsRanges = "bytes (Multi-part enabled)",
-            ServerSoftware = "Apple-CDN-Edge/v4.2",
-            ETag = "\"swcdn-apple-67b12d\"",
-            Sha256Hash = "1a8b94f068c07e32489c7d1e39a045ff826b1d490c68270183e390c5f210d7a4",
-            StartedAt = "Today 08:30 PM",
-            CompletedAt = "--",
-            SmartRule = "by extension (*.dmg -> Software)",
-            AllocationMethod = "Pre-allocated Sparse (Zero Frag)",
-            AvScannerName = "Windows Defender Engine 1.1.24080"
-        });
-
-        _allMasterDownloads.Add(new DownloadModel
-        {
-            Title = "patch_crack_v2024_setup.exe",
-            Url = "https://unverified-thirdparty-cdn.ru/files/patch_crack_v2024_setup.exe",
-            Domain = "unverified-thirdparty-cdn.ru",
-            TotalBytes = 24117248L,
-            DownloadedBytes = 24117248L,
-            ProgressPercentage = 100,
-            SpeedMbps = 0,
-            Status = DownloadStatus.Quarantined,
-            Category = "EXE",
-            SecondaryBadge = "",
-            IconSource = "/Assets/Icons/danger-red.png",
-            IconBitmap = LoadIcon("danger-red.png"),
-            IconBg = "#FDE8E8",
-            ParallelThreads = 0,
-            ActiveMirrors = 0,
-            EtaSeconds = 0,
-            StatusDetail = "File locked in isolation sandbox",
-            Subline = "Blocked by Local Heuristics • RTLO Disguised Extension",
-            FooterDetail = "File locked in isolation sandbox",
-            FooterRight = "Execution blocked",
-            HttpProtocol = "HTTP/1.1 TLS 1.2",
-            MimeType = "application/x-msdos-program",
-            AcceptsRanges = "bytes (Multi-part enabled)",
-            ServerSoftware = "nginx/1.18.0",
-            ETag = "\"malicious-trojan-dropper-v2\"",
-            Sha256Hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            StartedAt = "Today 07:15 PM",
-            CompletedAt = "Today 07:16 PM",
-            SmartRule = "Quarantined by Heuristic Safety Rule",
-            AllocationMethod = "Isolated Sandbox Quarantine",
-            AvScannerName = "Windows Defender (Threat Quarantined)"
-        });
-
+        _allMasterDownloads.AddRange(DesignData.DemoDownloads.Create(LoadIcon));
         foreach (var dl in _allMasterDownloads)
         {
             WireDownloadCallbacks(dl);
@@ -1025,147 +860,17 @@ public partial class MainViewModel : ViewModelBase
 
     public DownloadModel? FindActiveDownloadByUrl(string? url)
     {
-        if (string.IsNullOrWhiteSpace(url)) return null;
-
-        var normalizedUrl = url.Trim();
-        string? targetYtId = YouTubeMediaResolver.ExtractYouTubeVideoId(normalizedUrl);
-
-        string? targetBaseUrl = null;
-        bool isCdnStreamEndpoint = false;
-        Uri? parsedUri = null;
-        if (targetYtId == null && Uri.TryCreate(normalizedUrl, UriKind.Absolute, out parsedUri))
-        {
-            targetBaseUrl = $"{parsedUri.Scheme}://{parsedUri.Authority}{parsedUri.AbsolutePath}";
-            string absPath = parsedUri.AbsolutePath.ToLowerInvariant();
-            isCdnStreamEndpoint = absPath.Contains("videoplayback") ||
-                                  absPath.Contains("/seg-") ||
-                                  absPath.Contains("segment") ||
-                                  absPath.EndsWith("/stream") ||
-                                  absPath.EndsWith("/video") ||
-                                  absPath.EndsWith("/manifest");
-        }
-
-        lock (_allMasterDownloads)
-        {
-            foreach (var dl in _allMasterDownloads)
-            {
-                if (dl.Status != DownloadStatus.Active &&
-                    dl.Status != DownloadStatus.Queued &&
-                    dl.Status != DownloadStatus.Paused)
-                {
-                    continue;
-                }
-
-                // 1. Direct URL or SourcePageUrl match
-                if (string.Equals(dl.Url, normalizedUrl, StringComparison.OrdinalIgnoreCase) ||
-                    (!string.IsNullOrWhiteSpace(dl.SourcePageUrl) && string.Equals(dl.SourcePageUrl, normalizedUrl, StringComparison.OrdinalIgnoreCase)))
-                {
-                    return dl;
-                }
-
-                // 2. YouTube Video ID match
-                if (!string.IsNullOrEmpty(targetYtId))
-                {
-                    string? dlYtId = YouTubeMediaResolver.ExtractYouTubeVideoId(dl.SourcePageUrl ?? dl.Url);
-                    if (!string.IsNullOrEmpty(dlYtId) && string.Equals(targetYtId, dlYtId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return dl;
-                    }
-                }
-
-                // 3. For CDN / stream endpoints (like Googlevideo videoplayback), match only if resource identifiers match
-                if (parsedUri != null && Uri.TryCreate(dl.Url, UriKind.Absolute, out var dlUri))
-                {
-                    string targetPath = parsedUri.AbsolutePath.ToLowerInvariant();
-                    string dlPath = dlUri.AbsolutePath.ToLowerInvariant();
-
-                    if (targetPath.Contains("videoplayback") && dlPath.Contains("videoplayback"))
-                    {
-                        var targetQuery = System.Web.HttpUtility.ParseQueryString(parsedUri.Query);
-                        var dlQuery = System.Web.HttpUtility.ParseQueryString(dlUri.Query);
-                        string? targetId = targetQuery["id"];
-                        string? dlId = dlQuery["id"];
-                        if (!string.IsNullOrEmpty(targetId) && !string.IsNullOrEmpty(dlId) &&
-                            string.Equals(targetId, dlId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return dl;
-                        }
-                        continue;
-                    }
-
-                    if (isCdnStreamEndpoint)
-                    {
-                        continue;
-                    }
-
-                    // 4. Static downloads with concrete filenames: match base URL without tracking query parameters
-                    if (targetBaseUrl != null)
-                    {
-                        string dlBaseUrl = $"{dlUri.Scheme}://{dlUri.Authority}{dlUri.AbsolutePath}";
-                        string targetFileName = Path.GetFileName(parsedUri.AbsolutePath);
-                        if (!string.IsNullOrEmpty(targetFileName) &&
-                            targetFileName.Contains('.') &&
-                            !HttpProbeService.IsGenericName(targetFileName) &&
-                            string.Equals(targetBaseUrl, dlBaseUrl, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return dl;
-                        }
-                    }
-                }
-            }
-        }
-
-        return null;
+        lock (_allMasterDownloads) return DownloadLookup.FindActiveByUrl(_allMasterDownloads, url);
     }
 
     public bool IsPathInUse(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path)) return false;
-
-        string normalizedPath;
-        try
-        {
-            normalizedPath = Path.GetFullPath(path);
-        }
-        catch
-        {
-            normalizedPath = path;
-        }
-
-        if (File.Exists(normalizedPath))
-        {
-            return true;
-        }
-
-        lock (_allMasterDownloads)
-        {
-            foreach (var dl in _allMasterDownloads)
-            {
-                if (dl.Status == DownloadStatus.Completed || dl.Status == DownloadStatus.Quarantined)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(dl.SavePath))
-                {
-                    try
-                    {
-                        string dlFullPath = Path.GetFullPath(dl.SavePath);
-                        if (string.Equals(normalizedPath, dlFullPath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return true;
-                        }
-                    }
-                    catch { }
-                }
-            }
-        }
-
-        return false;
+        lock (_allMasterDownloads) return DownloadLookup.IsPathInUse(_allMasterDownloads, path);
     }
 
     public void AddNewDownload(DownloadModel newDl)
     {
+
         // Smart guard: If the path is actively in use by another running/queued download, auto-number it
         if (IsPathInUse(newDl.SavePath))
         {
@@ -1184,6 +889,17 @@ public partial class MainViewModel : ViewModelBase
                 newDl.Title = Path.GetFileName(newDl.SavePath);
                 newDl.FooterDetail = "Target: " + newDl.SavePath;
             }
+        }
+
+        if (_isDemoMode || PreviewTransfers.IsPreview(newDl))
+        {
+            newDl.IsPreview = true;
+            newDl.StatusDetail = PreviewTransfers.DisabledMessage;
+            WireDownloadCallbacks(newDl);
+            _allMasterDownloads.Insert(0, newDl);
+            UpdateCounts();
+            ApplyFilters();
+            return;
         }
 
         WireDownloadCallbacks(newDl);

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartDM</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="modules/appearance.js" defer></script>
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><h1>SmartDM</h1></header>
+    <section aria-labelledby="appearance-heading">
+      <h2 id="appearance-heading">Appearance</h2>
+      <form id="appearance-form">
+        <label for="theme">Theme</label>
+        <select id="theme" name="theme"><option value="auto">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select>
+        <div class="range-heading"><label for="menu-opacity">Menu opacity</label><output id="menu-value" for="menu-opacity">100%</output></div>
+        <input id="menu-opacity" name="menuOpacity" type="range" min="0" max="100" step="1" value="100">
+        <div class="range-heading"><label for="button-opacity">Button opacity</label><output id="button-value" for="button-opacity">0%</output></div>
+        <input id="button-opacity" name="buttonOpacity" type="range" min="0" max="100" step="1" value="0">
+        <p class="hint">0% transparent · 100% solid</p>
+        <div class="form-footer"><button id="reset" type="button">Reset</button><span id="save-status" role="status" aria-live="polite"></span></div>
+      </form>
+    </section>
+    <footer><button id="download-page" type="button">Send this page to SmartDM</button><p id="download-status" role="status" aria-live="polite"></p></footer>
+  </main>
+</body>
+</html>

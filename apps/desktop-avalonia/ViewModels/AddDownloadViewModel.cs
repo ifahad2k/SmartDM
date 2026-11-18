@@ -227,11 +227,6 @@ public partial class AddDownloadViewModel : ViewModelBase
         settings ??= new AppSettingsModel();
         _settings = settings;
         ParallelThreads = Math.Clamp(settings.MaxParallelSegments, 1, 32);
-        if (DownloadEngine.IsStreamingCdn(initialUrl) || DownloadEngine.IsStreamingCdn(initialVideoUrl) ||
-            initialFormats?.Any(f => DownloadEngine.IsStreamingCdn(f.DirectUrl, f.MediaKind)) == true)
-        {
-            ParallelThreads = Math.Min(ParallelThreads, 4);
-        }
         _probeService = probeService ?? new HttpProbeService(settings: settings);
         _catalogService = catalogService ?? new FileCatalogService();
         _findActiveDownloadByUrl = findActiveDownloadByUrl;
@@ -964,16 +959,7 @@ public partial class AddDownloadViewModel : ViewModelBase
         }
 
         bool isHls = (SelectedFormat?.MediaKind == "hls" || targetUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(SelectedFormat?.ManifestText));
-        bool isStreamingCdn = DownloadEngine.IsStreamingCdn(targetUrl, SelectedFormat?.MediaKind) || isHls;
         int effectiveThreads = (isHls || _probedAcceptsRanges) ? ParallelThreads : 1;
-        if (isStreamingCdn)
-        {
-            effectiveThreads = Math.Clamp(effectiveThreads, 1, 6);
-            if (effectiveThreads > 4 && ParallelThreads == 16)
-            {
-                effectiveThreads = 4;
-            }
-        }
 
         long targetBytes = (SelectedFormat != null && SelectedFormat.FileSize > 0)
             ? SelectedFormat.FileSize

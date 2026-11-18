@@ -71,8 +71,8 @@ public class HttpProbeService : IHttpProbeService
             req.Headers.TryAddWithoutValidation("User-Agent", effectiveUa);
             req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,application/x-bittorrent,*/*;q=0.8");
             req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-            string? scopedCookies = DownloadEngine.FormatCookieHeader(cookies, req.RequestUri?.AbsoluteUri);
-            if (!string.IsNullOrEmpty(scopedCookies)) req.Headers.TryAddWithoutValidation("Cookie", scopedCookies);
+            string? scopedCookies = CookieHeaderPolicy.Select(cookies, req.RequestUri?.AbsoluteUri, url);
+            DownloadRedirectHandler.ApplyCookies(req, cookies, url);
             if (!string.IsNullOrWhiteSpace(rHeader))
             {
                 req.Headers.TryAddWithoutValidation("Referer", rHeader);
@@ -96,11 +96,11 @@ public class HttpProbeService : IHttpProbeService
                 // Head failed, try GET
             }
 
-            // Verify advertised ranges with an actual one-byte GET. A server
-            // may advertise bytes on HEAD but ignore Range on GET, or reject HEAD (e.g. 403 Forbidden on PHP scripts).
+            // Accept-Ranges is optional: verify with a one-byte GET, never infer support from HEAD alone.
             bool usedRangeProbe = response == null || response.StatusCode == HttpStatusCode.MethodNotAllowed ||
                 response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.NotFound ||
-                (response.IsSuccessStatusCode && response.Headers.AcceptRanges.Contains("bytes"));
+                (response.IsSuccessStatusCode && (response.Headers.AcceptRanges.Contains("bytes") ||
+                    !StreamRequestPolicy.IsHtmlResponse(response.Content.Headers.ContentType?.MediaType, null)));
             if (usedRangeProbe)
             {
                 response?.Dispose();
@@ -132,7 +132,7 @@ public class HttpProbeService : IHttpProbeService
                 // If still 403/Forbidden, 401, or 429, test candidate referers
                 if (response != null && (response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == (HttpStatusCode)429))
                 {
-                    var candidates = DownloadEngine.GetCandidateReferers(url, effectiveRef, null);
+                    var candidates = StreamRequestPolicy.GetCandidateReferers(url, effectiveRef, null);
                     foreach (var candRef in candidates)
                     {
                         if (string.Equals(effectiveRef, candRef, StringComparison.OrdinalIgnoreCase)) continue;
@@ -236,10 +236,10 @@ public class HttpProbeService : IHttpProbeService
                     {
                         using var getTitleReq = HttpTransferRequest.Create(HttpMethod.Get, uri);
                         ApplyHeaders(getTitleReq, effectiveRef);
-                        using var htmlResp = await _httpClient.SendAsync(getTitleReq, HttpCompletionOption.ResponseContentRead, cancellationToken);
+                        using var htmlResp = await _httpClient.SendAsync(getTitleReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                         if (htmlResp.IsSuccessStatusCode)
                         {
-                            string html = await htmlResp.Content.ReadAsStringAsync(cancellationToken);
+                            string html = await BoundedMetadata.ReadAsync(htmlResp.Content, BoundedMetadata.HtmlBytes, cancellationToken);
                             string pageTitle = ExtractTitleFromHtml(html);
                             if (!string.IsNullOrWhiteSpace(pageTitle))
                             {

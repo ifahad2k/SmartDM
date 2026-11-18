@@ -11,6 +11,24 @@ const manifest = n => ({success: true, title: `Video ${n}`, formats: [
   {formatId: 'thumbnail', ext: 'jpg', url: `https://cdn.invalid/${n}/cover`}
 ]});
 
+test('YouTube background gives the delayed HD source a chance after a 360p desktop response', async () => {
+  const runtime = fs.readFileSync('extensions/shared/background/runtime.js', 'utf8');
+  const block = runtime.slice(runtime.indexOf('function bestYouTubeHeight('), runtime.indexOf("  if (request.type === 'RESOLVE_M3U8_VARIANTS')"));
+  let desktopReply, browserReply, response;
+  const context = vm.createContext({
+    setTimeout, clearTimeout, ytBackgroundFormatCache: new Map(), extractYouTubeVideoId: () => 'aaaaaaaaaa1',
+    appendCookiesAndSend: (_, callback) => {desktopReply = callback;},
+    fetchYouTubeFormatsInServiceWorker: () => new Promise(resolve => {browserReply = resolve;})
+  });
+  const request = vm.runInContext(`(function(request, sender, sendResponse) { ${block} })`, context);
+  request({type:'GET_MEDIA_FORMATS', url:video(1)}, {}, result => {response = result;});
+  desktopReply({status:'ok', formats:[{resolution:'360p', directUrl:'https://cdn.invalid/360'}]});
+  assert.equal(response, undefined);
+  browserReply(manifest(1));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(response.formats[0].height, 1080);
+});
+
 class MenuElement {
   constructor() {
     this.style = {}; this.dataset = {}; this.children = []; this.listeners = {}; this.isConnected = true;
@@ -103,7 +121,8 @@ for (const browser of ['chrome', 'firefox']) {
     rows[0].listeners.click({preventDefault() {}, stopPropagation() {}});
     assert.equal(sent.item.audioUrl, manifest(1).formats[0].audioUrl);
     assert.equal(sent.item.fileName, 'Selected video.mp4');
-    assert.equal(f.requests.length, 1);
+    assert.equal(f.requests.filter(item => item.request.type !== 'GET_MEDIA_SIZE').length, 1);
+    assert.ok(f.requests.filter(item => item.request.type === 'GET_MEDIA_SIZE').length <= 3);
     mount.isConnected = false; f.watcher.pruneDisconnectedThumbnails();
     assert.equal(f.observers[0].targets.size, 0);
     assert.equal(f.watcher.thumbnailHosts.size, 0);

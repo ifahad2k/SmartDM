@@ -231,4 +231,29 @@ public class HlsCaptureTests
         }
     }
 
+    [Fact]
+    public async Task NativeReplyKeepsLongResolvedPlaylistInsideDesktopAndRestoresItForDownload()
+    {
+        string playlist = Playlist + "#" + new string('s', 1_200_000);
+        using var client = new HttpClient(new MockHlsHttpMessageHandler(_ => new(System.Net.HttpStatusCode.OK)
+            {Content = new StringContent(playlist, System.Text.Encoding.UTF8, "application/vnd.apple.mpegurl")}));
+        HlsMediaResolver.SetHttpClientForTesting(client);
+        var ipc = new LocalIpcService();
+        try
+        {
+            var dispatch = typeof(LocalIpcService).GetMethod("DispatchNativeAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            byte[] response = await (Task<byte[]>)dispatch.Invoke(ipc, new object[]{"{\"protocolVersion\":1,\"type\":\"RESOLVE_M3U8_VARIANTS\",\"url\":\"https://cdn.invalid/long.m3u8\"}",CancellationToken.None})!;
+            Assert.InRange(response.Length, 1, BrowserProtocol.MaximumResponseBytes);
+            using var json = System.Text.Json.JsonDocument.Parse(response);
+            Assert.True(json.RootElement.GetProperty("success").GetBoolean());
+            string formats = json.RootElement.GetProperty("formats").GetRawText();
+            Assert.DoesNotContain(new string('s',1000),formats);
+            BrowserDownloadRequest? received = null; ipc.DownloadRequestedFromBrowser += request => received = request;
+            string download = "{\"protocolVersion\":1,\"type\":\"START_MEDIA_DOWNLOAD\",\"url\":\"https://cdn.invalid/long.m3u8\",\"formats\":" + formats + "}";
+            await (Task<byte[]>)dispatch.Invoke(ipc, new object[]{download,CancellationToken.None})!;
+            Assert.Equal(playlist,Assert.Single(received!.Formats!).ManifestText);
+        }
+        finally {HlsMediaResolver.SetHttpClientForTesting(null);}
+    }
+
 }

@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using SmartDm.Desktop.Avalonia.Models;
+using SmartDm.Desktop.Avalonia.Services;
 
 namespace SmartDm.Desktop.Avalonia.Views;
 
@@ -35,6 +36,10 @@ public partial class DeleteConfirmDialog : Window
     public void LoadDownload(DownloadModel download)
     {
         _download = download;
+        bool preview = PreviewTransfers.IsPreview(download);
+        PermanentDeleteButton.IsVisible = PermanentDeleteExplanation.IsVisible = !preview;
+        Grid.SetColumnSpan(SoftDeleteExplanation, preview ? 2 : 1);
+        DeleteNotice.Text = preview ? "Preview entry: only history will be removed; no files are changed." : "Permanent deletion cannot be undone";
         HeaderPromptText.Text = $"How would you like to delete \"{download.Title}\"?";
         FileNameText.Text = download.Title;
         string sizeStr = FormatBytes(download.TotalBytes);

@@ -199,3 +199,67 @@ open and remaining sites need live proof. Full Package 4 exit gate **NO**.
 Graphify/Ponytail installation is complete and Graphify was used to locate the
 relative-XHR gap; neither tool closes a product/package gate. Java excluded;
 installer/release remain owner-deferred.
+
+
+## 2026-11-17 authorized security remediation slice
+
+The owner authorized repairs across Packages 2-4 for all eight findings in scan
+`270c2399-31ec-4673-943d-e6e0d376205e`. Source repairs cover cookie scope, protected
+credential fields, authenticated native IPC, metadata/handler budgets and the
+FFmpeg network/argument boundary. Windows: 464 C# / 333 browser checks pass;
+restore/build have zero warnings/errors. See TEST_EVIDENCE.md.
+
+Package exit gates remain NO: Linux runtime/installed-host verification, complete
+SQLCipher protection, durable handoff and outstanding transfer/release work remain.
+Next allowed package remains Package 2, plus completion of this authorized security
+verification slice. No Java changes or installer/release work was performed.
+
+
+## 2026-11-17 owner-authorized structural cleanup
+
+Transfer recovery/staging, request policy and HLS reading were extracted;
+composition and demo/lookup logic moved out of MainViewModel; browser backgrounds
+now use shared authored sections and generated package bundles. This is structural
+work on existing v2 behavior, not a new feature or completed assembly migration.
+468 C#, 335 browser and two graph-tool cases pass. Package/release gates remain NO.
+See STRUCTURAL_REFACTOR_HANDOFF.md. Next allowed package remains Package 2.
+
+## 2026-11-17 Package 2 staging allocation defect
+
+Owner-reported disk growth repaired at preview/engine/history/file boundaries.
+Shared profile staging replaces new binary-local staging, while existing partials
+resume in place. Eager full-file allocation is removed; Windows sparse writes and
+a sequential fallback have regression coverage. Preview deletion is history-only.
+478 C# / 335 browser checks pass, including a physical Windows allocation probe.
+This Windows defect slice is verified; broader package and Linux/release gates
+remain NO. No schema migration. See STAGING_DISK_USAGE_HANDOFF.md.
+
+2026-11-17: owner-requested browser UI slice adds draggable download controls in
+both packages. 347 browser checks and isolated Chrome interaction pass. No schema
+or transfer changes; broader gates remain open. See DRAGGABLE_OVERLAY_HANDOFF.md.
+
+2026-11-17: owner-reported duplicate player controls repaired in the browser UI
+slice; 357 browser checks and synthetic cross-origin Chrome verification pass.
+No desktop/schema change or broader gate closure. See PLAYER_OWNERSHIP_HANDOFF.md.
+
+2026-11-17: owner-approved browser design and toolbar settings slice implemented;
+376 browser cases pass. Native popup replaces the toolbar's immediate page send
+with controls and an explicit page-send action. No desktop/database changes or
+broader gate closure. See OVERLAY_APPEARANCE_HANDOFF.md.
+
+
+## 2026-11-17 visible media size and progressive metadata
+
+Package 2/4 size/progressive-metadata slice implemented: 483 C# / 391 browser tests pass. No schema/Java changes. Sustained IDM/CDN performance and broader gates remain NO. See MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md.
+
+## 2026-11-18 HLS stream reliability
+
+Package 4 HLS repair passed controlled media and extension tests. The package gate remains open pending live browser and platform validation. [HLS handoff](HLS_STREAM_RELIABILITY_HANDOFF.md).
+
+## 2026-11-18 worker count and media discovery
+
+The Package 2 worker-count repair and Package 4 media discovery repair passed controlled tests. The transfer and media exit gates remain open. [Handoff](WORKERS_AND_MEDIA_DISCOVERY_HANDOFF.md)
+
+## 2026-11-18 HLS startup and selected audio
+
+Controlled tests verified the HLS startup and selected audio repairs. The transfer and media exit gates remain open. [Handoff](HLS_START_AND_AUDIO_HANDOFF.md)

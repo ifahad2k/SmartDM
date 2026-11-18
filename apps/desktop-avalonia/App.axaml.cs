@@ -47,7 +47,7 @@ public partial class App : Application
             // C-04: Do not wipe staging directories blindly before DB is loaded;
             // reconciliation happens safely in MainViewModel.InitializeProductionAsync.
             LogStartup("Starting MainViewModel creation...");
-            var mainVm = new MainViewModel(isDemoMode: isDemo);
+            var mainVm = SmartDm.Desktop.Avalonia.DesktopComposition.CreateMainViewModel(isDemoMode: isDemo);
             LogStartup("MainViewModel created successfully");
 
             // Apply saved theme preference on launch
@@ -64,6 +64,7 @@ public partial class App : Application
             try
             {
                 mainWindow = new MainWindow();
+                if (isDemo) mainWindow.Title = "SmartDM — Preview (downloads disabled)";
                 LogStartup("MainWindow instantiated");
                 mainWindow.DataContext = mainVm;
                 LogStartup("mainWindow.DataContext assigned");

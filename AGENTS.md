@@ -41,7 +41,7 @@ A free, local-first, open-source download manager for **Windows and Linux only**
   - YouTube: Handled by `YouTubeMediaResolver.cs` via **YoutubeExplode**. It does **not** call `yt-dlp`.
   - HLS: Handled natively in C# via `HlsMediaResolver.cs` with enforced platform TLS validation (no accept-all bypass).
   - Stream Post-Processing: Handled by `FFmpeg` with explicit argument arrays for audio/video muxing and container conversion. No hardcoded WinGet or `yt-dlp.FFmpeg` paths.
-- **Transfer engine**: `MainViewModel` now creates the C# `DownloadEngine` directly. Legacy Java IPC helpers remain outside production composition. The Java product remains preserved on `main`; it is not a runtime dependency of this C# product.
+- **Transfer engine**: `Composition/DesktopComposition.cs` constructs the C# `DownloadEngine` and injects it into `MainViewModel`. Recovery/staging, request/cookie policy and playlist reading have dedicated components. Legacy Java IPC helpers remain outside production composition. The Java product remains preserved on `main`; it is not a runtime dependency of this C# product.
 
 Do not add macOS support, accounts, cloud sync, a license server, ads, or any paid/entitlement-gated feature. These are permanent constraints, not placeholders.
 
@@ -83,6 +83,7 @@ Package 5: Safety states, UI claims, installer, release validation (Phases 3, 11
 - Add or update tests with every change; no code lands without tests.
 - Use constructor injection; no service locators or hidden singletons.
 - Keep network, database, filesystem, hashing, scanning, and process work off the Avalonia UI thread.
+- Edit browser background logic in `extensions/shared/background`, then run `node tools/build-extensions.cjs`. Both packaged `background.js` files are generated; `--check` and browser tests enforce synchronization.
 - Invoke external processes (FFmpeg, Windows Defender, ClamAV) with fixed paths and `ProcessStartInfo.ArgumentList` — never a shell string.
 - Redact secrets before any log call or exception. API keys, cookies, and auth tokens must never appear in logs or ordinary DTOs.
 - Schema changes must use immutable versioned migrations with rollback.

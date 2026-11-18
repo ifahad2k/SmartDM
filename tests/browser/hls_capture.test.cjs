@@ -3,14 +3,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 for(const browser of ['chrome','firefox']) {
-  function fixture() {
+  function fixture(extra = {}) {
     const nodes=[],captured=[];
     const node=()=>({attrs:{},style:{},textContent:'',setAttribute(k,v){this.attrs[k]=v;},getAttribute(k){return this.attrs[k]||null;},remove(){nodes.splice(nodes.indexOf(this),1);}});
     const root={setAttribute(){},querySelector(s){return nodes.find(n=>s.includes(n.attrs['data-smartdm-url']))||null;},querySelectorAll(){return nodes;},appendChild(n){nodes.push(n);}};
     const document={head:root,documentElement:root,createElement:node,querySelectorAll(){return [...nodes];}};
     const window={location:{href:'https://player.invalid/e/1',hostname:'player.invalid'},dispatchEvent(e){captured.push(e.detail);}};
     window.top=window.self=window;
-    const context=vm.createContext({window,document,CSS:{escape:s=>s},XMLHttpRequest:function(){},CustomEvent:function(_,options){this.detail=options.detail;}});
+    const context=vm.createContext({window,document,CSS:{escape:s=>s},XMLHttpRequest:function(){},CustomEvent:function(_,options){this.detail=options.detail;},...extra});
     context.XMLHttpRequest.prototype.open=function(){};context.XMLHttpRequest.prototype.send=function(){};
     vm.runInContext(fs.readFileSync(`extensions/${browser}/sniffer.js`,'utf8'),context);
     class Hls {
@@ -24,6 +24,22 @@ for(const browser of ['chrome','firefox']) {
     return {window,document,nodes,player,captured};
   }
   const manifest='#EXTM3U\n#EXTINF:6,\nsegment.ts\n#EXT-X-ENDLIST';
+  test(`${browser}: captures the playlist the player reads from an opaque successful response`, async () => {
+    class PlayerResponse {
+      constructor(url, body, ok) {Object.assign(this, {url, body, ok});}
+      async text() {return this.body;}
+    }
+    const f = fixture({Response: PlayerResponse});
+    const url = 'https://cdn.invalid/a383d917';
+    const incomplete = manifest.replace('#EXT-X-ENDLIST', '');
+    assert.equal(await new PlayerResponse(url, incomplete, true).text(), incomplete);
+    assert.equal(await new PlayerResponse(url, manifest, true).text(), manifest);
+    assert.equal(f.nodes.length, 1);
+    assert.equal(f.nodes[0].getAttribute('data-smartdm-url'), url);
+    assert.equal(f.nodes[0].textContent, manifest);
+    await new PlayerResponse('https://cdn.invalid/denied', manifest, false).text();
+    assert.equal(f.nodes.length, 1);
+  });
   const movieManifest = '#EXTM3U\n' + Array.from({length: 974}, (_, i) =>
     `#EXTINF:6,\nhttps://cdn.invalid/${i}.m4s?token=${'s'.repeat(700)}\n`).join('') + '#EXT-X-ENDLIST';
   test(`${browser}: long movie playlist stays bound to the selected player through discovery`, () => {
@@ -104,17 +120,24 @@ for(const browser of ['chrome','firefox']) {
     h.media.isConnected=true;h.emit('level',{details:{url:'https://cdn.invalid/opaque',m3u8:manifest,live:true}});
     assert.equal(f.nodes.length,0);
   });
-  test(`${browser}: pairs the selected audio playlist and refuses silent fallback while audio is pending`,()=>{
+  test(`${browser}: pairs the selected audio URL before its body arrives and rejects an unrelated rendition`,()=>{
     const f=fixture(),h=new f.window.Hls();h.media=f.player();h.audioTracks=[{url:'https://cdn.invalid/audio'}];h.audioTrack=0;h.emit('attached');h.emit('parsed');
     h.emit('level',{details:{url:'https://cdn.invalid/video',m3u8:manifest,live:false},levelInfo:{height:1080}});
     const c=vm.createContext({window:f.window,document:f.document,SmartDmUtils:{extractWatchPageTitle:()=> 'Episode 5'}});
     vm.runInContext(fs.readFileSync(`extensions/${browser}/modules/format_engine.js`,'utf8')+'\nthis.Engine=FormatRegistryEngine;',c);
-    assert.equal(c.Engine.capturedPlayerFormats(h.media).success,false);
+    assert.equal(c.Engine.capturedPlayerFormats(h.media).formats[0].audioUrl,'https://cdn.invalid/audio');
+    assert.equal(c.Engine.capturedPlayerFormats(h.media).formats[0].audioManifestText,null);
     h.emit('audio',{id:1,details:{url:'https://cdn.invalid/wrong-audio',m3u8:manifest,live:false}});
-    assert.equal(c.Engine.capturedPlayerFormats(h.media).success,false);
+    assert.equal(c.Engine.capturedPlayerFormats(h.media).formats[0].audioUrl,'https://cdn.invalid/audio');
+    assert.equal(c.Engine.capturedPlayerFormats(h.media).formats[0].audioManifestText,null);
     h.emit('audio',{id:0,details:{url:'https://cdn.invalid/audio',m3u8:manifest,live:false}});
     const result=c.Engine.capturedPlayerFormats(h.media);
     assert.equal(result.formats[0].audioUrl,'https://cdn.invalid/audio');assert.equal(result.formats[0].audioManifestText,manifest);
+    h.audioTracks.push({url:'https://cdn.invalid/audio-two'});
+    h.audioTrack=1;h.emit('tracks',{audioTracks:h.audioTracks});
+    const switched = c.Engine.capturedPlayerFormats(h.media).formats[0];
+    assert.equal(switched.audioUrl,'https://cdn.invalid/audio-two');
+    assert.equal(switched.audioManifestText,null);
   });
   test(`${browser}: late rendition groups cannot silently become a video-only download`,()=>{
     const f=fixture(),h=new f.window.Hls();h.media=f.player();h.audioTracks=[];h.audioTrack=0;h.emit('attached');
@@ -125,7 +148,7 @@ for(const browser of ['chrome','firefox']) {
     assert.equal(c.Engine.capturedPlayerFormats(h.media).success,false);
     h.audioTracks=[{id:7,groupId:'aud',url:'https://cdn.invalid/audio'}];h.emit('tracks',{audioTracks:h.audioTracks});
     h.emit('audio',{id:7,groupId:'wrong',details:{m3u8:manifest,live:false}});
-    assert.equal(c.Engine.capturedPlayerFormats(h.media).success,false);
+    assert.equal(c.Engine.capturedPlayerFormats(h.media).formats[0].audioManifestText,null);
     h.emit('audio',{id:7,groupId:'aud',details:{m3u8:manifest,live:false}});
     const format=c.Engine.capturedPlayerFormats(h.media).formats[0];
     assert.equal(format.audioUrl,'https://cdn.invalid/audio');
@@ -255,6 +278,34 @@ for(const browser of ['chrome','firefox']) {
     assert.equal(res.formats[0].height, 1080);
     assert.equal(res.formats[1].height, 720);
     assert.equal(res.formats[0].url, 'https://moviebite.org/stream-embed/playlist/1080p.m3u8');
+
+    const base = 'https://cdn.invalid/';
+    const preview = {textContent: manifest, getAttribute: k => k === 'data-smartdm-url' ? base + 'preview.m3u8' : null};
+    const movie = {
+      textContent: '#EXTM3U\n#EXTINF:3600,\nmovie.ts\n#EXT-X-ENDLIST',
+      getAttribute: k => k === 'data-smartdm-url' ? base + '1080p.m3u8' : null
+    };
+    c.document.querySelectorAll = selector => selector === 'video' ? [playerVideo] : [preview, movie];
+    playerVideo.duration = 3600;
+    const selected = c.Engine.capturedPlayerFormats(playerVideo);
+    assert.deepEqual(Array.from(selected.formats, f => f.url), [base + '1080p.m3u8']);
+    assert.equal(selected.formats[0].totalDuration, 3600);
+
+    stashNode.attrs['data-smartdm-url'] = base + 'master.m3u8';
+    stashNode.textContent = [
+      '#EXTM3U', '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="main",DEFAULT=YES,URI="main-audio.m3u8"',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="main",DEFAULT=NO,URI="dub.m3u8"',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sd",URI="sd-audio.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,AUDIO="main"', '1080p.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="sd"', '720p.m3u8'
+    ].join('\n');
+    playerVideo.getAttribute = k => k === 'data-smartdm-hls-external-audio' ? '1' : null;
+    c.document.querySelectorAll = selector => selector === 'video' ? [playerVideo] : [stashNode, movie];
+    const paired = c.Engine.capturedPlayerFormats(playerVideo);
+    assert.deepEqual(Array.from(paired.formats, f => f.audioUrl), [base + 'main-audio.m3u8', base + 'sd-audio.m3u8']);
+    assert.equal(paired.formats[0].manifestText, movie.textContent);
+    assert.equal(paired.formats[1].manifestText, undefined);
+    assert.equal(paired.formats[0].audioManifestText, null);
   });
   test(`${browser}: in-page variant probe uses _smartdm_probe flag without sending CORS-triggering wire header`, async () => {
     let capturedOptions = null;

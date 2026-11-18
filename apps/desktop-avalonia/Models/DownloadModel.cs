@@ -25,6 +25,9 @@ public enum DestinationConflictAction
 
 public partial class DownloadModel : ObservableObject
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsPreview { get; set; }
+
     [ObservableProperty]
     private string _id = Guid.NewGuid().ToString();
 
@@ -156,6 +159,7 @@ public partial class DownloadModel : ObservableObject
     private string? _userAgent;
 
     [ObservableProperty]
+    [property: System.Text.Json.Serialization.JsonIgnore]
     private string? _cookies;
 
     [ObservableProperty]

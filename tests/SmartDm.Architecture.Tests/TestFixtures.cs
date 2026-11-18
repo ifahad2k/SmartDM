@@ -24,7 +24,7 @@ public sealed class InMemorySettingsService : ISettingsService
         return Task.CompletedTask;
     }
     public Task<AiConfigModel> LoadAiConfigAsync() => Task.FromResult(CurrentAiConfig);
-    public Task SaveAiConfigAsync(AiConfigModel config)
+    public Task SaveAiConfigAsync(AiConfigModel config, string? newApiKey = null, bool clearApiKey = false)
     {
         CurrentAiConfig = config;
         return Task.CompletedTask;

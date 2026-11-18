@@ -468,3 +468,144 @@ Initial graph: 162 files / 2,641 nodes / 6,963 edges; refreshed graph deduplicat
 six nodes. Raw diagnostics: 549 dangling endpoints, 587 directed same-endpoint
 collapses, five self-loops. Preserved original graph before accepting dedup shrink.
 No package-wide runtime or security closure follows from these results.
+
+
+## 2026-11-17 — eight-finding security remediation verification
+
+Branch began at `sdm2.0` / `3f59d5e`; concurrent commit `6c91563` incorporated browser
+changes during the session. Both user changes and the Java worktree are preserved.
+No commit, push, installer generation, running-app restart or real-profile migration
+was performed by this security-fix session.
+
+PowerShell environment used for every broad .NET test:
+
+```powershell
+$env:SMARTDM_PROFILE_DIR='C:/Users/ifaha/.codex/visualizations/2026/10/26/01a178f9-dae7-7c71-87be-f0a77ae6d160/security-test-profile'
+$env:SMARTDM_STAGING_DIR=Join-Path $env:SMARTDM_PROFILE_DIR 'staging'
+$env:SMARTDM_MEDIA_TESTS='1'
+dotnet restore SmartDm.sln --verbosity minimal
+dotnet build SmartDm.sln --no-restore --verbosity minimal -p:BaseOutputPath='C:/Users/ifaha/.codex/visualizations/2026/10/26/01a178f9-dae7-7c71-87be-f0a77ae6d160/security-bin/'
+dotnet test SmartDm.sln --no-build --verbosity minimal -p:BaseOutputPath='C:/Users/ifaha/.codex/visualizations/2026/10/26/01a178f9-dae7-7c71-87be-f0a77ae6d160/security-bin/'
+node --test tests/browser/*.test.cjs
+```
+
+Restore/build: pass, zero warnings/errors. C#: **464 pass, 0 fail, 0 skip**, including
+12 real FFmpeg cases using the existing configured SHA-256 pin. Chrome/Firefox:
+**333 pass, 0 fail/skip**. `git diff --check`: pass. Sandbox compiler access initially
+failed; normal elevated compiler execution succeeded. No TLS/crypto/authentication
+bypass was used to obtain passing checks.
+
+Coverage includes cookie domain/path/Secure and same-host redirect escapes; raw
+video cookies withheld from foreign audio; ciphertext save/resume; migration 9
+rollback on locked-key failure and retry; AI legacy-key migration/blank preserve/
+explicit removal; real Windows DPAPI restart; native framing and origin/token
+rejection; actual C# native-host subprocess with clean framed stdout; slow-pipe
+admission and joined shutdown; streaming HTML byte cap; native large-playlist
+compatibility; manifest coalescing; process argv secrecy; Origin/range preservation;
+invalid-certificate refusal; HLS map/key URI spacing; DASH DTD refusal; and real
+HLS/fMP4/AES/paired-audio/progressive/DASH decode controls.
+
+An independent read-only pre-patch investigation and one candidate review were
+performed. Confirmed redirect/audio credential and response-write deadline issues
+were fixed and retested. The review's unvalidated whitespace-URI hypothesis was
+covered by rejecting non-HTTP URI attributes across alternate spacing.
+
+Migration 9 encrypts existing cookie fields and records its ledger entry in the
+same transaction. Key failure rolls back both; successful migration checkpoints
+and vacuums SQLite. Resume credentials remain recoverable through the OS-backed
+profile key. It is not SQLCipher or forensic removal of old backups. Linux needs
+`secret-tool` and an unlocked Secret Service; there is no plaintext fallback.
+
+Limits: no Linux distribution was available through WSL, so Linux native IPC,
+Secret Service and shell registration require native runtime verification. Live
+Chrome/Firefox extension registration and real user sites were not exercised in
+this session. Next integration step: build/start the C# app, register the updated
+extension native host, reload the extension and refresh tabs. Package/release exit
+gate remains NO; remaining Package 2 work and Linux/installed-host checks remain.
+
+
+The updated `--test-pna` compatibility diagnostic now verifies authenticated IPC
+instead of expecting wildcard/private-network grants. Ran the isolated built C#
+app with `Start-Process -ArgumentList '--test-pna' -WindowStyle Hidden -Wait
+-PassThru` and redirected stdout/stderr: **exit 0**, authenticated activation
+accepted, unauthenticated and foreign-origin requests rejected. The diagnostic
+uses a separate `security-diagnostic-profile` and made no external media request.
+
+
+## 2026-11-17 Graphify-guided structural refactor
+
+Fresh pre-edit baseline: 464 C# tests pass. After component extraction, constructor
+injection, demo/lookup separation and shared background generation: **468 C# pass,
+0 fail/skip**, including 12 real synthetic FFmpeg controls; **335 browser pass**;
+**two Python overview tests pass**. Restore/build: zero warnings/errors. Bundle
+`--check` and `git diff --check` pass. Four direct desktop boundary tests and two
+standalone browser/parity controls were added; existing behavior tests remain.
+
+Commands/profile/output isolation, moved modules, graph diagnostics, preserved dirty
+files and handoff fields are recorded in
+[STRUCTURAL_REFACTOR_HANDOFF.md](STRUCTURAL_REFACTOR_HANDOFF.md). Tests used
+SMARTDM_MEDIA_TESTS=1 and separate refactor-profile/staging and refactor-bin output.
+No live app/browser/site or Linux validation, restart, migration, release or push.
+Graphify queried/reflected, refreshed with local AST extraction, and produced a
+17-component production overview. No semantic LLM extraction/source upload occurred.
+
+## 2026-11-17 preview isolation and staging disk use
+
+Final C# run after preview deletion protection: **478 passed, 0 failed/skipped**,
+including 10 new disk/preview cases and 12 real synthetic FFmpeg controls. Browser
+checks: **335 passed**; generated bundles current. Restore/build: zero warnings
+or errors. Exact commands and isolation paths are in
+[STAGING_DISK_USAGE_HANDOFF.md](STAGING_DISK_USAGE_HANDOFF.md).
+
+A transfer advertising 41,768,878,080 bytes with stalled response bodies retained
+zero staging length. On Windows, writing three bytes after a 1 GiB offset produced
+1,073,741,827 logical bytes but only **65,536 physical bytes**. Injected unsupported
+sparse capability completed a real 2 MiB payload byte-identically with one worker;
+skipping a missing prefix was rejected. Legacy mock rows were recognized without
+filename-only matching. History removal and direct-helper rejection preserved a
+real fixture at a preview save path. No real user download was used for these tests.
+
+## 2026-11-17 draggable browser controls
+
+12 new pointer/keyboard/lifecycle regression cases across both browser modules;
+full suite **347 passed, 0 failed/skipped**. Bundle synchronization and JS syntax
+checks pass. An isolated Chrome trusted-mouse smoke verified clipped-card escape,
+normal menu clicks after dragging, media identity, scroll/resize, source removal
+and player positioning; the screenshot was inspected. C# was not changed/rerun.
+See [exact commands and limits](DRAGGABLE_OVERLAY_HANDOFF.md).
+
+## 2026-11-17 nested player ownership
+
+Ten new Chrome/Firefox regressions pass; full browser suite **357 passed,
+0 failed/skipped**. Syntax/bundle checks pass. Real sandboxed cross-origin Chrome
+smoke verifies one child owner, matching fallback restoration, unrelated-source
+rejection and local nested-player deduplication. Public Dailymotion could not be
+read with the web tool; live-site/installed-extension verification is not claimed.
+Commands and boundaries: [PLAYER_OWNERSHIP_HANDOFF.md](PLAYER_OWNERSHIP_HANDOFF.md).
+
+## 2026-11-17 Direct menu and toolbar settings
+
+**376 browser tests pass, 0 failed/skipped**, including 19 new appearance/popup
+checks. Syntax/bundle checks pass. Isolated Chrome verified actual popup layout
+(336px, below 600px tall), themes, opacity endpoints/reset, reload persistence via
+mock storage, page handoff, and trusted keyboard menu activation retaining its
+filename. Both theme screenshots were inspected. C# was unchanged/not rerun;
+installed-extension/live-site verification remains open. Exact commands and
+preserved work: [OVERLAY_APPEARANCE_HANDOFF.md](OVERLAY_APPEARANCE_HANDOFF.md).
+
+
+## 2026-11-17 visible media size and progressive metadata
+
+Final: **483 C# / 391 browser tests pass, zero failed/skipped**. Five new C# and fifteen browser controls cover concurrent verified ranges, non-range fallback, response-length truncation, visible exact/estimated size, stale replies and bounded body-cancelled probes. Existing export/recovery/sparse/native/security/media checks pass. Synthetic Chrome shows 654.5 MB and preserves keyboard filename selection. Live headers confirm 686,329,621 bytes/ranges, but concurrent checks timed out; no sustained IDM-speed claim. Normal app build has zero warnings/errors. [Exact commands](MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md).
+
+## 2026-11-18 HLS stream reliability
+
+486 desktop and 392 browser tests passed with zero failed or skipped. Real FFmpeg decoded video and audio after parallel fragmented MP4 transfers against loopback servers. [Commands and evidence](HLS_STREAM_RELIABILITY_HANDOFF.md).
+
+## 2026-11-18 worker count and media discovery
+
+487 C# and 395 browser tests passed with zero failed or skipped. The C# engine started 12 overlapping HLS requests, and live Chrome showed 1080p60 on the reported video and thumbnail. [Commands and evidence](WORKERS_AND_MEDIA_DISCOVERY_HANDOFF.md)
+
+## 2026-11-18 HLS startup and selected audio
+
+489 desktop and 395 browser tests passed with zero failed or skipped. The engine ramped from one to 12 active requests after validated chunks, kept waiting workers idle after a terminal 403, and decoded generated audio when the extension supplied only its playlist URL. [Handoff](HLS_START_AND_AUDIO_HANDOFF.md)

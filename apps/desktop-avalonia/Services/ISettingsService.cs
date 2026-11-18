@@ -12,7 +12,7 @@ public interface ISettingsService
     Task SaveAppSettingsAsync(AppSettingsModel settings);
 
     Task<AiConfigModel> LoadAiConfigAsync();
-    Task SaveAiConfigAsync(AiConfigModel config);
+    Task SaveAiConfigAsync(AiConfigModel config, string? newApiKey = null, bool clearApiKey = false);
 
     bool SetStartup(bool enable);
     Task PerformUninstallAsync(bool eraseData);

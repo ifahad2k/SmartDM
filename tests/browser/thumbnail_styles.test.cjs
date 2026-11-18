@@ -60,12 +60,13 @@ for (const browser of ['chrome', 'firefox']) {
     test(`${browser}: thumbnail control receives its dark button styling through ${adopted ? 'shared CSS' : 'inline CSS fallback'}`, () => {
       const mounted = mountedBadge(browser, adopted);
       const style = baseDeclarations(mounted.css, mounted.classes);
-      assert.match(style.background || '', /rgba\(15, 23, 42,/);
+      assert.match(style.background || '', /color-mix.*--sdm-button-opacity/);
       assert.equal(style.display, 'flex');
-      assert.equal(style.cursor, 'pointer');
+      assert.equal(style.cursor, 'grab');
+      assert.equal(style['touch-action'], 'none');
       assert.equal(style['font-size'], '11px');
-      assert.match(style['font-family'] || '', /Segoe UI/);
-      assert.match(style.border || '', /solid/);
+      assert.match(style.font || '', /Segoe UI/);
+      assert.equal(style.border, '0');
       assert.match(mounted.tag, /type="button"/);
       assert.ok(mounted.classes.has('thumb-btn'), 'keep the existing thumbnail listener selector');
       if (adopted) {

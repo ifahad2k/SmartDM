@@ -156,9 +156,10 @@ public sealed class Package2RegressionTests
         }, restored.Id, restored.Url, payload.Length);
         try
         {
+            int probeRanges = server.RangeRequests.Count;
             var engine = new DownloadEngine(new SqliteDatabaseRepository(database), new DirectCleanSafetyScanner());
             Assert.Equal(DownloadStatus.Completed, await RunToTerminal(engine, restored));
-            Assert.Empty(server.RangeRequests);
+            Assert.Equal(probeRanges, server.RangeRequests.Count); // Capability probe only; transfer remains sequential.
             Assert.Equal(payload, await File.ReadAllBytesAsync(restored.SavePath));
         }
         finally { RemoveStaging(restored.Id); }

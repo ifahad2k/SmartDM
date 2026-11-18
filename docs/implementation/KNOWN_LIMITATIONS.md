@@ -139,3 +139,85 @@ Its health diagnostics include unresolved endpoints, repeated-edge collapse and
 self-loops; verify source rather than treating graph absence as proof of no call.
 No Java, Linux, installer, memory benchmark or universal compatibility proof.
 See [handoff](REPORT_REPAIR_HANDOFF.md).
+
+
+## 2026-11-17 current security limits (supersedes older implementation notes)
+
+The eight scanned paths now have repairs with 464 passing C# and 333 passing
+browser tests on Windows. Cookies/API keys are protected fields; ordinary SQLite
+history and signed media URLs are not full-database encrypted. Earlier plaintext
+cookie/key and unauthenticated-loopback descriptions are historical.
+
+Linux Secret Service/current-user pipe/shell-host integration is implemented but
+not runtime-verified here; Linux requires `secret-tool` and an unlocked Secret
+Service and fails explicitly without protected storage. Installed Chrome/Firefox
+host registration/reload and real sites were not exercised. The running app and
+real profile were not changed. Historical backups are not rewritten by migration.
+
+FFmpeg network traffic now uses the .NET media proxy, but still does not use the
+worker speed limiter. Native replies have a 1 MiB cap; large resolved snapshots
+stay in an eight-entry, 15-minute, credential-keyed desktop cache. Full SQLCipher,
+durable browser acknowledgement and wider package/release gates remain open.
+See TEST_EVIDENCE.md for the exact scope and commands.
+
+
+## 2026-11-17 structural refactor limits
+
+Recovery, staging, policy, playlist reading, composition and preview/lookup logic
+have separate components with passing checks. DownloadEngine still owns multi-mode
+media-session orchestration (2,951 lines); MainViewModel still coordinates UI lifecycle
+and callbacks (1,434 lines). Shared browser runtime/capture routing is 1,868 lines;
+other responsibilities are in six separate sections. This is not complete layered
+assembly migration, a performance proof or universal site verification.
+
+The compact Graphify map hides tests and package copies. The detailed post-build
+graph still has six self-loops and 225 nodes without source files; `.axaml` markup
+is not parsed. Read source to confirm relationships; absent edges are not proof.
+Prior Linux, installed-host, SQLCipher, durable handoff and release limits remain.
+See STRUCTURAL_REFACTOR_HANDOFF.md for exact evidence.
+
+## 2026-11-17 staging repair limits
+
+New files grow with received data; Windows sparse physical allocation is measured.
+Linux physical allocation is not runtime-verified, and unsupported Windows sparse
+capability was fault-injected rather than tested on a live unsupported volume.
+Existing valid partials remain allocated and may resume from legacy roots; they
+are not bulk deleted, copied or retroactively compacted. Real downloaded bytes
+still consume disk space. There is no disk quota or automatic deletion of real
+paused transfers. Normal orphan reconciliation remains enabled. Only known exact
+historical mock signatures are classified as legacy previews. See
+STAGING_DISK_USAGE_HANDOFF.md; wider security/release gates remain open.
+
+2026-11-17 draggable controls: placement resets on refresh/remount and remains
+within the originating document/iframe viewport. Visibility still follows the
+original media/card. Chrome has synthetic trusted-input smoke coverage; installed
+Firefox/live-site dragging was not exercised. Extension reload plus page refresh
+is required. See DRAGGABLE_OVERLAY_HANDOFF.md.
+
+2026-11-17 ownership repair: live Dailymotion/installed Firefox remains unverified.
+Frame loading may briefly show a fallback until the child announces availability;
+frames without an installed child content script keep the fallback. Status messages
+are source-matched and do not authorize downloads. See PLAYER_OWNERSHIP_HANDOFF.md.
+
+2026-11-17 appearance UI: toolbar popup source/native DOM is verified synthetically;
+installed extension/Firefox/live sites still require checks after reload. Values
+save locally; Saved indicates completion, without a crash guarantee for pending
+writes. Very low opacity can reduce contrast over arbitrary video content. No
+separate settings tab remains. See OVERLAY_APPEARANCE_HANDOFF.md.
+
+
+## 2026-11-17 visible media size and progressive metadata
+
+Installed Firefox/live extension and sustained same-file IDM comparison remain unverified. Protected media can retain unknown size; HLS/mux/conversion may be estimated. New probing adds setup latency and safely falls back if unavailable. Existing unknown-length checkpoints may restart after metadata discovery. Short live CDN checks hit timeouts; no 5 MB/s guarantee. See MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md.
+
+## 2026-11-18 HLS stream reliability
+
+Whole-file clear fMP4 now uses parallel workers. Byte-range HLS and encrypted fMP4 still use the existing FFmpeg path. Live CDN compatibility and sustained IDM comparisons remain unverified. [HLS handoff](HLS_STREAM_RELIABILITY_HANDOFF.md).
+
+## 2026-11-18 worker count and media discovery
+
+Host throughput remains unmeasured against IDM. The reported HydraHD page required a verification challenge in Chrome before playback, so live validation remains open. Existing queued items retain their saved worker count. [Handoff](WORKERS_AND_MEDIA_DISCOVERY_HANDOFF.md)
+
+## 2026-11-18 HLS startup and selected audio
+
+Origin refusals remain terminal. The reported sites were not verified live with the new capture hooks. [Handoff](HLS_START_AND_AUDIO_HANDOFF.md)

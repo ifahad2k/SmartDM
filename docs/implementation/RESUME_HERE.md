@@ -191,3 +191,76 @@ Graphify 0.9.111 and Ponytail are installed globally as Codex skills. Local
 Refresh with `graphify extract . --code-only --max-workers 2`; `.graphifyignore`
 excludes Java, website, docs and user evidence. Do not upload sources or claim
 that a graph proves correctness. No installer, push or package closure.
+
+
+## 2026-11-17 security remediation handoff
+
+Current HEAD is `6c91563` after a concurrent browser commit; preserve all dirty
+C# security changes and pre-existing media tests. No security-session commit or
+push occurred. Java is untouched. Read the latest TEST_EVIDENCE.md entry first.
+
+Eight reported paths have code repairs and Windows verification: 464 C# tests,
+333 browser tests, zero build warnings/errors. The owner authorized this bounded
+Package 2-4 security slice; it does not close those package gates.
+
+Next: validate Linux Secret Service/current-user native IPC and shell registration,
+then rebuild/start the C# app, register its updated native host, reload extensions
+and refresh tabs. The real app/profile was not replaced or migrated. Keep full
+SQLCipher, durable browser acknowledgement and remaining Package 2 gates open.
+
+
+## 2026-11-17 structural refactor — latest source navigation
+
+Read [STRUCTURAL_REFACTOR_HANDOFF.md](STRUCTURAL_REFACTOR_HANDOFF.md). Engine recovery,
+policy and playlist reading have dedicated components; view-model construction is
+explicit in DesktopComposition. Edit background logic in `extensions/shared/background`
+and rebuild/check both generated bundles. Preserve all earlier dirty security/media work.
+Graphify's production overview is `graphify-out/architecture/architecture.html`;
+its detailed query graph remains graph.json. Final checks: 468 C#, 335 browser,
+two tool tests; zero build warnings/errors. No real app restart or publication.
+Package 2 and prior Linux/live-site/security/release limitations remain open.
+
+## 2026-11-17 staging repair — latest handoff
+
+Read [STAGING_DISK_USAGE_HANDOFF.md](STAGING_DISK_USAGE_HANDOFF.md). Keep preview
+rows out of transfers/persistence and permit only history removal for old samples.
+New staging is profile-local, without eager size allocation; preserve in-place
+legacy recovery and strict range validation. Windows checks: 478 C# / 335 browser
+pass. The normal Debug app was rebuilt/restarted after verifying no active/queued
+transfers. Existing partials were not bulk deleted or compacted. Linux physical
+allocation and live sparse-unsupported hardware remain unverified. Next: Package 2;
+broader package/security/release gates remain open.
+
+2026-11-17 UI follow-up: player and thumbnail download controls can be dragged or
+moved with focused Alt + arrows. Reload the extension and refresh pages to load it.
+347 browser cases pass; isolated Chrome trusted-input smoke passes. Read
+[DRAGGABLE_OVERLAY_HANDOFF.md](DRAGGABLE_OVERLAY_HANDOFF.md) for scope and limits.
+
+2026-11-17 duplicate-button follow-up: nested players elect the inner control and
+keep an iframe fallback when no child is available. Both watcher modules updated;
+357 browser tests and synthetic cross-origin Chrome checks pass. Reload extension
+and refresh pages. Read [PLAYER_OWNERSHIP_HANDOFF.md](PLAYER_OWNERSHIP_HANDOFF.md).
+
+2026-11-17 latest UI: approved Direct menu plus 336px native toolbar popup.
+Do not restore the discarded separate options page. Theme and independent opacity
+sliders save locally and update mounted controls. Defaults: Graphite, compact,
+12px menu corners, menu 100%/button 0%. 376 browser tests and synthetic Chrome
+popup/menu checks pass. Reload the extension/refresh websites. Read
+[OVERLAY_APPEARANCE_HANDOFF.md](OVERLAY_APPEARANCE_HANDOFF.md).
+
+
+## 2026-11-17 visible media size and progressive metadata
+
+Read [MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md](MEDIA_SIZE_AND_PARALLELISM_HANDOFF.md). Menu sizes are visible; unknown progressive captures obtain metadata before partitioning. Preserve body cancellation, bounds and identity checks. 483 C# / 391 browser tests pass; Debug app rebuilt/restarted after zero-active check. Reload extension/refresh sites. Sustained CDN/IDM speed parity remains unverified; live concurrent probes timed out. Package 2 remains open.
+
+## 2026-11-18 HLS stream reliability
+
+The HLS repair is built and the desktop is running. Installed extension reload and live CDN runs remain open. [HLS handoff](HLS_STREAM_RELIABILITY_HANDOFF.md).
+
+## 2026-11-18 worker count and media discovery
+
+SmartDM was rebuilt and restarted with the worker-count repair. Installed Chrome displayed 1080p60 on both the reported YouTube watch page and its home thumbnail. [Handoff](WORKERS_AND_MEDIA_DISCOVERY_HANDOFF.md)
+
+## 2026-11-18 HLS startup and selected audio
+
+The startup and selected-audio repair is built. Chrome showed SmartDM Integration switched off during verification. [Handoff](HLS_START_AND_AUDIO_HANDOFF.md)

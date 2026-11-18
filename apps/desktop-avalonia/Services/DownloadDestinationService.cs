@@ -9,14 +9,16 @@ public sealed class DownloadDestinationService(IDatabaseRepository repository)
 {
     public static Task DeleteConfirmedFileAsync(DownloadModel model) => Task.Run(() =>
     {
+        PreviewTransfers.RequireRealTransfer(model);
         // A quarantined transfer never owned an existing file at SavePath.
         string? path = model.IsQuarantined ? model.QuarantinePath : model.SavePath;
         if (!string.IsNullOrWhiteSpace(path) && File.Exists(path)) File.Delete(path);
-        DownloadEngine.CleanupStagingDirectory(DownloadEngine.GetDownloadStagingDirectory(model.Id));
+        DownloadStaging.CleanupStagingDirectory(DownloadStaging.GetDownloadStagingDirectory(model.Id));
     });
 
     public async Task<string> MoveAsync(DownloadModel model, string directory, string name)
     {
+        PreviewTransfers.RequireRealTransfer(model);
         if (model.IsActive || model.IsQuarantined) throw new InvalidOperationException("Pause the download before moving it. Quarantined files cannot be moved here.");
         if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains('/') || name.Contains('\\'))
             throw new ArgumentException("Enter a file name without a directory path.");
@@ -30,7 +32,7 @@ public sealed class DownloadDestinationService(IDatabaseRepository repository)
         string? stageOriginal = null, stageTarget = null;
         if (!model.IsCompletedFile)
         {
-            string root = DownloadEngine.GetDownloadStagingDirectory(model.Id);
+            string root = DownloadStaging.GetDownloadStagingDirectory(model.Id);
             stageOriginal = Path.Combine(root, Path.GetFileName(original));
             stageTarget = Path.Combine(root, name);
         }

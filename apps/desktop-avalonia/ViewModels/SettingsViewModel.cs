@@ -121,8 +121,13 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string _aiProviderType = "DISABLED";
 
-    [ObservableProperty]
-    private string _geminiApiKey = string.Empty;
+    private string? _pendingApiKey;
+    private bool _clearSavedApiKey;
+    [ObservableProperty] private bool _hasSavedApiKey;
+    [ObservableProperty] private string _settingsError = string.Empty;
+    public void SetPendingApiKey(string? value) => _pendingApiKey = value;
+    [RelayCommand]
+    private void ClearSavedApiKey() { _clearSavedApiKey = true; HasSavedApiKey = false; }
 
     [ObservableProperty]
     private string _geminiBaseUrl = "https://generativelanguage.googleapis.com";
@@ -191,7 +196,7 @@ public partial class SettingsViewModel : ViewModelBase
 
         var ai = _settingsService.CurrentAiConfig;
         AiProviderType = string.IsNullOrWhiteSpace(ai.ProviderType) ? "DISABLED" : ai.ProviderType;
-        GeminiApiKey = ai.ApiKey ?? "";
+        HasSavedApiKey = ai.HasApiKey;
         GeminiBaseUrl = string.IsNullOrWhiteSpace(ai.BaseUrl) ? "https://generativelanguage.googleapis.com" : ai.BaseUrl;
         SelectedOllamaModel = string.IsNullOrWhiteSpace(ai.ModelName) ? "qwen2.5:3b" : ai.ModelName;
 
@@ -384,6 +389,9 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     public async Task SaveAsync()
     {
+        SettingsError = "";
+        try
+        {
         // 1. Update AppSettingsModel
         var s = new AppSettingsModel
         {
@@ -409,12 +417,13 @@ public partial class SettingsViewModel : ViewModelBase
         {
             Enabled = !IsAiDisabled,
             ProviderType = AiProviderType,
-            ApiKey = GeminiApiKey,
             BaseUrl = IsAiGemini ? GeminiBaseUrl : OllamaBaseUrl,
             ModelName = SelectedOllamaModel
         };
 
-        await _settingsService.SaveAiConfigAsync(ai);
+        await _settingsService.SaveAiConfigAsync(ai, _pendingApiKey, _clearSavedApiKey);
+        _pendingApiKey = null;
+        _clearSavedApiKey = false;
 
         // 3. Notify Theme Change
         RequestThemeChange?.Invoke(SelectedTheme);
@@ -423,6 +432,9 @@ public partial class SettingsViewModel : ViewModelBase
         SettingsSaved?.Invoke(s, ai);
 
         RequestClose?.Invoke();
+        }
+        catch (System.Security.Cryptography.CryptographicException ex) { SettingsError = ex.Message; }
+        catch (System.IO.IOException) { SettingsError = "Settings could not be saved. Check the profile permissions."; }
     }
 
     [RelayCommand]

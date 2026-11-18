@@ -16,6 +16,9 @@ namespace SmartDm.Desktop.Avalonia.Services;
 public class DownloadEngine : IDownloadEngine
 {
     private readonly HttpClient _httpClient;
+    private readonly bool _isPreviewMode;
+    private readonly Func<string, long, CancellationToken, Task<bool>> _prepareStagingFile;
+    private readonly HlsPlaylistReader _hlsReader;
     private readonly IDatabaseRepository _repository;
     private readonly ISafetyScanner _safetyScanner;
     private readonly TransferScheduler _scheduler = new();
@@ -48,368 +51,33 @@ public class DownloadEngine : IDownloadEngine
         public bool IsFiniteHls { get; set; }
     }
 
-    public static string GetDownloadStagingDirectory(string downloadId)
+    public static string GetDownloadStagingDirectory(string downloadId) => DownloadStaging.GetDownloadStagingDirectory(downloadId);
+    public static void CleanupStagingDirectory(string stagingDir) => DownloadStaging.CleanupStagingDirectory(stagingDir);
+    public static void CleanupOrphanStagingDirectories(IEnumerable<string>? activeOrResumableIds = null, TimeSpan? retentionCutoff = null) =>
+        DownloadStaging.CleanupOrphanStagingDirectories(activeOrResumableIds, retentionCutoff, LiveSessionIds.Keys);
+    public static string GetSegmentJournalPath(string stagingDirectory) => DownloadJournalStore.GetSegmentJournalPath(stagingDirectory);
+    public static void SaveSegmentJournal(string stagingDirectory, IEnumerable<SegmentProgress> segments,
+        string? downloadId = null, string? sourceUrl = null, long totalBytes = 0, string? etag = null, string? lastModified = null) =>
+        DownloadJournalStore.SaveSegmentJournal(stagingDirectory, segments, downloadId, sourceUrl, totalBytes, etag, lastModified);
+    public static void SaveSegmentJournal(string stagingDirectory, DownloadModel download, IEnumerable<SegmentProgress> segments) =>
+        DownloadJournalStore.SaveSegmentJournal(stagingDirectory, download, segments);
+    public static List<SegmentProgress>? LoadAndValidateJournal(string stagingDirectory, string downloadId, string sourceUrl, long totalBytes,
+        string? currentETag = null, string? currentLastModified = null, string? stagingFilePath = null, bool allowCompletedReuse = false) =>
+        DownloadJournalStore.LoadAndValidateJournal(stagingDirectory, downloadId, sourceUrl, totalBytes, currentETag, currentLastModified, stagingFilePath, allowCompletedReuse);
+    public static List<SegmentProgress>? LoadSegmentJournal(string stagingDirectory) => DownloadJournalStore.LoadSegmentJournal(stagingDirectory);
+    public static string CombineHlsUri(string baseUrl, string relativeOrAbsoluteUri) => StreamRequestPolicy.CombineHlsUri(baseUrl, relativeOrAbsoluteUri);
+    public static List<string> GetCandidateReferers(string targetUrl, string? primaryReferer, string? pageUrl = null) => StreamRequestPolicy.GetCandidateReferers(targetUrl, primaryReferer, pageUrl);
+    public static bool IsStreamingCdn(string? url, string? mediaKind = null) => StreamRequestPolicy.IsStreamingCdn(url, mediaKind);
+    public static bool IsHtmlResponse(string? contentType, string? bodyPrefix) => StreamRequestPolicy.IsHtmlResponse(contentType, bodyPrefix);
+    public static string? FormatCookieHeader(string? cookieData, string? targetUrl, string? sourceUrl = null) => CookieHeaderPolicy.Select(cookieData, targetUrl, sourceUrl);
+    private static string GetHttpErrorMessage(int statusCode, string? reasonPhrase = null) => StreamRequestPolicy.GetHttpErrorMessage(statusCode, reasonPhrase);
+
+    private readonly IHttpProbeService _probeService;
+
+    public DownloadEngine(IDatabaseRepository repository, ISafetyScanner safetyScanner, HttpClient? httpClient = null, bool isPreviewMode = false, Func<string, long, CancellationToken, Task<bool>>? stagingFilePreparation = null, IHttpProbeService? probeService = null)
     {
-        string? isolated = Environment.GetEnvironmentVariable("SMARTDM_STAGING_DIR");
-        if (!string.IsNullOrEmpty(isolated))
-        {
-            if (!Path.IsPathFullyQualified(isolated)) throw new InvalidOperationException("The staging root must be absolute.");
-            string path = Path.Combine(isolated, "dl_" + MediaCheckpoint.Fingerprint(downloadId));
-            Directory.CreateDirectory(path);
-            return path;
-        }
-        string safeId = "dl_" + string.Join("_", downloadId.Replace(".", "_").Split(Path.GetInvalidFileNameChars()));
-        string stagingDir;
-        try
-        {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string tempRoot = Path.Combine(baseDir, ".temp");
-            Directory.CreateDirectory(tempRoot);
-            try
-            {
-                var di = new DirectoryInfo(tempRoot);
-                if ((di.Attributes & FileAttributes.Hidden) != FileAttributes.Hidden)
-                {
-                    di.Attributes |= FileAttributes.Hidden;
-                }
-            }
-            catch { }
-
-            stagingDir = Path.Combine(tempRoot, safeId);
-            Directory.CreateDirectory(stagingDir);
-            return stagingDir;
-        }
-        catch
-        {
-            // Fallback to LocalApplicationData if BaseDirectory is read-only
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string tempRoot = Path.Combine(appData, "SmartDM", ".temp");
-            Directory.CreateDirectory(tempRoot);
-            try
-            {
-                var di = new DirectoryInfo(tempRoot);
-                if ((di.Attributes & FileAttributes.Hidden) != FileAttributes.Hidden)
-                {
-                    di.Attributes |= FileAttributes.Hidden;
-                }
-            }
-            catch { }
-
-            stagingDir = Path.Combine(tempRoot, safeId);
-            Directory.CreateDirectory(stagingDir);
-            return stagingDir;
-        }
-    }
-
-    public static void CleanupStagingDirectory(string stagingDir)
-    {
-        try
-        {
-            if (Directory.Exists(stagingDir))
-            {
-                Directory.Delete(stagingDir, recursive: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DownloadEngine] Failed to clean staging directory '{stagingDir}': {ex.Message}");
-        }
-    }
-
-    public static void CleanupOrphanStagingDirectories(IEnumerable<string>? activeOrResumableIds = null, TimeSpan? retentionCutoff = null)
-    {
-        var safeSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (activeOrResumableIds != null)
-        {
-            foreach (var id in activeOrResumableIds)
-            {
-                if (!string.IsNullOrWhiteSpace(id))
-                {
-                    safeSet.Add("dl_" + string.Join("_", id.Replace(".", "_").Split(Path.GetInvalidFileNameChars())));
-                }
-            }
-        }
-
-        foreach (string id in LiveSessionIds.Keys) safeSet.Add("dl_" + string.Join("_", id.Replace(".", "_").Split(Path.GetInvalidFileNameChars())));
-
-        DateTime cutoffTime = retentionCutoff.HasValue
-            ? DateTime.UtcNow - retentionCutoff.Value
-            : DateTime.MinValue;
-
-        void CleanTempRoot(string tempRoot)
-        {
-            try
-            {
-                if (!Directory.Exists(tempRoot)) return;
-                foreach (var dir in Directory.GetDirectories(tempRoot))
-                {
-                    try
-                    {
-                        string dirName = Path.GetFileName(dir);
-                        if (safeSet.Contains(dirName))
-                        {
-                            continue;
-                        }
-
-                        if (retentionCutoff.HasValue)
-                        {
-                            var di = new DirectoryInfo(dir);
-                            if (di.LastWriteTimeUtc > cutoffTime)
-                            {
-                                continue;
-                            }
-                        }
-
-                        Directory.Delete(dir, recursive: true);
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-        }
-
-        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMARTDM_STAGING_DIR"))) return;
-        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        CleanTempRoot(Path.Combine(baseDir, ".temp"));
-
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        CleanTempRoot(Path.Combine(appData, "SmartDM", ".temp"));
-    }
-
-    public class SegmentJournalEntry
-    {
-        public int SegmentIndex { get; set; }
-        public long StartByte { get; set; }
-        public long EndByte { get; set; }
-        public long DownloadedBytes { get; set; }
-        public bool IsCompleted { get; set; }
-        public string? CheckpointSha256 { get; set; }
-    }
-
-    public class DownloadJournal
-    {
-        public string DownloadId { get; set; } = string.Empty;
-        public string SourceUrl { get; set; } = string.Empty;
-        public long TotalBytes { get; set; }
-        public string? ETag { get; set; }
-        public string? LastModified { get; set; }
-        public List<SegmentJournalEntry> Segments { get; set; } = new();
-    }
-
-    public static string GetSegmentJournalPath(string stagingDirectory)
-    {
-        return Path.Combine(stagingDirectory, "segments.journal");
-    }
-
-    public static void SaveSegmentJournal(
-        string stagingDirectory,
-        IEnumerable<SegmentProgress> segments,
-        string? downloadId = null,
-        string? sourceUrl = null,
-        long totalBytes = 0,
-        string? etag = null,
-        string? lastModified = null)
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(stagingDirectory) || !Directory.Exists(stagingDirectory)) return;
-
-            var journal = new DownloadJournal
-            {
-                DownloadId = downloadId ?? string.Empty,
-                SourceUrl = sourceUrl ?? string.Empty,
-                TotalBytes = totalBytes,
-                ETag = etag,
-                LastModified = lastModified,
-                Segments = segments.Select(s => new SegmentJournalEntry
-                {
-                    SegmentIndex = s.SegmentIndex,
-                    StartByte = s.StartByte,
-                    EndByte = s.EndByte,
-                    DownloadedBytes = s.DownloadedBytes,
-                    IsCompleted = s.IsCompleted,
-                    CheckpointSha256 = s.CheckpointSha256
-                }).ToList()
-            };
-
-            string json = JsonSerializer.Serialize(journal, new JsonSerializerOptions { WriteIndented = true });
-            string journalPath = GetSegmentJournalPath(stagingDirectory);
-            string tmpPath = journalPath + ".tmp";
-            File.WriteAllText(tmpPath, json);
-            File.Move(tmpPath, journalPath, overwrite: true);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DownloadEngine] Failed to save segment journal: {ex.Message}");
-        }
-    }
-
-    public static void SaveSegmentJournal(string stagingDirectory, DownloadModel download, IEnumerable<SegmentProgress> segments)
-    {
-        SaveSegmentJournal(
-            stagingDirectory,
-            segments,
-            downloadId: download.Id,
-            sourceUrl: download.Url,
-            totalBytes: download.TotalBytes,
-            etag: download.ETag,
-            lastModified: download.LastModified);
-    }
-
-    public static List<SegmentProgress>? LoadAndValidateJournal(
-        string stagingDirectory,
-        string downloadId,
-        string sourceUrl,
-        long totalBytes,
-        string? currentETag = null,
-        string? currentLastModified = null,
-        string? stagingFilePath = null,
-        bool allowCompletedReuse = false)
-    {
-        try
-        {
-            string journalPath = GetSegmentJournalPath(stagingDirectory);
-            if (!File.Exists(journalPath)) return null;
-
-            string json = File.ReadAllText(journalPath);
-            DownloadJournal? journal = null;
-
-            try
-            {
-                journal = JsonSerializer.Deserialize<DownloadJournal>(json);
-            }
-            catch { }
-
-            if (journal == null || journal.Segments == null || journal.Segments.Count == 0)
-            {
-                try
-                {
-                    var fallbackEntries = JsonSerializer.Deserialize<List<SegmentJournalEntry>>(json);
-                    if (fallbackEntries != null && fallbackEntries.Count > 0)
-                    {
-                        journal = new DownloadJournal { Segments = fallbackEntries };
-                    }
-                }
-                catch { }
-            }
-
-            if (journal == null || journal.Segments == null || journal.Segments.Count == 0)
-            {
-                return null;
-            }
-
-            // 1. Source Identity Validation
-            if (!string.IsNullOrEmpty(journal.DownloadId) && !string.IsNullOrEmpty(downloadId) &&
-                !string.Equals(journal.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase))
-            {
-                Debug.WriteLine("[JournalValidation] Rejecting journal: download identity mismatch");
-                return null;
-            }
-
-            if (!string.IsNullOrEmpty(journal.SourceUrl) && !string.IsNullOrEmpty(sourceUrl) &&
-                !string.Equals(journal.SourceUrl, sourceUrl, StringComparison.OrdinalIgnoreCase))
-            {
-                Debug.WriteLine("[JournalValidation] Rejecting journal: source URL mismatch");
-                return null;
-            }
-
-            if (journal.TotalBytes > 0 && totalBytes > 0 && journal.TotalBytes != totalBytes)
-            {
-                Debug.WriteLine($"[JournalValidation] Rejecting journal: TotalBytes mismatch (journal {journal.TotalBytes} vs expected {totalBytes})");
-                return null;
-            }
-
-            // 2. HTTP Validators Validation
-            if (!string.IsNullOrEmpty(journal.ETag) && !string.IsNullOrEmpty(currentETag))
-            {
-                string normJ = journal.ETag.Trim().Trim('"');
-                string normC = currentETag.Trim().Trim('"');
-                if (!string.Equals(normJ, normC, StringComparison.OrdinalIgnoreCase))
-                {
-                    Debug.WriteLine("[JournalValidation] Rejecting journal: ETag validator changed");
-                    return null;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(journal.LastModified) && !string.IsNullOrEmpty(currentLastModified))
-            {
-                if (!string.Equals(journal.LastModified.Trim(), currentLastModified.Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    Debug.WriteLine("[JournalValidation] Rejecting journal: Last-Modified validator changed");
-                    return null;
-                }
-            }
-
-            allowCompletedReuse = allowCompletedReuse &&
-                !string.IsNullOrWhiteSpace(downloadId) &&
-                string.Equals(journal.DownloadId, downloadId, StringComparison.Ordinal) &&
-                !string.IsNullOrWhiteSpace(sourceUrl) &&
-                string.Equals(journal.SourceUrl, sourceUrl, StringComparison.Ordinal) &&
-                totalBytes > 0 && journal.TotalBytes == totalBytes &&
-                !string.IsNullOrWhiteSpace(currentETag) &&
-                !currentETag.StartsWith("W/", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(journal.ETag, currentETag, StringComparison.Ordinal);
-
-            // 3. Segment Range Bounds & Monotonicity Validation
-            long prevEnd = -1;
-            foreach (var seg in journal.Segments)
-            {
-                if (seg.StartByte < 0) return null;
-                if (seg.EndByte >= 0 && seg.EndByte < seg.StartByte) return null;
-                if (seg.StartByte <= prevEnd) return null; // Overlapping or non-monotonic
-                if (totalBytes > 0 && seg.EndByte >= totalBytes) return null;
-                prevEnd = seg.EndByte;
-            }
-
-            // A preallocated file length proves no bytes were written. Reuse only fully
-            // flushed ranges whose saved digest still matches the bytes on disk.
-            foreach (var seg in journal.Segments)
-            {
-                long length = seg.EndByte >= seg.StartByte ? seg.EndByte - seg.StartByte + 1 : 0;
-                bool verified = false;
-                if (allowCompletedReuse && length > 0 && seg.IsCompleted && seg.DownloadedBytes == length &&
-                    seg.CheckpointSha256?.Length == 64 && !string.IsNullOrEmpty(stagingFilePath))
-                {
-                    try
-                    {
-                        string actual = SegmentCheckpointHash.Compute(stagingFilePath, seg.StartByte, length);
-                        verified = string.Equals(actual, seg.CheckpointSha256, StringComparison.OrdinalIgnoreCase);
-                    }
-                    catch (IOException) { }
-                    catch (UnauthorizedAccessException) { }
-                }
-                if (!verified)
-                {
-                    seg.DownloadedBytes = 0;
-                    seg.IsCompleted = false;
-                    seg.CheckpointSha256 = null;
-                }
-            }
-
-            return journal.Segments.Select(e => new SegmentProgress
-            {
-                SegmentIndex = e.SegmentIndex,
-                StartByte = e.StartByte,
-                EndByte = e.EndByte,
-                DownloadedBytes = e.DownloadedBytes,
-                IsCompleted = e.IsCompleted,
-                CheckpointSha256 = e.CheckpointSha256
-            }).ToList();
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DownloadEngine] Failed to load and validate journal: {ex.Message}");
-            return null;
-        }
-    }
-
-    public static List<SegmentProgress>? LoadSegmentJournal(string stagingDirectory)
-    {
-        return LoadAndValidateJournal(stagingDirectory, string.Empty, string.Empty, 0);
-    }
-
-    public DownloadEngine(IDatabaseRepository repository, ISafetyScanner safetyScanner, HttpClient? httpClient = null)
-    {
+        _prepareStagingFile = stagingFilePreparation ?? StagingFile.PrepareAsync;
+        _isPreviewMode = isPreviewMode;
         _repository = repository;
         _safetyScanner = safetyScanner;
 
@@ -433,6 +101,8 @@ public class DownloadEngine : IDownloadEngine
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
         }
+        _hlsReader = new HlsPlaylistReader(_httpClient);
+        _probeService = probeService ?? new HttpProbeService(_httpClient);
     }
 
     public void SetSpeedLimitBytesPerSec(long limitBytesPerSec)
@@ -468,9 +138,9 @@ public class DownloadEngine : IDownloadEngine
                 request.Headers.TryAddWithoutValidation("Referer", download.Referer);
             if (!string.IsNullOrWhiteSpace(download.UserAgent))
                 request.Headers.TryAddWithoutValidation("User-Agent", download.UserAgent);
-            string? cookies = FormatCookieHeader(download.Cookies, download.Url);
+            string? cookies = FormatCookieHeader(download.Cookies, download.Url, download.Url);
             if (!string.IsNullOrWhiteSpace(cookies))
-                request.Headers.TryAddWithoutValidation("Cookie", cookies);
+                DownloadRedirectHandler.ApplyCookies(request, download.Cookies, download.Url);
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             var range = response.Content.Headers.ContentRange;
@@ -495,12 +165,21 @@ public class DownloadEngine : IDownloadEngine
     public async Task StartDownloadAsync(DownloadModel download)
     {
         ArgumentNullException.ThrowIfNull(download);
+        RequireTransferMode();
+        PreviewTransfers.RequireRealTransfer(download);
         using var command = await _commands.EnterAsync(download.Id);
         await StartDownloadCoreAsync(download);
     }
 
+    private void RequireTransferMode()
+    {
+        if (_isPreviewMode) throw new InvalidOperationException(PreviewTransfers.DisabledMessage);
+    }
+
     private async Task StartDownloadCoreAsync(DownloadModel download)
     {
+        RequireTransferMode();
+        PreviewTransfers.RequireRealTransfer(download);
         if (_sessions.TryGetValue(download.Id, out var existingSession))
         {
             if (!IsTerminal(existingSession.Download.Status) && existingSession.Download.Status != DownloadStatus.Failed) return;
@@ -599,18 +278,7 @@ public class DownloadEngine : IDownloadEngine
         }
     }
 
-    public static string SanitizeMediaUrl(string? rawUrl)
-    {
-        if (string.IsNullOrWhiteSpace(rawUrl)) return rawUrl ?? string.Empty;
-        int query = rawUrl.IndexOf('?');
-        int hash = rawUrl.IndexOf('#');
-        if (query < 0 || (hash >= 0 && query > hash)) return rawUrl;
-        string queryText = hash >= 0 ? rawUrl[(query + 1)..hash] : rawUrl[(query + 1)..];
-        string[] parts = queryText.Split('&');
-        var kept = parts.Where(p => !Regex.IsMatch(p, @"^(?:(?:bytestart|byteend)=\d+|range=\d+(?:-\d+)?)$", RegexOptions.IgnoreCase)).ToArray();
-        if (kept.Length == parts.Length) return rawUrl;
-        return rawUrl[..query] + (kept.Length > 0 ? "?" + string.Join("&", kept) : "") + (hash >= 0 ? rawUrl[hash..] : "");
-    }
+    public static string SanitizeMediaUrl(string? rawUrl) => StreamRequestPolicy.SanitizeMediaUrl(rawUrl);
 
     private async Task PrepareAndRunSessionAsync(DownloadSession session)
     {
@@ -640,6 +308,7 @@ public class DownloadEngine : IDownloadEngine
             download.VideoUrl = representation.DirectUrl;
         }
         download.Status = DownloadStatus.Active;
+        download.AllocationMethod = "Grows with received data";
         await _repository.SaveDownloadAsync(download);
         session.Cts.Token.ThrowIfCancellationRequested();
         DownloadStatusChanged?.Invoke(download);
@@ -675,8 +344,8 @@ public class DownloadEngine : IDownloadEngine
             probe.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 63);
             if (!string.IsNullOrEmpty(download.Referer)) probe.Headers.TryAddWithoutValidation("Referer", download.Referer);
             if (!string.IsNullOrEmpty(download.UserAgent)) probe.Headers.TryAddWithoutValidation("User-Agent", download.UserAgent);
-            string? probeCookies = FormatCookieHeader(download.Cookies, download.Url);
-            if (probeCookies != null) probe.Headers.TryAddWithoutValidation("Cookie", probeCookies);
+            string? probeCookies = FormatCookieHeader(download.Cookies, download.Url, download.Url);
+            DownloadRedirectHandler.ApplyCookies(probe, download.Cookies, download.Url);
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(session.Cts.Token);
             budget.CancelAfter(TimeSpan.FromSeconds(15));
             using var response = await _httpClient.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, budget.Token);
@@ -693,25 +362,13 @@ public class DownloadEngine : IDownloadEngine
 
         if (!string.IsNullOrEmpty(download.ManifestText))
         {
-            var manifest = HlsManifestSnapshot.Normalize(download.ManifestText, download.Url);
-            if (!manifest.Contains("#EXT-X-MAP:") && !manifest.Contains("#EXT-X-BYTERANGE:"))
-            {
-                await RunParallelHlsSessionAsync(session, manifest);
-                return;
-            }
-            await using var source = new CapturedHlsPlaylist(manifest, session.Cts.Token);
-            if (download.TotalDuration <= 0 && source.TotalDuration > 0) download.TotalDuration = source.TotalDuration;
-            if (download.TotalBytes <= 0)
-            {
-                long bw = source.Bandwidth > 0 ? source.Bandwidth : download.Bandwidth;
-                int h = HlsMediaResolver.ExtractResolutionNumber(download.FormatId ?? "");
-                if (h <= 0) h = HlsMediaResolver.ExtractResolutionNumber(download.Title ?? "");
-                long expected = HlsMediaResolver.CalculateExpectedTotalBytes(source.TotalDuration, bw, h, source.SegmentCount);
-                if (expected > 0) download.TotalBytes = expected;
-            }
-            await using var audioSource = !string.IsNullOrEmpty(download.AudioManifestText) && !string.IsNullOrEmpty(download.AudioUrl)
-                ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(download.AudioManifestText, download.AudioUrl), session.Cts.Token) : null;
-            await RunFfmpegSessionAsync(session, source.Url, audioSource?.Url);
+            // Older extensions sent master playlists in this field.
+            var snapshot = download.ManifestText;
+            if (!HlsManifestSnapshot.IsWithinSizeLimit(snapshot))
+                throw new InvalidDataException("The media playlist exceeds the supported size.");
+            string? manifest = HlsManifestSnapshot.IsCompleteMediaPlaylist(snapshot)
+                ? HlsManifestSnapshot.Normalize(snapshot, download.Url) : null;
+            await RunParallelHlsSessionAsync(session, manifest);
             return;
         }
 
@@ -749,11 +406,28 @@ public class DownloadEngine : IDownloadEngine
             return;
         }
 
+        // Browser captures can omit length even when the CDN exposes it on HEAD/Range.
+        if (download.TotalBytes <= 0 || download.SupportsRanges == null)
+        {
+            using var probeBudget = CancellationTokenSource.CreateLinkedTokenSource(session.Cts.Token);
+            probeBudget.CancelAfter(TimeSpan.FromSeconds(15));
+            try
+            {
+                var metadata = await _probeService.ProbeUrlAsync(download.Url, download.Referer, download.UserAgent, download.Cookies, probeBudget.Token);
+                if (metadata.IsSuccess && metadata.TotalBytes > 0)
+                {
+                    download.TotalBytes = metadata.TotalBytes;
+                    download.SupportsRanges = metadata.AcceptsRanges;
+                    if (string.IsNullOrWhiteSpace(download.ETag)) download.ETag = metadata.ETag;
+                    download.LastModified ??= metadata.LastModified;
+                    DownloadProgressChanged?.Invoke(download);
+                }
+            }
+            catch (OperationCanceledException) when (!session.Cts.IsCancellationRequested) { }
+        }
+
         // Determine segments
-        bool isStreamingHost = IsStreamingCdn(download.Url, download.MediaKind);
-        int defaultThreads = isStreamingHost ? 4 : 16;
-        int maxThreads = isStreamingHost ? 6 : 32;
-        int threadCount = Math.Clamp(download.ParallelThreads > 0 ? (isStreamingHost ? Math.Min(download.ParallelThreads, 6) : download.ParallelThreads) : defaultThreads, 1, maxThreads);
+        int threadCount = Math.Clamp(download.ParallelThreads > 0 ? download.ParallelThreads : 16, 1, 32);
         long totalBytes = download.TotalBytes;
 
         // Check for cached segments in memory or from durable journal on disk
@@ -822,7 +496,15 @@ public class DownloadEngine : IDownloadEngine
             }
         }
 
-        string? cookieHeader = FormatCookieHeader(download.Cookies, download.Url);
+        string? cookieHeader = FormatCookieHeader(download.Cookies, download.Url, download.Url);
+
+        // Unknown-length checkpoints cannot safely define partitions for a newly sized resource.
+        if (totalBytes > 0 && cachedSegs?.Any(segment => segment.EndByte < 0) == true)
+        {
+            cachedSegs = null;
+            download.DownloadedBytes = 0;
+            download.ProgressPercentage = 0;
+        }
 
         string? uaString = !string.IsNullOrWhiteSpace(download.UserAgent)
             ? download.UserAgent
@@ -830,20 +512,15 @@ public class DownloadEngine : IDownloadEngine
 
         if (totalBytes > 0 && download.SupportsRanges != false)
         {
-            // Pre-allocate file size in isolated staging directory without truncating existing valid bytes
-            try
+            bool sparseWrites = await _prepareStagingFile(session.StagingFilePath, totalBytes, session.Cts.Token);
+            if (!sparseWrites)
             {
-                await using (var fs = new FileStream(session.StagingFilePath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
-                {
-                    if (fs.Length < totalBytes)
-                    {
-                        fs.SetLength(totalBytes);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to pre-allocate file length: {ex.Message}");
+                // Unsupported volumes replay in one contiguous worker instead of creating large holes.
+                cachedSegs = null;
+                threadCount = 1;
+                download.ParallelThreads = 1;
+                download.DownloadedBytes = 0;
+                download.ProgressPercentage = 0;
             }
 
             if (cachedSegs != null && cachedSegs.Count > 0)
@@ -853,7 +530,7 @@ public class DownloadEngine : IDownloadEngine
                 {
                     var seg = cachedSegs[i];
                     long initialDownloaded = Math.Clamp(seg.DownloadedBytes, 0, seg.EndByte >= 0 ? seg.EndByte - seg.StartByte + 1 : seg.DownloadedBytes);
-                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, seg.SegmentIndex, seg.StartByte, seg.EndByte, initialDownloaded, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
+                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, seg.SegmentIndex, seg.StartByte, seg.EndByte, initialDownloaded, referer, uaString, download.Cookies, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
                     worker.Progress.CheckpointSha256 = seg.CheckpointSha256;
                     session.Workers.Add(worker);
                 }
@@ -872,7 +549,7 @@ public class DownloadEngine : IDownloadEngine
                 {
                     long start = currentOffset;
                     long end = (i == threadCount - 1) ? totalBytes - 1 : (currentOffset + chunkSize - 1);
-                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, i + 1, start, end, 0, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
+                    var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, i + 1, start, end, 0, referer, uaString, download.Cookies, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
                     session.Workers.Add(worker);
                     currentOffset = end + 1;
                 }
@@ -881,11 +558,12 @@ public class DownloadEngine : IDownloadEngine
         else
         {
             long initialDownloaded = (cachedSegs != null && cachedSegs.Count > 0) ? cachedSegs[0].DownloadedBytes : 0;
-            var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, 1, 0, -1, initialDownloaded, referer, uaString, cookieHeader, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
+            var worker = new SegmentWorker(_httpClient, download.Url, session.StagingFilePath, 1, 0, -1, initialDownloaded, referer, uaString, download.Cookies, _speedLimiter, totalBytes, download.ETag, download.PageUrl);
             session.Workers.Add(worker);
         }
 
         session.Cts.Token.ThrowIfCancellationRequested();
+        download.ParallelThreads = session.Workers.Count;
         _segmentCache[download.Id] = session.Workers.Select(w => w.Progress).ToList();
         session.UsesSegmentJournal = true;
         SaveSegmentJournal(session.StagingDirectory, session.Download, session.Workers.Select(w => w.Progress));
@@ -912,6 +590,7 @@ public class DownloadEngine : IDownloadEngine
 
     public static bool PromoteStagedFile(DownloadModel dl, string stagingFilePath)
     {
+        PreviewTransfers.RequireRealTransfer(dl);
         if (string.IsNullOrEmpty(stagingFilePath) || !File.Exists(stagingFilePath))
             return false;
 
@@ -957,6 +636,8 @@ public class DownloadEngine : IDownloadEngine
 
     public async Task<bool> FinalizeDownloadIntegrityAsync(DownloadModel dl, SafetyScanResult scanResult, string? stagingFilePath = null)
     {
+        RequireTransferMode();
+        PreviewTransfers.RequireRealTransfer(dl);
         dl.Sha256Hash = scanResult.Sha256Hash;
         dl.SafetyVerdict = scanResult.Verdict;
         dl.AvScannerName = scanResult.ScannerName;
@@ -1088,6 +769,8 @@ public class DownloadEngine : IDownloadEngine
                 if (token.IsCancellationRequested || dl.Status == DownloadStatus.Paused) break;
 
                 long currentDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
+                if (dl.TotalBytes <= 0 && session.Workers.Count == 1 && session.Workers[0].ObservedTotalBytes > 0)
+                    dl.TotalBytes = session.Workers[0].ObservedTotalBytes;
                 double elapsedSec = sw.Elapsed.TotalSeconds;
 
                 if (elapsedSec > 0)
@@ -1135,6 +818,7 @@ public class DownloadEngine : IDownloadEngine
 
             long totalDownloaded = session.Workers.Sum(w => w.Progress.DownloadedBytes);
             bool allWorkersCompleted = session.Workers.Count > 0 && session.Workers.All(w => w.Progress.IsCompleted && string.IsNullOrEmpty(w.LastError));
+            if (allWorkersCompleted && dl.TotalBytes <= 0 && totalDownloaded > 0) dl.TotalBytes = totalDownloaded;
             bool byteCountValid = dl.TotalBytes > 0 ? totalDownloaded >= dl.TotalBytes : totalDownloaded > 0;
             bool transferSucceeded = allWorkersCompleted && byteCountValid;
 
@@ -1256,7 +940,7 @@ public class DownloadEngine : IDownloadEngine
             req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
             if (!string.IsNullOrEmpty(referer)) req.Headers.TryAddWithoutValidation("Referer", referer);
             if (!string.IsNullOrEmpty(uaString)) req.Headers.TryAddWithoutValidation("User-Agent", uaString);
-            if (!string.IsNullOrEmpty(cookieHeader)) req.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+            DownloadRedirectHandler.ApplyCookies(req, cookieHeader, url);
 
             using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
             if (!resp.IsSuccessStatusCode)
@@ -1269,7 +953,7 @@ public class DownloadEngine : IDownloadEngine
                     candReq.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
                     if (!string.IsNullOrEmpty(cand)) candReq.Headers.TryAddWithoutValidation("Referer", cand);
                     if (!string.IsNullOrEmpty(uaString)) candReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
-                    if (!string.IsNullOrEmpty(cookieHeader)) candReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                    DownloadRedirectHandler.ApplyCookies(candReq, cookieHeader, url);
                     using var candResp = await _httpClient.SendAsync(candReq, HttpCompletionOption.ResponseHeadersRead, token);
                     if (candResp.IsSuccessStatusCode)
                     {
@@ -1349,14 +1033,14 @@ public class DownloadEngine : IDownloadEngine
             }
         }
 
-        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url);
+        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url, dl.Url);
 
         dl.StatusDetail = "Probing video & audio stream boundaries...";
         DownloadStatusChanged?.Invoke(dl);
 
         long videoSize = await ProbeStreamLengthAsync(dl.Url, referer, uaString, cookieHeader, token);
         string? audioCookieHeader = dl.Cookies?.Contains('\t') == true || new Uri(dl.Url).Host == new Uri(dl.AudioUrl!).Host
-            ? FormatCookieHeader(dl.Cookies, dl.AudioUrl) : null;
+            ? FormatCookieHeader(dl.Cookies, dl.AudioUrl, dl.Url) : null;
         long audioSize = await ProbeStreamLengthAsync(dl.AudioUrl!, referer, uaString, audioCookieHeader, token);
 
         if (videoSize <= 0 || audioSize <= 0)
@@ -1371,25 +1055,11 @@ public class DownloadEngine : IDownloadEngine
         string videoStagingPath = Path.Combine(session.StagingDirectory, "video_stream.tmp");
         string audioStagingPath = Path.Combine(session.StagingDirectory, "audio_stream.tmp");
 
-        try
-        {
-            await using (var fs = new FileStream(videoStagingPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
-            {
-                fs.SetLength(videoSize);
-            }
-            await using (var fs = new FileStream(audioStagingPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
-            {
-                fs.SetLength(audioSize);
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DownloadEngine] Pre-allocate error: {ex.Message}");
-        }
-
+        bool sparseVideo = await _prepareStagingFile(videoStagingPath, videoSize, token);
+        bool sparseAudio = await _prepareStagingFile(audioStagingPath, audioSize, token);
         session.Workers.Clear();
-        int videoThreads = Math.Min(16, Math.Max(1, (int)(videoSize / (128 * 1024))));
-        int audioThreads = Math.Min(8, Math.Max(1, (int)(audioSize / (128 * 1024))));
+        int videoThreads = sparseVideo ? Math.Min(16, Math.Max(1, (int)(videoSize / (128 * 1024)))) : 1;
+        int audioThreads = sparseAudio ? Math.Min(8, Math.Max(1, (int)(audioSize / (128 * 1024)))) : 1;
         dl.ParallelThreads = videoThreads + audioThreads;
 
         string vPartsFile = videoStagingPath + ".parts";
@@ -1473,7 +1143,7 @@ public class DownloadEngine : IDownloadEngine
         {
             long start = i * videoPerWorker;
             long end = (i == videoThreads - 1) ? videoSize - 1 : (i + 1) * videoPerWorker - 1;
-            var worker = new SegmentWorker(_httpClient, dl.Url, videoStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader, _speedLimiter, videoSize);
+            var worker = new SegmentWorker(_httpClient, dl.Url, videoStagingPath, i + 1, start, end, 0, referer, uaString, dl.Cookies, _speedLimiter, videoSize, allowSparseWrites: sparseVideo);
             session.Workers.Add(worker);
         }
 
@@ -1483,7 +1153,7 @@ public class DownloadEngine : IDownloadEngine
         {
             long start = i * audioPerWorker;
             long end = (i == audioThreads - 1) ? audioSize - 1 : (i + 1) * audioPerWorker - 1;
-            var worker = new SegmentWorker(_httpClient, dl.AudioUrl!, audioStagingPath, videoThreads + i + 1, start, end, 0, referer, uaString, audioCookieHeader, _speedLimiter, audioSize);
+            var worker = new SegmentWorker(_httpClient, dl.AudioUrl!, audioStagingPath, videoThreads + i + 1, start, end, 0, referer, uaString, dl.Cookies, _speedLimiter, audioSize, credentialSourceUrl: dl.Url, allowSparseWrites: sparseAudio);
             session.Workers.Add(worker);
         }
 
@@ -1737,7 +1407,7 @@ public class DownloadEngine : IDownloadEngine
             ? dl.UserAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url);
+        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url, dl.Url);
 
         long probedSize = await ProbeStreamLengthAsync(dl.Url, referer, uaString, cookieHeader, token);
         long audioSize = probedSize > 0 ? probedSize : dl.TotalBytes;
@@ -1751,20 +1421,9 @@ public class DownloadEngine : IDownloadEngine
         dl.TotalBytes = audioSize;
         string audioStagingPath = Path.Combine(session.StagingDirectory, "audio_raw.tmp");
 
-        try
-        {
-            await using (var fs = new FileStream(audioStagingPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
-            {
-                fs.SetLength(audioSize);
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DownloadEngine] Pre-allocate audio error: {ex.Message}");
-        }
-
+        bool sparseAudio = await _prepareStagingFile(audioStagingPath, audioSize, token);
         session.Workers.Clear();
-        int threadCount = Math.Min(16, Math.Max(1, (int)(audioSize / (128 * 1024))));
+        int threadCount = sparseAudio ? Math.Min(16, Math.Max(1, (int)(audioSize / (128 * 1024)))) : 1;
         dl.ParallelThreads = threadCount;
 
         string aPartsFile = audioStagingPath + ".parts";
@@ -1810,7 +1469,7 @@ public class DownloadEngine : IDownloadEngine
         {
             long start = i * audioPerWorker;
             long end = (i == threadCount - 1) ? audioSize - 1 : (i + 1) * audioPerWorker - 1;
-            var worker = new SegmentWorker(_httpClient, dl.Url, audioStagingPath, i + 1, start, end, 0, referer, uaString, cookieHeader, _speedLimiter, probedSize);
+            var worker = new SegmentWorker(_httpClient, dl.Url, audioStagingPath, i + 1, start, end, 0, referer, uaString, dl.Cookies, _speedLimiter, audioSize, allowSparseWrites: sparseAudio);
             session.Workers.Add(worker);
         }
 
@@ -2023,647 +1682,6 @@ public class DownloadEngine : IDownloadEngine
         }
     }
 
-    private class HlsPlaylistInfo
-    {
-        public bool IsEncrypted { get; set; }
-        public List<string> SegmentUrls { get; set; } = new();
-        public List<HlsSegmentEncryption?> SegmentEncryption { get; set; } = new();
-        public List<double> SegmentDurations { get; set; } = new();
-        public double TotalDuration { get; set; }
-        public long Bandwidth { get; set; }
-        public long ExpectedBytes { get; set; }
-        public string? AudioPlaylistUrl { get; set; }
-        public int HttpStatusCode { get; set; } = 200;
-        public string? ErrorMessage { get; set; }
-        public string? EffectiveReferer { get; set; }
-    }
-
-    private static string GetHttpErrorMessage(int statusCode, string? reasonPhrase = null)
-    {
-        return statusCode switch
-        {
-            410 => "Stream link expired (HTTP 410 Gone). Please refresh the video page in your browser for a fresh link.",
-            403 => "Access denied (HTTP 403 Forbidden). CDN token expired or signature invalid. Please refresh the page in browser.",
-            404 => "Stream not found (HTTP 404). File is no longer available on the server.",
-            401 => "Authentication required (HTTP 401 Unauthorized).",
-            _ => $"Server returned HTTP {statusCode} ({reasonPhrase ?? "Error"})"
-        };
-    }
-
-    public static string CombineHlsUri(string baseUrl, string relativeOrAbsoluteUri)
-    {
-        if (string.IsNullOrWhiteSpace(relativeOrAbsoluteUri)) return baseUrl;
-
-        Uri baseUri;
-        try
-        {
-            baseUri = new Uri(baseUrl);
-        }
-        catch
-        {
-            return relativeOrAbsoluteUri;
-        }
-
-        Uri targetUri;
-        if (!Uri.TryCreate(relativeOrAbsoluteUri, UriKind.Absolute, out var absUri))
-        {
-            targetUri = new Uri(baseUri, relativeOrAbsoluteUri);
-        }
-        else
-        {
-            targetUri = absUri;
-        }
-
-        string baseQuery = baseUri.Query.TrimStart('?');
-        string targetQuery = targetUri.Query.TrimStart('?');
-
-        if (string.IsNullOrEmpty(baseQuery))
-        {
-            return targetUri.ToString();
-        }
-
-        if (string.IsNullOrEmpty(targetQuery))
-        {
-            var builder = new UriBuilder(targetUri) { Query = baseQuery };
-            return builder.Uri.ToString();
-        }
-
-        // Merge query parameters so security tokens and signatures from baseUri are preserved
-        var paramMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in baseQuery.Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            int eq = pair.IndexOf('=');
-            string k = eq >= 0 ? pair[..eq] : pair;
-            string v = eq >= 0 ? pair[(eq + 1)..] : "";
-            paramMap[k] = v;
-        }
-        foreach (var pair in targetQuery.Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            int eq = pair.IndexOf('=');
-            string k = eq >= 0 ? pair[..eq] : pair;
-            string v = eq >= 0 ? pair[(eq + 1)..] : "";
-            paramMap[k] = v;
-        }
-
-        string mergedQuery = string.Join("&", paramMap.Select(kv => string.IsNullOrEmpty(kv.Value) ? kv.Key : $"{kv.Key}={kv.Value}"));
-        var finalBuilder = new UriBuilder(targetUri) { Query = mergedQuery };
-        return finalBuilder.Uri.ToString();
-    }
-
-    public static List<string> GetCandidateReferers(string targetUrl, string? primaryReferer, string? pageUrl = null)
-    {
-        var list = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        void Add(string? r)
-        {
-            if (string.IsNullOrWhiteSpace(r)) return;
-            string trimmed = r.Trim();
-            if (!seen.Contains(trimmed))
-            {
-                seen.Add(trimmed);
-                list.Add(trimmed);
-            }
-        }
-
-        // 0. Prioritize specific watch page permalink (e.g. viewkey=...) over generic category/listing referer
-        bool isPornhubTarget = targetUrl.Contains("phncdn.com", StringComparison.OrdinalIgnoreCase) ||
-                               targetUrl.Contains("pornhub.com", StringComparison.OrdinalIgnoreCase);
-        if (isPornhubTarget && !string.IsNullOrEmpty(pageUrl) && pageUrl.Contains("viewkey=", StringComparison.OrdinalIgnoreCase) &&
-            (string.IsNullOrEmpty(primaryReferer) || !primaryReferer.Contains("viewkey=", StringComparison.OrdinalIgnoreCase)))
-        {
-            Add(pageUrl);
-        }
-
-        // 1. Primary authentic referer as supplied
-        Add(primaryReferer);
-
-        // 2. Origin of primary referer (e.g. https://embed-host.com/)
-        if (!string.IsNullOrEmpty(primaryReferer))
-        {
-            try
-            {
-                var uri = new Uri(primaryReferer);
-                Add(uri.GetLeftPart(UriPartial.Authority) + "/");
-                Add(uri.GetLeftPart(UriPartial.Authority));
-            }
-            catch { }
-        }
-
-        // 3. Page / Video URL if distinct
-        Add(pageUrl);
-        if (!string.IsNullOrEmpty(pageUrl))
-        {
-            try
-            {
-                var uri = new Uri(pageUrl);
-                Add(uri.GetLeftPart(UriPartial.Authority) + "/");
-                Add(uri.GetLeftPart(UriPartial.Authority));
-            }
-            catch { }
-        }
-
-        void AddHostAndRoot(string? url)
-        {
-            if (string.IsNullOrWhiteSpace(url)) return;
-            try
-            {
-                var uri = new Uri(url);
-                Add(uri.GetLeftPart(UriPartial.Authority) + "/");
-                Add(uri.GetLeftPart(UriPartial.Authority));
-                string host = uri.Host;
-                var parts = host.Split('.');
-                if (parts.Length > 2)
-                {
-                    string rootDomain = string.Join(".", parts.Skip(parts.Length - 2));
-                    Add($"{uri.Scheme}://{rootDomain}/");
-                    Add($"{uri.Scheme}://{rootDomain}");
-                }
-            }
-            catch { }
-        }
-
-        // 4. Target stream's own host origin and root domain origin (e.g. https://owocdn.top/, https://flixcloud.cc/)
-        AddHostAndRoot(targetUrl);
-        AddHostAndRoot(primaryReferer);
-        AddHostAndRoot(pageUrl);
-
-        // 4a. Meta / Facebook / Instagram CDN referer candidates
-        bool isMetaCdn = targetUrl.Contains("fbcdn.net", StringComparison.OrdinalIgnoreCase) ||
-                         targetUrl.Contains("cdninstagram.com", StringComparison.OrdinalIgnoreCase) ||
-                         targetUrl.Contains("instagram.com", StringComparison.OrdinalIgnoreCase) ||
-                         targetUrl.Contains("facebook.com", StringComparison.OrdinalIgnoreCase);
-        if (isMetaCdn)
-        {
-            if (targetUrl.Contains("instagram", StringComparison.OrdinalIgnoreCase) ||
-                (pageUrl != null && pageUrl.Contains("instagram.com", StringComparison.OrdinalIgnoreCase)))
-            {
-                Add("https://www.instagram.com/");
-                Add("https://www.facebook.com/");
-            }
-            else
-            {
-                Add("https://www.facebook.com/");
-                Add("https://www.instagram.com/");
-            }
-        }
-
-        // 4b. Specific Movie CDN to embedder/page mappings
-        if (targetUrl.Contains("stellarconductornexus.com", StringComparison.OrdinalIgnoreCase) ||
-            targetUrl.Contains("stellar", StringComparison.OrdinalIgnoreCase) ||
-            (pageUrl != null && pageUrl.Contains("hydrahd", StringComparison.OrdinalIgnoreCase)) ||
-            (primaryReferer != null && primaryReferer.Contains("hydrahd", StringComparison.OrdinalIgnoreCase)))
-        {
-            Add("https://hydrahd.gd/");
-            Add("https://hydrahd.com/");
-            Add("https://hydrahd.net/");
-            Add("https://stellarconductornexus.com/");
-        }
-        if (targetUrl.Contains("goldenkite.top", StringComparison.OrdinalIgnoreCase) ||
-            (pageUrl != null && (pageUrl.Contains("ramoflix", StringComparison.OrdinalIgnoreCase) || pageUrl.Contains("111movies", StringComparison.OrdinalIgnoreCase))) ||
-            (primaryReferer != null && (primaryReferer.Contains("ramoflix", StringComparison.OrdinalIgnoreCase) || primaryReferer.Contains("111movies", StringComparison.OrdinalIgnoreCase))))
-        {
-            Add("https://ramoflix.net/");
-            Add("https://111movies.com/");
-            Add("https://111movies.net/");
-            Add("https://moon.goldenkite.top/");
-            Add("https://goldenkite.top/");
-        }
-        if (targetUrl.Contains("jabroni.mov", StringComparison.OrdinalIgnoreCase) ||
-            (pageUrl != null && pageUrl.Contains("goojara", StringComparison.OrdinalIgnoreCase)) ||
-            (primaryReferer != null && primaryReferer.Contains("goojara", StringComparison.OrdinalIgnoreCase)))
-        {
-            Add("https://ww1.goojara.to/");
-            Add("https://goojara.to/");
-            Add("https://drw.jabroni.mov/");
-            Add("https://jabroni.mov/");
-        }
-        if (targetUrl.Contains("wmovies.nl", StringComparison.OrdinalIgnoreCase) ||
-            (pageUrl != null && pageUrl.Contains("wmovies", StringComparison.OrdinalIgnoreCase)) ||
-            (primaryReferer != null && primaryReferer.Contains("wmovies", StringComparison.OrdinalIgnoreCase)))
-        {
-            Add("https://wmovies.nl/");
-        }
-
-        // 4c. Known embed hosts and streaming video providers
-        Add("https://jabroni.mov/");
-        Add("https://drw.jabroni.mov/");
-        Add("https://goldenkite.top/");
-        Add("https://moon.goldenkite.top/");
-        Add("https://stellarconductornexus.com/");
-        Add("https://shiora.top/");
-        Add("https://owocdn.top/");
-        Add("https://111movies.com/");
-        Add("https://111movies.net/");
-        Add("https://goojara.to/");
-        Add("https://hydrahd.gd/");
-        Add("https://ramoflix.net/");
-        Add("https://wmovies.nl/");
-        Add("https://megacloud.tv/");
-        Add("https://rapid-cloud.ru/");
-        Add("https://rabbitstream.net/");
-        Add("https://megaplay.buzz/");
-        Add("https://gogoanime.com.by/");
-        Add("https://streamtape.com/");
-        Add("https://aniwave.gr/");
-        Add("https://hianime.to/");
-        Add("https://vidsrc.stream/");
-        Add("https://2embed.stream/");
-
-        // 4c. Anime specific CDN to embedder/page mappings
-        if (targetUrl.Contains("owocdn.top", StringComparison.OrdinalIgnoreCase))
-        {
-            Add("https://kwik.cx/");
-            Add("https://animepahe.pw/");
-            Add("https://animepahe.org/");
-            Add("https://animepahe.ru/");
-            Add("https://animepahe.com/");
-        }
-        if (targetUrl.Contains("shiora.top", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("megap", StringComparison.OrdinalIgnoreCase))
-        {
-            Add("https://animesuge.tv/");
-            Add("https://megaplay.buzz/");
-            Add("https://megacloud.tv/");
-        }
-        if (targetUrl.Contains("sunwave", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("sunwaveclear.top", StringComparison.OrdinalIgnoreCase))
-        {
-            Add("https://miruro.to/");
-            Add("https://miruro.online/");
-        }
-        if (targetUrl.Contains("nexus", StringComparison.OrdinalIgnoreCase) || (pageUrl != null && pageUrl.Contains("nexus", StringComparison.OrdinalIgnoreCase)))
-        {
-            Add("https://anime.nexus/");
-        }
-        if (targetUrl.Contains("anizone", StringComparison.OrdinalIgnoreCase) || (pageUrl != null && pageUrl.Contains("anizone", StringComparison.OrdinalIgnoreCase)))
-        {
-            Add("https://anizone.to/");
-        }
-
-        // 5. Blank / empty (no referer / anti-hotlink bypass)
-        if (!seen.Contains(""))
-        {
-            list.Add("");
-        }
-
-        return list;
-    }
-
-    public static bool IsStreamingCdn(string? url, string? mediaKind = null)
-    {
-        if (string.IsNullOrWhiteSpace(url)) return false;
-        if (string.Equals(mediaKind, "hls", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(mediaKind, "dash", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        string lower = url.ToLowerInvariant();
-        if (lower.Contains(".m3u8") || lower.Contains(".mpd")) return true;
-
-        string[] cdnIndicators = new string[]
-        {
-            "goldenkite.top", "stellarconductornexus.com", "jabroni.mov", "shiora.top", "owocdn.top",
-            "shioricdn.top", "streamtape.com", "rabbitstream.net", "megacloud.tv", "rapid-cloud.ru",
-            "vidsrc", "2embed", "autoembed", "superembed", "streamembed", "filemoon", "dood",
-            "mixdrop", "streamwish", "mp4upload", "upstream", "vidcloud", "akamaized.net", "byteoversea.com",
-            "111movies", "wmovies", "ramoflix", "hydrahd", "goojara", "sunwaveclear.top", "sunwave",
-            "anime.nexus", "kwik.cx", "anizone"
-        };
-
-        foreach (var cdn in cdnIndicators)
-        {
-            if (lower.Contains(cdn)) return true;
-        }
-
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            string host = uri.Host.ToLowerInvariant();
-            if (host.EndsWith(".top") || host.EndsWith(".mov") || host.EndsWith(".stream") || host.EndsWith(".buzz"))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public static bool IsHtmlResponse(string? contentType, string? bodyPrefix)
-    {
-        if (!string.IsNullOrEmpty(contentType) && contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-        if (!string.IsNullOrEmpty(bodyPrefix))
-        {
-            string trimmed = bodyPrefix.TrimStart();
-            if (trimmed.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.Contains("challenge-platform", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.Contains("Just a moment...", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.Contains("cf-browser-verification", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public static string? FormatCookieHeader(string? cookieData, string? targetUrl)
-    {
-        if (string.IsNullOrWhiteSpace(cookieData)) return null;
-
-        if (!cookieData.Contains("\t"))
-        {
-            return cookieData.IndexOfAny(new[] {'\r', '\n'}) >= 0 ? null : cookieData.Trim();
-        }
-
-        if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var target)) return null;
-        var pairs = new List<(string Pair, int PathLength)>();
-        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        foreach (var raw in cookieData.Split(new[] {'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries))
-        {
-            string line = raw.StartsWith("#HttpOnly_", StringComparison.Ordinal) ? raw[10..] : raw;
-            if (line.StartsWith('#')) continue;
-            string[] parts = line.Split('\t');
-            if (parts.Length < 7) continue;
-            string domain = parts[0].TrimStart('.');
-            bool domainMatch = target.Host.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
-                (parts[1].Equals("TRUE", StringComparison.OrdinalIgnoreCase) && target.Host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
-            string path = string.IsNullOrEmpty(parts[2]) ? "/" : parts[2];
-            bool pathMatch = target.AbsolutePath == path || (target.AbsolutePath.StartsWith(path, StringComparison.Ordinal) &&
-                (path.EndsWith('/') || (target.AbsolutePath.Length > path.Length && target.AbsolutePath[path.Length] == '/')));
-            if (!domainMatch || !pathMatch || (parts[3].Equals("TRUE", StringComparison.OrdinalIgnoreCase) && target.Scheme != "https") ||
-                (long.TryParse(parts[4], out long expires) && expires > 0 && expires <= now)) continue;
-            if (string.IsNullOrEmpty(parts[5]) || parts[5].IndexOfAny(new[] {'\r', '\n', ';'}) >= 0 || parts[6].IndexOfAny(new[] {'\r', '\n'}) >= 0) continue;
-            pairs.Add(($"{parts[5]}={parts[6]}", path.Length));
-        }
-        return pairs.Count > 0 ? string.Join("; ", pairs.OrderByDescending(p => p.PathLength).Select(p => p.Pair)) : null;
-    }
-
-    private static Task<string> ReadManifestAsync(HttpContent content, CancellationToken token)
-        => HlsManifestSnapshot.ReadAsync(content, token);
-
-    private async Task<HlsPlaylistInfo?> ParseHlsPlaylistAsync(
-        string playlistUrl,
-        string? referer,
-        string? userAgent,
-        string? cookies,
-        CancellationToken token,
-        string? pageUrl = null,
-        string? capturedPlaylist = null)
-    {
-        var info = new HlsPlaylistInfo { EffectiveReferer = referer };
-        try
-        {
-            HttpResponseMessage? resp = capturedPlaylist == null ? null : new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            { Content = new StringContent(capturedPlaylist), RequestMessage = HttpTransferRequest.Create(HttpMethod.Get, playlistUrl) };
-            string effectiveWorkingReferer = referer ?? "";
-
-            var candidateReferers = GetCandidateReferers(playlistUrl, referer, pageUrl);
-            foreach (var candRef in capturedPlaylist == null ? candidateReferers : new List<string>())
-            {
-                using var req = HttpTransferRequest.Create(HttpMethod.Get, playlistUrl);
-
-                if (!string.IsNullOrEmpty(candRef))
-                {
-                    req.Headers.TryAddWithoutValidation("Referer", candRef);
-                    try { req.Headers.TryAddWithoutValidation("Origin", new Uri(candRef).GetLeftPart(UriPartial.Authority)); } catch { }
-                }
-                if (!string.IsNullOrEmpty(userAgent)) req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-                if (!string.IsNullOrEmpty(cookies)) req.Headers.TryAddWithoutValidation("Cookie", cookies);
-                req.Headers.TryAddWithoutValidation("Accept", "*/*");
-
-                var candidateResp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
-                if (candidateResp.IsSuccessStatusCode)
-                {
-                    string? mediaType = candidateResp.Content.Headers.ContentType?.MediaType;
-                    if (mediaType != null && mediaType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
-                    {
-                        candidateResp.Dispose();
-                        continue; // Skip HTML bot check/error pages
-                    }
-                    resp = candidateResp;
-                    effectiveWorkingReferer = candRef;
-                    info.EffectiveReferer = candRef;
-                    break;
-                }
-                else if (candidateResp.StatusCode == System.Net.HttpStatusCode.Forbidden || candidateResp.StatusCode == System.Net.HttpStatusCode.Unauthorized || candidateResp.StatusCode == System.Net.HttpStatusCode.Gone)
-                {
-                    candidateResp.Dispose();
-                    continue; // Try next candidate referer
-                }
-                else if (candidateResp.StatusCode == (System.Net.HttpStatusCode)429)
-                {
-                    int delayMs = 1500;
-                    if (candidateResp.Headers.RetryAfter?.Delta.HasValue == true)
-                    {
-                        delayMs = (int)Math.Max(delayMs, candidateResp.Headers.RetryAfter.Delta.Value.TotalMilliseconds);
-                    }
-                    candidateResp.Dispose();
-                    await Task.Delay(Math.Min(delayMs, 5000), token);
-                    continue; // Wait and try next candidate or retry
-                }
-                else
-                {
-                    resp = candidateResp;
-                    break;
-                }
-            }
-
-            if (resp == null)
-            {
-                info.HttpStatusCode = 403;
-                info.ErrorMessage = GetHttpErrorMessage(403, "Forbidden");
-                return info;
-            }
-
-            using (resp)
-            {
-                if (!resp.IsSuccessStatusCode)
-                {
-                    int code = (int)resp.StatusCode;
-                    info.HttpStatusCode = code;
-                    info.ErrorMessage = GetHttpErrorMessage(code, resp.ReasonPhrase);
-                    return info;
-                }
-
-                string content = await ReadManifestAsync(resp.Content, token);
-                if (IsHtmlResponse(resp.Content.Headers.ContentType?.MediaType, content))
-                {
-                    info.ErrorMessage = "Stream CDN returned a bot verification or challenge page (HTML) instead of a video manifest. The stream requires browser verification or the access token has expired.";
-                    return info;
-                }
-
-                if (string.IsNullOrWhiteSpace(content) || !content.Contains("#EXTM3U"))
-                {
-                    info.ErrorMessage = "Invalid stream manifest: response is not a valid HLS playlist";
-                    return info;
-                }
-
-                string currentBaseUrl = resp.RequestMessage?.RequestUri?.ToString() ?? playlistUrl;
-
-                // If it's a master playlist with variant streams (#EXT-X-STREAM-INF), pick highest bandwidth stream
-                if (content.Contains("#EXT-X-STREAM-INF"))
-                {
-                    var masterAudioMatch = Regex.Match(content, @"#EXT-X-MEDIA:TYPE=AUDIO.*?[,\s]URI=""([^""]+)""", RegexOptions.IgnoreCase);
-                    if (masterAudioMatch.Success)
-                    {
-                        info.AudioPlaylistUrl = CombineHlsUri(currentBaseUrl, masterAudioMatch.Groups[1].Value);
-                    }
-
-                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    long maxBandwidth = -1;
-                    string? bestStreamUri = null;
-
-                    for (int i = 0; i < lines.Length; i++)
-                    {
-                        var line = lines[i].Trim();
-                        if (line.StartsWith("#EXT-X-STREAM-INF", StringComparison.OrdinalIgnoreCase))
-                        {
-                            long bw = 0;
-                            var avgBwMatch = Regex.Match(line, @"AVERAGE-BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
-                            if (avgBwMatch.Success) long.TryParse(avgBwMatch.Groups[1].Value, out bw);
-                            if (bw <= 0)
-                            {
-                                var bwMatch = Regex.Match(line, @"BANDWIDTH=(\d+)", RegexOptions.IgnoreCase);
-                                if (bwMatch.Success) long.TryParse(bwMatch.Groups[1].Value, out bw);
-                            }
-
-                            if (i + 1 < lines.Length && !lines[i + 1].StartsWith("#"))
-                            {
-                                string streamUri = lines[i + 1].Trim();
-                                if (bw > maxBandwidth || bestStreamUri == null)
-                                {
-                                    maxBandwidth = bw;
-                                    bestStreamUri = streamUri;
-                                }
-                            }
-                        }
-                    }
-
-                    if (maxBandwidth > 0)
-                    {
-                        info.Bandwidth = maxBandwidth;
-                    }
-
-                    if (!string.IsNullOrEmpty(bestStreamUri))
-                    {
-                        currentBaseUrl = CombineHlsUri(currentBaseUrl, bestStreamUri);
-                        HttpResponseMessage? mediaResp = null;
-                        var varCandidates = GetCandidateReferers(currentBaseUrl, effectiveWorkingReferer, pageUrl);
-
-                        foreach (var candRef in varCandidates)
-                        {
-                            using var mediaReq = HttpTransferRequest.Create(HttpMethod.Get, currentBaseUrl);
-
-                            if (!string.IsNullOrEmpty(candRef))
-                            {
-                                mediaReq.Headers.TryAddWithoutValidation("Referer", candRef);
-                                try { mediaReq.Headers.TryAddWithoutValidation("Origin", new Uri(candRef).GetLeftPart(UriPartial.Authority)); } catch { }
-                            }
-                            if (!string.IsNullOrEmpty(userAgent)) mediaReq.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-                            if (!string.IsNullOrEmpty(cookies)) mediaReq.Headers.TryAddWithoutValidation("Cookie", cookies);
-                            mediaReq.Headers.TryAddWithoutValidation("Accept", "*/*");
-
-                            var cResp = await _httpClient.SendAsync(mediaReq, HttpCompletionOption.ResponseHeadersRead, token);
-                            if (cResp.IsSuccessStatusCode)
-                            {
-                                mediaResp = cResp;
-                                effectiveWorkingReferer = candRef;
-                                info.EffectiveReferer = candRef;
-                                break;
-                            }
-                            else if (cResp.StatusCode == System.Net.HttpStatusCode.Forbidden || cResp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                            {
-                                cResp.Dispose();
-                                continue;
-                            }
-                            else
-                            {
-                                mediaResp = cResp;
-                                break;
-                            }
-                        }
-
-                        if (mediaResp == null)
-                        {
-                            info.HttpStatusCode = 403;
-                            info.ErrorMessage = GetHttpErrorMessage(403, "Forbidden");
-                            return info;
-                        }
-
-                        using (mediaResp)
-                        {
-                            if (!mediaResp.IsSuccessStatusCode)
-                            {
-                                int code = (int)mediaResp.StatusCode;
-                                info.HttpStatusCode = code;
-                                info.ErrorMessage = GetHttpErrorMessage(code, mediaResp.ReasonPhrase);
-                                return info;
-                            }
-                            content = await ReadManifestAsync(mediaResp.Content, token);
-                            string newBase = mediaResp.RequestMessage?.RequestUri?.ToString() ?? currentBaseUrl;
-                            currentBaseUrl = CombineHlsUri(currentBaseUrl, newBase);
-                        }
-                    }
-                }
-
-                content = HlsManifestSnapshot.Normalize(content, currentBaseUrl);
-
-                // Parse duration and bitrate from media manifest
-                info.TotalDuration = HlsMediaResolver.ParseTotalDuration(content);
-                if (info.Bandwidth <= 0)
-                {
-                    info.Bandwidth = HlsMediaResolver.ParseBitrate(content);
-                }
-
-                // Check for separate audio streams if not already found in master
-                if (string.IsNullOrEmpty(info.AudioPlaylistUrl))
-                {
-                    var audioMatch = Regex.Match(content, @"#EXT-X-MEDIA:TYPE=AUDIO.*?[,\s]URI=""([^""]+)""", RegexOptions.IgnoreCase);
-                    if (audioMatch.Success)
-                    {
-                        info.AudioPlaylistUrl = CombineHlsUri(currentBaseUrl, audioMatch.Groups[1].Value);
-                    }
-                }
-
-                // Byte-range/fMP4 layouts still require a demuxer. Identity
-                // AES-128 TS segments use the native bounded transfer workers.
-                if (content.Contains("#EXT-X-BYTERANGE") ||
-                    content.Contains("#EXT-X-MAP"))
-                {
-                    int segCount = Regex.Matches(content, @"#EXTINF", RegexOptions.IgnoreCase).Count;
-                    info.ExpectedBytes = HlsMediaResolver.CalculateExpectedTotalBytes(info.TotalDuration, info.Bandwidth, 0, segCount);
-                    info.IsEncrypted = true;
-                    return info;
-                }
-
-                // Parse media segments
-                foreach (var segment in HlsAes128.ParseSegments(content, currentBaseUrl))
-                {
-                    info.SegmentUrls.Add(segment.Url);
-                    info.SegmentEncryption.Add(segment.Encryption);
-                }
-
-                // Calculate expected total bytes
-                info.ExpectedBytes = HlsMediaResolver.CalculateExpectedTotalBytes(info.TotalDuration, info.Bandwidth, 0, info.SegmentUrls.Count);
-
-                return info;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch (InvalidDataException) { throw; }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DownloadEngine] ParseHlsPlaylistAsync error: {ex.Message}");
-            info.ErrorMessage = $"Network error while contacting stream host: {ex.Message}";
-            return info;
-        }
-    }
-
     private async Task RunParallelHlsSessionAsync(DownloadSession session, string? capturedPlaylist = null)
     {
         var dl = session.Download;
@@ -2700,13 +1718,13 @@ public class DownloadEngine : IDownloadEngine
             ? dl.UserAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url);
+        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url, dl.Url);
 
         dl.StatusDetail = "Resolving stream segments...";
         dl.Status = DownloadStatus.Active;
         DownloadProgressChanged?.Invoke(dl);
 
-        var playlistInfo = await ParseHlsPlaylistAsync(dl.Url, referer, uaString, cookieHeader, token, dl.PageUrl, capturedPlaylist);
+        var playlistInfo = await _hlsReader.ReadAsync(dl.Url, referer, uaString, dl.Cookies, token, dl.PageUrl, capturedPlaylist, dl.Url);
         if (playlistInfo == null && token.IsCancellationRequested)
         {
             return;
@@ -2753,6 +1771,10 @@ public class DownloadEngine : IDownloadEngine
         // for these resources, including a later FFmpeg fallback of this session.
         session.IsFiniteHls = true;
 
+        if (dl.TotalDuration > 0 && playlistInfo.TotalDuration > 0 &&
+            Math.Abs(dl.TotalDuration - playlistInfo.TotalDuration) > Math.Max(15, dl.TotalDuration * 0.15))
+            throw new InvalidDataException("This playlist does not match the selected video's duration. Play the selected video and capture it again.");
+
         if (playlistInfo.TotalDuration > 0 && dl.TotalDuration <= 0)
         {
             dl.TotalDuration = playlistInfo.TotalDuration;
@@ -2790,34 +1812,22 @@ public class DownloadEngine : IDownloadEngine
         var segmentUrls = playlistInfo.SegmentUrls.ToList();
         var segmentEncryption = playlistInfo.SegmentEncryption.ToList();
         int videoSegmentCount = segmentUrls.Count;
+        string? fragmentedAudio = null;
         bool pairedAudio = !string.IsNullOrEmpty(dl.AudioManifestText) || !string.IsNullOrEmpty(dl.AudioUrl);
         if (pairedAudio)
         {
             if (string.IsNullOrEmpty(dl.AudioUrl))
-            {
-                Debug.WriteLine("[DownloadEngine] Audio playlist URL missing, falling back to FFmpeg session.");
-                if (capturedPlaylist != null)
-                {
-                    await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
-                    await RunFfmpegSessionAsync(session, capSrc.Url);
-                }
-                else
-                {
-                    await RunFfmpegSessionAsync(session);
-                }
-                return;
-            }
+                throw new InvalidDataException("The selected audio playlist has no address. Capture the video again.");
             string? audioText = null;
-            try
-            {
-                if (!string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl))
-                {
-                    audioText = HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl);
-                }
-            }
-            catch { }
-            var audioInfo = await ParseHlsPlaylistAsync(dl.AudioUrl, referer, uaString, cookieHeader, token, dl.PageUrl, audioText);
-            if (audioInfo == null || audioInfo.IsEncrypted || audioInfo.SegmentUrls.Count == 0 || !string.IsNullOrEmpty(audioInfo.ErrorMessage))
+            if (!string.IsNullOrEmpty(dl.AudioManifestText) && HlsManifestSnapshot.IsCompleteMediaPlaylist(dl.AudioManifestText))
+                audioText = HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl);
+            var audioInfo = await _hlsReader.ReadAsync(dl.AudioUrl, referer, uaString, dl.Cookies, token, dl.PageUrl, audioText, dl.Url);
+            token.ThrowIfCancellationRequested();
+            if (audioInfo == null || !string.IsNullOrEmpty(audioInfo.ErrorMessage))
+                throw new InvalidDataException(audioInfo?.HttpStatusCode is >= 400
+                    ? $"The stream host rejected the selected audio playlist (HTTP {audioInfo.HttpStatusCode})."
+                    : "SmartDM could not read the selected audio playlist. Capture the video again.");
+            if (audioInfo.IsEncrypted || audioInfo.SegmentUrls.Count == 0)
             {
                 Debug.WriteLine("[DownloadEngine] Paired audio requires FFmpeg handling, delegating to FFmpeg.");
                 if (capturedPlaylist != null)
@@ -2833,140 +1843,23 @@ public class DownloadEngine : IDownloadEngine
                 }
                 return;
             }
+            fragmentedAudio = audioInfo.FragmentedPlaylist;
             segmentUrls.AddRange(audioInfo.SegmentUrls);
             segmentEncryption.AddRange(audioInfo.SegmentEncryption);
         }
         int totalSegments = segmentUrls.Count;
-        bool isStreamingHost = IsStreamingCdn(dl.Url, dl.MediaKind) || (segmentUrls.Count > 0 && IsStreamingCdn(segmentUrls[0], dl.MediaKind));
-        int defaultThreads = isStreamingHost ? 4 : 8;
-        int maxThreads = isStreamingHost ? 6 : 32;
-        int threadCount = Math.Clamp(dl.ParallelThreads > 0 ? (isStreamingHost ? Math.Min(dl.ParallelThreads, 6) : dl.ParallelThreads) : defaultThreads, 1, maxThreads);
-        threadCount = Math.Max(1, Math.Min(threadCount, totalSegments));
-        dl.ParallelThreads = threadCount;
-
-        // Adaptively test candidate referers on segment CDN host (anti-hotlink bypass)
-        bool segmentAccessible = false;
-        if (segmentUrls.Count > 0)
-        {
-            var segCandidates = GetCandidateReferers(segmentUrls[0], referer, dl.PageUrl);
-            foreach (var cand in segCandidates)
-            {
-                try
-                {
-                    using var testReq = HttpTransferRequest.Create(HttpMethod.Get, segmentUrls[0]);
-
-                    if (!string.IsNullOrEmpty(cand))
-                    {
-                        testReq.Headers.TryAddWithoutValidation("Referer", cand);
-                        try { testReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
-                    }
-                    if (!string.IsNullOrEmpty(uaString)) testReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
-                    if (!string.IsNullOrEmpty(cookieHeader)) testReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-                    testReq.Headers.TryAddWithoutValidation("Accept", "*/*");
-                    using var testCts = new CancellationTokenSource(4000);
-                    using var testResp = await _httpClient.SendAsync(testReq, HttpCompletionOption.ResponseHeadersRead, testCts.Token);
-                    if ((testResp.IsSuccessStatusCode || testResp.StatusCode == System.Net.HttpStatusCode.PartialContent) &&
-                        !IsHtmlResponse(testResp.Content.Headers.ContentType?.MediaType, null))
-                    {
-                        segmentAccessible = true;
-                        referer = cand;
-                        dl.Referer = cand;
-                        session.Download.Referer = cand;
-                        break;
-                    }
-                }
-                catch
-                {
-                    // Continue trying next candidate
-                }
-            }
-        }
-
-        // If primary segment CDN is blocked (e.g. Cloudflare 403 / banned CDN host), probe alternate stream variants
-        if (!segmentAccessible && segmentUrls.Count > 0 && capturedPlaylist == null)
-        {
-            Debug.WriteLine($"[DownloadEngine] Primary segment CDN for {dl.Url} is blocked or unreachable. Probing alternate stream variants...");
-            dl.StatusDetail = "Checking alternate stream qualities...";
-            DownloadProgressChanged?.Invoke(dl);
-
-            var hlsDiscovery = await HlsMediaResolver.ResolveHlsFormatsAsync(dl.Url, referer, uaString, cookieHeader, token);
-            if (hlsDiscovery.Success && hlsDiscovery.Formats.Count > 0)
-            {
-                foreach (var variant in hlsDiscovery.Formats)
-                {
-                    if (token.IsCancellationRequested) break;
-                    if (string.Equals(variant.DirectUrl, dl.Url, StringComparison.OrdinalIgnoreCase)) continue;
-                    if (string.IsNullOrEmpty(variant.DirectUrl)) continue;
-
-                    var candidateInfo = await ParseHlsPlaylistAsync(variant.DirectUrl, referer, uaString, cookieHeader, token, dl.PageUrl);
-                    if (candidateInfo != null && candidateInfo.SegmentUrls.Count > 0)
-                    {
-                        var candSegCandidates = GetCandidateReferers(candidateInfo.SegmentUrls[0], referer, dl.PageUrl);
-                        foreach (var cCand in candSegCandidates)
-                        {
-                            try
-                            {
-                                using var cReq = HttpTransferRequest.Create(HttpMethod.Get, candidateInfo.SegmentUrls[0]);
-
-                                if (!string.IsNullOrEmpty(cCand))
-                                {
-                                    cReq.Headers.TryAddWithoutValidation("Referer", cCand);
-                                    try { cReq.Headers.TryAddWithoutValidation("Origin", new Uri(cCand).GetLeftPart(UriPartial.Authority)); } catch { }
-                                }
-                                if (!string.IsNullOrEmpty(uaString)) cReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
-                                if (!string.IsNullOrEmpty(cookieHeader)) cReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-                                cReq.Headers.TryAddWithoutValidation("Accept", "*/*");
-                                using var cCts = new CancellationTokenSource(4000);
-                                using var cResp = await _httpClient.SendAsync(cReq, HttpCompletionOption.ResponseHeadersRead, cCts.Token);
-                                if ((cResp.IsSuccessStatusCode || cResp.StatusCode == System.Net.HttpStatusCode.PartialContent) &&
-                                    !IsHtmlResponse(cResp.Content.Headers.ContentType?.MediaType, null))
-                                {
-                                    Debug.WriteLine($"[DownloadEngine] Auto-failover: switched from blocked stream to working variant ({variant.Resolution}) -> {variant.DirectUrl}");
-                                    dl.Url = variant.DirectUrl;
-                                    session.Download.Url = variant.DirectUrl;
-                                    playlistInfo = candidateInfo;
-                                    segmentUrls = candidateInfo.SegmentUrls;
-                                    segmentEncryption = candidateInfo.SegmentEncryption;
-                                    totalSegments = segmentUrls.Count;
-                                    segmentAccessible = true;
-                                    referer = cCand;
-                                    dl.Referer = cCand;
-                                    session.Download.Referer = cCand;
-                                    dl.StatusDetail = $"Switched to available {variant.Resolution} stream";
-                                    DownloadProgressChanged?.Invoke(dl);
-                                    break;
-                                }
-                            }
-                            catch { }
-                        }
-                        if (segmentAccessible) break;
-                    }
-                }
-            }
-        }
-
-        // If direct parallel segments probe was unverified, proceed with adaptive workers (SegmentWorker has per-chunk adaptive referer recovery and 35s timeout)
-        if (!segmentAccessible && segmentUrls.Count > 0)
-        {
-            Debug.WriteLine("[DownloadEngine] Segment pre-flight probe unverified, proceeding with adaptive segment workers...");
-            if (string.IsNullOrEmpty(referer) && !string.IsNullOrEmpty(dl.PageUrl))
-            {
-                referer = dl.PageUrl;
-                dl.Referer = dl.PageUrl;
-                session.Download.Referer = dl.PageUrl;
-            }
-        }
+        int requestedWorkers = Math.Clamp(dl.ParallelThreads > 0 ? dl.ParallelThreads : 8, 1, 32);
 
         var segmentQueue = new System.Collections.Concurrent.ConcurrentQueue<HlsSegmentTask>();
         var allTasks = new List<HlsSegmentTask>(totalSegments);
         long baseDownloadedBytes = 0;
         int completedChunksCount = 0;
-
         string playlistIdentity = MediaCheckpoint.Fingerprint(dl.SourcePageUrl + dl.FormatId + string.Join("\n", segmentUrls) +
             string.Join("\n", segmentEncryption.Select(e => e == null ? "clear" : e.KeyUrl + e.IvHex)));
         for (int i = 0; i < totalSegments; i++)
         {
-            string chunkFile = Path.Combine(chunksDir, $"seg_{i:D5}.ts");
+            bool fragmentedTrack = i < videoSegmentCount ? playlistInfo.FragmentedPlaylist != null : fragmentedAudio != null;
+            string chunkFile = Path.Combine(chunksDir, $"seg_{i:D5}" + (fragmentedTrack ? ".mp4" : ".ts"));
             var taskItem = new HlsSegmentTask
             {
                 Index = i,
@@ -2998,6 +1891,7 @@ public class DownloadEngine : IDownloadEngine
         }
 
         int remainingToDownload = totalSegments - completedChunksCount;
+        int threadCount = Math.Min(requestedWorkers, remainingToDownload);
 
         // Initialize parallel workers for Transfer Monitor UI
         session.Workers.Clear();
@@ -3013,7 +1907,7 @@ public class DownloadEngine : IDownloadEngine
                 initialDownloaded: 0,
                 referer: referer,
                 userAgent: uaString,
-                cookies: cookieHeader,
+                cookies: dl.Cookies,
                 speedLimiter: _speedLimiter,
                 pageUrl: dl.PageUrl);
             session.Workers.Add(worker);
@@ -3021,11 +1915,18 @@ public class DownloadEngine : IDownloadEngine
         _segmentCache[dl.Id] = session.Workers.Select(w => w.Progress).ToList();
 
         var hlsProgress = new HlsTransferProgress(totalSegments, completedChunksCount, baseDownloadedBytes);
+        // Open one request first and admit another worker for each verified chunk.
+        using var workerAdmission = new SemaphoreSlim(0, Math.Max(1, threadCount - 1));
+        int admittedWorkers = 1;
 
         Action<HlsSegmentTask, long> onChunkDone = (chunk, bytes) =>
         {
             if (hlsProgress.RecordSaved(chunk.Index, bytes))
+            {
                 Interlocked.Decrement(ref remainingToDownload);
+                if (Interlocked.Increment(ref admittedWorkers) <= threadCount)
+                    workerAdmission.Release();
+            }
         };
 
         Func<bool> isCompletedCheck = () => Volatile.Read(ref remainingToDownload) <= 0;
@@ -3034,18 +1935,25 @@ public class DownloadEngine : IDownloadEngine
         string? fatalSegmentError = null;
         void FailSegment(string error) { Interlocked.CompareExchange(ref fatalSegmentError, error, null); workerFailure.Cancel(); }
         using var keys = new HlsAes128KeyCache(referer, uaString, keyUrl =>
-            dl.Cookies?.Contains('\t') == true || new Uri(keyUrl).Host == new Uri(dl.Url).Host ? FormatCookieHeader(dl.Cookies, keyUrl) : null);
-        var workerTasks = session.Workers.Select(w => w.ExecuteHlsChunkQueueAsync(
-            segmentQueue,
-            isCompletedCheck,
-            workerFailure.Token,
-            onChunkDone,
-            FailSegment,
-            keys.DecryptAsync,
-            getSharedReferer: () => dl.Referer,
-            setSharedReferer: cand => { dl.Referer = cand; session.Download.Referer = cand; },
-            onBytesReceived: hlsProgress.RecordReceived
-        )).ToList();
+            FormatCookieHeader(dl.Cookies, keyUrl, dl.Url));
+        var workerTasks = session.Workers.Select(async (worker, index) =>
+        {
+            if (index > 0)
+            {
+                try { await workerAdmission.WaitAsync(workerFailure.Token); }
+                catch (OperationCanceledException) when (workerFailure.IsCancellationRequested) { return; }
+            }
+            await worker.ExecuteHlsChunkQueueAsync(
+                segmentQueue,
+                isCompletedCheck,
+                workerFailure.Token,
+                onChunkDone,
+                FailSegment,
+                keys.DecryptAsync,
+                getSharedReferer: () => dl.Referer,
+                setSharedReferer: cand => { dl.Referer = cand; session.Download.Referer = cand; },
+                onBytesReceived: hlsProgress.RecordReceived);
+        }).ToList();
 
         // High-precision Telemetry Monitor loop with EMA smoothing & dynamic total size estimation
         var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -3163,33 +2071,12 @@ public class DownloadEngine : IDownloadEngine
 
             if (!allChunksPresent || hasFatalError)
             {
-                Debug.WriteLine("[DownloadEngine] Direct parallel HLS download encountered segment errors. Falling back to native FFmpeg stream engine...");
-                bool isThrottled = (fatalSegmentError != null && fatalSegmentError.Contains("429")) || session.Workers.Any(w => w.LastError != null && w.LastError.Contains("429"));
-                dl.StatusDetail = isThrottled
-                    ? "Parallel stream throttled (HTTP 429); cooling down before switching to native stream engine..."
-                    : "Parallel stream throttled; switching to native FFmpeg engine...";
+                dl.Status = DownloadStatus.Failed;
                 dl.SpeedMbps = 0;
-                DownloadProgressChanged?.Invoke(dl);
-
-                if (isThrottled && !token.IsCancellationRequested)
-                {
-                    // Allow CDN rate-limit burst bucket to drain before starting FFmpeg
-                    try { await Task.Delay(2500, token); } catch (OperationCanceledException) { return; }
-                }
-
-                // Seamlessly fall back to native FFmpeg stream session
-                session.Workers.Clear();
-                if (capturedPlaylist != null)
-                {
-                    await using var capSrc = new CapturedHlsPlaylist(capturedPlaylist, token);
-                    await using var capAudioSrc = !string.IsNullOrEmpty(dl.AudioManifestText) && !string.IsNullOrEmpty(dl.AudioUrl)
-                        ? new CapturedHlsPlaylist(HlsManifestSnapshot.Normalize(dl.AudioManifestText, dl.AudioUrl), token) : null;
-                    await RunFfmpegSessionAsync(session, capSrc.Url, capAudioSrc?.Url);
-                }
-                else
-                {
-                    await RunFfmpegSessionAsync(session);
-                }
+                dl.StatusDetail = fatalSegmentError ?? session.Workers.FirstOrDefault(w => w.LastError != null)?.LastError
+                    ?? "Some stream chunks could not be saved. Retry to reuse verified chunks.";
+                await _repository.SaveDownloadAsync(dl);
+                DownloadStatusChanged?.Invoke(dl);
                 return;
             }
 
@@ -3199,12 +2086,27 @@ public class DownloadEngine : IDownloadEngine
             dl.ProgressPercentage = 99.5;
             DownloadProgressChanged?.Invoke(dl);
 
-            string concatFile = Path.Combine(session.StagingDirectory, "concat.txt");
-            var concatLines = allTasks.Take(videoSegmentCount).Select(t => $"file '{t.TargetPath.Replace("\\", "/")}'");
-            await File.WriteAllLinesAsync(concatFile, concatLines, token);
-            string audioConcatFile = Path.Combine(session.StagingDirectory, "audio-concat.txt");
-            if (pairedAudio)
-                await File.WriteAllLinesAsync(audioConcatFile, allTasks.Skip(videoSegmentCount).Select(t => $"file '{t.TargetPath.Replace("\\", "/")}'"), token);
+            async Task<string> WriteLocalTrackAsync(string name, string? fragmentPlaylist, int start, int count)
+            {
+                string path = Path.Combine(session.StagingDirectory, name + (fragmentPlaylist == null ? ".txt" : ".m3u8"));
+                if (fragmentPlaylist == null)
+                {
+                    var lines = allTasks.Skip(start).Take(count).Select(t => $"file 'chunks/{Path.GetFileName(t.TargetPath)}'");
+                    await File.WriteAllLinesAsync(path, lines, token);
+                }
+                else
+                {
+                    int next = start;
+                    string local = HlsPlaylistReader.RewriteFragmentedPlaylist(fragmentPlaylist,
+                        _ => "chunks/" + Path.GetFileName(allTasks[next++].TargetPath));
+                    await File.WriteAllTextAsync(path, local, token);
+                }
+                return path;
+            }
+
+            string videoInput = await WriteLocalTrackAsync("video-concat", playlistInfo.FragmentedPlaylist, 0, videoSegmentCount);
+            string? audioInput = pairedAudio
+                ? await WriteLocalTrackAsync("audio-concat", fragmentedAudio, videoSegmentCount, totalSegments - videoSegmentCount) : null;
 
             string? ffmpegPath = ResolveFfmpegPath();
             if (ffmpegPath == null)
@@ -3228,17 +2130,25 @@ public class DownloadEngine : IDownloadEngine
 
             psi.ArgumentList.Add("-y");
             psi.ArgumentList.Add("-nostdin");
-            psi.ArgumentList.Add("-f");
-            psi.ArgumentList.Add("concat");
-            psi.ArgumentList.Add("-safe");
-            psi.ArgumentList.Add("0");
-            psi.ArgumentList.Add("-i");
-            psi.ArgumentList.Add(concatFile);
-            if (pairedAudio)
+            void AddLocalInput(string path, bool fragmented)
             {
-                psi.ArgumentList.Add("-f"); psi.ArgumentList.Add("concat");
-                psi.ArgumentList.Add("-safe"); psi.ArgumentList.Add("0");
-                psi.ArgumentList.Add("-i"); psi.ArgumentList.Add(audioConcatFile);
+                psi.ArgumentList.Add("-protocol_whitelist");
+                psi.ArgumentList.Add("file");
+                psi.ArgumentList.Add("-f");
+                psi.ArgumentList.Add(fragmented ? "hls" : "concat");
+                if (!fragmented)
+                {
+                    psi.ArgumentList.Add("-safe");
+                    psi.ArgumentList.Add("1");
+                }
+                psi.ArgumentList.Add("-i");
+                psi.ArgumentList.Add(path);
+            }
+
+            AddLocalInput(videoInput, playlistInfo.FragmentedPlaylist != null);
+            if (audioInput != null)
+            {
+                AddLocalInput(audioInput, fragmentedAudio != null);
                 psi.ArgumentList.Add("-map"); psi.ArgumentList.Add("0:v:0");
                 psi.ArgumentList.Add("-map"); psi.ArgumentList.Add("1:a:0");
             }
@@ -3359,7 +2269,7 @@ public class DownloadEngine : IDownloadEngine
             ? dl.UserAgent
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url);
+        string? cookieHeader = FormatCookieHeader(dl.Cookies, dl.Url, dl.Url);
 
         // Test candidate referers before starting FFmpeg to ensure working Referer/Origin headers are passed
         var ffmpegCandidates = GetCandidateReferers(dl.Url, referer, dl.PageUrl);
@@ -3375,7 +2285,7 @@ public class DownloadEngine : IDownloadEngine
                     try { pReq.Headers.TryAddWithoutValidation("Origin", new Uri(cand).GetLeftPart(UriPartial.Authority)); } catch { }
                 }
                 if (!string.IsNullOrEmpty(uaString)) pReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
-                if (!string.IsNullOrEmpty(cookieHeader)) pReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                DownloadRedirectHandler.ApplyCookies(pReq, dl.Cookies, dl.Url);
                 pReq.Headers.TryAddWithoutValidation("Accept", "*/*");
                 using var pCts = new CancellationTokenSource(3500);
                 using var pResp = await _httpClient.SendAsync(pReq, HttpCompletionOption.ResponseHeadersRead, pCts.Token);
@@ -3406,7 +2316,7 @@ public class DownloadEngine : IDownloadEngine
                     try { preflightReq.Headers.TryAddWithoutValidation("Origin", new Uri(referer).GetLeftPart(UriPartial.Authority)); } catch { }
                 }
                 if (!string.IsNullOrEmpty(uaString)) preflightReq.Headers.TryAddWithoutValidation("User-Agent", uaString);
-                if (!string.IsNullOrEmpty(cookieHeader)) preflightReq.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                DownloadRedirectHandler.ApplyCookies(preflightReq, dl.Cookies, dl.Url);
                 preflightReq.Headers.TryAddWithoutValidation("Accept", "*/*");
                 using var pfCts = new CancellationTokenSource(3500);
                 using var pfResp = await _httpClient.SendAsync(preflightReq, HttpCompletionOption.ResponseHeadersRead, pfCts.Token);
@@ -3436,22 +2346,6 @@ public class DownloadEngine : IDownloadEngine
                 }
             }
             catch { }
-        }
-
-        string customHeaders = "";
-        if (!string.IsNullOrEmpty(referer))
-        {
-            customHeaders += $"Referer: {referer}\r\n";
-            try
-            {
-                var uri = new Uri(referer);
-                customHeaders += $"Origin: {uri.GetLeftPart(UriPartial.Authority)}\r\n";
-            }
-            catch { }
-        }
-        if (!string.IsNullOrEmpty(cookieHeader))
-        {
-            customHeaders += $"Cookie: {cookieHeader}\r\n";
         }
 
         string? ffmpegPath = ResolveFfmpegPath();
@@ -3490,21 +2384,8 @@ public class DownloadEngine : IDownloadEngine
         psi.ArgumentList.Add("ALL");
         psi.ArgumentList.Add("-extension_picky");
         psi.ArgumentList.Add("0");
-        if (!string.IsNullOrEmpty(customHeaders))
-        {
-            psi.ArgumentList.Add("-headers");
-            psi.ArgumentList.Add(customHeaders);
-        }
-        if (!string.IsNullOrEmpty(uaString))
-        {
-            psi.ArgumentList.Add("-user_agent");
-            psi.ArgumentList.Add(uaString);
-        }
-        if (capturedInput != null)
-        {
-            psi.ArgumentList.Add("-protocol_whitelist");
-            psi.ArgumentList.Add("http,https,tcp,tls");
-        }
+        await using var mediaTransport = new MediaTransportProxy(dl.Url, dl.Cookies, referer, uaString, token);
+        string mediaInput = mediaTransport.AddInput(dl.Url, dl.ManifestText, dl.MediaKind is "hls" or "dash");
         psi.ArgumentList.Add("-reconnect");
         psi.ArgumentList.Add("1");
         // A captured VOD snapshot is finite. Reconnecting at its normal EOF can
@@ -3518,8 +2399,7 @@ public class DownloadEngine : IDownloadEngine
         psi.ArgumentList.Add("1");
         psi.ArgumentList.Add("-reconnect_delay_max");
         psi.ArgumentList.Add("5");
-        psi.ArgumentList.Add("-i");
-        psi.ArgumentList.Add(capturedInput ?? dl.Url);
+        mediaTransport.ConfigureInput(psi, mediaInput);
 
         if (!string.IsNullOrWhiteSpace(dl.AudioUrl))
         {
@@ -3527,21 +2407,6 @@ public class DownloadEngine : IDownloadEngine
             psi.ArgumentList.Add("ALL");
             psi.ArgumentList.Add("-extension_picky");
             psi.ArgumentList.Add("0");
-            if (!string.IsNullOrEmpty(customHeaders))
-            {
-                psi.ArgumentList.Add("-headers");
-                psi.ArgumentList.Add(customHeaders);
-            }
-            if (!string.IsNullOrEmpty(uaString))
-            {
-                psi.ArgumentList.Add("-user_agent");
-                psi.ArgumentList.Add(uaString);
-            }
-            if (capturedAudioInput != null)
-            {
-                psi.ArgumentList.Add("-protocol_whitelist");
-                psi.ArgumentList.Add("http,https,tcp,tls");
-            }
             psi.ArgumentList.Add("-reconnect");
             psi.ArgumentList.Add("1");
             if (capturedAudioInput == null && !session.IsFiniteHls)
@@ -3553,8 +2418,7 @@ public class DownloadEngine : IDownloadEngine
             psi.ArgumentList.Add("1");
             psi.ArgumentList.Add("-reconnect_delay_max");
             psi.ArgumentList.Add("5");
-            psi.ArgumentList.Add("-i");
-            psi.ArgumentList.Add(capturedAudioInput ?? dl.AudioUrl);
+            mediaTransport.ConfigureInput(psi, mediaTransport.AddInput(dl.AudioUrl, dl.AudioManifestText, dl.MediaKind is "hls" or "dash"));
             psi.ArgumentList.Add("-c:v");
             psi.ArgumentList.Add("copy");
             psi.ArgumentList.Add("-c:a");
@@ -3871,6 +2735,8 @@ public class DownloadEngine : IDownloadEngine
 
     public async Task RefreshDownloadAddressAsync(DownloadModel model, string address)
     {
+        RequireTransferMode();
+        PreviewTransfers.RequireRealTransfer(model);
         using var command = await _commands.EnterAsync(model.Id);
         if (_sessions.ContainsKey(model.Id) || model.IsActive) throw new InvalidOperationException("Pause and wait for the transfer to stop before refreshing its address.");
         if (!Uri.TryCreate(address, UriKind.Absolute, out var fresh) || fresh.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(fresh.UserInfo))
@@ -3887,6 +2753,8 @@ public class DownloadEngine : IDownloadEngine
 
     public async Task<string> MoveDownloadAsync(DownloadModel model, string directory, string name)
     {
+        RequireTransferMode();
+        PreviewTransfers.RequireRealTransfer(model);
         using var command = await _commands.EnterAsync(model.Id);
         if (_sessions.ContainsKey(model.Id)) throw new InvalidOperationException("Pause and wait for this transfer to stop before moving it.");
         return await new DownloadDestinationService(_repository).MoveAsync(model, directory, name);
@@ -3894,12 +2762,17 @@ public class DownloadEngine : IDownloadEngine
 
     public async Task PauseDownloadAsync(string downloadId)
     {
+        RequireTransferMode();
+        if (PreviewTransfers.IsPreviewId(downloadId)) throw new InvalidOperationException(PreviewTransfers.DisabledMessage);
         using var command = await _commands.EnterAsync(downloadId);
         await Task.Run(() => StopDownloadCoreAsync(downloadId, cancel: false));
     }
 
     public async Task ResumeDownloadAsync(string downloadId, DownloadModel? existingModel = null)
     {
+        RequireTransferMode();
+        if (PreviewTransfers.IsPreviewId(downloadId)) throw new InvalidOperationException(PreviewTransfers.DisabledMessage);
+        if (existingModel != null) PreviewTransfers.RequireRealTransfer(existingModel);
         if (existingModel != null && !string.Equals(existingModel.Id, downloadId, StringComparison.Ordinal))
             throw new ArgumentException("The supplied download does not match the command ID.", nameof(existingModel));
         using var command = await _commands.EnterAsync(downloadId);
@@ -3925,6 +2798,8 @@ public class DownloadEngine : IDownloadEngine
 
     public async Task CancelDownloadAsync(string downloadId)
     {
+        RequireTransferMode();
+        if (PreviewTransfers.IsPreviewId(downloadId)) throw new InvalidOperationException(PreviewTransfers.DisabledMessage);
         using var command = await _commands.EnterAsync(downloadId);
         await Task.Run(() => StopDownloadCoreAsync(downloadId, cancel: true));
     }
@@ -3967,6 +2842,7 @@ public class DownloadEngine : IDownloadEngine
         {
             target = (await _repository.GetAllDownloadsAsync()).FirstOrDefault(item => item.Id == downloadId);
             if (target == null || IsTerminal(target.Status)) return;
+            PreviewTransfers.RequireRealTransfer(target);
             if (cancel) staging = GetDownloadStagingDirectory(downloadId);
         }
 

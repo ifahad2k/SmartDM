@@ -347,7 +347,7 @@ public class FileExtensionAndCategoryTests
     [Fact]
     public void MainViewModel_MatchesCategory_RoutesAllCategories()
     {
-        var vm = new MainViewModel(isDemoMode: true);
+        var vm = SmartDm.Desktop.Avalonia.DesktopComposition.CreateMainViewModel(isDemoMode: true);
 
         // Check helper method via reflection or direct testing on downloads
         var softwareDl = new DownloadModel { Title = "setup.exe", SavePath = @"C:\Downloads\setup.exe", Category = "Software" };

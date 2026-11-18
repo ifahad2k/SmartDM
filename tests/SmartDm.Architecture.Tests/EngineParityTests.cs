@@ -20,7 +20,7 @@ public class EngineParityTests
     public void MainViewModel_DefaultEngine_IsPureDownloadEngine_WithoutJavaDaemonAdapter()
     {
         // Arrange & Act
-        var vm = new MainViewModel(isDemoMode: true);
+        var vm = SmartDm.Desktop.Avalonia.DesktopComposition.CreateMainViewModel(isDemoMode: true);
 
         // Assert
         Assert.NotNull(vm.Engine);

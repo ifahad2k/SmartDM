@@ -2,6 +2,145 @@
 // Encapsulates Shadow DOM creation, button rendering, safe DOM construction (zero innerHTML for titles), and popovers
 
 class OverlayUiRenderer {
+  static icon(name) {
+    const paths = {
+      download: '<path d="M12 3v12m-4-4 4 4 4-4M5 17v4h14v-4"/>',
+      arrow: '<path d="M12 4v16m-5-5 5 5 5-5"/>',
+      film: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4M17 8h4m-4 8h4"/>',
+      audio: '<path d="M3 14v-3a9 9 0 0 1 18 0v3"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/>',
+      image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',
+      grip: '<path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" stroke-width="3"/>'
+    };
+    return `<svg class="smartdm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.download}</svg>`;
+  }
+
+  static headerMarkup() {
+    return '<span>Download</span><span class="smartdm-brand">SmartDM</span>';
+  }
+
+  static sectionMarkup() {
+    return `<div class="format-section">${this.icon('film')}<span>Video</span></div>`;
+  }
+
+  static bindAppearance(shadow) {
+    if (typeof OverlayAppearance !== 'undefined') OverlayAppearance.apply(shadow.host);
+  }
+
+  static updateSize(row, item) {
+    const label = row.querySelector('.format-size');
+    if (!label) return;
+    const display = () => {
+      label.textContent = item.sizeBytes > 0 ? (item.sizeEstimated ? '≈ ' : '') + SmartDmUtils.formatSize(item.sizeBytes)
+        : item.formatId === 'bestaudio/best' ? 'Size after conversion' : 'Size unknown';
+    };
+    display();
+    const api = globalThis.chrome || globalThis.browser;
+    if (item.sizeBytes > 0 || item.isStream || item.formatId === 'thumbnail' || item.formatId === 'bestaudio/best' || row._smartdm_size_pending || !api?.runtime?.sendMessage) return;
+    row._smartdm_size_pending = true;
+    label.textContent = 'Checking size…';
+    try {
+      api.runtime.sendMessage({type:'GET_MEDIA_SIZE',url:item.videoUrl || item.url,audioUrl:item.audioUrl,referer:item.referer}, response => {
+        row._smartdm_size_pending = false;
+        if (row.isConnected === false) return;
+        if (row._formatData?.url !== item.url || row._formatData?.audioUrl !== item.audioUrl) { OverlayUiRenderer.updateSize(row, row._formatData); return; }
+        const size = response?.fileSize;
+        if (!api.runtime.lastError && response?.success && Number.isSafeInteger(size) && size > 0) {
+          item.sizeBytes = size;
+          if (row._formatData) row._formatData.sizeBytes = size;
+        }
+        display();
+      });
+    } catch (_) { row._smartdm_size_pending = false; display(); }
+  }
+
+  static makeDraggable(host, button, popover) {
+    let pointer = null, suppressClick = false;
+    button.title = 'Click for downloads. Drag to move, or use Alt + arrow keys when focused.';
+
+    const place = () => {
+      const position = host._smartdm_drag_position;
+      if (!position) return false;
+      position.left = Math.max(6, Math.min(position.left, window.innerWidth - position.width - 6));
+      position.top = Math.max(6, Math.min(position.top, window.innerHeight - position.height - 6));
+      Object.assign(host.style, { position: 'fixed', left: position.left + 'px', top: position.top + 'px',
+        right: 'auto', bottom: 'auto', width: 'max-content', zIndex: '2147483647' });
+      return true;
+    };
+    host._smartdm_apply_drag_position = place;
+
+    const move = (left, top, rect) => {
+      // Escape card overflow/transform containment while retaining the original media binding.
+      const root = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+      if (host.parentNode !== root) {
+        root.appendChild(host);
+        if (pointer) {
+          try { button.setPointerCapture(pointer.id); } catch (_) { /* Keep document tracking if capture is unavailable. */ }
+        }
+      }
+      host._smartdm_drag_position = { left, top, width: rect.width, height: rect.height };
+      popover.classList.remove('active');
+      popover.style.position = 'fixed';
+      host._smartdm_stop_poll?.();
+      place();
+    };
+    const onMove = event => {
+      if (!pointer || event.pointerId !== pointer.id) return;
+      const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y;
+      if (!pointer.moved && Math.hypot(dx, dy) < 5) return;
+      pointer.moved = true;
+      event.preventDefault();
+      event.stopPropagation();
+      move(pointer.rect.left + dx, pointer.rect.top + dy, pointer.rect);
+    };
+    const finish = event => {
+      if (!pointer || (event && event.pointerId !== pointer.id)) return;
+      suppressClick = pointer.moved;
+      try { button.releasePointerCapture(pointer.id); } catch (_) { /* Capture may end on reparent/cancel. */ }
+      pointer = null;
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', finish, true);
+      document.removeEventListener('pointercancel', finish, true);
+      window.removeEventListener('blur', onBlur);
+    };
+    const onBlur = () => finish();
+    const onDown = event => {
+      if (event.button !== 0 || event.isPrimary === false || pointer) return;
+      suppressClick = false;
+      pointer = { id: event.pointerId, x: event.clientX, y: event.clientY,
+        rect: button.getBoundingClientRect(), moved: false };
+      event.stopPropagation();
+      try { button.setPointerCapture(event.pointerId); } catch (_) { /* Document listeners still track the drag. */ }
+      document.addEventListener('pointermove', onMove, { capture: true, passive: false });
+      document.addEventListener('pointerup', finish, true);
+      document.addEventListener('pointercancel', finish, true);
+      window.addEventListener('blur', onBlur);
+    };
+    const onClick = event => {
+      if (!suppressClick || event.detail === 0) return;
+      suppressClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const onKey = event => {
+      if (!event.altKey || event.ctrlKey || event.metaKey) return;
+      const delta = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] }[event.key];
+      if (!delta) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = button.getBoundingClientRect();
+      move(rect.left + delta[0], rect.top + delta[1], rect);
+    };
+    button.addEventListener('pointerdown', onDown, true);
+    button.addEventListener('click', onClick, true);
+    button.addEventListener('keydown', onKey);
+    return () => {
+      finish();
+      button.removeEventListener('pointerdown', onDown, true);
+      button.removeEventListener('click', onClick, true);
+      button.removeEventListener('keydown', onKey);
+    };
+  }
+
   static positionPopover(popover, rect, width, height) {
     const margin = 8, panelWidth = Math.min(312, Math.max(0, width - margin * 2));
     const panelHeight = Math.min(400, Math.max(0, height - margin * 2));
@@ -16,199 +155,43 @@ class OverlayUiRenderer {
 
   static getStyles() {
     return `
-      @keyframes spin { to { transform: rotate(360deg); } }
-      .spinner { width: 14px; height: 14px; border: 2px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
-      .spinner-container { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; }
-      .banner-btn {
-        background: rgba(15, 23, 42, 0.72);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        color: rgba(248, 250, 252, 0.95);
-        border: 1px solid rgba(56, 189, 248, 0.4);
-        border-radius: 6px;
-        padding: 5px 10px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 11px;
-        font-weight: 700;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        transition: all 0.2s ease;
-        user-select: none;
-      }
-      .banner-btn:hover {
-        background: rgba(15, 23, 42, 0.95);
-        border-color: #38bdf8;
-        color: #ffffff;
-        box-shadow: 0 6px 20px rgba(56, 189, 248, 0.6);
-        transform: translateY(-1px);
-      }
-      .play-icon {
-        width: 0; height: 0;
-        border-top: 4px solid transparent;
-        border-bottom: 4px solid transparent;
-        border-left: 7px solid #38bdf8;
-      }
-      .banner-btn:hover .play-icon { border-left-color: #ffffff; }
-      .download-icon {
-        width: 0; height: 0;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 6px solid #38bdf8;
-        display: inline-block;
-      }
-      .banner-btn:hover .download-icon { border-top-color: #ffffff; }
-      /* YouTube Music native dark-theme pill styling */
-      .banner-btn.ytmusic-bar-btn {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 18px;
-        color: #f1f1f1;
-        padding: 0 12px;
-        height: 32px;
-        font-family: "YouTube Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        font-size: 12px;
-        font-weight: 500;
-        letter-spacing: 0.2px;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        cursor: pointer;
-        box-shadow: none;
-        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-        white-space: nowrap;
-        user-select: none;
-      }
-      .banner-btn.ytmusic-bar-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.3);
-        color: #ffffff;
-        box-shadow: none;
-        transform: none;
-      }
-      .banner-btn.ytmusic-bar-btn:active {
-        background: rgba(255, 255, 255, 0.28);
-        transform: scale(0.97);
-      }
-      .banner-btn.ytmusic-playlist-header-btn {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 18px;
-        color: #f1f1f1;
-        padding: 0 16px;
-        height: 36px;
-        font-family: "YouTube Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        font-size: 13px;
-        font-weight: 500;
-        letter-spacing: 0.2px;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        cursor: pointer;
-        box-shadow: none;
-        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-        white-space: nowrap;
-        user-select: none;
-      }
-      .banner-btn.ytmusic-playlist-header-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.3);
-        color: #ffffff;
-        box-shadow: none;
-        transform: none;
-      }
-      .banner-btn.ytmusic-playlist-header-btn:active {
-        background: rgba(255, 255, 255, 0.28);
-        transform: scale(0.97);
-      }
-      .ytmusic-svg-icon {
-        width: 16px;
-        height: 16px;
-        fill: currentColor;
-        display: inline-block;
-        flex-shrink: 0;
-        border: none;
-        outline: none;
-      }
-      .banner-btn.ytmusic-playlist-header-btn .ytmusic-svg-icon {
-        width: 18px;
-        height: 18px;
-        border: none;
-        outline: none;
-      }
-      .popover {
-        position: fixed;
-        width: 290px;
-        box-sizing: border-box;
-        max-width: calc(100vw - 16px);
-        background: rgba(15, 23, 42, 0.96);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 8px;
-        padding: 10px;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
-        display: none;
-        flex-direction: column;
-        gap: 6px;
-        color: #f8fafc;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 12px;
-        z-index: 2147483647;
-      }
-      .popover.active { display: flex; }
-      .popover-title {
-        font-weight: 700;
-        color: #38bdf8;
-        font-size: 11px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-        padding-bottom: 6px;
-        margin-bottom: 4px;
-      }
-      .popover-content {
-        max-height: 380px;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        padding-right: 4px;
-      }
-      .popover-content::-webkit-scrollbar { width: 4px; }
-      .popover-content::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 4px; }
-      @keyframes smartdmFadeIn {
-        from { opacity: 0; transform: translateY(-4px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .format-item {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 6px;
-        padding: 7px 10px;
-        cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        transition: background 0.15s, border-color 0.15s;
-      }
-      .format-item:hover {
-        background: rgba(56, 189, 248, 0.25);
-        border-color: #38bdf8;
-      }
-      .format-info { display: flex; flex-direction: column; gap: 2px; }
-      .format-title { font-weight: 700; color: #f8fafc; }
-      .format-badge {
-        font-size: 10px; font-weight: 700;
-        color: #38bdf8;
-        background: rgba(56, 189, 248, 0.15);
-        padding: 2px 6px; border-radius: 4px;
-      }
-      .status-text { font-size: 11px; color: #94a3b8; text-align: center; padding: 8px; }
+      :host { color-scheme:light dark; --sdm-paper:light-dark(#ffffff,#252a30); --sdm-ink:light-dark(#252c35,#f0f3f6); --sdm-muted:light-dark(#4f5c69,#aeb9c5); --sdm-line:light-dark(#dfe5eb,#434d58); --sdm-accent:light-dark(#424d5a,#d0d8e1); --sdm-hover:light-dark(#eef1f4,#38414b); --sdm-menu-opacity:100%; --sdm-button-opacity:0%; }
+      :host([data-smartdm-theme="light"]) { color-scheme:light; }
+      :host([data-smartdm-theme="dark"]) { color-scheme:dark; }
+      * { box-sizing:border-box; }
+      .smartdm-icon { width:16px; height:16px; flex-shrink:0; }
+      .banner-btn { display:flex; align-items:center; gap:6px; padding:7px 9px; border:0; border-radius:6px; background:var(--sdm-accent); background:color-mix(in srgb,var(--sdm-accent) var(--sdm-button-opacity),transparent); color:var(--sdm-button-foreground,var(--sdm-ink)); font:500 12px/1.4 'Segoe UI',Arial,sans-serif; cursor:grab; touch-action:none; user-select:none; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+      .banner-btn:active { cursor:grabbing; }
+      .banner-btn .smartdm-grip { width:9px; opacity:.65; }
+      .thumb-btn { font-size:11px; padding:6px 8px; gap:5px; }
+      .banner-btn.ytmusic-bar-btn, .banner-btn.ytmusic-playlist-header-btn { cursor:pointer; touch-action:auto; white-space:nowrap; }
+      .ytmusic-svg-icon { width:16px; height:16px; fill:currentColor; flex-shrink:0; }
+      .popover { position:fixed; width:290px; max-width:calc(100vw - 16px); background:var(--sdm-paper); background:color-mix(in srgb,var(--sdm-paper) var(--sdm-menu-opacity),transparent); backdrop-filter:blur(14px) saturate(1.1); -webkit-backdrop-filter:blur(14px) saturate(1.1); border:1px solid var(--sdm-line); border-radius:12px; padding:0; box-shadow:0 6px 18px #0000000c; display:none; flex-direction:column; color:var(--sdm-ink); font:400 13px/1.4 'Segoe UI',Arial,sans-serif; z-index:2147483647; }
+      .popover.active { display:flex; }
+      .popover-title { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px 10px; font-size:14px; font-weight:600; }
+      .smartdm-brand { color:var(--sdm-muted); font-size:11px; font-weight:400; }
+      .popover-content { max-height:380px; overflow-y:auto; display:flex; flex-direction:column; padding:0 5px 6px; scrollbar-width:thin; }
+      .popover > .format-section { display:none; }
+      .popover:has(.popover-content[data-has-video="true"]) > .format-section { display:flex; padding-left:14px; }
+      .format-section { display:flex; align-items:center; gap:7px; color:var(--sdm-muted); font-size:12px; padding:2px 9px 6px; }
+      .format-item { display:flex; align-items:center; gap:10px; flex-shrink:0; width:100%; min-height:34px; padding:8px 9px; border:0; border-radius:4px; background:transparent; color:var(--sdm-ink); font:400 13px/1.4 'Segoe UI',Arial,sans-serif; text-align:left; cursor:pointer; }
+      .format-item:hover, .format-item:focus-visible { background:var(--sdm-hover); }
+      .format-item[data-is-audio="true"] { border-top:1px solid var(--sdm-line); margin-top:5px; padding-top:10px; border-radius:0 0 4px 4px; }
+      .format-info { flex:1; min-width:0; }
+      .format-title { font-weight:500; overflow-wrap:anywhere; }
+      .format-size { display:block; margin-top:2px; color:var(--sdm-muted); font-size:11px; font-weight:400; }
+      .format-badge { margin-left:auto; color:var(--sdm-muted); font-size:11px; font-weight:400; white-space:nowrap; }
+      .format-action { display:flex; color:var(--sdm-muted); }
+      .format-action .smartdm-icon { width:15px; height:15px; }
+      .format-kind { display:flex; color:var(--sdm-accent); }
+      .status-text { font-size:12px; color:var(--sdm-muted); text-align:center; padding:12px; overflow-wrap:anywhere; }
+      .status-text.success { color:var(--sdm-ink); }
+      .status-text.error { color:light-dark(#b42318,#ffb4ab); }
+      @keyframes spin { to { transform:rotate(360deg); } }
+      .spinner { width:14px; height:14px; border:2px solid var(--sdm-line); border-top-color:var(--sdm-muted); border-radius:50%; animation:spin .8s linear infinite; display:inline-block; }
+      .spinner-container, .smartdm-pending-notice { display:flex; align-items:center; justify-content:center; gap:8px; padding:10px; color:var(--sdm-muted); font-size:12px; }
+      @media(pointer:coarse) { .format-item, .banner-btn { min-height:44px; } }
+      @media(prefers-reduced-motion:reduce) { .spinner { animation:none; } }
     `;
   }
 
@@ -331,7 +314,8 @@ class OverlayUiRenderer {
       }
       cleanTitle = cleanTitle.replace(/\(([^)]+)\)\s*\(\1\)/gi, '($1)');
 
-      const fSize = fmt.fileSize || fmt.FileSize || 0;
+      const rawSize = Number(fmt.fileSize || fmt.FileSize || fmt.contentLength || 0);
+      const fSize = Number.isSafeInteger(rawSize) && rawSize > 0 ? rawSize : 0;
       const formattedSize = (fSize >= 1048576 || (isAud && fSize >= 102400)) ? SmartDmUtils.formatSize(fSize) : null;
       const sizeText = formattedSize ? formattedSize : (fmt.tbr > 0 ? '~' + Math.round(fmt.tbr) + ' kbps' : 'Download');
 
@@ -356,6 +340,9 @@ class OverlayUiRenderer {
         fileName: itemFileName,
         height: isAud ? -1 : hVal,
         isAudio: isAud,
+        sizeBytes: fSize,
+        isStream: ['hls','dash'].includes(fmt.mediaKind || fmt.MediaKind) || !!(fmt.manifestText || fmt.ManifestText) || /\.(m3u8|mpd)(?:[?#]|$)/i.test(streamUrl || ''),
+        sizeEstimated: !!(fmt.sizeIsEstimate || fmt.isEstimated || fmt.audioUrl || fmt.AudioUrl || ['hls','dash'].includes(fmt.mediaKind || fmt.MediaKind) || /\.(m3u8|mpd)(?:[?#]|$)/i.test(streamUrl || '')),
         referer: fmt.referer || fmt.Referer || null,
         origin: fmt.origin || fmt.Origin || null
       });
@@ -438,6 +425,7 @@ class OverlayUiRenderer {
       container.innerHTML = '<div class="status-text">No media formats detected.</div>';
       return;
     }
+    container.setAttribute?.('data-has-video', String(items.some(item => !item.isAudio && item.formatId !== 'thumbnail')));
 
     const existingDomItems = Array.from(container.querySelectorAll('.format-item'));
     const isFirstRender = existingDomItems.length === 0;
@@ -447,7 +435,8 @@ class OverlayUiRenderer {
     }
 
     const createItemElement = (item) => {
-      const div = document.createElement('div');
+      const div = document.createElement('button');
+      div.type = 'button';
       div._formatData = item;
       div.className = 'format-item';
       div.dataset.formatKey = item.title;
@@ -460,23 +449,42 @@ class OverlayUiRenderer {
       infoDiv.className = 'format-info';
       const titleSpan = document.createElement('span');
       titleSpan.className = 'format-title';
-      titleSpan.textContent = item.title;
+      const isThumb = item.formatId === 'thumbnail';
+      const displayTitle = isThumb ? 'Cover image' : item.isAudio ? 'Audio only'
+        : item.height > 0 ? `${item.height}p${/60fps/.test(item.title) ? ' 60 fps' : ''}` : 'Video';
+      titleSpan.textContent = displayTitle;
       titleSpan.setAttribute('title', item.title);
+      div.setAttribute('aria-label', 'Download ' + item.title);
       infoDiv.appendChild(titleSpan);
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'format-size';
+      infoDiv.appendChild(sizeSpan);
 
       const badgeSpan = document.createElement('span');
       badgeSpan.className = 'format-badge';
-      badgeSpan.textContent = item.badge;
+      badgeSpan.textContent = item.fileName.split('.').pop().toUpperCase();
+      badgeSpan.setAttribute('title', item.badge);
 
+      if (isThumb || item.isAudio) {
+        const kind = document.createElement('span');
+        kind.className = 'format-kind';
+        kind.innerHTML = OverlayUiRenderer.icon(isThumb ? 'image' : 'audio');
+        div.appendChild(kind);
+      }
       div.appendChild(infoDiv);
       div.appendChild(badgeSpan);
+      const action = document.createElement('span');
+      action.className = 'format-action';
+      action.innerHTML = OverlayUiRenderer.icon('arrow');
+      div.appendChild(action);
+      OverlayUiRenderer.updateSize(div, item);
 
       div.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
         container._smartdm_downloading = true;
-        container.innerHTML = '<div class="status-text" style="color:#38bdf8; font-weight:bold;">Opening SmartDM...</div>';
+        container.innerHTML = '<div class="status-text">Opening SmartDM...</div>';
 
         const activeItem = div._formatData || item;
         if (typeof onDownload === 'function') {
@@ -484,11 +492,10 @@ class OverlayUiRenderer {
             container._smartdm_downloading = false;
             const accepted = !!response && (response.success === true || response.status === 'ok');
             const status = document.createElement('div');
-            status.className = 'status-text';
+            status.className = 'status-text ' + (accepted ? 'success' : 'error');
             status.textContent = accepted
               ? 'Added to SmartDM.'
               : 'Could not send this video to SmartDM. Check that the desktop app is running.';
-            status.style.color = accepted ? '#38bdf8' : '#f87171';
             container.replaceChildren(status);
             if (!accepted) {
               const retry = document.createElement('button');
@@ -520,16 +527,15 @@ class OverlayUiRenderer {
       items.forEach(item => {
         const existingEl = container.querySelector('.format-item[data-format-key="' + CSS.escape(item.title) + '"]');
         if (existingEl) {
+          if (!item.sizeBytes && existingEl._formatData?.url === item.url && existingEl._formatData.audioUrl === item.audioUrl && existingEl._formatData.sizeBytes > 0) item.sizeBytes = existingEl._formatData.sizeBytes;
           existingEl._formatData = item;
+          OverlayUiRenderer.updateSize(existingEl, item);
           const badgeEl = existingEl.querySelector('.format-badge');
-          if (badgeEl && item.badge && item.badge !== 'Download' && badgeEl.textContent === 'Download') {
-            badgeEl.textContent = item.badge;
-          }
+          if (badgeEl) badgeEl.setAttribute('title', item.badge);
           return;
         }
 
         const div = createItemElement(item);
-        div.style.animation = 'smartdmFadeIn 0.25s ease-out';
 
         const currentDom = Array.from(container.querySelectorAll('.format-item'));
         let insertBeforeEl = null;
@@ -569,8 +575,7 @@ class OverlayUiRenderer {
       if (!notice) {
         notice = document.createElement('div');
         notice.className = 'smartdm-pending-notice';
-        notice.style.cssText = 'padding: 6px 12px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; gap: 6px;';
-        notice.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border:2px solid #38bdf8; border-top-color:transparent; border-radius:50%; animation: spin 0.8s linear infinite;"></span> Checking for higher qualities...';
+        notice.innerHTML = '<span class="spinner"></span> Checking for higher qualities...';
         container.appendChild(notice);
       }
     } else {

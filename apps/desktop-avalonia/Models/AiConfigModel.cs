@@ -10,8 +10,11 @@ public class AiConfigModel
     [JsonPropertyName("providerType")]
     public string ProviderType { get; set; } = "DISABLED"; // "DISABLED", "GEMINI", "OPENAI_COMPATIBLE"
 
-    [JsonPropertyName("apiKey")]
-    public string ApiKey { get; set; } = string.Empty;
+    [JsonPropertyName("protectedApiKey")]
+    public string? ProtectedApiKey { get; set; }
+
+    [JsonIgnore]
+    public bool HasApiKey => !string.IsNullOrEmpty(ProtectedApiKey);
 
     [JsonPropertyName("baseUrl")]
     public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com";

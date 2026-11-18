@@ -49,3 +49,7 @@ obj/
 
 # Local audit download; preserve on disk, exclude from source snapshots
 /docs/audits/2026-10-26/youtube-test.mp4
+
+# Local Python developer-tool caches
+**/__pycache__/
+*.py[cod]

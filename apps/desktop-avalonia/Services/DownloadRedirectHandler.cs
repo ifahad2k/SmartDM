@@ -10,6 +10,17 @@ namespace SmartDm.Desktop.Avalonia.Services;
 // Follow them without forwarding source-site credentials to another authority.
 public sealed class DownloadRedirectHandler(HttpMessageHandler transport) : DelegatingHandler(transport)
 {
+    private static readonly HttpRequestOptionsKey<Func<string, string?>> CookiePolicy = new("SmartDM.CookiePolicy");
+
+    public static void ApplyCookies(HttpRequestMessage request, string? credentials, string? sourceUrl)
+    {
+        Func<string, string?> policy = target => CookieHeaderPolicy.Select(credentials, target, sourceUrl);
+        request.Options.Set(CookiePolicy, policy);
+        string? cookie = policy(request.RequestUri!.AbsoluteUri);
+        request.Headers.Remove("Cookie");
+        if (cookie != null) request.Headers.TryAddWithoutValidation("Cookie", cookie);
+    }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         HttpRequestMessage current = request;
@@ -43,11 +54,17 @@ public sealed class DownloadRedirectHandler(HttpMessageHandler transport) : Dele
                 foreach (var header in current.Headers)
                 {
                     if (header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase) ||
-                        (!sameOrigin && (header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
-                        header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                        header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
+                        (!sameOrigin && (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
                         header.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase) ||
                         header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase)))) continue;
                     next.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+                if (current.Options.TryGetValue(CookiePolicy, out var policy))
+                {
+                    next.Options.Set(CookiePolicy, policy);
+                    string? cookie = policy(target.AbsoluteUri);
+                    if (cookie != null) next.Headers.TryAddWithoutValidation("Cookie", cookie);
                 }
                 response.Dispose();
                 if (!ReferenceEquals(current, request)) current.Dispose();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -17,6 +18,37 @@ public class LocalIpcService : ILocalIpcService
     private string? _token;
     private string? _ipcInfoPath;
     private CancellationTokenSource? _cts;
+    private NativeMessagingBridge? _nativeBridge;
+    private readonly SemaphoreSlim _slots = new(8, 8);
+    private readonly ConcurrentDictionary<int, Task> _requests = new();
+    private int _requestId;
+    private readonly object _manifestGate = new();
+    private readonly Dictionary<string, (string Text, DateTime Expires)> _resolvedManifests = new();
+
+    private static string ManifestCacheKey(string url, string? cookies) => url + "\n" +
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cookies ?? "")));
+
+    private void RetainResolvedManifest(MediaFormatDto format, string? cookies)
+    {
+        if (string.IsNullOrEmpty(format.ManifestText)) return;
+        lock (_manifestGate)
+        {
+            // Eight complete snapshots, at most 32 MiB, stay inside the desktop.
+            // Chrome native-host replies cannot exceed 1 MiB.
+            if (_resolvedManifests.Count >= 8) _resolvedManifests.Clear();
+            _resolvedManifests[ManifestCacheKey(format.DirectUrl ?? "", cookies)] = (format.ManifestText, DateTime.UtcNow.AddMinutes(15));
+        }
+        format.ManifestText = null;
+        format.MediaKind = "hls";
+    }
+
+    private void RestoreResolvedManifest(MediaFormatDto format, string? cookies)
+    {
+        if (!string.IsNullOrEmpty(format.ManifestText)) return;
+        lock (_manifestGate)
+            if (_resolvedManifests.TryGetValue(ManifestCacheKey(format.DirectUrl ?? "", cookies), out var capture) && capture.Expires > DateTime.UtcNow)
+            { format.ManifestText = capture.Text; format.MediaKind = "hls"; }
+    }
 
     public event Action<BrowserDownloadRequest>? DownloadRequestedFromBrowser;
     public event Action<BrowserBatchDownloadRequest>? BatchDownloadRequestedFromBrowser;
@@ -39,35 +71,10 @@ public class LocalIpcService : ILocalIpcService
         _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
         _listener.Start();
 
-        // 4. Write ipc.info
-        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".smartdm");
-        Directory.CreateDirectory(dir);
-        _ipcInfoPath = Path.Combine(dir, "ipc.info");
-        File.WriteAllText(_ipcInfoPath, $"{port}\n{_token}\n");
-
-        // Restrict file permissions
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "icacls",
-                    Arguments = $"\"{_ipcInfoPath}\" /inheritance:r /grant:r \"{Environment.UserName}:F\"",
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                };
-                Process.Start(psi)?.WaitForExit(2000);
-            }
-            else if (OperatingSystem.IsLinux())
-            {
-                File.SetUnixFileMode(_ipcInfoPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-        }
-        catch
-        {
-            // Ignore permission setting errors on platforms without icacls
-        }
+        string pipeName = "smartdm-" + Guid.NewGuid().ToString("N");
+        _ipcInfoPath = Path.Combine(AppProfile.DirectoryPath, "ipc.info");
+        PrivateProfileFiles.WriteText(_ipcInfoPath, $"{port}\n{_token}\n{pipeName}\n");
+        _nativeBridge = new NativeMessagingBridge(pipeName, _token, DispatchNativeAsync);
 
         // 5. Start listener loop
         _ = Task.Run(async () =>
@@ -77,7 +84,11 @@ public class LocalIpcService : ILocalIpcService
                 try
                 {
                     var context = await _listener.GetContextAsync();
-                    _ = ProcessRequestAsync(context);
+                    if (!_slots.Wait(0)) { context.Response.StatusCode = 503; context.Response.Close(); continue; }
+                    int id = Interlocked.Increment(ref _requestId);
+                    Task request = ServeRequestAsync(context);
+                    _requests[id] = request;
+                    _ = request.ContinueWith(_ => _requests.TryRemove(id, out var ignored), TaskScheduler.Default);
                 }
                 catch (HttpListenerException)
                 {
@@ -104,17 +115,14 @@ public class LocalIpcService : ILocalIpcService
 
         try
         {
-            resp.Headers.Add("Access-Control-Allow-Origin", "*");
-            resp.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type, X-SmartDM-Token, Access-Control-Request-Private-Network");
-            resp.Headers.Add("Access-Control-Allow-Methods", "POST, GET, HEAD, OPTIONS");
-            resp.Headers.Add("Access-Control-Allow-Private-Network", "true");
-
+            string? origin = req.Headers["Origin"];
+            if (origin != null && !BrowserProtocol.IsAllowedOrigin(origin)) { resp.StatusCode = 403; return; }
+            if (origin != null) { resp.Headers["Access-Control-Allow-Origin"] = origin; resp.Headers["Vary"] = "Origin"; }
             if (req.HttpMethod == "OPTIONS")
             {
-                resp.StatusCode = 200;
-                resp.ContentLength64 = 0;
-                resp.Close();
-                return;
+                resp.Headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-SmartDM-Protocol";
+                resp.Headers["Access-Control-Allow-Methods"] = "POST";
+                resp.StatusCode = 204; return;
             }
 
             if (req.Url?.AbsolutePath != "/api/browser" && req.Url?.AbsolutePath != "/api/download")
@@ -145,22 +153,55 @@ public class LocalIpcService : ILocalIpcService
                 return;
             }
 
-            // Check Bearer Token or Loopback caller verification
             string? auth = req.Headers["Authorization"];
-            bool isAuthorized = (!string.IsNullOrEmpty(auth) && auth == $"Bearer {_token}") ||
-                                (req.IsLocal || IPAddress.IsLoopback(req.RemoteEndPoint.Address));
+            if (auth == null || !auth.StartsWith("Bearer ", StringComparison.Ordinal) ||
+                !NativeMessagingBridge.TokenMatches(auth[7..], _token ?? ""))
+            { resp.StatusCode = 401; return; }
+            if (req.Headers["X-SmartDM-Protocol"] != "1") { resp.StatusCode = 400; return; }
+            using var readBudget = CancellationTokenSource.CreateLinkedTokenSource(_cts!.Token);
+            readBudget.CancelAfter(TimeSpan.FromSeconds(20));
+            string body = await BrowserProtocol.ReadBodyAsync(req.InputStream, req.ContentLength64, readBudget.Token);
+            byte[] result = await DispatchNativeAsync(body, readBudget.Token);
+            resp.ContentType = "application/json";
+            resp.ContentLength64 = result.Length;
+            await resp.OutputStream.WriteAsync(result, readBudget.Token);
+        }
+        catch (InvalidDataException) { resp.StatusCode = 413; }
+        catch (OperationCanceledException) { resp.StatusCode = 408; }
+        catch { resp.StatusCode = 400; }
+        finally { resp.Close(); }
+    }
 
-            if (!isAuthorized)
-            {
-                resp.StatusCode = 401;
-                resp.Close();
-                return;
-            }
+    private async Task ServeRequestAsync(HttpListenerContext context)
+    {
+        try { await ProcessRequestAsync(context); }
+        finally { _slots.Release(); }
+    }
 
-            using var reader = new StreamReader(req.InputStream, Encoding.UTF8);
-            string body = await reader.ReadToEndAsync();
+    private sealed class IpcReply : IDisposable
+    {
+        public int StatusCode { get; set; } = 200;
+        public string ContentType { get; set; } = "application/json";
+        public long ContentLength64
+        {
+            set { if (value > BrowserProtocol.MaximumResponseBytes) throw new InvalidDataException("Browser reply is too large."); }
+        }
+        public MemoryStream OutputStream { get; } = new();
+        public void Dispose() => OutputStream.Dispose();
+    }
 
-            using var doc = JsonDocument.Parse(body);
+    private async Task<byte[]> DispatchNativeAsync(string body, CancellationToken token)
+    {
+        using var reply = new IpcReply();
+        await DispatchMessageAsync(body, reply, token);
+        if (reply.StatusCode >= 400) return Encoding.UTF8.GetBytes("{\"status\":\"error\",\"success\":false,\"message\":\"Browser request refused.\"}");
+        return reply.OutputStream.ToArray();
+    }
+
+    private async Task DispatchMessageAsync(string body, IpcReply resp, CancellationToken token)
+    {
+            using var doc = JsonDocument.Parse(body, new JsonDocumentOptions {MaxDepth = 32});
+            BrowserProtocol.Validate(doc.RootElement);
             var root = doc.RootElement;
 
             string type = root.TryGetProperty("type", out var tElem) ? tElem.GetString() ?? "" : "";
@@ -202,7 +243,7 @@ public class LocalIpcService : ILocalIpcService
                 {
                     if (YouTubeMediaResolver.IsYouTubeUrl(queryUrl))
                     {
-                        var ytRes = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(queryUrl);
+                        var ytRes = await YouTubeMediaResolver.ResolveYouTubeFormatsAsync(queryUrl, token: token);
                         if (ytRes.Success && ytRes.Formats.Count > 0)
                         {
                             var jsonPayload = JsonSerializer.Serialize(new
@@ -226,9 +267,10 @@ public class LocalIpcService : ILocalIpcService
                              queryUrl.Contains("stream-embed", StringComparison.OrdinalIgnoreCase) ||
                              queryUrl.Contains("playlist", StringComparison.OrdinalIgnoreCase))
                     {
-                        var hlsRes = await HlsMediaResolver.ResolveHlsFormatsAsync(queryUrl, queryReferer ?? queryPageUrl, queryUa, queryCookies, token: _cts?.Token ?? default, pageUrl: queryPageUrl ?? queryReferer);
+                        var hlsRes = await HlsMediaResolver.ResolveHlsFormatsAsync(queryUrl, queryReferer ?? queryPageUrl, queryUa, queryCookies, token: token, pageUrl: queryPageUrl ?? queryReferer);
                         if (hlsRes.Success && hlsRes.Formats.Count > 0)
                         {
+                            foreach (var format in hlsRes.Formats) RetainResolvedManifest(format, queryCookies);
                             var jsonPayload = JsonSerializer.Serialize(new
                             {
                                 status = "ok",
@@ -344,6 +386,7 @@ public class LocalIpcService : ILocalIpcService
                         if (durProp.ValueKind == JsonValueKind.Number) dto.TotalDuration = durProp.GetDouble();
                         else if (durProp.ValueKind == JsonValueKind.String && double.TryParse(durProp.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var durVal)) dto.TotalDuration = durVal;
                     }
+                    RestoreResolvedManifest(dto, cookies);
                     formats.Add(dto);
                 }
             }
@@ -435,6 +478,12 @@ public class LocalIpcService : ILocalIpcService
 
             if (!string.IsNullOrEmpty(url))
             {
+                if ((formats ??= new List<MediaFormatDto>()).Count == 0)
+                {
+                    var resolved = new MediaFormatDto {DirectUrl = url, FormatId = formatId ?? "", Resolution = title ?? "Video", Ext = "mp4"};
+                    RestoreResolvedManifest(resolved, cookies);
+                    if (resolved.ManifestText != null) formats.Add(resolved);
+                }
                 DownloadRequestedFromBrowser?.Invoke(new BrowserDownloadRequest
                 {
                     Url = url,
@@ -457,16 +506,6 @@ public class LocalIpcService : ILocalIpcService
             resp.StatusCode = 200;
             resp.ContentLength64 = respBytes.Length;
             await resp.OutputStream.WriteAsync(respBytes);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to process IPC request: {ex.Message}");
-            resp.StatusCode = 500;
-        }
-        finally
-        {
-            resp.Close();
-        }
     }
 
     private static int GetAvailablePort()
@@ -494,12 +533,14 @@ public class LocalIpcService : ILocalIpcService
     public void Stop()
     {
         _cts?.Cancel();
+        if (_nativeBridge != null) { _nativeBridge.DisposeAsync().AsTask().GetAwaiter().GetResult(); _nativeBridge = null; }
         if (_listener != null && _listener.IsListening)
         {
             try { _listener.Stop(); } catch { }
             try { _listener.Close(); } catch { }
         }
 
+        Task.WhenAll(_requests.Values).GetAwaiter().GetResult();
         if (!string.IsNullOrEmpty(_ipcInfoPath) && File.Exists(_ipcInfoPath))
         {
             try { File.Delete(_ipcInfoPath); } catch { }

@@ -355,7 +355,10 @@
                                 <TextBlock Text="Google Gemini API Configuration" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource PrimaryAccent}" />
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="Gemini API Key" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
-                                    <TextBox Text="{Binding GeminiApiKey}" PasswordChar="•" FontSize="12" Padding="8,6" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" />
+                                    <TextBox TextChanged="OnApiKeyTextChanged" Watermark="New key (blank keeps saved key)" PasswordChar="•" FontSize="12" Padding="8,6" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderColor}" />
+                                    <TextBlock Text="A key is saved in protected storage." IsVisible="{Binding HasSavedApiKey}" />
+                                    <Button Content="Remove saved key on Save" Command="{Binding ClearSavedApiKeyCommand}" />
+                                    <TextBlock Text="{Binding SettingsError}" Foreground="Red" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="API Endpoint URL" FontSize="11.5" Foreground="{DynamicResource SecondaryText}" />
